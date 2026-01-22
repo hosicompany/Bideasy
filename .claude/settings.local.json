@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python -m pip install:*)",
+      "Bash(python -m uvicorn:*)",
+      "Bash(timeout:*)",
+      "Bash(curl:*)",
+      "Bash(python scripts/seed_data.py:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python tests/verify_calc.py:*)",
+      "Bash(set PYTHONPATH=%CD%)",
+      "Bash(python -c:*)",
+      "Bash(flutter --version:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter test)",
+      "Bash(flutter build:*)",
+      "Bash(flutter doctor:*)",
+      "Bash(flutter run:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

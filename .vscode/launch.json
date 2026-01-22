@@ -1,0 +1,42 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Frontend (Flutter)",
+            "request": "launch",
+            "type": "dart",
+            "program": "frontend/lib/main.dart",
+            "cwd": "${workspaceFolder}/frontend",
+            "args": [
+                "-d",
+                "chrome"
+            ]
+        },
+        {
+            "name": "Backend (FastAPI)",
+            "request": "launch",
+            "type": "python",
+            "module": "uvicorn",
+            "args": [
+                "main:app",
+                "--reload",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000"
+            ],
+            "cwd": "${workspaceFolder}/backend",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Stack Run",
+            "configurations": [
+                "Backend (FastAPI)",
+                "Frontend (Flutter)"
+            ]
+        }
+    ]
+}
