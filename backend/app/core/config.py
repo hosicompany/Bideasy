@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
 
+    # Public Data Portal
+    PUBLIC_DATA_KEY: str = ""
+
     class Config:
         env_file = ".env"
 

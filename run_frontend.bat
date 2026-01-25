@@ -2,8 +2,7 @@
 echo [BidEasy] Starting Frontend App...
 cd frontend
 
-echo [BidEasy] Starting Frontend App...
-cd frontend
+
 
 echo [Setup] Cleaning previous build...
 call flutter clean

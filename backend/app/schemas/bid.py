@@ -19,12 +19,15 @@ class NoticeBase(BaseModel):
     bid_no: str
     title: str
     basic_price: float
+    content: Optional[str] = None # Link URL
+    contract_type: Optional[str] = "CONSTRUCTION"
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
 
 class Notice(NoticeBase):
     class Config:
         from_attributes = True
+
 
 # --- User Bid Schemas ---
 class UserBidCreate(BaseModel):
@@ -38,3 +41,13 @@ class UserBid(UserBidCreate):
     
     class Config:
         from_attributes = True
+
+# --- AI Analysis Schemas ---
+class RiskFactor(BaseModel):
+    type: str # e.g., "Term", "Penalty"
+    content: str
+    level: str # HIGH, MEDIUM, LOW
+
+class BidAnalysisResponse(BaseModel):
+    summary: List[str]
+    risks: List[RiskFactor]

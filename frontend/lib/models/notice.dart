@@ -3,16 +3,21 @@ import 'package:intl/intl.dart';
 class Notice {
   final String bidNo;
   final String title;
+  final String content; // Notice URL
   final double basicPrice;
   final DateTime? startDate;
   final DateTime? endDate;
 
+  final String? contractType;
+
   Notice({
     required this.bidNo,
     required this.title,
+    required this.content,
     required this.basicPrice,
     this.startDate,
     this.endDate,
+    this.contractType,
   });
 
   // Factory for JSON parsing
@@ -21,8 +26,13 @@ class Notice {
       bidNo: json['bid_no'] ?? '',
       title: json['title'] ?? '',
       basicPrice: (json['basic_price'] ?? 0).toDouble(),
-      startDate: json['start_date'] != null ? DateTime.parse(json['start_date']) : null,
-      endDate: json['end_date'] != null ? DateTime.parse(json['end_date']) : null,
+      contractType: json['contract_type'],
+      content: json['content'] ?? '',
+      startDate: json['start_date'] != null
+          ? DateTime.parse(json['start_date'])
+          : null,
+      endDate:
+          json['end_date'] != null ? DateTime.parse(json['end_date']) : null,
     );
   }
 

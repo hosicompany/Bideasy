@@ -17,11 +17,10 @@ async def analyze_bid(bid_no: str, db: Session = Depends(get_db)):
     # 1. Check Cache (DB)
     cached_log = db.query(models.AIAnalysisLog).filter(models.AIAnalysisLog.bid_no == bid_no).first()
     if cached_log:
-        return {
-            "source": "cache",
-            "summary": cached_log.summary_json,
-            "risks": cached_log.risk_factors
-        }
+        # Return the cached JSON directly
+        # Note: We assume cached_log.summary_json contains the new 'badges/check_items/tips' structure
+        # If old cache exists, it might break. But for dev environment, we accept this risk or clear DB.
+        return cached_log.summary_json
     
     # 2. Get Notice Content
     notice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
@@ -29,25 +28,19 @@ async def analyze_bid(bid_no: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Notice not found")
         
     # 3. Call LLM
-    # In a real app, this should be a background task (Celery) because LLM is slow.
-    # For MVP, we do blocking call (or async if client supported async).
     analysis_result = llm_agent.analyze_notice(notice.content)
     
     # 4. Save to Cache
     new_log = models.AIAnalysisLog(
         bid_no=bid_no,
-        summary_json=analysis_result.get("summary", []),
-        risk_factors=analysis_result.get("risks", []),
+        summary_json=analysis_result, # Store the WHOLE dict here
+        risk_factors=[], # Unused
         llm_model="gpt-4o-mini",
-        token_usage=0, # Placeholder
+        token_usage=0, 
         created_at=datetime.utcnow()
     )
     db.add(new_log)
     db.commit()
     
-    return {
-        "source": "llm",
-        "summary": new_log.summary_json,
-        "risks": new_log.risk_factors
-    }
+    return analysis_result
 

@@ -21,6 +21,7 @@ class Notice(Base):
     title = Column(String, index=True)
     content = Column(Text) # HTML or Text content
     basic_price = Column(Float) # 기초금액
+    contract_type = Column(String, default="CONSTRUCTION") # CONSTRUCTION(시설), SERVICE(용역), GOODS(물품)
     start_date = Column(DateTime)
     end_date = Column(DateTime)
     

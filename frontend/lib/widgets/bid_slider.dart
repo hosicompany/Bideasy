@@ -21,7 +21,8 @@ class BidSlider extends StatefulWidget {
 class _BidSliderState extends State<BidSlider> {
   @override
   Widget build(BuildContext context) {
-    final activeColor = widget.isDangerous ? AppColors.dangerRed : AppColors.safeGreen;
+    final activeColor =
+        widget.isDangerous ? AppColors.dangerRed : AppColors.safeGreen;
 
     return Column(
       children: [
@@ -43,17 +44,19 @@ class _BidSliderState extends State<BidSlider> {
               activeTrackColor: activeColor,
               inactiveTrackColor: AppColors.backgroundGrey,
               thumbColor: AppColors.surfaceWhite,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12, elevation: 4),
+              thumbShape: const RoundSliderThumbShape(
+                  enabledThumbRadius: 12, elevation: 4),
               overlayColor: activeColor.withValues(alpha: 0.1),
             ),
             child: Slider(
               value: widget.currentRate,
-              min: -2.0,
-              max: 2.0,
+              min: -15.0,
+              max: 15.0,
               divisions: 400, // 0.01 step
               onChanged: (value) {
                 // Haptic Feedback
-                if ((value * 100).round() != (widget.currentRate * 100).round()) {
+                if ((value * 100).round() !=
+                    (widget.currentRate * 100).round()) {
                   HapticFeedback.selectionClick();
                 }
                 widget.onChanged(value);

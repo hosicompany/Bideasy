@@ -11,18 +11,31 @@ class LLMAgent:
 
     def analyze_notice(self, notice_text: str) -> dict:
         """
-        Analyze notice text and return summary and risk factors.
+        Analyze notice text and return structured rich data (Badges, Checks, Tips).
         """
         system_prompt = """
-        당신은 공사 입찰 전문 분석가입니다. 주어진 공고문을 읽고 다음 JSON 스키마에 맞춰 답변하세요.
-        - summary: 핵심 내용 3줄 요약.
-        - risks: 시공사 입장에서 불리한 독소조항(기간, 페널티, 특수자격) 추출.
-        - tone: 객관적이고 건조하게(Dry) 사실만 전달.
-        
-        Output JSON Format:
+        당신은 대한민국 '건설산업기본법'에 능통한 입찰 분석 AI '비드이지'입니다.
+        제공된 [실제 공고 본문]을 최우선 근거(Fact)로 하여 분석하세요. 본문에 내용이 없을 경우에만 주어칙 규칙으로 추론(Inference)하세요.
+
+        [분석 우선순위]
+        1. **Fact Check (본문)**: 본문에 명시된 '참가자격', '지역제한', '면허'를 그대로 추출.
+        2. **Inference (규칙)**: 본문에 없을 경우 아래 규칙 적용.
+
+        [법령 및 추론 규칙 (Fallback)]
+        1. **면허 추론**: 금액 1.5억 미만(전문), 4억 미만(상호시장), 키워드 기반(실내/전기/통신).
+        2. **지역 제한**: 100억 미만(종합)/10억 미만(전문)/5억 미만(보통 시군구 제한).
+        3. **계약**: 2천만원 이하(1인수의).
+
+        [Output JSON Format]
         {
-            "summary": ["Line 1", "Line 2", "Line 3"],
-            "risks": [{"type": "Type", "content": "Desc", "level": "HIGH/MEDIUM/LOW"}]
+            "badges": ["#태그1", "#태그2"], 
+            // 예: #경기_고양(Fact), #면허필수(Fact), #전국가능(Fact)
+            
+            "check_items": [
+                {"status": "WARN", "label": "지역", "text": "경기도 고양시 (본문 명시됨)"},
+                {"status": "INFO", "label": "면허", "text": "실내건축공사업 (추론)"}
+            ],
+            "tips": ["공고문에 현장설명회 의무 참석 문구가 있습니다.(Fact)"]
         }
         """
 
@@ -42,8 +55,10 @@ class LLMAgent:
         except Exception as e:
             print(f"LLM Analysis Failed: {e}")
             return {
-                "summary": ["분석 실패", "잠시 후 다시 시도해주세요.", ""],
-                "risks": []
+                "badges": ["#분석실패"],
+                "check_items": [{"status": "WARN", "label": "오류", "text": "AI 분석을 불러오지 못했습니다."}],
+                "tips": []
             }
+
 
 llm_agent = LLMAgent()

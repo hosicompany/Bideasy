@@ -2,6 +2,20 @@ import math
 
 class CalculatorService:
     @staticmethod
+    def get_lower_limit_rate(contract_type: str) -> float:
+        """
+        Get standard Lower Limit Rate (Nakchalhahan-yul)
+        """
+        # Standard Public Procurement Service Rates (Approx)
+        if contract_type == "CONSTRUCTION":
+            return 87.745 # 87.745%
+        elif contract_type == "SERVICE":
+            return 87.995 # 87.995%
+        elif contract_type == "GOODS":
+            return 88.0 # 88.0%
+        return 87.745 # Default
+
+    @staticmethod
     def calculate_safe_bid(basic_price: float, rate: float) -> int:
         """
         Calculate safe bid price with 1 won truncation.

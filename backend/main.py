@@ -18,9 +18,8 @@ app = FastAPI(
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
-        # allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
-        allow_origin_regex=".*", # Allow any origin for development (dynamic ports)
-        allow_credentials=True,
+        allow_origins=["*"], # Allow ALL origins for dev
+        allow_credentials=False, # Must be False if origins is "*"
         allow_methods=["*"],
         allow_headers=["*"],
     )
