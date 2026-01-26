@@ -10,10 +10,27 @@ class CrawlerService:
     # Updated Endpoint based on user feedback (ad/BidPublicInfoService)
     BASE_URL = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk"
     
+    # Korean region names for smart detection
+    REGION_KEYWORDS = [
+        "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종",
+        "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주",
+        "고양", "수원", "성남", "용인", "안양", "안산", "화성", "평택",
+        "청주", "천안", "전주", "포항", "창원", "김해"
+    ]
+    
     @staticmethod
-    def fetch_notices(page: int = 1, size: int = 50) -> List[dict]:
+    def is_region_keyword(keyword: str) -> bool:
+        """Check if keyword is a region name."""
+        if not keyword:
+            return False
+        return any(region in keyword for region in CrawlerService.REGION_KEYWORDS)
+    
+    @staticmethod
+    def fetch_notices(page: int = 1, size: int = 50, keyword: str = None, region: str = None) -> List[dict]:
         """
         Fetch notices from Public Data Portal API (Real Data).
+        - keyword: Search by title (bidNtceNm)
+        - region: Search by organization name (ntceInsttNm) for region filtering
         """
         # Calculate date range (Recent 30 days)
         end_date_str = datetime.now().strftime("%Y%m%d") + "2359"
@@ -29,23 +46,33 @@ class CrawlerService:
             "type": "json" 
         }
         
+        # Smart Parameter Selection
+        if region:
+            # Region-based search: Use organization name filter
+            params["ntceInsttNm"] = region
+            print(f"[Crawler] Region Search: ntceInsttNm={region}", flush=True)
+        elif keyword:
+            # Keyword-based search: Use title filter
+            params["bidNtceNm"] = keyword
+            print(f"[Crawler] Keyword Search: bidNtceNm={keyword}", flush=True)
+
         try:
-            print(f"[Crawler] Fetching from: {CrawlerService.BASE_URL}")
+            print(f"[Crawler] Fetching from: {CrawlerService.BASE_URL}", flush=True)
             response = requests.get(CrawlerService.BASE_URL, params=params)
             
             # Check Status
             if response.status_code != 200:
                 print(f"[Crawler] Error: {response.status_code}, {response.text}")
-                print("[Crawler] Switching to Mock Data (HTTP Error)...")
+                # Fallback to Mock Data on API Error
+                print("[Crawler] Falling back to Mock Data due to API Error", flush=True)
                 return CrawlerService.get_mock_data()
             
             # Parse JSON
-            # Note: data.go.kr sometimes returns double stringified JSON or XML error on failure
             try:
                 data = response.json()
             except json.JSONDecodeError:
                 print(f"[Crawler] JSON Decode Error. Response might be XML or Invalid: {response.text[:200]}")
-                return []
+                return CrawlerService.get_mock_data()
                 
             response_body = data.get("response", {}).get("body", {})
             if not response_body:
@@ -54,7 +81,9 @@ class CrawlerService:
                 
             items = response_body.get("items", [])
             if not items:
-                print("[Crawler] No items found.")
+                print("[Crawler] No items found, verifying with Mock Data if 0 results is unexpected")
+                # Optional: return mock data if search yields nothing for generic terms?
+                # For now, return empty list is correct behavior for search.
                 return []
                 
             # Handle single item vs list
@@ -64,7 +93,6 @@ class CrawlerService:
             result_list = []
             for item in items:
                 # Map API fields to our model
-                # bidNtceNo: 공고번호, bidNtceOrd: 차수
                 bid_no = f"{item.get('bidNtceNo')}-{item.get('bidNtceOrd')}"
                 
                 # Date Parsing with Format Exception Handling
@@ -83,54 +111,97 @@ class CrawlerService:
                 elif any(k in title for k in ["구매", "구입", "제작"]):
                     ctype = "GOODS"
 
+                if item.get("ntceSpecDocUrl1"):
+                    print(f"[Crawler] Found attachment: {item.get('ntceSpecFileNm1')} for {bid_no}", flush=True)
+                
                 notice_dict = {
+                    # Core fields
                     "bid_no": bid_no,
                     "title": title,
-                    "content": item.get("bidNtceDtlUrl", ""), # Link as content
+                    "content": item.get("bidNtceDtlUrl", ""),  # Detail URL
                     "basic_price": float(item.get("presmptPrce", 0)),
                     "contract_type": ctype,
                     "start_date": start_dt,
-                    "end_date": end_dt
+                    "end_date": end_dt,
+                    "organization": item.get("ntceInsttNm", ""),
+                    
+                    # Extended fields for AI analysis
+                    "demand_organization": item.get("dmndInsttNm", ""),  # 수요기관
+                    "bid_method": item.get("bidMthdNm", ""),  # 입찰방법 (전자입찰 등)
+                    "contract_method": item.get("cntrctMthdNm", ""),  # 계약방법 (일반경쟁 등)
+                    "bid_type": item.get("bidClsfcNm", ""),  # 입찰분류
+                    "status": item.get("bidNtceSttusNm", ""),  # 공고상태 (일반/긴급/정정)
+                    "region": item.get("prtcptLmtRgnNm", ""),  # 참가제한지역
+                    "budget_amount": float(item.get("asignBdgtAmt", 0)),  # 배정예산
+                    "opening_date": item.get("opengDt", ""),  # 개찰일시
+                    "international_bid": item.get("intrntnlBidYn", "N"),  # 국제입찰여부
+                    "joint_contract": item.get("jntcontrctPsbltyYn", "N"),  # 공동계약가능
+                    "big_company_ok": item.get("lrgcntrctPsbltyYn", "N"),  # 대기업참여가능
+                    "sme_only": item.get("dminsttRcptcpYn", "N"),  # 중소기업제한
+                    "bid_qualification": item.get("bidQlfctRgstDt", ""),  # 입찰자격등록마감
+                    "emergency_bid": item.get("urgntNtceYn", "N"),  # 긴급공고여부
+                    "rebid_yn": item.get("rbidYn", "N"),  # 재입찰여부
+                    "attachment_url": item.get("ntceSpecDocUrl1", ""),  # 공고규격서 URL
+                    "attachment_name": item.get("ntceSpecFileNm1", ""),  # 첨부파일명
                 }
                 result_list.append(notice_dict)
                 
-            print(f"[Crawler] Successfully fetched {len(result_list)} items.")
+            print(f"[Crawler] Successfully fetched {len(result_list)} items.", flush=True)
             return result_list
 
         except Exception as e:
             print(f"[Crawler] Critical Error: {str(e)}")
-            print("[Crawler] Switching to Mock Data for Development...")
             return CrawlerService.get_mock_data()
 
     @staticmethod
     def get_mock_data() -> List[dict]:
         from datetime import datetime
+        now = datetime.now()
         return [
             {
                 "bid_no": "20240123001",
-                "title": "[Mock] 강남구 구민회관 리모델링 공사",
+                "title": "[Mock-Test] 부산광역시 기장군 청사 리모델링 공사",
                 "content": "http://example.com/notice1",
                 "basic_price": 500000000.0,
                 "contract_type": "CONSTRUCTION",
-                "start_date": datetime.now(),
-                "end_date": datetime.now() + timedelta(days=7)
+                "start_date": now,
+                "end_date": now + timedelta(days=7),
+                "organization": "부산광역시 기장군",
+                "demand_organization": "기장군청",
+                "bid_method": "전자입찰",
+                "contract_method": "일반경쟁입찰",
+                "bid_type": "공사",
+                "status": "일반공고",
+                "region": "부산광역시",
+                "budget_amount": 550000000.0,
+                "opening_date": (now + timedelta(days=8)).strftime("%Y-%m-%d %H:%M"),
+                "international_bid": "N",
+                "joint_contract": "Y",
+                "sme_only": "Y",
+                "big_company_ok": "N",
+                "bid_qualification": "부산광역시 소재 전기공사업 등록업체",
+                "emergency_bid": "N",
+                "rebid_yn": "N",
+                "attachment_url": "https://www.g2b.go.kr/example_spec.hwp", 
+                "attachment_name": "공고규격서.hwp"
             },
             {
                 "bid_no": "20240123002",
-                "title": "[Mock] 서초구 도로 포장 공사",
+                "title": "[Mock-Test] 서초구 보건소 전기 소방 공사",
                 "content": "http://example.com/notice2",
                 "basic_price": 120000000.0,
-                "start_date": datetime.now(),
-                "end_date": datetime.now() + timedelta(days=5)
+                "contract_type": "CONSTRUCTION",
+                "start_date": now,
+                "end_date": now + timedelta(days=5),
+                "organization": "서울특별시 서초구",
+                "demand_organization": "서초구보건소",
+                "bid_method": "전자입찰",
+                "contract_method": "제한경쟁",
+                "region": "서울특별시",
+                "sme_only": "N",
+                "attachment_url": "",
+                "attachment_name": ""
             },
-            {
-                "bid_no": "20240123003",
-                "title": "[Mock] 판교 도서관 신축 전기 공사",
-                "content": "http://example.com/notice3",
-                "basic_price": 350000000.0,
-                "start_date": datetime.now(),
-                "end_date": datetime.now() + timedelta(days=10)
-            }
         ]
 
     @staticmethod

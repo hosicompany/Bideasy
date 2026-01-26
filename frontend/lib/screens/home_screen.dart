@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/style.dart';
 import '../widgets/notice_card.dart';
 import '../widgets/bid_slider.dart';
@@ -16,17 +17,88 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final ApiService apiService = ApiService();
   late Future<List<Notice>> futureNotices;
+  late Future<List<Notice>> futureFavorites;
   String? _keyword;
+  final Set<String> _favoriteIds = {};
 
   @override
   void initState() {
     super.initState();
+    futureFavorites = Future.value([]);
+    _loadFilters();
     futureNotices = apiService.fetchNotices();
+    _fetchFavorites();
+  }
+
+  Future<void> _loadFilters() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _keyword = prefs.getString('keyword');
+      if (_keyword != null && _keyword!.isNotEmpty) {
+        futureNotices = apiService.fetchNotices(keyword: _keyword);
+      }
+    });
+  }
+
+  Future<void> _saveFilter(String? keyword) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (keyword == null || keyword.isEmpty) {
+      await prefs.remove('keyword');
+    } else {
+      await prefs.setString('keyword', keyword);
+    }
+  }
+
+  Future<void> _fetchFavorites() async {
+    try {
+      final favorites = await apiService.fetchFavorites();
+      setState(() {
+        _favoriteIds.clear();
+        _favoriteIds.addAll(favorites.map((n) => n.bidNo));
+        futureFavorites = Future.value(favorites);
+      });
+    } catch (e) {
+      // Handle error cleanly or log
+      print("Failed to fetch favorites: $e");
+      futureFavorites = Future.value([]);
+    }
+  }
+
+  Future<void> _toggleFavorite(String bidNo) async {
+    try {
+      // Optimistic Update
+      setState(() {
+        if (_favoriteIds.contains(bidNo)) {
+          _favoriteIds.remove(bidNo);
+        } else {
+          _favoriteIds.add(bidNo);
+        }
+      });
+      // Call Backend
+      await apiService.toggleFavorite(bidNo);
+      // Refresh Favorites List in background
+      _fetchFavorites();
+    } catch (e) {
+      // Revert if failed
+      setState(() {
+        if (_favoriteIds.contains(bidNo)) {
+          _favoriteIds.remove(bidNo);
+        } else {
+          _favoriteIds.add(bidNo);
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("즐겨찾기 변경 실패")),
+        );
+      }
+    }
   }
 
   Future<void> _refreshNotices() async {
     try {
       await apiService.triggerCrawl(); // Still crawl all
+      await _fetchFavorites(); // Sync favorites
       setState(() {
         futureNotices = apiService.fetchNotices(keyword: _keyword);
       });
@@ -34,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
-                  "Notices updated${_keyword != null ? ' (Filter: $_keyword)' : ''}")),
+                  "업데이트 완료${_keyword != null ? ' (Filter: $_keyword)' : ''}")),
         );
       }
     } catch (e) {
@@ -45,91 +117,126 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showFilterDialog() {
-    TextEditingController controller = TextEditingController(text: _keyword);
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("관심 키워드 설정"),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: "예: 실내, 도로, 전기",
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _keyword = null;
-                futureNotices = apiService.fetchNotices();
-              });
-              Navigator.pop(context);
-            },
-            child: const Text("초기화", style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _keyword = controller.text.trim();
-                futureNotices = apiService.fetchNotices(keyword: _keyword);
-              });
-              Navigator.pop(context);
-            },
-            child: const Text("적용"),
-          ),
-        ],
-      ),
+  // Filter Dialog removed (Replaced by Search Bar)
+
+  Widget _buildNoticeList(Future<List<Notice>> futureList) {
+    return FutureBuilder<List<Notice>>(
+      future: futureList,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          return Center(child: Text("Error: ${snapshot.error}"));
+        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const Center(
+              child: Text("공고가 없습니다.",
+                  style: TextStyle(color: Colors.grey, fontSize: 16)));
+        }
+
+        final notices = snapshot.data!;
+        return ListView.builder(
+          itemCount: notices.length,
+          itemBuilder: (context, index) {
+            final notice = notices[index];
+            final isFav = _favoriteIds.contains(notice.bidNo);
+            return NoticeCard(
+              notice: notice,
+              isFavorite: isFav,
+              onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
+              onTap: () {
+                _showCalculator(context, notice);
+              },
+            );
+          },
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("BidEasy"),
-        actions: [
-          // Filter Button
-          IconButton(
-            icon: Icon(Icons.filter_list,
-                color: _keyword != null ? AppColors.primaryBlue : Colors.black),
-            onPressed: _showFilterDialog,
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          toolbarHeight: 70, // Increase height for search bar
+          title: Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.backgroundGrey,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: TextField(
+              controller: TextEditingController(text: _keyword),
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: "공고명, 키워드 검색 (예: 전기, 서울)",
+                hintStyle: TextStyle(color: Colors.grey[500], fontSize: 14),
+                prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                suffixIcon: _keyword != null && _keyword!.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        onPressed: () {
+                          setState(() {
+                            _keyword = null;
+                            futureNotices = apiService.fetchNotices();
+                          });
+                          _saveFilter(null);
+                        },
+                      )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              onSubmitted: (value) {
+                final newKeyword = value.trim();
+                setState(() {
+                  _keyword = newKeyword.isEmpty ? null : newKeyword;
+                  futureNotices = apiService.fetchNotices(keyword: _keyword);
+                });
+                _saveFilter(_keyword);
+              },
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshNotices,
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: "전체 공고"),
+              Tab(text: "즐겨찾기"),
+            ],
+            indicatorColor: AppColors.primaryBlue,
+            labelColor: AppColors.primaryBlue,
+            unselectedLabelColor: Colors.grey,
           ),
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {},
-          )
-        ],
-      ),
-      body: FutureBuilder<List<Notice>>(
-        future: futureNotices,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text("No notices found."));
-          }
-
-          final notices = snapshot.data!;
-          return ListView.builder(
-            itemCount: notices.length,
-            itemBuilder: (context, index) {
-              return NoticeCard(
-                notice: notices[index],
-                onTap: () {
-                  _showCalculator(context, notices[index]);
-                },
-              );
-            },
-          );
-        },
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _refreshNotices,
+            ),
+            IconButton(
+              icon: const Icon(Icons.notifications_outlined),
+              onPressed: () {},
+            )
+          ],
+        ),
+        body: TabBarView(
+          children: [
+            // Tab 1: Feed
+            _buildNoticeList(futureNotices),
+            // Tab 2: Favorites
+            FutureBuilder<List<Notice>>(
+              future: futureFavorites,
+              builder: (context, snapshot) {
+                // Reuse logic but maybe futureFavorites needs explicit refresh handling if empty
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                // Just use the helper
+                return _buildNoticeList(futureFavorites);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -250,8 +357,7 @@ class _CalculatorViewState extends State<CalculatorView> {
 
                 // AI Analysis (Real)
                 AiAnalysisCard(
-                  bidNo: widget.notice.bidNo,
-                  noticeUrl: widget.notice.content,
+                  notice: widget.notice,
                 ),
 
                 const SizedBox(height: 24),

@@ -1,8 +1,22 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+import asyncio
+import aiohttp
+from typing import List, Dict, Optional
+from concurrent.futures import ThreadPoolExecutor
 
 class ScraperService:
+    
+    # Location keywords to extract from content
+    LOCATION_PATTERNS = [
+        r"공사지역\s*[:：]\s*([가-힣\s]+)",
+        r"납품장소\s*[:：]\s*([가-힣\s]+)",
+        r"사업장소\s*[:：]\s*([가-힣\s]+)",
+        r"지역\s*[:：]\s*([가-힣\s]+)",
+        r"소재지\s*[:：]\s*([가-힣\s]+)"
+    ]
+    
     @staticmethod
     def fetch_page_content(url: str) -> str:
         """
@@ -30,9 +44,6 @@ class ScraperService:
             soup = BeautifulSoup(response.text, 'html.parser')
             
             # 3. Extract Core Content (Heuristic)
-            # G2B content is usually inside specific divs or tables
-            # Strategy: Get all text, but prioritize common container classes
-            
             content_text = ""
             
             # G2B Specific Selectors (Common patterns)
@@ -55,7 +66,6 @@ class ScraperService:
                 content_text = soup.body.get_text(separator="\n", strip=True)
 
             # 4. Cleanup
-            # Remove excessive newlines
             cleaned_text = re.sub(r'\n\s*\n', '\n', content_text)
             
             # Limit length for LLM Token limit (e.g. 5000 chars)
@@ -64,3 +74,75 @@ class ScraperService:
         except Exception as e:
             print(f"[Scraper] Error scraping {url}: {e}")
             return ""
+    
+    @staticmethod
+    def extract_location(content: str) -> Optional[str]:
+        """Extract location/region from scraped content."""
+        if not content:
+            return None
+        for pattern in ScraperService.LOCATION_PATTERNS:
+            match = re.search(pattern, content)
+            if match:
+                return match.group(1).strip()
+        return None
+    
+    @staticmethod
+    async def fetch_page_async(session: aiohttp.ClientSession, url: str) -> Dict:
+        """Async version of page fetching."""
+        if not url or not url.startswith("http"):
+            return {"url": url, "content": "", "location": None}
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        try:
+            async with session.get(url, headers=headers, ssl=False, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status != 200:
+                    return {"url": url, "content": "", "location": None}
+                
+                html = await response.text()
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                content_text = ""
+                target_selectors = [".table_list", "#container", ".section"]
+                
+                found = False
+                for selector in target_selectors:
+                    elements = soup.select(selector)
+                    if elements:
+                        for el in elements:
+                            content_text += el.get_text(separator="\n", strip=True) + "\n"
+                        found = True
+                
+                if not found and soup.body:
+                    content_text = soup.body.get_text(separator="\n", strip=True)
+                
+                cleaned_text = re.sub(r'\n\s*\n', '\n', content_text)[:5000]
+                location = ScraperService.extract_location(cleaned_text)
+                
+                return {"url": url, "content": cleaned_text, "location": location}
+                
+        except Exception as e:
+            print(f"[Scraper] Async Error: {e}")
+            return {"url": url, "content": "", "location": None}
+    
+    @staticmethod
+    async def scrape_batch_async(urls: List[str]) -> List[Dict]:
+        """Scrape multiple URLs in parallel."""
+        async with aiohttp.ClientSession() as session:
+            tasks = [ScraperService.fetch_page_async(session, url) for url in urls]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Filter out exceptions
+            return [r for r in results if isinstance(r, dict)]
+    
+    @staticmethod
+    def scrape_batch(urls: List[str]) -> List[Dict]:
+        """Synchronous wrapper for async batch scraping."""
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        return loop.run_until_complete(ScraperService.scrape_batch_async(urls))

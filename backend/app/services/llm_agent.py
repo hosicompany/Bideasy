@@ -7,7 +7,7 @@ class LLMAgent:
         # Initialize OpenAI Client
         # Note: Requires OPENAI_API_KEY in .env
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = "gpt-4o-mini"
+        self.model = "gpt-5-nano"
 
     def analyze_notice(self, notice_text: str) -> dict:
         """
@@ -15,31 +15,30 @@ class LLMAgent:
         """
         system_prompt = """
         당신은 대한민국 '건설산업기본법'에 능통한 입찰 분석 AI '비드이지'입니다.
-        제공된 [실제 공고 본문]을 최우선 근거(Fact)로 하여 분석하세요. 본문에 내용이 없을 경우에만 주어칙 규칙으로 추론(Inference)하세요.
+        제공된 [실제 공고 본문]을 최우선 근거(Fact)로 하여 분석하세요. 
+        
+        [주의사항]
+        - 예시에 있는 지역(경기도 고양시 등)이나 면허를 그대로 베끼지 마세요. 
+        - 반드시 입력된 공고문 텍스트에서 지역과 면허를 찾아서 답하세요.
+        - 만약 본문에서 찾을 수 없다면 "분석불가"라고 적으세요.
 
         [분석 우선순위]
         1. **Fact Check (본문)**: 본문에 명시된 '참가자격', '지역제한', '면허'를 그대로 추출.
         2. **Inference (규칙)**: 본문에 없을 경우 아래 규칙 적용.
 
-        [법령 및 추론 규칙 (Fallback)]
-        1. **면허 추론**: 금액 1.5억 미만(전문), 4억 미만(상호시장), 키워드 기반(실내/전기/통신).
-        2. **지역 제한**: 100억 미만(종합)/10억 미만(전문)/5억 미만(보통 시군구 제한).
-        3. **계약**: 2천만원 이하(1인수의).
-
-        [Output JSON Format]
+        [Output JSON Format 예시 - 형식을 따르되 값은 실제 분석해서 채울것]
         {
-            "badges": ["#태그1", "#태그2"], 
-            // 예: #경기_고양(Fact), #면허필수(Fact), #전국가능(Fact)
-            
+            "badges": ["#지역명(Fact)", "#면허명(Fact)"], 
             "check_items": [
-                {"status": "WARN", "label": "지역", "text": "경기도 고양시 (본문 명시됨)"},
-                {"status": "INFO", "label": "면허", "text": "실내건축공사업 (추론)"}
+                {"status": "WARN", "label": "지역", "text": "실제 공고의 지역명 (본문 명시됨)"},
+                {"status": "INFO", "label": "면허", "text": "실제 요구 면허 (추론)"}
             ],
-            "tips": ["공고문에 현장설명회 의무 참석 문구가 있습니다.(Fact)"]
+            "tips": ["특이사항이 있다면 요약"]
         }
         """
 
         try:
+            print(f"[LLM] Requesting analysis with model: {self.model}", flush=True)
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -52,8 +51,28 @@ class LLMAgent:
             
             result_json = response.choices[0].message.content
             return json.loads(result_json)
+            
         except Exception as e:
-            print(f"LLM Analysis Failed: {e}")
+            print(f"[LLM] Primary model ({self.model}) failed: {e}", flush=True)
+            
+            # Fallback to gpt-4o-mini if using a different model
+            if self.model != "gpt-4o-mini":
+                try:
+                    print(f"[LLM] Retrying with fallback model: gpt-4o-mini", flush=True)
+                    response = self.client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": f"공고문 내용: {notice_text}"}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0 
+                    )
+                    result_json = response.choices[0].message.content
+                    return json.loads(result_json)
+                except Exception as fallback_e:
+                    print(f"[LLM] Fallback model also failed: {fallback_e}", flush=True)
+            
             return {
                 "badges": ["#분석실패"],
                 "check_items": [{"status": "WARN", "label": "오류", "text": "AI 분석을 불러오지 못했습니다."}],

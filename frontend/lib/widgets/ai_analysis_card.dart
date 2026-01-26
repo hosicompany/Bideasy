@@ -3,15 +3,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/style.dart';
 import '../services/api_service.dart';
 import '../models/ai_analysis.dart';
+import '../models/notice.dart';
 
 class AiAnalysisCard extends StatefulWidget {
-  final String bidNo;
-  final String noticeUrl;
+  final Notice notice;
 
   const AiAnalysisCard({
     super.key,
-    required this.bidNo,
-    required this.noticeUrl,
+    required this.notice,
   });
 
   @override
@@ -25,11 +24,14 @@ class _AiAnalysisCardState extends State<AiAnalysisCard> {
   @override
   void initState() {
     super.initState();
-    _analysisFuture = _apiService.fetchBidAnalysis(widget.bidNo);
+    _analysisFuture = _apiService.fetchBidAnalysis(
+      widget.notice.bidNo,
+      widget.notice.toAnalysisParams(),
+    );
   }
 
   Future<void> _launchURL() async {
-    final Uri url = Uri.parse(widget.noticeUrl);
+    final Uri url = Uri.parse(widget.notice.content);
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -72,12 +74,12 @@ class _AiAnalysisCardState extends State<AiAnalysisCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 1. Header
-              Row(
+              const Row(
                 children: [
-                  const Icon(Icons.auto_awesome,
+                  Icon(Icons.auto_awesome,
                       size: 18, color: AppColors.primaryBlue),
-                  const SizedBox(width: 6),
-                  const Text(
+                  SizedBox(width: 6),
+                  Text(
                     "AI 입찰 분석",
                     style: TextStyle(
                       fontSize: 16,
@@ -208,34 +210,82 @@ class _AiAnalysisCardState extends State<AiAnalysisCard> {
 
               // 5. View Original Button
               const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: _launchURL,
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFE5E8EB)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _launchURL,
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFFE5E8EB)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.description_outlined,
+                              size: 18, color: AppColors.textSub),
+                          SizedBox(width: 8),
+                          Text(
+                            "원문 보기",
+                            style: TextStyle(
+                              color: AppColors.textMain,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.description_outlined,
-                          size: 18, color: AppColors.textSub),
-                      SizedBox(width: 8),
-                      Text(
-                        "나라장터 원문 보기",
-                        style: TextStyle(
-                          color: AppColors.textMain,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
+                  if (widget.notice.attachmentUrl != null &&
+                      widget.notice.attachmentUrl!.isNotEmpty) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final Uri url =
+                              Uri.parse(widget.notice.attachmentUrl!);
+                          if (!await launchUrl(url,
+                              mode: LaunchMode.externalApplication)) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('첨부파일을 열 수 없습니다.')),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryBlue,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          elevation: 0,
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.attachment_rounded,
+                                size: 18, color: Colors.white),
+                            SizedBox(width: 8),
+                            Text(
+                              "규격서 보기",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),

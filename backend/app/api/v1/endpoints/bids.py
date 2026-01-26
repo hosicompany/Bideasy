@@ -41,16 +41,71 @@ def calculate_bid(request: schemas.BidCalculationRequest):
 @router.get("/feed", response_model=List[schemas.Notice])
 def get_feed(keyword: str = None, db: Session = Depends(get_db)):
     """
-    Get customized notice feed.
-    - keyword: Filter by title (e.g. "socket", "paving")
+    Get customized notice feed with client-side filtering.
+    - Fetches bulk results from API
+    - Applies strict client-side filtering based on keyword
+    - Region keywords filter by organization name
+    - General keywords filter by title
     """
-    query = db.query(models.Notice)
     if keyword:
-        # Simple LIKE query
-        query = query.filter(models.Notice.title.contains(keyword))
-    
-    notices = query.limit(50).all()
-    return notices
+        from app.services.crawler import CrawlerService
+        import sys
+        
+        # 1. Smart Detection: Is this a region search?
+        is_region = CrawlerService.is_region_keyword(keyword)
+        print(f"Smart Search: '{keyword}' (Region: {is_region})", flush=True)
+        sys.stdout.flush()
+        
+        # 2. Fetch MORE results from API (API filtering is unreliable)
+        # We fetch 500 and filter client-side for accuracy
+        api_results = CrawlerService.fetch_notices(size=500)
+        
+        if not api_results:
+            print("No API results, falling back to DB search", flush=True)
+            query = db.query(models.Notice).filter(models.Notice.title.contains(keyword))
+            return query.limit(30).all()
+        
+        # 3. CLIENT-SIDE FILTERING (the key fix!)
+        filtered_results = []
+        keyword_lower = keyword.lower()
+        
+        for item in api_results:
+            title = item.get("title", "").lower()
+            organization = item.get("organization", "").lower()
+            
+            if is_region:
+                # For region search: match organization name
+                if keyword_lower in organization or keyword_lower in title:
+                    filtered_results.append(item)
+            else:
+                # For keyword search: match title only
+                if keyword_lower in title:
+                    filtered_results.append(item)
+        
+        print(f"Filtered: {len(filtered_results)}/{len(api_results)} match '{keyword}'", flush=True)
+        
+        # Limit to 30 results
+        filtered_results = filtered_results[:30]
+        
+        if not filtered_results:
+            print(f"No matches for '{keyword}', returning empty", flush=True)
+            return []
+        
+        # 4. Save to DB for caching (only filtered results)
+        try:
+            CrawlerService.save_notices(db, filtered_results)
+        except Exception as e:
+            print(f"DB save error (non-fatal): {e}", flush=True)
+        
+        # 5. Return filtered results directly (includes all extended fields)
+        print(f"Returning {len(filtered_results)} notices with extended data", flush=True)
+        return filtered_results
+        
+    else:
+        # Default Feed (Local DB)
+        query = db.query(models.Notice).order_by(models.Notice.start_date.desc())
+        notices = query.limit(50).all()
+        return notices
 
 @router.post("/crawl")
 def trigger_crawl(db: Session = Depends(get_db)):
@@ -136,4 +191,29 @@ def get_bid_analysis(bid_no: str, db: Session = Depends(get_db)):
 
     risks = [schemas.RiskFactor(**r) for r in result.get("risks", [])]
     return schemas.BidAnalysisResponse(summary=result.get("summary", []), risks=risks)
+
+@router.post("/{bid_no}/favorite")
+def toggle_favorite(bid_no: str, db: Session = Depends(get_db)):
+    """
+    Toggle Favorite status for a bid.
+    """
+    existing = db.query(models.Favorite).filter(models.Favorite.bid_no == bid_no).first()
+    if existing:
+        db.delete(existing)
+        db.commit()
+        return {"status": "removed", "bid_no": bid_no}
+    else:
+        new_fav = models.Favorite(bid_no=bid_no)
+        db.add(new_fav)
+        db.commit()
+        return {"status": "added", "bid_no": bid_no}
+
+@router.get("/favorites/list", response_model=List[schemas.Notice])
+def get_favorites(db: Session = Depends(get_db)):
+    """
+    Get all favorite notices.
+    """
+    # Join with Notice to get full notice details
+    favorites = db.query(models.Notice).join(models.Favorite).order_by(models.Favorite.created_at.desc()).all()
+    return favorites
 

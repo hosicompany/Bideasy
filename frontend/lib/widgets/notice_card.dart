@@ -5,11 +5,15 @@ import '../models/notice.dart';
 class NoticeCard extends StatelessWidget {
   final Notice notice;
   final VoidCallback onTap;
+  final bool isFavorite;
+  final VoidCallback? onFavoriteChanged;
 
   const NoticeCard({
     super.key,
     required this.notice,
     required this.onTap,
+    this.isFavorite = false,
+    this.onFavoriteChanged,
   });
 
   @override
@@ -33,21 +37,39 @@ class NoticeCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Safe Badge (Mock)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.safeGreen.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Text(
-                "안전한 공고",
-                style: TextStyle(
-                  color: AppColors.safeGreen,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+            // Header Row: Safe Badge + Star Icon
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Safe Badge (Mock)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.safeGreen.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    "안전한 공고",
+                    style: TextStyle(
+                      color: AppColors.safeGreen,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
+                // Favorite Icon
+                GestureDetector(
+                  onTap: onFavoriteChanged,
+                  child: Icon(
+                    isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: isFavorite
+                        ? const Color(0xFFFFD700)
+                        : const Color(0xFFC4C4C4),
+                    size: 28,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             Text(

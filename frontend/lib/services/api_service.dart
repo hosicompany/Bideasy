@@ -43,18 +43,53 @@ class ApiService {
   // Future<BidCalculationResponse> calculateBid(...)
   // Implement this later when needed
 
-  Future<AiAnalysis> fetchBidAnalysis(String bidNo) async {
+  Future<AiAnalysis> fetchBidAnalysis(
+    String bidNo,
+    Map<String, String> params,
+  ) async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/ai/$bidNo/analysis'));
+      String url = '$baseUrl/ai/$bidNo/analysis';
+      if (params.isNotEmpty) {
+        url +=
+            '?${params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')}';
+      }
+
+      final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
-        // Decode logic
         return AiAnalysis.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
       } else {
         throw Exception('Failed to load analysis: ${response.statusCode}');
       }
     } catch (e) {
       throw Exception('Failed to load analysis: $e');
+    }
+  }
+
+  Future<void> toggleFavorite(String bidNo) async {
+    try {
+      final response =
+          await http.post(Uri.parse('$baseUrl/bids/$bidNo/favorite'));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to toggle favorite: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to toggle favorite: $e');
+    }
+  }
+
+  Future<List<Notice>> fetchFavorites() async {
+    try {
+      final response =
+          await http.get(Uri.parse('$baseUrl/bids/favorites/list'));
+      if (response.statusCode == 200) {
+        List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
+        return body.map((dynamic item) => Notice.fromJson(item)).toList();
+      } else {
+        throw Exception('Failed to load favorites: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to load favorites: $e');
     }
   }
 }
