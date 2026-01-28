@@ -27,10 +27,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Initialize futureNotices immediately to prevent LateInitializationError
+    futureNotices = apiService.fetchNotices();
     futureFavorites = Future.value([]);
     _loadFilters();
-    // fetchNotices called in _loadFilters or below
-    // futureNotices = apiService.fetchNotices(); // Moved to _loadFilters
     _fetchFavorites();
   }
 

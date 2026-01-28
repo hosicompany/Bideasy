@@ -18,9 +18,12 @@ class NoticeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -102,6 +105,7 @@ class NoticeCard extends StatelessWidget {
             )
           ],
         ),
+      ),
       ),
     );
   }
