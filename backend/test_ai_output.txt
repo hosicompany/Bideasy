@@ -1,0 +1,22 @@
+﻿======================================================================
+AI ANALYSIS API TEST
+======================================================================
+
+Endpoint: /api/v1/ai/TEST-001/analysis
+
+Request params:
+  title: 경북대학교 IT대학 1호관 강의실여건개선 및 내부도어 교체공사
+  basic_price: 85000000
+  organization: 경북대학교
+  demand_organization: 시설과
+  bid_method: 전자입찰
+  ... and 12 more fields
+
+Calling AI Analysis API...
+
+Status: 200
+
+======================================================================
+AI ANALYSIS RESULT
+======================================================================
+Error: UnicodeEncodeError: 'cp949' codec can't encode character '\U0001f4cb' in position 2: illegal multibyte sequence

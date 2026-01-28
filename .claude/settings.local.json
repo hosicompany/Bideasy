@@ -23,7 +23,10 @@
       "Bash(git config:*)",
       "Bash(gh auth:*)",
       "Bash(git remote add:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(python:*)",
+      "Bash(ping:*)",
+      "Bash(pip show:*)"
     ]
   }
 }

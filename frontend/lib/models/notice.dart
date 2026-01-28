@@ -19,7 +19,7 @@ class Notice {
   final String? status;
   final String? region;
   final double? budgetAmount;
-  final String? openingDate;
+  final DateTime? openingDate;
   final String? internationalBid;
   final String? jointContract;
   final String? bigCompanyOk;
@@ -29,6 +29,10 @@ class Notice {
   final String? rebidYn;
   final String? attachmentUrl;
   final String? attachmentName;
+
+  // Calculated fields (populated by AI Analysis or Calculator)
+  final int? aValue;
+  final int? netCost;
 
   Notice({
     required this.bidNo,
@@ -56,10 +60,27 @@ class Notice {
     this.rebidYn,
     this.attachmentUrl,
     this.attachmentName,
+    this.aValue,
+    this.netCost,
   });
+
+  bool get isClosed {
+    if (openingDate == null) return false;
+    return DateTime.now().isAfter(openingDate!);
+  }
 
   // Factory for JSON parsing with extended fields
   factory Notice.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(String? dateStr) {
+      if (dateStr == null || dateStr.isEmpty) return null;
+      try {
+        // Handle "YYYY-MM-DD HH:mm:ss" typical in DB
+        return DateTime.parse(dateStr.replaceAll(' ', 'T'));
+      } catch (e) {
+        return null;
+      }
+    }
+
     return Notice(
       // Core fields
       bidNo: json['bid_no'] ?? '',
@@ -67,11 +88,8 @@ class Notice {
       basicPrice: (json['basic_price'] ?? 0).toDouble(),
       contractType: json['contract_type'],
       content: json['content'] ?? '',
-      startDate: json['start_date'] != null
-          ? DateTime.parse(json['start_date'])
-          : null,
-      endDate:
-          json['end_date'] != null ? DateTime.parse(json['end_date']) : null,
+      startDate: parseDate(json['start_date']),
+      endDate: parseDate(json['end_date']),
       organization: json['organization'],
 
       // Extended fields
@@ -84,7 +102,7 @@ class Notice {
       budgetAmount: json['budget_amount'] != null
           ? (json['budget_amount']).toDouble()
           : null,
-      openingDate: json['opening_date'],
+      openingDate: parseDate(json['opening_date']),
       internationalBid: json['international_bid'],
       jointContract: json['joint_contract'],
       bigCompanyOk: json['big_company_ok'],
@@ -118,7 +136,8 @@ class Notice {
     if (status != null) params['status'] = status!;
     if (region != null) params['region'] = region!;
     if (budgetAmount != null) params['budget_amount'] = budgetAmount.toString();
-    if (openingDate != null) params['opening_date'] = openingDate!;
+    if (openingDate != null)
+      params['opening_date'] = openingDate!.toIso8601String(); // Use ISO format
     if (internationalBid != null) {
       params['international_bid'] = internationalBid!;
     }
@@ -133,5 +152,65 @@ class Notice {
     if (endDate != null) params['end_date'] = endDate!.toIso8601String();
     if (content.isNotEmpty) params['notice_url'] = content;
     return params;
+  }
+
+  Notice copyWith({
+    String? bidNo,
+    String? title,
+    String? content,
+    double? basicPrice,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? contractType,
+    String? organization,
+    String? demandOrganization,
+    String? bidMethod,
+    String? contractMethod,
+    String? bidType,
+    String? status,
+    String? region,
+    double? budgetAmount,
+    DateTime? openingDate,
+    String? internationalBid,
+    String? jointContract,
+    String? bigCompanyOk,
+    String? smeOnly,
+    String? bidQualification,
+    String? emergencyBid,
+    String? rebidYn,
+    String? attachmentUrl,
+    String? attachmentName,
+    int? aValue,
+    int? netCost,
+  }) {
+    return Notice(
+      bidNo: bidNo ?? this.bidNo,
+      title: title ?? this.title,
+      content: content ?? this.content,
+      basicPrice: basicPrice ?? this.basicPrice,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      contractType: contractType ?? this.contractType,
+      organization: organization ?? this.organization,
+      demandOrganization: demandOrganization ?? this.demandOrganization,
+      bidMethod: bidMethod ?? this.bidMethod,
+      contractMethod: contractMethod ?? this.contractMethod,
+      bidType: bidType ?? this.bidType,
+      status: status ?? this.status,
+      region: region ?? this.region,
+      budgetAmount: budgetAmount ?? this.budgetAmount,
+      openingDate: openingDate ?? this.openingDate,
+      internationalBid: internationalBid ?? this.internationalBid,
+      jointContract: jointContract ?? this.jointContract,
+      bigCompanyOk: bigCompanyOk ?? this.bigCompanyOk,
+      smeOnly: smeOnly ?? this.smeOnly,
+      bidQualification: bidQualification ?? this.bidQualification,
+      emergencyBid: emergencyBid ?? this.emergencyBid,
+      rebidYn: rebidYn ?? this.rebidYn,
+      attachmentUrl: attachmentUrl ?? this.attachmentUrl,
+      attachmentName: attachmentName ?? this.attachmentName,
+      aValue: aValue ?? this.aValue,
+      netCost: netCost ?? this.netCost,
+    );
   }
 }

@@ -4,6 +4,7 @@ import '../theme/style.dart';
 import '../widgets/notice_card.dart';
 import '../widgets/bid_slider.dart';
 import '../widgets/ai_analysis_card.dart';
+import '../widgets/opening_result_table.dart';
 import '../models/notice.dart';
 import '../services/api_service.dart';
 
@@ -20,13 +21,15 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<Notice>> futureFavorites;
   String? _keyword;
   final Set<String> _favoriteIds = {};
+  bool _excludeClosed = false;
 
   @override
   void initState() {
     super.initState();
     futureFavorites = Future.value([]);
     _loadFilters();
-    futureNotices = apiService.fetchNotices();
+    // fetchNotices called in _loadFilters or below
+    // futureNotices = apiService.fetchNotices(); // Moved to _loadFilters
     _fetchFavorites();
   }
 
@@ -34,18 +37,24 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _keyword = prefs.getString('keyword');
-      if (_keyword != null && _keyword!.isNotEmpty) {
-        futureNotices = apiService.fetchNotices(keyword: _keyword);
-      }
+      _excludeClosed = prefs.getBool('exclude_closed') ?? false;
+
+      futureNotices = apiService.fetchNotices(
+          keyword: _keyword, excludeClosed: _excludeClosed);
     });
   }
 
-  Future<void> _saveFilter(String? keyword) async {
+  Future<void> _saveFilter({String? keyword, bool? excludeClosed}) async {
     final prefs = await SharedPreferences.getInstance();
-    if (keyword == null || keyword.isEmpty) {
-      await prefs.remove('keyword');
-    } else {
-      await prefs.setString('keyword', keyword);
+    if (keyword != null) {
+      if (keyword.isEmpty) {
+        await prefs.remove('keyword');
+      } else {
+        await prefs.setString('keyword', keyword);
+      }
+    }
+    if (excludeClosed != null) {
+      await prefs.setBool('exclude_closed', excludeClosed);
     }
   }
 
@@ -100,7 +109,8 @@ class _HomeScreenState extends State<HomeScreen> {
       await apiService.triggerCrawl(); // Still crawl all
       await _fetchFavorites(); // Sync favorites
       setState(() {
-        futureNotices = apiService.fetchNotices(keyword: _keyword);
+        futureNotices = apiService.fetchNotices(
+            keyword: _keyword, excludeClosed: _excludeClosed);
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -116,8 +126,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-
-  // Filter Dialog removed (Replaced by Search Bar)
 
   Widget _buildNoticeList(Future<List<Notice>> futureList) {
     return FutureBuilder<List<Notice>>(
@@ -159,7 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          toolbarHeight: 70, // Increase height for search bar
+          toolbarHeight: 70,
           title: Container(
             height: 48,
             decoration: BoxDecoration(
@@ -170,21 +178,60 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: TextEditingController(text: _keyword),
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: "공고명, 키워드 검색 (예: 전기, 서울)",
+                hintText: "공고명, 키워드 검색",
                 hintStyle: TextStyle(color: Colors.grey[500], fontSize: 14),
                 prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                suffixIcon: _keyword != null && _keyword!.isNotEmpty
-                    ? IconButton(
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Exclude Closed Checkbox
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _excludeClosed = !_excludeClosed;
+                          futureNotices = apiService.fetchNotices(
+                              keyword: _keyword, excludeClosed: _excludeClosed);
+                        });
+                        _saveFilter(excludeClosed: _excludeClosed);
+                      },
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: _excludeClosed,
+                            onChanged: (val) {
+                              setState(() {
+                                _excludeClosed = val ?? false;
+                                futureNotices = apiService.fetchNotices(
+                                    keyword: _keyword,
+                                    excludeClosed: _excludeClosed);
+                              });
+                              _saveFilter(excludeClosed: _excludeClosed);
+                            },
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          Text("종료숨김",
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[700])),
+                          const SizedBox(width: 8),
+                        ],
+                      ),
+                    ),
+                    if (_keyword != null && _keyword!.isNotEmpty)
+                      IconButton(
                         icon: const Icon(Icons.clear, size: 20),
                         onPressed: () {
                           setState(() {
                             _keyword = null;
-                            futureNotices = apiService.fetchNotices();
+                            futureNotices = apiService.fetchNotices(
+                                excludeClosed: _excludeClosed);
                           });
-                          _saveFilter(null);
+                          _saveFilter(keyword: ""); // Clear keyword
                         },
-                      )
-                    : null,
+                      ),
+                  ],
+                ),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
@@ -192,9 +239,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 final newKeyword = value.trim();
                 setState(() {
                   _keyword = newKeyword.isEmpty ? null : newKeyword;
-                  futureNotices = apiService.fetchNotices(keyword: _keyword);
+                  futureNotices = apiService.fetchNotices(
+                      keyword: _keyword, excludeClosed: _excludeClosed);
                 });
-                _saveFilter(_keyword);
+                _saveFilter(keyword: _keyword);
               },
             ),
           ),
@@ -335,69 +383,76 @@ class _CalculatorViewState extends State<CalculatorView> {
           // Scrollable Content
           Expanded(
             child: ListView(
-              controller:
-                  ScrollController(), // Internal controller since parent handles drag
+              controller: ScrollController(),
               padding: EdgeInsets.zero,
               children: [
                 Text(widget.notice.title, style: AppTextStyles.h2),
                 const SizedBox(height: 8),
                 Text("기초금액: ${widget.notice.formattedPrice}원",
                     style: AppTextStyles.body1),
-
-                const SizedBox(height: 48),
-
-                // Result
-                Center(
-                  child: Text(
-                    "${_calculatedPrice.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원",
-                    style: AppTextStyles.h1.copyWith(fontSize: 32),
-                  ),
-                ),
                 const SizedBox(height: 32),
+                if (widget.notice.isClosed) ...[
+                  // Closed View: Result Table
+                  OpeningResultTable(notice: widget.notice),
+                  const SizedBox(height: 32),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  AiAnalysisCard(
+                      notice: widget.notice), // Optional: Keep for reference
+                ] else ...[
+                  // Active View: Calculator
+                  Center(
+                    child: Text(
+                      "${_calculatedPrice.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원",
+                      style: AppTextStyles.h1.copyWith(fontSize: 32),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
 
-                // AI Analysis (Real)
-                AiAnalysisCard(
-                  notice: widget.notice,
-                ),
+                  AiAnalysisCard(notice: widget.notice),
 
-                const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-                // Slider
-                BidSlider(
-                  currentRate: _rate,
-                  isDangerous: _isDangerous,
-                  onChanged: (val) {
-                    setState(() => _rate = val);
-                  },
-                ),
-                const SizedBox(height: 24),
+                  BidSlider(
+                    currentRate: _rate,
+                    isDangerous: _isDangerous,
+                    onChanged: (val) {
+                      setState(() => _rate = val);
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                ],
               ],
             ),
           ),
 
-          // Action Button (Fixed at bottom)
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isDangerous
-                  ? null
-                  : () {
-                      // Submit logic
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    _isDangerous ? AppColors.dangerRed : AppColors.primaryBlue,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                disabledBackgroundColor: AppColors.backgroundGrey,
+          // Action Button (Hide if closed)
+          if (!widget.notice.isClosed) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isDangerous
+                    ? null
+                    : () {
+                        // Submit logic
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _isDangerous
+                      ? AppColors.dangerRed
+                      : AppColors.primaryBlue,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  disabledBackgroundColor: AppColors.backgroundGrey,
+                ),
+                child: const Text("이 가격으로 저장하기",
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
-              child: const Text("이 가격으로 저장하기",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
-          ),
+          ],
         ],
       ),
     );

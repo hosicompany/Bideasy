@@ -2,19 +2,25 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/notice.dart';
 import '../models/ai_analysis.dart';
+import '../models/opening_result.dart';
 
 class ApiService {
   // Use 10.0.2.2 for Android emulator, localhost for Web/iOS/Windows
   // Since we are targeting Windows/Web, localhost is fine.
-  static const String baseUrl = 'http://127.0.0.1:8000/api/v1';
+  static const String baseUrl = 'http://localhost:8000/api/v1';
 
-  Future<List<Notice>> fetchNotices({String? keyword}) async {
+  Future<List<Notice>> fetchNotices(
+      {String? keyword, bool excludeClosed = false}) async {
     try {
-      String url = '$baseUrl/bids/feed';
+      final queryParams = <String, String>{};
       if (keyword != null && keyword.isNotEmpty) {
-        url += '?keyword=$keyword';
+        queryParams['keyword'] = keyword;
       }
-      final response = await http.get(Uri.parse(url));
+      queryParams['exclude_closed'] = excludeClosed.toString();
+
+      final uri =
+          Uri.parse('$baseUrl/bids/feed').replace(queryParameters: queryParams);
+      final response = await http.get(uri);
 
       if (response.statusCode == 200) {
         List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
@@ -90,6 +96,24 @@ class ApiService {
       }
     } catch (e) {
       throw Exception('Failed to load favorites: $e');
+    }
+  }
+
+  Future<List<OpeningResult>> fetchOpeningResults(String bidNo) async {
+    try {
+      final response =
+          await http.get(Uri.parse('$baseUrl/bids/$bidNo/results'));
+
+      if (response.statusCode == 200) {
+        List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
+        return body
+            .map((dynamic item) => OpeningResult.fromJson(item))
+            .toList();
+      } else {
+        throw Exception('Failed to load results: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to load results: $e');
     }
   }
 }

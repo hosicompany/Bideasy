@@ -41,18 +41,22 @@ class NoticeCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Safe Badge (Mock)
+                // Status Badge
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.safeGreen.withValues(alpha: 0.1),
+                    color: notice.isClosed
+                        ? const Color(0xFFF0F0F0) // Gray for closed
+                        : AppColors.safeGreen.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Text(
-                    "안전한 공고",
+                  child: Text(
+                    notice.isClosed ? "개찰 완료" : "안전한 공고",
                     style: TextStyle(
-                      color: AppColors.safeGreen,
+                      color: notice.isClosed
+                          ? const Color(0xFF888888)
+                          : AppColors.safeGreen,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),

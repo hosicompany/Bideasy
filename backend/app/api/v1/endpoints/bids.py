@@ -16,13 +16,10 @@ def calculate_bid(request: schemas.BidCalculationRequest):
     Applies strict 1-won truncation.
     """
     try:
-        # Get Contract Type or Default
-        contract_type = "CONSTRUCTION" # Default if not provided
+        contract_type = request.contract_type or "CONSTRUCTION"
         
         final_price = CalculatorService.calculate_safe_bid(request.basic_price, request.rate)
         
-        # Real Logic: Lower Limit Check
-        # Calc expected price: Basic Price * Lower Limit Rate
         lower_limit_rate = CalculatorService.get_lower_limit_rate(contract_type)
         limit_price = request.basic_price * (lower_limit_rate / 100)
         
@@ -38,15 +35,60 @@ def calculate_bid(request: schemas.BidCalculationRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+@router.post("/calculate/detailed", response_model=schemas.DetailedBidCalculationResponse)
+def calculate_bid_detailed(request: schemas.BidCalculationRequest):
+    """
+    상세 투찰가 계산 (Advanced Calculator)
+    - 예정가격 범위 (±3%)
+    - 낙찰하한선 분석
+    - 안전도 레벨 (SAFE/WARNING/DANGER)
+    - A값 반영 (고정비용 미적용 보장)
+    """
+    try:
+        contract_type = request.contract_type or "CONSTRUCTION"
+        a_value = request.a_value or 0
+        
+        result = CalculatorService.calculate_detailed_bid(
+            basic_price=request.basic_price,
+            rate=request.rate,
+            contract_type=contract_type,
+            a_value=a_value
+        )
+        
+        return schemas.DetailedBidCalculationResponse(
+            original_price=result.original_price,
+            rate=result.rate,
+            result_price=result.result_price,
+            estimated_price_min=result.estimated_price_min,
+            estimated_price_max=result.estimated_price_max,
+            lower_limit_rate=result.lower_limit_rate,
+            lower_limit_price=result.lower_limit_price,
+            a_value=result.a_value,
+            a_value_applied=result.a_value_applied,
+            safety_level=result.safety_level.value,
+            distance_from_limit=result.distance_from_limit,
+            warning_message=result.warning_message,
+            result_price_formatted=f"{result.result_price:,}원",
+            lower_limit_formatted=f"{result.lower_limit_price:,}원",
+            a_value_formatted=f"{result.a_value:,}원" if result.a_value > 0 else None
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/feed", response_model=List[schemas.Notice])
-def get_feed(keyword: str = None, db: Session = Depends(get_db)):
+def get_feed(keyword: str = None, exclude_closed: bool = False, db: Session = Depends(get_db)):
     """
     Get customized notice feed with client-side filtering.
     - Fetches bulk results from API
     - Applies strict client-side filtering based on keyword
     - Region keywords filter by organization name
     - General keywords filter by title
+    - Optional: Exclude closed bids (based on opening_date)
     """
+    from datetime import datetime
+
     if keyword:
         from app.services.crawler import CrawlerService
         import sys
@@ -63,16 +105,31 @@ def get_feed(keyword: str = None, db: Session = Depends(get_db)):
         if not api_results:
             print("No API results, falling back to DB search", flush=True)
             query = db.query(models.Notice).filter(models.Notice.title.contains(keyword))
+            if exclude_closed:
+                query = query.filter(models.Notice.opening_date > datetime.now())
             return query.limit(30).all()
         
         # 3. CLIENT-SIDE FILTERING (the key fix!)
         filtered_results = []
         keyword_lower = keyword.lower()
+        now = datetime.now()
         
         for item in api_results:
             title = item.get("title", "").lower()
             organization = item.get("organization", "").lower()
             
+            # Date Filter
+            if exclude_closed:
+                opening_date_str = item.get("opening_date")
+                if opening_date_str:
+                    try:
+                        # Standard format "YYYY-MM-DD HH:mm:ss"
+                        od = datetime.strptime(opening_date_str, "%Y-%m-%d %H:%M:%S")
+                        if od < now:
+                            continue # Skip closed
+                    except:
+                        pass # Ignore parsing error
+
             if is_region:
                 # For region search: match organization name
                 if keyword_lower in organization or keyword_lower in title:
@@ -104,6 +161,8 @@ def get_feed(keyword: str = None, db: Session = Depends(get_db)):
     else:
         # Default Feed (Local DB)
         query = db.query(models.Notice).order_by(models.Notice.start_date.desc())
+        if exclude_closed:
+             query = query.filter(models.Notice.opening_date > datetime.now())
         notices = query.limit(50).all()
         return notices
 
@@ -216,4 +275,18 @@ def get_favorites(db: Session = Depends(get_db)):
     # Join with Notice to get full notice details
     favorites = db.query(models.Notice).join(models.Favorite).order_by(models.Favorite.created_at.desc()).all()
     return favorites
+
+
+@router.get("/{bid_no}/results", response_model=List[schemas.OpeningResult])
+def get_opening_results(bid_no: str, db: Session = Depends(get_db)):
+    """
+    Get Opening Results (Ranking) for a bid.
+    """
+    from app.services.opening_result import OpeningResultService
+    
+    # Fetch notice to know contract_type
+    notice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
+    contract_type = notice.contract_type if notice else "CONSTRUCTION"
+    
+    return OpeningResultService.fetch_opening_results(bid_no, contract_type)
 

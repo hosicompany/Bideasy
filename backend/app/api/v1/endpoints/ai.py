@@ -1,88 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from app.db.session import get_db
-from app.db import models
-from app.services.llm_agent import llm_agent
+import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional
-import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.db import models
+from app.services.tips_generator import generate_tips
+from app.services.scraper import ScraperService
 
 router = APIRouter()
-
-def generate_comprehensive_context(data: dict) -> str:
-    """Generate comprehensive text context from bid data for LLM analysis."""
-    sections = []
-    
-    # 1. Basic Info
-    sections.append("=== 공고 기본 정보 ===")
-    if data.get("title"):
-        sections.append(f"공고명: {data['title']}")
-    if data.get("organization"):
-        sections.append(f"공고기관: {data['organization']}")
-    if data.get("demand_organization"):
-        sections.append(f"수요기관: {data['demand_organization']}")
-    if data.get("status"):
-        sections.append(f"공고상태: {data['status']}")
-    
-    # 2. Financial Info
-    sections.append("\n=== 금액 정보 ===")
-    if data.get("basic_price"):
-        try:
-            price = float(data["basic_price"])
-            sections.append(f"기초금액: {price:,.0f}원")
-        except:
-            pass
-    if data.get("budget_amount"):
-        try:
-            budget = float(data["budget_amount"])
-            if budget > 0:
-                sections.append(f"배정예산: {budget:,.0f}원")
-        except:
-            pass
-    
-    # 3. Bid Method Info
-    sections.append("\n=== 입찰 방식 ===")
-    if data.get("bid_method"):
-        sections.append(f"입찰방법: {data['bid_method']}")
-    if data.get("contract_method"):
-        sections.append(f"계약방법: {data['contract_method']}")
-    if data.get("bid_type"):
-        sections.append(f"입찰분류: {data['bid_type']}")
-    
-    # 4. Participation Restrictions
-    sections.append("\n=== 참가 자격 ===")
-    if data.get("region"):
-        sections.append(f"참가제한지역: {data['region']}")
-    if data.get("sme_only") == "Y":
-        sections.append("중소기업 제한: 예 (중소기업만 참가 가능)")
-    if data.get("big_company_ok") == "Y":
-        sections.append("대기업 참여 가능: 예")
-    if data.get("joint_contract") == "Y":
-        sections.append("공동계약 가능: 예")
-    if data.get("international_bid") == "Y":
-        sections.append("국제입찰: 예")
-    
-    # 5. Schedule
-    sections.append("\n=== 일정 ===")
-    if data.get("start_date"):
-        sections.append(f"입찰시작: {data['start_date']}")
-    if data.get("end_date"):
-        sections.append(f"입찰마감: {data['end_date']}")
-    if data.get("opening_date"):
-        sections.append(f"개찰일시: {data['opening_date']}")
-    
-    # 6. Special Notes
-    if data.get("emergency_bid") == "Y":
-        sections.append("\n⚠️ 긴급공고입니다!")
-    if data.get("rebid_yn") == "Y":
-        sections.append("\n⚠️ 재입찰 공고입니다!")
-    
-    # 7. Attachments
-    if data.get("attachment_url"):
-        sections.append(f"\n📎 첨부파일: {data['attachment_name'] or '공고규격서'}")
-        sections.append(f"   URL: {data['attachment_url']}")
-    
-    return "\n".join(sections)
 
 
 @router.get("/{bid_no}/analysis")
@@ -96,6 +26,7 @@ async def analyze_bid(
     demand_organization: Optional[str] = Query(None),
     bid_method: Optional[str] = Query(None),
     contract_method: Optional[str] = Query(None),
+    contract_type: Optional[str] = Query(None),
     bid_type: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
@@ -115,93 +46,181 @@ async def analyze_bid(
     db: Session = Depends(get_db)
 ):
     """
-    Get AI Analysis for a specific bid with comprehensive data.
-    Accepts extended bid data via query parameters for rich analysis.
+    Get AI Analysis for a specific bid.
+    
+    환각 방지를 위해 규칙 기반 팁 생성기 사용:
+    - 모든 팁은 API 데이터, 법률 기준, 또는 수학적 계산에서 도출
+    - LLM 의존성 최소화
+    - 초보자를 위한 친절한 설명 포함
     """
-    print(f"[AI] Analysis request for bid_no={bid_no}", flush=True)
+    print(f"[AI] Enhanced analysis request for bid_no={bid_no}", flush=True)
     
     # 1. Check Cache
-    cached_log = db.query(models.AIAnalysisLog).filter(models.AIAnalysisLog.bid_no == bid_no).first()
-    if cached_log:
+    cached_log = db.query(models.AIAnalysisLog).filter(
+        models.AIAnalysisLog.bid_no == bid_no
+    ).first()
+    
+    if cached_log and cached_log.summary_json:
         print(f"[AI] Cache hit for {bid_no}", flush=True)
-        return cached_log.summary_json
+        # 캐시된 결과가 새 형식인지 확인
+        if isinstance(cached_log.summary_json, dict) and "tips" in cached_log.summary_json:
+            return cached_log.summary_json
     
-    # 2. Try to get Notice from DB
-    notice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
-    
+    # 2. Collect bid data from query params or DB
     bid_data = {}
     
+    # Try to get from DB first
+    notice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
+    
     if notice:
-        print(f"[AI] Using Notice from DB: {notice.title[:50]}...", flush=True)
-        # Use to_dict() to get all extended fields from DB
+        print(f"[AI] Using Notice from DB: {notice.title[:50] if notice.title else 'N/A'}...", flush=True)
         try:
             bid_data = notice.to_dict()
         except AttributeError:
-            # Fallback for old schema if to_dict missing
-            print("[AI] Warning: notice.to_dict() missing, using partial data")
+            # Fallback
             bid_data = {
                 "title": notice.title,
                 "basic_price": notice.basic_price,
-                "start_date": notice.start_date.isoformat() if notice.start_date else None,
-                "end_date": notice.end_date.isoformat() if notice.end_date else None,
+                "organization": getattr(notice, "organization", None),
+                "contract_type": getattr(notice, "contract_type", "CONSTRUCTION"),
             }
-    else:
-        # Fallback: build from query params
-        bid_data = {
-            "title": title,
-            "basic_price": basic_price,
-            "organization": organization,
-            "demand_organization": demand_organization,
-            "bid_method": bid_method,
-            "contract_method": contract_method,
-            "bid_type": bid_type,
-            "status": status,
-            "region": region,
-            "budget_amount": budget_amount,
-            "opening_date": opening_date,
-            "international_bid": international_bid,
-            "joint_contract": joint_contract,
-            "sme_only": sme_only,
-            "big_company_ok": big_company_ok,
-            "emergency_bid": emergency_bid,
-            "rebid_yn": rebid_yn,
-            "attachment_url": attachment_url,
-            "attachment_name": attachment_name,
-            "start_date": start_date,
-            "end_date": end_date,
+    
+    # Override/supplement with query params (they are more recent)
+    param_data = {
+        "title": title,
+        "basic_price": basic_price,
+        "organization": organization,
+        "demand_organization": demand_organization,
+        "bid_method": bid_method,
+        "contract_method": contract_method,
+        "contract_type": contract_type or "CONSTRUCTION",
+        "bid_type": bid_type,
+        "status": status,
+        "region": region,
+        "budget_amount": budget_amount,
+        "opening_date": opening_date,
+        "international_bid": international_bid,
+        "joint_contract": joint_contract,
+        "sme_only": sme_only,
+        "big_company_ok": big_company_ok,
+        "emergency_bid": emergency_bid,
+        "rebid_yn": rebid_yn,
+        "attachment_url": attachment_url,
+        "attachment_name": attachment_name,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+    
+    # Merge: query params take precedence if not None
+    for key, value in param_data.items():
+        if value is not None:
+            bid_data[key] = value
+    
+    # 3. Validate minimum data
+    if not bid_data.get("title") and not bid_data.get("basic_price"):
+        raise HTTPException(
+            status_code=400,
+            detail="분석에 필요한 공고 정보가 부족합니다. (제목 또는 기초금액 필요)"
+        )
+    
+    print(f"[AI] Generating tips for: {bid_data.get('title', 'Unknown')[:30]}...", flush=True)
+    
+    # 4. Generate tips using rule-based engine (NO LLM = NO HALLUCINATION)
+    try:
+        analysis_result = generate_tips(bid_data)
+    except Exception as e:
+        print(f"[AI] Tips generation error: {e}", flush=True)
+        # Fallback instead of Raising 500
+        analysis_result = {
+            "summary": f"{bid_data.get('title', '공고')} (분석 데이터 생성 실패)",
+            "tips": [{
+                "category": "system",
+                "icon": "⚠️",
+                "title": "분석 실패",
+                "content": "공고 상세 정보를 분석하는 중 오류가 발생했습니다. 아래 [공고 원문 보기]를 통해 상세 내용을 확인해주세요.",
+                "importance": "HIGH",
+                "source": "System Fallback"
+            }],
+            "eligibility": {"can_participate": None, "source": "Fallback"},
+            "deadline_info": {"source": "Fallback"},
+            "price_info": {"error": "분석 실패"},
+            "meta": {
+                "generated_at": datetime.utcnow().isoformat(),
+                "error": str(e),
+                "data_source": "Fallback"
+            }
         }
     
-    # 3. Generate comprehensive context
-    content_for_analysis = generate_comprehensive_context(bid_data)
-    print(f"[AI] Analysis context: {len(content_for_analysis)} chars", flush=True)
+    print(f"[AI] Generated {len(analysis_result.get('tips', []))} tips", flush=True)
     
-    if len(content_for_analysis) < 50:
-        raise HTTPException(
-            status_code=404, 
-            detail="분석할 공고 정보가 부족합니다."
-        )
+    # 4.5. Extract A-value and Net Cost if URL is available (Async Scrape)
+    target_url = bid_data.get("notice_url") or notice_url
     
-    # 4. Call LLM
+    if target_url:
+        print(f"[AI] Scraping for A-value from {target_url}...", flush=True)
+        try:
+            loop = asyncio.get_event_loop()
+            # Run blocking scrape in thread pool
+            content = await loop.run_in_executor(None, ScraperService.fetch_page_content, target_url)
+            
+            if content:
+                a_value_data = ScraperService.extract_a_value(content)
+                net_cost = ScraperService.extract_net_cost(content)
+                
+                # Add to result
+                analysis_result["a_value_info"] = a_value_data
+                analysis_result["net_cost"] = net_cost
+                
+                # Update tip if A-value found
+                if a_value_data and a_value_data.get("found"):
+                    total_a = a_value_data.get("total", 0)
+                    # Insert at top
+                    analysis_result["tips"].insert(0, {
+                        "type": "safety",
+                        "text": f"A값(국민연금 등) {total_a:,}원이 자동 추출되었습니다. 투찰 계산 시 이 금액은 낙찰률이 적용되지 않습니다.",
+                        "importance": "high"
+                    })
+                    print(f"[AI] A-value found: {total_a}", flush=True)
+        except Exception as e:
+            print(f"[AI] Scraping A-value failed: {e}", flush=True)
+    
+    # 5. Cache the result
     try:
-        analysis_result = llm_agent.analyze_notice(content_for_analysis)
-    except Exception as e:
-        print(f"[AI] LLM Error: {e}", flush=True)
-        raise HTTPException(status_code=500, detail=f"AI 분석 중 오류 발생: {str(e)}")
-    
-    # 5. Cache result
-    try:
-        new_log = models.AIAnalysisLog(
-            bid_no=bid_no,
-            summary_json=analysis_result,
-            risk_factors=[],
-            llm_model="gpt-4o-mini",
-            token_usage=0, 
-            created_at=datetime.utcnow()
-        )
-        db.add(new_log)
+        if cached_log:
+            # Update existing
+            cached_log.summary_json = analysis_result
+            cached_log.created_at = datetime.utcnow()
+        else:
+            # Create new
+            new_log = models.AIAnalysisLog(
+                bid_no=bid_no,
+                summary_json=analysis_result,
+                risk_factors=[],
+                llm_model="rule-based-v1",  # No LLM used
+                token_usage=0,
+                created_at=datetime.utcnow()
+            )
+            db.add(new_log)
+        
         db.commit()
         print(f"[AI] Cached analysis for {bid_no}", flush=True)
     except Exception as e:
         print(f"[AI] Cache save error (non-fatal): {e}", flush=True)
+        db.rollback()
     
     return analysis_result
+
+
+@router.delete("/{bid_no}/analysis/cache")
+async def clear_analysis_cache(bid_no: str, db: Session = Depends(get_db)):
+    """캐시 삭제 (디버깅용)"""
+    cached = db.query(models.AIAnalysisLog).filter(
+        models.AIAnalysisLog.bid_no == bid_no
+    ).first()
+    
+    if cached:
+        db.delete(cached)
+        db.commit()
+        return {"message": f"Cache cleared for {bid_no}"}
+    
+    return {"message": "No cache found"}
