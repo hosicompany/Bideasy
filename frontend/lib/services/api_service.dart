@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/notice.dart';
 import '../models/ai_analysis.dart';
 import '../models/opening_result.dart';
+import '../models/user.dart';
 
 class ApiService {
   // Use 10.0.2.2 for Android emulator, localhost for Web/iOS/Windows
@@ -114,6 +115,36 @@ class ApiService {
       }
     } catch (e) {
       throw Exception('Failed to load results: $e');
+    }
+  }
+
+  Future<User> getUserMe() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/users/me'));
+      if (response.statusCode == 200) {
+        return User.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+      } else {
+        throw Exception('Failed to load user: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to load user: $e');
+    }
+  }
+
+  Future<User> updateUserMe(Map<String, dynamic> data) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/users/me'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(data),
+      );
+      if (response.statusCode == 200) {
+        return User.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+      } else {
+        throw Exception('Failed to update user: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to update user: $e');
     }
   }
 }

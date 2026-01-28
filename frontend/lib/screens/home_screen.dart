@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'my_page_screen.dart';
 import '../theme/style.dart';
 import '../widgets/notice_card.dart';
 import '../widgets/bid_slider.dart';
@@ -263,6 +264,15 @@ class _HomeScreenState extends State<HomeScreen> {
             IconButton(
               icon: const Icon(Icons.notifications_outlined),
               onPressed: () {},
+            ),
+            IconButton(
+              icon: const Icon(Icons.person),
+              onPressed: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const MyPageScreen()));
+              },
             )
           ],
         ),

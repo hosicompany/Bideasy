@@ -9,7 +9,15 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    company_name = Column(String, default="Hosi Company") # Default or user input
+    company_name = Column(String, default="Hosi Company") 
+    ceo_name = Column(String) # Representative Name
+    
+    # My Page Fields
+    licenses = Column(Text) # JSON List or Comma-separated (e.g. "전기공사업, 소방시설업")
+    location = Column(String) # Region (e.g. "서울특별시")
+    capacity_cost = Column(Integer, default=0) # Construction Capacity Evaluation Amount (Si-pyeong)
+    performance_record = Column(Integer, default=0) # Performance Record (Sil-jeok)
+    
     points = Column(Integer, default=0)
     
     bids = relationship("UserBid", back_populates="user")

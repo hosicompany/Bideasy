@@ -127,7 +127,18 @@ async def analyze_bid(
     
     # 4. Generate tips using rule-based engine (NO LLM = NO HALLUCINATION)
     try:
-        analysis_result = generate_tips(bid_data)
+        # Fetch User Profile for Personalization
+        user_id = 1
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        user_profile = None
+        if user:
+            user_profile = {
+                "licenses": user.licenses,
+                "location": user.location,
+                "capacity": user.capacity_cost
+            }
+        
+        analysis_result = generate_tips(bid_data, user_profile)
     except Exception as e:
         print(f"[AI] Tips generation error: {e}", flush=True)
         # Fallback instead of Raising 500

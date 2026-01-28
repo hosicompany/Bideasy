@@ -39,12 +39,16 @@ ESTIMATED_PRICE_RANGE = 0.03
 class TipsGenerator:
     """규칙 기반 입찰 전략 팁 생성기"""
     
-    def __init__(self, bid_data: Dict[str, Any]):
+    def __init__(self, bid_data: Dict[str, Any], user_profile: Optional[Dict[str, Any]] = None):
         self.data = bid_data
+        self.user_profile = user_profile
         self.tips: List[BidTip] = []
     
     def generate_all_tips(self) -> Dict[str, Any]:
         """모든 팁 생성 및 분석 결과 반환"""
+        # 맞춤형 분석 (최우선)
+        self._generate_personalization_tips()
+        
         # 각 카테고리별 팁 생성
         self._generate_eligibility_tips()
         self._generate_deadline_tips()
@@ -413,13 +417,77 @@ class TipsGenerator:
                 importance="MEDIUM"
             ))
 
+    def _generate_personalization_tips(self):
+        """사용자 맞춤형 팁 (지역/면허 매칭)"""
+        if not self.user_profile:
+            # 프로필이 없으면 안내 팁 추가 (Optional)
+            return
 
-def generate_tips(bid_data: Dict[str, Any]) -> Dict[str, Any]:
+        user_loc = self.user_profile.get("location")
+        user_licenses = self.user_profile.get("licenses") # String containing licenses
+
+        # 1. 지역 제한 체크
+        bid_region = self.data.get("region")
+        if bid_region and user_loc:
+            # 단순 포함 관계 확인 (e.g. "경기" in "경기도")
+            if (bid_region not in user_loc) and (user_loc not in bid_region):
+                # 전국 공고인지 확인 (지역제한 없음)
+                if bid_region != "전국": 
+                    self.tips.insert(0, BidTip(
+                        category="eligibility",
+                        icon="❌",
+                        title="지역 제한 불일치",
+                        content=f"공고 지역은 '{bid_region}'이나, 귀사 소재지는 '{user_loc}'입니다. 투찰이 불가능할 수 있습니다.",
+                        source="내 프로필 맞춤 분석",
+                        importance="HIGH"
+                    ))
+            else:
+                 self.tips.append(BidTip(
+                    category="eligibility",
+                    icon="✅",
+                    title="지역 조건 충족",
+                    content=f"귀사 소재지('{user_loc}')는 입찰 가능 지역입니다.",
+                    source="내 프로필 맞춤 분석",
+                    importance="LOW"
+                ))
+
+        # 2. 면허/업종 체크 (Simple Keyword Match)
+        # 공고 제목이나 자격요건에서 업종 키워드 추출
+        # 예: "전기", "통신", "소방", "토목", "건축"
+        keywords_map = {
+            "전기": "전기공사업",
+            "통신": "정보통신공사업",
+            "소방": "소방시설공사업",
+            "토목": "토목공사업",
+            "건축": "건축공사업",
+            "실내": "실내건축공사업"
+        }
+        
+        title = self.data.get("title", "")
+        required_license = None
+        for key, lic in keywords_map.items():
+            if key in title:
+                required_license = lic
+                break
+        
+        if required_license and user_licenses:
+            if required_license not in user_licenses:
+                 self.tips.insert(0, BidTip(
+                    category="eligibility",
+                    icon="⚠️",
+                    title="면허 확인 필요",
+                    content=f"이 공고는 '{required_license}' 면허가 필요할 수 있습니다. 귀사 면허 보유 여부를 확인하세요.",
+                    source="내 프로필 맞춤 분석",
+                    importance="HIGH"
+                ))
+
+
+def generate_tips(bid_data: Dict[str, Any], user_profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     메인 함수: 입찰 데이터로부터 전략 팁 생성
     
     Returns:
         Dict containing summary, eligibility, tips, deadline_info, price_info
     """
-    generator = TipsGenerator(bid_data)
+    generator = TipsGenerator(bid_data, user_profile)
     return generator.generate_all_tips()
