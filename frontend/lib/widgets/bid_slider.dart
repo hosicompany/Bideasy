@@ -54,10 +54,10 @@ class _BidSliderState extends State<BidSlider> {
               max: 15.0,
               divisions: 400, // 0.01 step
               onChanged: (value) {
-                // Haptic Feedback
+                // Haptic Feedback - lightImpact for slider interaction
                 if ((value * 100).round() !=
                     (widget.currentRate * 100).round()) {
-                  HapticFeedback.selectionClick();
+                  HapticFeedback.lightImpact();
                 }
                 widget.onChanged(value);
               },

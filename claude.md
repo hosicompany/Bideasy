@@ -222,7 +222,15 @@ flutter run
 - [ ] Flutter 프로젝트에 Pretendard 폰트 에셋 추가
 - [ ] ThemeData에 컬러 팔레트 전역 변수 설정
 - [ ] OpenAI API 호출 시 `temperature=0` 설정 (답변 일관성)
-- [ ] 슬라이더 조작 시 햅틱 피드백 적용 (`HapticFeedback.lightImpact()`)
+- [x] 슬라이더 조작 시 햅틱 피드백 적용 (`HapticFeedback.lightImpact()`)
+- [x] 위험 구간 진입/탈출 시 강한 햅틱 피드백 (`HapticFeedback.heavyImpact()`)
+- [x] 즐겨찾기 토글 시 햅틱 피드백 적용
+- [x] 로딩/에러/빈 상태 UI 공통 위젯 구현 (`widgets/state_widgets.dart`)
+- [x] 스낵바 유틸리티 구현 (`utils/snackbar_utils.dart`)
+- [x] Pull-to-refresh 적용
+- [x] MyPageScreen 리디자인 (토스 스타일)
+- [x] 프로필 헤더 (포인트, 시공능력 표시)
+- [x] 앱 정보 섹션 (버전, 이용약관, 로그아웃)
 
 ---
 

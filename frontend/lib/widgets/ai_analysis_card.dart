@@ -4,6 +4,7 @@ import '../theme/style.dart';
 import '../services/api_service.dart';
 import '../models/ai_analysis.dart';
 import '../models/notice.dart';
+import '../utils/snackbar_utils.dart';
 
 class AiAnalysisCard extends StatefulWidget {
   final Notice notice;
@@ -73,9 +74,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
     final Uri url = Uri.parse(widget.notice.content);
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('원문 링크를 열 수 없습니다.')),
-        );
+        SnackBarUtils.showError(context, "원문 링크를 열 수 없어요");
       }
     }
   }
@@ -807,9 +806,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
                     if (!await launchUrl(url,
                         mode: LaunchMode.externalApplication)) {
                       if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('첨부파일을 열 수 없습니다.')),
-                        );
+                        SnackBarUtils.showError(context, "첨부파일을 열 수 없어요");
                       }
                     }
                   },

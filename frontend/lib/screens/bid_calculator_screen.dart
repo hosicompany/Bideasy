@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/style.dart';
 import '../models/notice.dart';
+import '../utils/snackbar_utils.dart';
 
 /// 투찰가 계산기 (고도화 버전)
 /// - 슬라이더로 사정률 조정
@@ -350,10 +351,19 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
               max: 5.0,
               divisions: 200,
               onChanged: (value) {
+                final oldSafetyLevel = _safetyLevel;
                 if ((value * 10).round() != (_rate * 10).round()) {
-                  HapticFeedback.selectionClick();
+                  HapticFeedback.lightImpact();
                 }
                 setState(() => _rate = value);
+                // 위험 구간 진입/탈출 시 강한 햅틱 피드백
+                if (oldSafetyLevel != _safetyLevel) {
+                  if (_safetyLevel == "DANGER") {
+                    HapticFeedback.heavyImpact();
+                  } else if (oldSafetyLevel == "DANGER") {
+                    HapticFeedback.mediumImpact();
+                  }
+                }
               },
             ),
           ),
@@ -532,13 +542,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
   void _copyBidPrice() {
     Clipboard.setData(ClipboardData(text: _bidPrice.toString()));
     HapticFeedback.mediumImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("${_formatPrice(_bidPrice.toDouble())} 복사됨"),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    SnackBarUtils.showCopied(context, _formatPrice(_bidPrice.toDouble()));
   }
 
   String _formatPrice(double price) {

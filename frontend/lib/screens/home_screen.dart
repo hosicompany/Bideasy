@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'my_page_screen.dart';
 import '../theme/style.dart';
@@ -6,6 +7,8 @@ import '../widgets/notice_card.dart';
 import '../widgets/bid_slider.dart';
 import '../widgets/ai_analysis_card.dart';
 import '../widgets/opening_result_table.dart';
+import '../widgets/state_widgets.dart';
+import '../utils/snackbar_utils.dart';
 import '../models/notice.dart';
 import '../services/api_service.dart';
 
@@ -76,6 +79,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _toggleFavorite(String bidNo) async {
     try {
+      // Haptic Feedback for favorite toggle
+      HapticFeedback.lightImpact();
       // Optimistic Update
       setState(() {
         if (_favoriteIds.contains(bidNo)) {
@@ -98,9 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("즐겨찾기 변경 실패")),
-        );
+        SnackBarUtils.showError(context, "즐겨찾기 변경에 실패했어요");
       }
     }
   }
@@ -114,49 +117,99 @@ class _HomeScreenState extends State<HomeScreen> {
             keyword: _keyword, excludeClosed: _excludeClosed);
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  "업데이트 완료${_keyword != null ? ' (Filter: $_keyword)' : ''}")),
+        SnackBarUtils.showSuccess(
+          context,
+          _keyword != null ? "검색 결과가 업데이트됐어요" : "최신 공고를 불러왔어요",
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("Error: $e")));
+        SnackBarUtils.showError(context, "업데이트에 실패했어요. 다시 시도해주세요");
       }
     }
   }
 
-  Widget _buildNoticeList(Future<List<Notice>> futureList) {
+  Widget _buildNoticeList(Future<List<Notice>> futureList, {bool isFavoriteTab = false}) {
     return FutureBuilder<List<Notice>>(
       future: futureList,
       builder: (context, snapshot) {
+        // 로딩 상태
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        } else if (snapshot.hasError) {
-          return Center(child: Text("Error: ${snapshot.error}"));
-        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return const Center(
-              child: Text("공고가 없습니다.",
-                  style: TextStyle(color: Colors.grey, fontSize: 16)));
+          return const LoadingStateWidget(
+            message: "공고를 불러오는 중...",
+            skeletonCount: 4,
+          );
+        }
+
+        // 에러 상태
+        if (snapshot.hasError) {
+          final errorMsg = snapshot.error.toString();
+          // 네트워크/서버 에러 구분
+          if (errorMsg.contains('SocketException') ||
+              errorMsg.contains('Connection refused')) {
+            return NetworkErrorWidget(
+              onRetry: _refreshNotices,
+            );
+          }
+          return ErrorStateWidget(
+            title: "공고를 불러오지 못했어요",
+            message: "잠시 후 다시 시도해주세요",
+            onRetry: _refreshNotices,
+          );
+        }
+
+        // 빈 상태
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          if (isFavoriteTab) {
+            return EmptyStateWidget(
+              icon: Icons.star_border_rounded,
+              title: "즐겨찾기한 공고가 없어요",
+              message: "관심 있는 공고의 별 아이콘을 눌러\n즐겨찾기에 추가해보세요",
+            );
+          }
+          return EmptyStateWidget(
+            icon: Icons.search_off_rounded,
+            title: _keyword != null ? "검색 결과가 없어요" : "공고가 없어요",
+            message: _keyword != null
+                ? "'$_keyword' 검색 결과가 없습니다.\n다른 키워드로 검색해보세요"
+                : "새로운 공고가 등록되면 알려드릴게요",
+            action: _keyword != null
+                ? TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _keyword = null;
+                        futureNotices = apiService.fetchNotices(
+                            excludeClosed: _excludeClosed);
+                      });
+                      _saveFilter(keyword: "");
+                    },
+                    icon: const Icon(Icons.clear, size: 18),
+                    label: const Text("검색어 지우기"),
+                  )
+                : null,
+          );
         }
 
         final notices = snapshot.data!;
-        return ListView.builder(
-          itemCount: notices.length,
-          itemBuilder: (context, index) {
-            final notice = notices[index];
-            final isFav = _favoriteIds.contains(notice.bidNo);
-            return NoticeCard(
-              notice: notice,
-              isFavorite: isFav,
-              onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
-              onTap: () {
-                _showCalculator(context, notice);
-              },
-            );
-          },
+        return RefreshIndicator(
+          onRefresh: _refreshNotices,
+          color: AppColors.primaryBlue,
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: notices.length,
+            itemBuilder: (context, index) {
+              final notice = notices[index];
+              final isFav = _favoriteIds.contains(notice.bidNo);
+              return NoticeCard(
+                notice: notice,
+                isFavorite: isFav,
+                onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
+                onTap: () {
+                  _showCalculator(context, notice);
+                },
+              );
+            },
+          ),
         );
       },
     );
@@ -281,18 +334,7 @@ class _HomeScreenState extends State<HomeScreen> {
             // Tab 1: Feed
             _buildNoticeList(futureNotices),
             // Tab 2: Favorites
-            FutureBuilder<List<Notice>>(
-              future: futureFavorites,
-              builder: (context, snapshot) {
-                // Reuse logic but maybe futureFavorites needs explicit refresh handling if empty
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                // Just use the helper
-                return _buildNoticeList(futureFavorites);
-              },
-            ),
+            _buildNoticeList(futureFavorites, isFavoriteTab: true),
           ],
         ),
       ),
