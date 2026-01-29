@@ -27,9 +27,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final Set<String> _favoriteIds = {};
   bool _excludeClosed = false;
 
+  late TextEditingController _searchController;
+  final FocusNode _searchFocusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
+    _searchController = TextEditingController(); // Initialize empty first
     // Initialize futureNotices immediately to prevent LateInitializationError
     futureNotices = apiService.fetchNotices();
     futureFavorites = Future.value([]);
@@ -37,10 +41,18 @@ class _HomeScreenState extends State<HomeScreen> {
     _fetchFavorites();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadFilters() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _keyword = prefs.getString('keyword');
+      _searchController.text = _keyword ?? ""; // Sync controller
       _excludeClosed = prefs.getBool('exclude_closed') ?? false;
 
       futureNotices = apiService.fetchNotices(
@@ -129,7 +141,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _buildNoticeList(Future<List<Notice>> futureList, {bool isFavoriteTab = false}) {
+  Widget _buildNoticeList(Future<List<Notice>> futureList,
+      {bool isFavoriteTab = false}) {
     return FutureBuilder<List<Notice>>(
       future: futureList,
       builder: (context, snapshot) {
@@ -176,12 +189,8 @@ class _HomeScreenState extends State<HomeScreen> {
             action: _keyword != null
                 ? TextButton.icon(
                     onPressed: () {
-                      setState(() {
-                        _keyword = null;
-                        futureNotices = apiService.fetchNotices(
-                            excludeClosed: _excludeClosed);
-                      });
-                      _saveFilter(keyword: "");
+                      _searchController.clear();
+                      _triggerSearch();
                     },
                     icon: const Icon(Icons.clear, size: 18),
                     label: const Text("검색어 지우기"),
@@ -215,6 +224,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _triggerSearch() {
+    // Dismiss keyboard
+    _searchFocusNode.unfocus();
+
+    final newKeyword = _searchController.text.trim();
+    setState(() {
+      _keyword = newKeyword.isEmpty ? null : newKeyword;
+      futureNotices = apiService.fetchNotices(
+          keyword: _keyword, excludeClosed: _excludeClosed);
+    });
+    _saveFilter(keyword: _keyword);
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -229,12 +251,17 @@ class _HomeScreenState extends State<HomeScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: TextField(
-              controller: TextEditingController(text: _keyword),
+              controller: _searchController,
+              focusNode: _searchFocusNode,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: "공고명, 키워드 검색",
                 hintStyle: TextStyle(color: Colors.grey[500], fontSize: 14),
-                prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                // Change prefixIcon to IconButton
+                prefixIcon: IconButton(
+                  icon: const Icon(Icons.search, color: Colors.grey),
+                  onPressed: _triggerSearch,
+                ),
                 suffixIcon: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -272,32 +299,26 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
-                    if (_keyword != null && _keyword!.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.clear, size: 20),
-                        onPressed: () {
-                          setState(() {
-                            _keyword = null;
-                            futureNotices = apiService.fetchNotices(
-                                excludeClosed: _excludeClosed);
-                          });
-                          _saveFilter(keyword: ""); // Clear keyword
-                        },
-                      ),
+                    // Clear Button
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _searchController,
+                      builder: (context, value, child) {
+                        if (value.text.isEmpty) return const SizedBox.shrink();
+                        return IconButton(
+                          icon: const Icon(Icons.clear, size: 20),
+                          onPressed: () {
+                            _searchController.clear();
+                            _triggerSearch(); // Trigger search with empty (reset)
+                          },
+                        );
+                      },
+                    ),
                   ],
                 ),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
-              onSubmitted: (value) {
-                final newKeyword = value.trim();
-                setState(() {
-                  _keyword = newKeyword.isEmpty ? null : newKeyword;
-                  futureNotices = apiService.fetchNotices(
-                      keyword: _keyword, excludeClosed: _excludeClosed);
-                });
-                _saveFilter(keyword: _keyword);
-              },
+              onSubmitted: (_) => _triggerSearch(),
             ),
           ),
           bottom: const TabBar(

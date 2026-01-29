@@ -99,8 +99,38 @@ class UserBid(Base):
     rate = Column(Float) # Sagyeongyul (e.g. 1.25)
     created_at = Column(DateTime, default=datetime.utcnow)
     
+    # Relationships
     user = relationship("User", back_populates="bids")
     notice = relationship("Notice", back_populates="bids")
+
+
+class OpeningResult(Base):
+    """
+    Historical Opening Results (개찰결과) for Data Analysis.
+    Used for 'Agency Profiling' and 'Monte Carlo Simulation'.
+    """
+    __tablename__ = "opening_results"
+
+    bid_no = Column(String, primary_key=True, index=True)
+    
+    # Agency Info (For Aggregation)
+    organization = Column(String, index=True) # e.g. "강남구청"
+    region = Column(String, index=True)       # e.g. "서울특별시"
+    
+    # Bid Info
+    open_date = Column(DateTime, index=True)
+    basic_price = Column(Float)
+    
+    # Winning Info (The most important part)
+    winner_company = Column(String)
+    winner_price = Column(Float)
+    winner_rate = Column(Float) # 낙찰하한율 대비가 아니라, '사정률' (예: -0.1234)
+    
+    # Competition Info
+    participants_count = Column(Integer)
+    
+    # Meta
+    crawled_at = Column(DateTime, default=datetime.utcnow)
 
 class AIAnalysisLog(Base):
     """

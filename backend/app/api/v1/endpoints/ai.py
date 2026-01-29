@@ -125,7 +125,7 @@ async def analyze_bid(
     
     print(f"[AI] Generating tips for: {bid_data.get('title', 'Unknown')[:30]}...", flush=True)
     
-    # 4. Generate tips using rule-based engine (NO LLM = NO HALLUCINATION)
+    # 4. Generate tips using rule-based engine (Base Layer)
     try:
         # Fetch User Profile for Personalization
         user_id = 1
@@ -141,30 +141,54 @@ async def analyze_bid(
         analysis_result = generate_tips(bid_data, user_profile)
     except Exception as e:
         print(f"[AI] Tips generation error: {e}", flush=True)
-        # Fallback instead of Raising 500
-        analysis_result = {
-            "summary": f"{bid_data.get('title', '공고')} (분석 데이터 생성 실패)",
-            "tips": [{
-                "category": "system",
-                "icon": "⚠️",
-                "title": "분석 실패",
-                "content": "공고 상세 정보를 분석하는 중 오류가 발생했습니다. 아래 [공고 원문 보기]를 통해 상세 내용을 확인해주세요.",
-                "importance": "HIGH",
-                "source": "System Fallback"
-            }],
-            "eligibility": {"can_participate": None, "source": "Fallback"},
-            "deadline_info": {"source": "Fallback"},
-            "price_info": {"error": "분석 실패"},
-            "meta": {
-                "generated_at": datetime.utcnow().isoformat(),
-                "error": str(e),
-                "data_source": "Fallback"
-            }
-        }
+        # Fallback (simplified)
+        analysis_result = {"summary": "분석 오류", "tips": []}
+
+    # 4.5. [Phase 2] Enhance with LLM (Summary & Risks)
+    # Check if we have content to analyze
+    target_content = bid_data.get("content")
+    if target_content and len(target_content) > 50:
+        from app.services.llm_agent import llm_agent
+        print(f"[AI] Calling LLM for deeper analysis...", flush=True)
+        
+        try:
+            # Synchronous call (or use run_in_executor if needed for async)
+            # Since OpenAI call is blocking, we should ideally use async/await or threadpool
+            # For MVP, we'll simple-call (FastAPI handles it in threadpool if def is not async, but this is async def)
+            # So we must use run_in_executor to avoid blocking the event loop
+            
+            loop = asyncio.get_event_loop()
+            llm_result = await loop.run_in_executor(None, llm_agent.analyze_notice, target_content)
+            
+            # Merge 1: Summary
+            # LLM returns list of 3 strings -> Join them
+            llm_summary_lines = llm_result.get("summary_3_lines", [])
+            if llm_summary_lines:
+                # Replace the simple rule-based summary
+                formatted_summary = "\n".join([f"• {line}" for line in llm_summary_lines])
+                analysis_result["summary"] = formatted_summary
+                print(f"[AI] Replaced summary with LLM result", flush=True)
+            
+            # Merge 2: Risks
+            # Add as High Priority Tips
+            llm_risks = llm_result.get("risk_factors", [])
+            for risk in llm_risks:
+                analysis_result["tips"].insert(0, {
+                    "category": "risk",
+                    "icon": "⚠️",
+                    "title": f"위험요소: {risk.get('type')}",
+                    "content": risk.get('content'),
+                    "source": "AI 정밀분석",
+                    "importance": risk.get('severity', 'HIGH')
+                })
+                
+        except Exception as e:
+            print(f"[AI] LLM enhancement failed: {e}", flush=True)
+            # Continue with rule-based result
     
     print(f"[AI] Generated {len(analysis_result.get('tips', []))} tips", flush=True)
     
-    # 4.5. Extract A-value and Net Cost if URL is available (Async Scrape)
+    # 4.6. Extract A-value and Net Cost if URL is available (Async Scrape)
     target_url = bid_data.get("notice_url") or notice_url
     
     if target_url:

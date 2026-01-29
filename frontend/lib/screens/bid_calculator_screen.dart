@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/style.dart';
 import '../models/notice.dart';
+import '../widgets/ai_analysis_card.dart';
+import '../widgets/scientific_analysis_dashboard.dart';
 import '../utils/snackbar_utils.dart';
 
 /// 투찰가 계산기 (고도화 버전)
@@ -156,6 +158,19 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
               // 결과 카드
               _buildResultCard(),
               const SizedBox(height: 24),
+
+              // Phase 3: Scientific Bidding Dashboard
+              Text(
+                "🧪 과학적 분석 (Scientific Bidding)",
+                style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.indigo),
+              ),
+              const SizedBox(height: 10),
+              ScientificAnalysisDashboard(bidNo: widget.notice.bidNo),
+
+              const SizedBox(height: 40),
 
               // 액션 버튼
               _buildActionButtons(),

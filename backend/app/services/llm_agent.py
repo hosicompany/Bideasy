@@ -11,29 +11,38 @@ class LLMAgent:
 
     def analyze_notice(self, notice_text: str) -> dict:
         """
-        Analyze notice text and return structured rich data (Badges, Checks, Tips).
+        Analyze notice text and return structured rich data (Summary, Risks).
         """
         system_prompt = """
-        당신은 대한민국 '건설산업기본법'에 능통한 입찰 분석 AI '비드이지'입니다.
-        제공된 [실제 공고 본문]을 최우선 근거(Fact)로 하여 분석하세요. 
-        
-        [주의사항]
-        - 예시에 있는 지역(경기도 고양시 등)이나 면허를 그대로 베끼지 마세요. 
-        - 반드시 입력된 공고문 텍스트에서 지역과 면허를 찾아서 답하세요.
-        - 만약 본문에서 찾을 수 없다면 "분석불가"라고 적으세요.
+        당신은 건설 공사 입찰 공고를 분석하는 전문가 AI '비드이지'입니다.
+        주어진 [공고문 본문]을 읽고 다음 두 가지를 JSON 형식으로 추출하세요.
 
-        [분석 우선순위]
-        1. **Fact Check (본문)**: 본문에 명시된 '참가자격', '지역제한', '면허'를 그대로 추출.
-        2. **Inference (규칙)**: 본문에 없을 경우 아래 규칙 적용.
+        1. **summary_3_lines**: 공고의 핵심 내용을 시공사 입장에서 가장 중요한 순서대로 3문장으로 요약.
+           - 첫 문장: 공사 개요 (무엇을 하는 공사인지, 규모 등)
+           - 둘째 문장: 핵심 자격 요건 (면허, 실적, 지역 등)
+           - 셋째 문장: 특이사항 (기간, 공동도급 여부, 기타 주의점)
+           - 말투: "~함", "~임" 체로 간결하게.
 
-        [Output JSON Format 예시 - 형식을 따르되 값은 실제 분석해서 채울것]
+        2. **risk_factors**: 시공사에게 불리하거나 주의가 필요한 '독소조항' 또는 '위험요소'.
+           - 없으면 빈 리스트.
+           - type: 기간, 비용, 서류, 처벌, 기타 중 택1
+           - content: 위험 요소의 구체적 내용
+           - severity: HIGH (입찰 포기 고려), MEDIUM (주의 필요)
+
+        [Response JSON Format]
         {
-            "badges": ["#지역명(Fact)", "#면허명(Fact)"], 
-            "check_items": [
-                {"status": "WARN", "label": "지역", "text": "실제 공고의 지역명 (본문 명시됨)"},
-                {"status": "INFO", "label": "면허", "text": "실제 요구 면허 (추론)"}
+            "summary_3_lines": [
+                "서울시 강남구 노후 하수관로 1.5km를 교체하는 30억 규모 공사임.",
+                "상하수도설비공사업 면허가 필수이며 서울시 업체만 참여 가능함.",
+                "착공 후 60일 이내 완공 조건으로 절대 공기 부족이 우려됨."
             ],
-            "tips": ["특이사항이 있다면 요약"]
+            "risk_factors": [
+                {
+                    "type": "기간",
+                    "content": "공사 기간 60일로 매우 촉박함 (우천 등 고려 안됨)",
+                    "severity": "HIGH"
+                }
+            ]
         }
         """
 
@@ -43,7 +52,7 @@ class LLMAgent:
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"공고문 내용: {notice_text}"}
+                    {"role": "user", "content": f"공고문 내용: {notice_text[:3000]}"} # Limit context to save tokens/cost
                 ],
                 response_format={"type": "json_object"},
                 temperature=0 
@@ -63,7 +72,7 @@ class LLMAgent:
                         model="gpt-4o-mini",
                         messages=[
                             {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": f"공고문 내용: {notice_text}"}
+                            {"role": "user", "content": f"공고문 내용: {notice_text[:3000]}"}
                         ],
                         response_format={"type": "json_object"},
                         temperature=0 
@@ -73,10 +82,10 @@ class LLMAgent:
                 except Exception as fallback_e:
                     print(f"[LLM] Fallback model also failed: {fallback_e}", flush=True)
             
+            # Final Fallback
             return {
-                "badges": ["#분석실패"],
-                "check_items": [{"status": "WARN", "label": "오류", "text": "AI 분석을 불러오지 못했습니다."}],
-                "tips": []
+                "summary_3_lines": [],
+                "risk_factors": []
             }
 
 

@@ -6,12 +6,14 @@ import '../models/opening_result.dart';
 import '../models/user.dart';
 
 class ApiService {
-  // Use 10.0.2.2 for Android emulator, localhost for Web/iOS/Windows
-  // Since we are targeting Windows/Web, localhost is fine.
-  static const String baseUrl = 'http://localhost:8000/api/v1';
+  // Use 10.0.2.2 for Android emulator, 127.0.0.1 for Web/iOS/Windows
+  // Using 127.0.0.1 avoids localhost resolution issues (IPv4 vs IPv6)
+  static const String baseUrl = 'http://127.0.0.1:8000/api/v1';
 
-  Future<List<Notice>> fetchNotices(
-      {String? keyword, bool excludeClosed = false}) async {
+  Future<List<Notice>> fetchNotices({
+    String? keyword,
+    bool excludeClosed = false,
+  }) async {
     try {
       final queryParams = <String, String>{};
       if (keyword != null && keyword.isNotEmpty) {
@@ -19,8 +21,9 @@ class ApiService {
       }
       queryParams['exclude_closed'] = excludeClosed.toString();
 
-      final uri =
-          Uri.parse('$baseUrl/bids/feed').replace(queryParameters: queryParams);
+      final uri = Uri.parse(
+        '$baseUrl/bids/feed',
+      ).replace(queryParameters: queryParams);
       final response = await http.get(uri);
 
       if (response.statusCode == 200) {
@@ -75,8 +78,9 @@ class ApiService {
 
   Future<void> toggleFavorite(String bidNo) async {
     try {
-      final response =
-          await http.post(Uri.parse('$baseUrl/bids/$bidNo/favorite'));
+      final response = await http.post(
+        Uri.parse('$baseUrl/bids/$bidNo/favorite'),
+      );
       if (response.statusCode != 200) {
         throw Exception('Failed to toggle favorite: ${response.statusCode}');
       }
@@ -87,8 +91,9 @@ class ApiService {
 
   Future<List<Notice>> fetchFavorites() async {
     try {
-      final response =
-          await http.get(Uri.parse('$baseUrl/bids/favorites/list'));
+      final response = await http.get(
+        Uri.parse('$baseUrl/bids/favorites/list'),
+      );
       if (response.statusCode == 200) {
         List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
         return body.map((dynamic item) => Notice.fromJson(item)).toList();
@@ -102,8 +107,9 @@ class ApiService {
 
   Future<List<OpeningResult>> fetchOpeningResults(String bidNo) async {
     try {
-      final response =
-          await http.get(Uri.parse('$baseUrl/bids/$bidNo/results'));
+      final response = await http.get(
+        Uri.parse('$baseUrl/bids/$bidNo/results'),
+      );
 
       if (response.statusCode == 200) {
         List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
@@ -145,6 +151,23 @@ class ApiService {
       }
     } catch (e) {
       throw Exception('Failed to update user: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchScientificAnalysis(String bidNo) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/analysis/$bidNo/recommend points'),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      } else {
+        throw Exception(
+          'Failed to load scientific analysis: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Failed to load scientific analysis: $e');
     }
   }
 }
