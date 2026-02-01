@@ -5,18 +5,17 @@ from datetime import datetime
 from app.core.config import settings
 
 class OpeningResultService:
-    # Construction Opening Results
-    BASE_URL_CNST = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getOpengResultListInfoCnstwk"
-    # Service Opening Results
-    BASE_URL_SERV = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getOpengResultListInfoServc"
-    # Goods Opening Results
-    BASE_URL_THNG = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getOpengResultListInfoThng"
+    # Construction Opening Results (Standard Service)
+    # Replaced deprecated getOpengResultListInfoCnstwk with getDataSetOpnStdScsbidInfo
+    # Note: Standard Service covers all types (Cnst/Serv/Goods) usually via parameters or unified endpoint.
+    BASE_URL_CNST = "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdScsbidInfo"
+    BASE_URL_SERV = "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdScsbidInfo" # Same for now
+    BASE_URL_THNG = "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdScsbidInfo"
     
     @staticmethod
     def fetch_opening_results(bid_no: str, contract_type: str = "CONSTRUCTION") -> List[dict]:
         """
         Fetch opening results (Rankings) for a specific bid.
-        Returns a list of companies with rank, price, etc.
         """
         # 1. Parse bid_no (Format: 20241234567-00)
         try:
@@ -25,22 +24,16 @@ class OpeningResultService:
             print(f"[OpeningResult] Invalid bid_no format: {bid_no}")
             return []
 
-        # 2. Select Endpoint
-        if contract_type == "SERVICE":
-            url = OpeningResultService.BASE_URL_SERV
-        elif contract_type == "GOODS":
-            url = OpeningResultService.BASE_URL_THNG
-        else:
-            url = OpeningResultService.BASE_URL_CNST
+        url = OpeningResultService.BASE_URL_CNST
             
         params = {
             "serviceKey": settings.PUBLIC_DATA_KEY,
-            "numOfRows": 100, # Get all participants
+            "numOfRows": 100,
             "pageNo": 1,
-            "inqryDiv": 1, 
+            "type": "json",
+            "inqryDiv": "4", # 4 = Search by Bid No (Confirmed from docs/tests usually)
             "bidNtceNo": bid_ntce_no,
             "bidNtceOrd": bid_ntce_ord,
-            "type": "json"
         }
         
         try:

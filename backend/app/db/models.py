@@ -51,7 +51,12 @@ class Notice(Base):
     emergency_bid = Column(String)
     rebid_yn = Column(String)
     attachment_url = Column(String)
+    attachment_url = Column(String)
     attachment_name = Column(String)
+
+    # Calculator Fields
+    a_value = Column(Integer, default=0) # A값 (국민연금, 건강보험 등 고정비용)
+    net_cost = Column(Integer, default=0) # 순공사원가 (투찰 하한선 방어용)
     
     # Relationships
     bids = relationship("UserBid", back_populates="notice")
@@ -85,7 +90,10 @@ class Notice(Base):
             "emergency_bid": self.emergency_bid,
             "rebid_yn": self.rebid_yn,
             "attachment_url": self.attachment_url,
+            "attachment_url": self.attachment_url,
             "attachment_name": self.attachment_name,
+            "a_value": self.a_value,
+            "net_cost": self.net_cost,
         }
 
 class UserBid(Base):

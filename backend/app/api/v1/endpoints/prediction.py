@@ -38,16 +38,36 @@ async def get_scientific_recommendation(
     agency_name = notice.organization
     basic_price = notice.basic_price
     
-    # 2. Run Algos
+    # 2. Run Algo 1, 2, 3 (Existing)
     # Algo 1: Agency Stats
     agency_stats = WinningRateService.get_agency_stats(db, agency_name)
     
     # Algo 2: Monte Carlo
-    # Use real basic price
     mc_results = WinningRateService.run_monte_carlo_simulation(basic_price, agency_stats)
     
     # Algo 3: Blue Ocean
     blue_ocean = WinningRateService.get_blue_ocean_strategy(db, bid_no)
+
+    # 4. Phase 4: Qualification Check
+    # Get User (Mock ID 1)
+    user = db.query(models.User).filter(models.User.id == 1).first()
+    qualification = {}
+    
+    if user:
+        from app.services.qualification_checker import QualificationChecker
+        # Convert SQLAlchemy model to Dict-like for Checker if needed, but Checker expects model for User and Dict for Notice
+        # Notice is model, convert to dict for checker compatibility or update checker
+        # Let's adjust checker call to pass model.Notice as dict
+        notice_dict = {
+            "bidNtceNm": notice.title,
+            "LmtRegion": notice.region,
+            # "sucsfbidMthdNm": notice.contract_method # If needed
+        }
+        
+        qualification = QualificationChecker.check_qualification(notice_dict, user)
+        
+    # 5. Algo 4: Competition Prediction
+    competition = WinningRateService.predict_competition_rate(notice)
     
     # 3. Format Response
     return {
@@ -59,5 +79,7 @@ async def get_scientific_recommendation(
         "blue_ocean": {
             "strategies": blue_ocean,
             "description": "경쟁사 분포 분석 기반 틈새 시장"
-        }
+        },
+        "competition": competition,
+        "qualification": qualification
     }

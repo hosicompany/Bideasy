@@ -20,7 +20,7 @@ class BidCalculatorScreen extends StatefulWidget {
 }
 
 class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
-  double _rate = -5.0; // 사정률 (기본값 -5%)
+  final double _rate = -5.0; // 사정률 (기본값 -5%)
 
   // A값 (고정비용) - TODO: 백엔드에서 자동 추출
   int _aValue = 0;
@@ -160,7 +160,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
               const SizedBox(height: 24),
 
               // Phase 3: Scientific Bidding Dashboard
-              Text(
+              const Text(
                 "🧪 과학적 분석 (Scientific Bidding)",
                 style: TextStyle(
                     fontSize: 20,
@@ -206,7 +206,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
           const SizedBox(height: 8),
           Text(
             widget.notice.organization ?? "발주처 미상",
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 13,
               color: AppColors.textSub,
             ),
@@ -329,7 +329,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
       child: Column(
         children: [
           // 사정률 표시
-          Text(
+          const Text(
             "사정률",
             style: TextStyle(
               fontSize: 13,
@@ -338,9 +338,9 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            "${_rate > 0 ? '+' : ''}${_rate.toStringAsFixed(2)}%",
+            "${_rate > 0 ? '+' : ''}${_rate.toStringAsFixed(4)}%", // 소수점 4자리까지 표시
             style: TextStyle(
-              fontSize: 36,
+              fontSize: 32, // 약간 축소
               fontWeight: FontWeight.w800,
               color: activeColor,
             ),
@@ -364,55 +364,90 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
               value: _rate < _minSafeRate ? _minSafeRate : _rate,
               min: _minSafeRate > -15.0 ? _minSafeRate : -15.0,
               max: 5.0,
-              divisions: 200,
+              divisions: null, // 연속적인 값 (미세조정 기능 보완)
               onChanged: (value) {
-                final oldSafetyLevel = _safetyLevel;
-                if ((value * 10).round() != (_rate * 10).round()) {
-                  HapticFeedback.lightImpact();
-                }
-                setState(() => _rate = value);
-                // 위험 구간 진입/탈출 시 강한 햅틱 피드백
-                if (oldSafetyLevel != _safetyLevel) {
-                  if (_safetyLevel == "DANGER") {
-                    HapticFeedback.heavyImpact();
-                  } else if (oldSafetyLevel == "DANGER") {
-                    HapticFeedback.mediumImpact();
-                  }
-                }
+                // 슬라이더로는 0.01 단위로 스냅
+                _updateRate(double.parse(value.toStringAsFixed(2)));
               },
             ),
           ),
 
-          // 슬라이더 라벨
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                    (_minSafeRate > -15.0 ? _minSafeRate : -15.0)
-                            .toStringAsFixed(1) +
-                        "%",
-                    style: TextStyle(fontSize: 11, color: AppColors.textSub)),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.dangerRed.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    "하한선: ${_minRate.toStringAsFixed(2)}%",
-                    style: const TextStyle(
-                        fontSize: 10, color: AppColors.dangerRed),
-                  ),
+          // 슬라이더 및 미세조정 섹션
+          Column(
+            children: [
+              // 미세 조정 버튼 (New)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildFineTuneButton(-0.01, activeColor),
+                  const SizedBox(width: 12),
+                  _buildFineTuneButton(-0.1, activeColor),
+                  const SizedBox(width: 24), // Spacer
+                  _buildFineTuneButton(0.1, activeColor),
+                  const SizedBox(width: 12),
+                  _buildFineTuneButton(0.01, activeColor),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // 하한선 라벨
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                        "${(_minSafeRate > -15.0 ? _minSafeRate : -15.0)
+                                .toStringAsFixed(1)}%",
+                        style:
+                            const TextStyle(fontSize: 11, color: AppColors.textSub)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.dangerRed.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        "하한선: ${_minRate.toStringAsFixed(3)}%",
+                        style: const TextStyle(
+                            fontSize: 10, color: AppColors.dangerRed),
+                      ),
+                    ),
+                    const Text("+5%",
+                        style:
+                            TextStyle(fontSize: 11, color: AppColors.textSub)),
+                  ],
                 ),
-                Text("+5%",
-                    style: TextStyle(fontSize: 11, color: AppColors.textSub)),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFineTuneButton(double amount, Color color) {
+    final isPositive = amount > 0;
+    final label = isPositive ? "+$amount %" : "$amount %";
+
+    return InkWell(
+      onTap: () {
+        _updateRate(_rate + amount);
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: color.withOpacity(0.3)),
+          borderRadius: BorderRadius.circular(8),
+          color: color.withOpacity(0.05),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w600, color: color),
+        ),
       ),
     );
   }
@@ -490,7 +525,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             const SizedBox(height: 12),
             Text(
               "하한선 대비 여유: +${_distanceFromLimit.toStringAsFixed(1)}%",
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 12,
                 color: AppColors.textSub,
               ),
@@ -532,11 +567,11 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             color: AppColors.primaryBlue.withOpacity(0.05),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Row(
+          child: const Row(
             children: [
-              const Icon(Icons.school_outlined,
+              Icon(Icons.school_outlined,
                   size: 18, color: AppColors.primaryBlue),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               Expanded(
                 child: Text(
                   "사정률이란 기초금액 대비 투찰 금액의 비율입니다.\n예: -5% = 기초금액의 95%로 투찰",

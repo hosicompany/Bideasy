@@ -10,4 +10,4 @@ if %errorlevel% neq 0 (
 )
 echo Starting Uvicorn Server...
 python -m uvicorn main:app --reload
-pause
+

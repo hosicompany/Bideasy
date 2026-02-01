@@ -273,6 +273,12 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
           _buildHeader(data.sentiment),
           const SizedBox(height: 16),
 
+          // 1.5. 자격 판별 결과 (NEW)
+          if (data.qualification != null) ...[
+            _buildQualificationBanner(data.qualification!),
+            const SizedBox(height: 16),
+          ],
+
           // 2. 공고 요약
           if (data.summary.isNotEmpty) ...[
             _buildSummarySection(data.summary),
@@ -299,6 +305,86 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
 
           // 7. 액션 버튼
           _buildActionButtons(data),
+        ],
+      ),
+    );
+  }
+
+  /// 자격 판별 배너
+  Widget _buildQualificationBanner(QualificationResult qualification) {
+    final isPass = qualification.isPass;
+    final color = isPass ? AppColors.safeGreen : AppColors.dangerRed;
+    final bgColor = isPass ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE);
+    final icon = isPass ? Icons.check_circle_rounded : Icons.cancel_rounded;
+    final title = isPass ? "입찰 가능" : "입찰 불가";
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+              if (!isPass) ...[
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    "자격 미달",
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSub,
+                    ),
+                  ),
+                )
+              ]
+            ],
+          ),
+          if (qualification.details.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ...qualification.details.map((detail) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("• ",
+                          style: TextStyle(color: color.withOpacity(0.7))),
+                      Expanded(
+                        child: Text(
+                          detail,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textMain.withOpacity(0.8),
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ))
+          ]
         ],
       ),
     );
@@ -451,7 +537,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
               const SizedBox(width: 6),
               Text(
                 title,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 12,
                   color: AppColors.textSub,
                 ),
@@ -721,10 +807,10 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
         color: Colors.grey[100],
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
+      child: const Row(
         children: [
           Icon(Icons.verified_outlined, size: 16, color: AppColors.textSub),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Expanded(
             child: Text(
               "모든 정보는 공공데이터포털 API 및 법률 기준에서 도출되었습니다.",

@@ -7,6 +7,8 @@ from app.core.config import settings
 SQLALCHEMY_DATABASE_URL = "sqlite:///./bideasy.db"
 
 # connect_args={"check_same_thread": False} is required for SQLite
+import os
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
     connect_args={"check_same_thread": False}

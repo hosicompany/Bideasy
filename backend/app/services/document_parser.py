@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Document Parser Service - Extracts text from HWP, PDF files
+Document Parser Service - Extracts text from HWP, HWPX, PDF files
 For deep analysis of bid attachments
 """
 import os
+import re
 import zlib
 import struct
+import zipfile
+import xml.etree.ElementTree as ET
 from typing import Optional
 
 try:
@@ -203,6 +206,106 @@ class HwpTextExtractor:
         return "".join(text_chars)
 
 
+class HwpxTextExtractor:
+    """
+    HWPX (한글 2014+) 파일에서 텍스트 추출
+
+    HWPX는 ZIP 기반 XML 포맷 (OOXML과 유사)
+    - Contents/section*.xml 에 본문 텍스트 저장
+    - 텍스트는 <hp:t> 태그 내부에 저장
+    """
+
+    # HWPX XML 네임스페이스
+    NAMESPACES = {
+        'hp': 'http://www.hancom.co.kr/hwpml/2011/paragraph',
+        'hc': 'http://www.hancom.co.kr/hwpml/2011/core',
+    }
+
+    @staticmethod
+    def extract(file_path: str) -> str:
+        """
+        HWPX 파일에서 텍스트 추출
+
+        Args:
+            file_path: HWPX 파일 경로
+
+        Returns:
+            추출된 텍스트 (실패시 빈 문자열)
+        """
+        if not os.path.exists(file_path):
+            print(f"[HWPX] 파일을 찾을 수 없음: {file_path}")
+            return ""
+
+        try:
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                # Contents/section*.xml 파일 목록 수집
+                section_files = []
+                for name in zf.namelist():
+                    if name.startswith('Contents/section') and name.endswith('.xml'):
+                        section_files.append(name)
+
+                if not section_files:
+                    print(f"[HWPX] 섹션 파일을 찾을 수 없음: {file_path}")
+                    return ""
+
+                # 섹션 번호순 정렬 (section0.xml, section1.xml, ...)
+                section_files.sort(key=lambda x: int(re.search(r'section(\d+)', x).group(1)))
+
+                all_text = []
+                for section_file in section_files:
+                    try:
+                        xml_content = zf.read(section_file)
+                        text = HwpxTextExtractor._parse_section_xml(xml_content)
+                        if text:
+                            all_text.append(text)
+                    except Exception as e:
+                        print(f"[HWPX] 섹션 파싱 실패 {section_file}: {e}")
+                        continue
+
+                return "\n".join(all_text)
+
+        except zipfile.BadZipFile:
+            print(f"[HWPX] 잘못된 ZIP 파일: {file_path}")
+            return ""
+        except Exception as e:
+            print(f"[HWPX] 텍스트 추출 실패: {e}")
+            return ""
+
+    @staticmethod
+    def _parse_section_xml(xml_content: bytes) -> str:
+        """
+        섹션 XML에서 텍스트 추출
+
+        Args:
+            xml_content: XML 파일 내용
+
+        Returns:
+            추출된 텍스트
+        """
+        try:
+            root = ET.fromstring(xml_content)
+        except ET.ParseError as e:
+            print(f"[HWPX] XML 파싱 오류: {e}")
+            return ""
+
+        texts = []
+
+        # <hp:t> 태그에서 텍스트 추출 (네임스페이스 사용)
+        for t_elem in root.iter('{http://www.hancom.co.kr/hwpml/2011/paragraph}t'):
+            if t_elem.text:
+                texts.append(t_elem.text)
+
+        # 네임스페이스 없이도 시도 (일부 HWPX 파일 호환)
+        if not texts:
+            for t_elem in root.iter():
+                if t_elem.tag.endswith('}t') or t_elem.tag == 't':
+                    if t_elem.text:
+                        texts.append(t_elem.text)
+
+        # 문단 구분을 위해 줄바꿈 추가
+        return "\n".join(texts)
+
+
 class PdfTextExtractor:
     """
     PDF 파일에서 텍스트 추출
@@ -254,7 +357,7 @@ class DocumentParser:
     파일 확장자에 따라 적절한 파서 선택
     """
 
-    SUPPORTED_EXTENSIONS = {".hwp", ".pdf"}
+    SUPPORTED_EXTENSIONS = {".hwp", ".hwpx", ".pdf"}
 
     @staticmethod
     def extract_text(file_path: str) -> Optional[str]:
@@ -271,6 +374,8 @@ class DocumentParser:
 
         if ext == ".hwp":
             return HwpTextExtractor.extract(file_path)
+        elif ext == ".hwpx":
+            return HwpxTextExtractor.extract(file_path)
         elif ext == ".pdf":
             return PdfTextExtractor.extract(file_path)
         else:

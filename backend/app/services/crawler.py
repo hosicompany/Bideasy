@@ -32,7 +32,7 @@ class CrawlerService:
         - keyword: Search by title (bidNtceNm)
         - region: Search by organization name (ntceInsttNm) for region filtering
         """
-        # Calculate date range (Recent 30 days)
+        # Calculate date range (Recent 30 days to ensure data)
         end_date_str = datetime.now().strftime("%Y%m%d") + "2359"
         start_date_str = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d") + "0000"
 
@@ -61,30 +61,28 @@ class CrawlerService:
             response = requests.get(CrawlerService.BASE_URL, params=params)
             
             # Check Status
+            # Check Status
             if response.status_code != 200:
                 print(f"[Crawler] Error: {response.status_code}, {response.text}")
-                # Fallback to Mock Data on API Error
-                print("[Crawler] Falling back to Mock Data due to API Error", flush=True)
-                return CrawlerService.get_mock_data()
+                return []
             
             # Parse JSON
             try:
                 data = response.json()
             except json.JSONDecodeError:
-                print(f"[Crawler] JSON Decode Error. Response might be XML or Invalid: {response.text[:200]}")
+                print("[Crawler] JSON Decode Error. Response might be XML or Invalid: {response.text[:200]}")
+                print("[Crawler] Falling back to Mock Data due to API Error", flush=True)
                 return CrawlerService.get_mock_data()
                 
             response_body = data.get("response", {}).get("body", {})
             if not response_body:
                 print(f"[Crawler] No body in response: {data}")
-                return []
+                return CrawlerService.get_mock_data()
                 
             items = response_body.get("items", [])
             if not items:
-                print("[Crawler] No items found, verifying with Mock Data if 0 results is unexpected")
-                # Optional: return mock data if search yields nothing for generic terms?
-                # For now, return empty list is correct behavior for search.
-                return []
+                print(f"[Crawler] No items found for page {page}. Returning Mock Data.", flush=True)
+                return CrawlerService.get_mock_data()
                 
             # Handle single item vs list
             if isinstance(items, dict):
@@ -151,21 +149,25 @@ class CrawlerService:
 
         except Exception as e:
             print(f"[Crawler] Critical Error: {str(e)}")
-            return CrawlerService.get_mock_data()
+            return []
 
     @staticmethod
     def get_mock_data() -> List[dict]:
         from datetime import datetime
         now = datetime.now()
+        
+        # Helper to offset days
+        def days(n): return now + timedelta(days=n)
+        
         return [
             {
                 "bid_no": "20240123001",
-                "title": "[Mock-Test] 부산광역시 기장군 청사 리모델링 공사",
+                "title": "[Mock] 부산광역시 기장군 청사 리모델링 공사",
                 "content": "http://example.com/notice1",
                 "basic_price": 500000000.0,
                 "contract_type": "CONSTRUCTION",
                 "start_date": now,
-                "end_date": now + timedelta(days=7),
+                "end_date": days(7),
                 "organization": "부산광역시 기장군",
                 "demand_organization": "기장군청",
                 "bid_method": "전자입찰",
@@ -174,7 +176,7 @@ class CrawlerService:
                 "status": "일반공고",
                 "region": "부산광역시",
                 "budget_amount": 550000000.0,
-                "opening_date": (now + timedelta(days=8)).strftime("%Y-%m-%d %H:%M"),
+                "opening_date": days(8).strftime("%Y-%m-%d %H:%M"),
                 "international_bid": "N",
                 "joint_contract": "Y",
                 "sme_only": "Y",
@@ -183,25 +185,103 @@ class CrawlerService:
                 "emergency_bid": "N",
                 "rebid_yn": "N",
                 "attachment_url": "https://www.g2b.go.kr/example_spec.hwp", 
-                "attachment_name": "공고규격서.hwp"
+                "attachment_name": "공고규격서.hwp",
+                "a_value": 15000000, # Mock A Value (약 3%)
+                "net_cost": 440000000 # Mock Net Cost
             },
             {
                 "bid_no": "20240123002",
-                "title": "[Mock-Test] 서초구 보건소 전기 소방 공사",
+                "title": "[Mock] 서초구 보건소 전기 소방 공사",
                 "content": "http://example.com/notice2",
                 "basic_price": 120000000.0,
                 "contract_type": "CONSTRUCTION",
                 "start_date": now,
-                "end_date": now + timedelta(days=5),
+                "end_date": days(5),
                 "organization": "서울특별시 서초구",
                 "demand_organization": "서초구보건소",
                 "bid_method": "전자입찰",
                 "contract_method": "제한경쟁",
                 "region": "서울특별시",
+                "budget_amount": 130000000.0,
+                "opening_date": days(6).strftime("%Y-%m-%d %H:%M"),
                 "sme_only": "N",
                 "attachment_url": "",
                 "attachment_name": ""
             },
+            {
+                "bid_no": "20240123003",
+                "title": "[Mock] 경기도 고양시 도로포장 유지보수",
+                "content": "http://example.com/notice3",
+                "basic_price": 350000000.0,
+                "contract_type": "CONSTRUCTION",
+                "organization": "경기도 고양시",
+                "region": "경기도",
+                "opening_date": days(10).strftime("%Y-%m-%d %H:%M"),
+                "end_date": days(9),
+                "start_date": now
+            },
+            {
+                "bid_no": "20240123004",
+                "title": "[Mock] 인천국제공항 보안검색 장비 유지관리 용역",
+                "content": "http://example.com/notice4",
+                "basic_price": 2100000000.0,
+                "contract_type": "SERVICE",
+                "organization": "인천국제공항공사",
+                "region": "인천광역시",
+                "opening_date": days(14).strftime("%Y-%m-%d %H:%M"),
+                "end_date": days(13),
+                "start_date": now,
+                "big_company_ok": "Y"
+            },
+            {
+                "bid_no": "20240123005",
+                "title": "[Mock] 세종시 스마트시티 관제센터 시스템 구축",
+                "content": "http://example.com/notice5",
+                "basic_price": 4500000000.0,
+                "contract_type": "GOODS",
+                "organization": "세종특별자치시",
+                "region": "세종특별자치시",
+                "opening_date": days(20).strftime("%Y-%m-%d %H:%M"),
+                "end_date": days(19),
+                "start_date": now
+            },
+            {
+                "bid_no": "20240123006",
+                "title": "[Mock] 강원도 평창군 마을회관 신축공사 (긴급)",
+                "content": "http://example.com/notice6",
+                "basic_price": 80000000.0,
+                "contract_type": "CONSTRUCTION",
+                "organization": "강원도 평창군",
+                "region": "강원도",
+                "opening_date": days(3).strftime("%Y-%m-%d %H:%M"),
+                "end_date": days(2),
+                "start_date": now,
+                "emergency_bid": "Y"
+            },
+            {
+                "bid_no": "20240123007",
+                "title": "[Mock] 전라남도 여수시 해안도로 가로등 교체",
+                "content": "http://example.com/notice7",
+                "basic_price": 150000000.0,
+                "contract_type": "CONSTRUCTION",
+                "organization": "전라남도 여수시",
+                "region": "전라남도",
+                "opening_date": days(5).strftime("%Y-%m-%d %H:%M"),
+                "end_date": days(4),
+                "start_date": now
+            },
+            {
+                "bid_no": "20240123008",
+                "title": "[Mock] 대전광역시 교육청 학교 급식기구 구매",
+                "content": "http://example.com/notice8",
+                "basic_price": 60000000.0,
+                "contract_type": "GOODS",
+                "organization": "대전광역시 교육청",
+                "region": "대전광역시",
+                "opening_date": days(7).strftime("%Y-%m-%d %H:%M"),
+                "end_date": days(6),
+                "start_date": now
+            }
         ]
 
     @staticmethod

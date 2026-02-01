@@ -31,7 +31,7 @@ class LoadingStateWidget extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               message!,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 14,
                 color: AppColors.textSub,
               ),
@@ -186,7 +186,7 @@ class ErrorStateWidget extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               message ?? "잠시 후 다시 시도해주세요",
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 14,
                 color: AppColors.textSub,
                 height: 1.5,
@@ -269,7 +269,7 @@ class EmptyStateWidget extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               message ?? "",
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 14,
                 color: AppColors.textSub,
                 height: 1.5,

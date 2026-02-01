@@ -1,5 +1,6 @@
 /// Enhanced AI Analysis Model
 /// 환각 방지 규칙 기반 분석 결과를 위한 모델
+library;
 
 enum AnalysisSentiment { safe, caution, danger }
 
@@ -13,6 +14,7 @@ class AiAnalysis {
   final AnalysisSentiment sentiment;
   final AValueInfo? aValueInfo;
   final int? netCost;
+  final QualificationResult? qualification;
 
   AiAnalysis({
     required this.summary,
@@ -23,6 +25,7 @@ class AiAnalysis {
     required this.sentiment,
     this.aValueInfo,
     this.netCost,
+    this.qualification,
   });
 
   factory AiAnalysis.fromJson(Map<String, dynamic> json) {
@@ -57,6 +60,10 @@ class AiAnalysis {
           ? AValueInfo.fromJson(json['a_value_info'] as Map<String, dynamic>)
           : null,
       netCost: json['net_cost'] as int?,
+      qualification: json['qualification'] != null
+          ? QualificationResult.fromJson(
+              json['qualification'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -274,4 +281,32 @@ class BidTip {
         return '#66BB6A'; // Green
     }
   }
+}
+
+/// 자격 판별 결과
+class QualificationResult {
+  final String status; // PASS, FAIL
+  final String message;
+  final List<String> details;
+  final List<String> badges;
+
+  QualificationResult({
+    required this.status,
+    required this.message,
+    required this.details,
+    required this.badges,
+  });
+
+  factory QualificationResult.fromJson(Map<String, dynamic> json) {
+    return QualificationResult(
+      status: json['status'] ??
+          'PASS', // Default to PASS if unknown (safe fallback?) or FAIL? Let's assume PASS unless explicit FAIL
+      message: json['message'] ?? '',
+      details: List<String>.from(json['details'] ?? []),
+      badges: List<String>.from(json['badges'] ??
+          []), // Backend might not send badges yet, check checker
+    );
+  }
+
+  bool get isPass => status == "PASS";
 }

@@ -21,7 +21,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ApiService apiService = ApiService();
-  late Future<List<Notice>> futureNotices;
+
+  // Infinite Scroll State
+  List<Notice> _notices = [];
+  bool _isLoading = false;
+  bool _isLoadingMore = false;
+  int _currentPage = 1;
+  final ScrollController _scrollController = ScrollController();
+
   late Future<List<Notice>> futureFavorites;
   String? _keyword;
   final Set<String> _favoriteIds = {};
@@ -33,12 +40,21 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _searchController = TextEditingController(); // Initialize empty first
-    // Initialize futureNotices immediately to prevent LateInitializationError
-    futureNotices = apiService.fetchNotices();
+    _searchController = TextEditingController();
+    _scrollController.addListener(_scrollListener);
+
+    _loadFilters(); // This triggers initial load
     futureFavorites = Future.value([]);
-    _loadFilters();
     _fetchFavorites();
+  }
+
+  void _scrollListener() {
+    if (_scrollController.position.pixels ==
+        _scrollController.position.maxScrollExtent) {
+      if (!_isLoading && !_isLoadingMore) {
+        _loadMoreNotices();
+      }
+    }
   }
 
   @override
@@ -52,12 +68,51 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _keyword = prefs.getString('keyword');
-      _searchController.text = _keyword ?? ""; // Sync controller
+      _searchController.text = _keyword ?? "";
       _excludeClosed = prefs.getBool('exclude_closed') ?? false;
 
-      futureNotices = apiService.fetchNotices(
-          keyword: _keyword, excludeClosed: _excludeClosed);
+      // Reset and Load First Page
+      _currentPage = 1;
+      _notices = [];
+      _fetchNotices(isInitial: true);
     });
+  }
+
+  Future<void> _fetchNotices({bool isInitial = false}) async {
+    if (isInitial) {
+      setState(() => _isLoading = true);
+    }
+
+    try {
+      final newNotices = await apiService.fetchNotices(
+          keyword: _keyword, excludeClosed: _excludeClosed, page: _currentPage);
+
+      if (mounted) {
+        setState(() {
+          if (isInitial) {
+            _notices = newNotices;
+          } else {
+            _notices.addAll(newNotices);
+          }
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+        // Show error only if it's initial load or meaningful
+      }
+    }
+  }
+
+  Future<void> _loadMoreNotices() async {
+    setState(() => _isLoadingMore = true);
+    _currentPage++;
+    await _fetchNotices(isInitial: false);
   }
 
   Future<void> _saveFilter({String? keyword, bool? excludeClosed}) async {
@@ -124,10 +179,13 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await apiService.triggerCrawl(); // Still crawl all
       await _fetchFavorites(); // Sync favorites
-      setState(() {
-        futureNotices = apiService.fetchNotices(
-            keyword: _keyword, excludeClosed: _excludeClosed);
-      });
+      await apiService.triggerCrawl();
+      await _fetchFavorites();
+
+      // Reset list
+      _currentPage = 1;
+      _notices = [];
+      await _fetchNotices(isInitial: true);
       if (mounted) {
         SnackBarUtils.showSuccess(
           context,
@@ -141,86 +199,90 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _buildNoticeList(Future<List<Notice>> futureList,
-      {bool isFavoriteTab = false}) {
-    return FutureBuilder<List<Notice>>(
-      future: futureList,
-      builder: (context, snapshot) {
-        // 로딩 상태
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const LoadingStateWidget(
-            message: "공고를 불러오는 중...",
-            skeletonCount: 4,
-          );
-        }
-
-        // 에러 상태
-        if (snapshot.hasError) {
-          final errorMsg = snapshot.error.toString();
-          // 네트워크/서버 에러 구분
-          if (errorMsg.contains('SocketException') ||
-              errorMsg.contains('Connection refused')) {
-            return NetworkErrorWidget(
-              onRetry: _refreshNotices,
-            );
+  Widget _buildNoticeList({bool isFavoriteTab = false}) {
+    // 1. Favorites Tab (Keep FutureBuilder for now)
+    if (isFavoriteTab) {
+      return FutureBuilder<List<Notice>>(
+        future: futureFavorites,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const LoadingStateWidget(
+                message: "불러오는 중...", skeletonCount: 4);
           }
-          return ErrorStateWidget(
-            title: "공고를 불러오지 못했어요",
-            message: "잠시 후 다시 시도해주세요",
-            onRetry: _refreshNotices,
-          );
-        }
-
-        // 빈 상태
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          if (isFavoriteTab) {
-            return EmptyStateWidget(
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const EmptyStateWidget(
               icon: Icons.star_border_rounded,
               title: "즐겨찾기한 공고가 없어요",
               message: "관심 있는 공고의 별 아이콘을 눌러\n즐겨찾기에 추가해보세요",
             );
           }
-          return EmptyStateWidget(
-            icon: Icons.search_off_rounded,
-            title: _keyword != null ? "검색 결과가 없어요" : "공고가 없어요",
-            message: _keyword != null
-                ? "'$_keyword' 검색 결과가 없습니다.\n다른 키워드로 검색해보세요"
-                : "새로운 공고가 등록되면 알려드릴게요",
-            action: _keyword != null
-                ? TextButton.icon(
-                    onPressed: () {
-                      _searchController.clear();
-                      _triggerSearch();
-                    },
-                    icon: const Icon(Icons.clear, size: 18),
-                    label: const Text("검색어 지우기"),
-                  )
-                : null,
-          );
-        }
-
-        final notices = snapshot.data!;
-        return RefreshIndicator(
-          onRefresh: _refreshNotices,
-          color: AppColors.primaryBlue,
-          child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: notices.length,
+          return ListView.builder(
+            itemCount: snapshot.data!.length,
             itemBuilder: (context, index) {
-              final notice = notices[index];
-              final isFav = _favoriteIds.contains(notice.bidNo);
+              final notice = snapshot.data![index];
               return NoticeCard(
                 notice: notice,
-                isFavorite: isFav,
+                isFavorite: true,
                 onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
-                onTap: () {
-                  _showCalculator(context, notice);
-                },
+                onTap: () => _showCalculator(context, notice),
               );
             },
-          ),
-        );
-      },
+          );
+        },
+      );
+    }
+
+    // 2. Main Feed (Infinite Scroll)
+    if (_isLoading && _notices.isEmpty) {
+      return const LoadingStateWidget(
+          message: "최신 공고를 불러옵니다...", skeletonCount: 4);
+    }
+
+    if (_notices.isEmpty) {
+      return EmptyStateWidget(
+        icon: Icons.search_off_rounded,
+        title: _keyword != null ? "검색 결과가 없어요" : "공고가 없어요",
+        message: _keyword != null
+            ? "'$_keyword' 검색 결과가 없습니다."
+            : "새로운 공고가 등록되면 알려드릴게요",
+        action: _keyword != null
+            ? TextButton.icon(
+                onPressed: () {
+                  _searchController.clear();
+                  _triggerSearch();
+                },
+                icon: const Icon(Icons.clear, size: 18),
+                label: const Text("검색어 지우기"),
+              )
+            : null,
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refreshNotices,
+      color: AppColors.primaryBlue,
+      child: ListView.builder(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: _notices.length + (_isLoadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == _notices.length) {
+            return const Padding(
+              padding: EdgeInsets.all(20.0),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          final notice = _notices[index];
+          final isFav = _favoriteIds.contains(notice.bidNo);
+          return NoticeCard(
+            notice: notice,
+            isFavorite: isFav,
+            onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
+            onTap: () => _showCalculator(context, notice),
+          );
+        },
+      ),
     );
   }
 
@@ -231,8 +293,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final newKeyword = _searchController.text.trim();
     setState(() {
       _keyword = newKeyword.isEmpty ? null : newKeyword;
-      futureNotices = apiService.fetchNotices(
-          keyword: _keyword, excludeClosed: _excludeClosed);
+      // Reset list logic
+      _currentPage = 1;
+      _notices = [];
+      _fetchNotices(isInitial: true);
     });
     _saveFilter(keyword: _keyword);
   }
@@ -270,8 +334,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: () {
                         setState(() {
                           _excludeClosed = !_excludeClosed;
-                          futureNotices = apiService.fetchNotices(
-                              keyword: _keyword, excludeClosed: _excludeClosed);
+                          _currentPage = 1;
+                          _notices = [];
+                          _fetchNotices(isInitial: true);
                         });
                         _saveFilter(excludeClosed: _excludeClosed);
                       },
@@ -282,9 +347,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             onChanged: (val) {
                               setState(() {
                                 _excludeClosed = val ?? false;
-                                futureNotices = apiService.fetchNotices(
-                                    keyword: _keyword,
-                                    excludeClosed: _excludeClosed);
+                                _currentPage = 1;
+                                _notices = [];
+                                _fetchNotices(isInitial: true);
                               });
                               _saveFilter(excludeClosed: _excludeClosed);
                             },
@@ -353,9 +418,9 @@ class _HomeScreenState extends State<HomeScreen> {
         body: TabBarView(
           children: [
             // Tab 1: Feed
-            _buildNoticeList(futureNotices),
+            _buildNoticeList(),
             // Tab 2: Favorites
-            _buildNoticeList(futureFavorites, isFavoriteTab: true),
+            _buildNoticeList(isFavoriteTab: true),
           ],
         ),
       ),

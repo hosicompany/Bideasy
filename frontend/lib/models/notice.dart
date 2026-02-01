@@ -112,6 +112,8 @@ class Notice {
       rebidYn: json['rebid_yn'],
       attachmentUrl: json['attachment_url'],
       attachmentName: json['attachment_name'],
+      aValue: json['a_value'],
+      netCost: json['net_cost'],
     );
   }
 
@@ -136,8 +138,9 @@ class Notice {
     if (status != null) params['status'] = status!;
     if (region != null) params['region'] = region!;
     if (budgetAmount != null) params['budget_amount'] = budgetAmount.toString();
-    if (openingDate != null)
+    if (openingDate != null) {
       params['opening_date'] = openingDate!.toIso8601String(); // Use ISO format
+    }
     if (internationalBid != null) {
       params['international_bid'] = internationalBid!;
     }

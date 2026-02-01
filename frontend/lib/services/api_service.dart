@@ -13,6 +13,7 @@ class ApiService {
   Future<List<Notice>> fetchNotices({
     String? keyword,
     bool excludeClosed = false,
+    int page = 1,
   }) async {
     try {
       final queryParams = <String, String>{};
@@ -20,6 +21,8 @@ class ApiService {
         queryParams['keyword'] = keyword;
       }
       queryParams['exclude_closed'] = excludeClosed.toString();
+      queryParams['page'] = page.toString();
+      queryParams['limit'] = '20'; // Match backend limit
 
       final uri = Uri.parse(
         '$baseUrl/bids/feed',

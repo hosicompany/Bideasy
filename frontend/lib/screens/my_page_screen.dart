@@ -338,7 +338,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
           // 이메일
           Text(
             _user?.email ?? "-",
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 14,
               color: AppColors.textSub,
             ),
@@ -395,7 +395,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         const SizedBox(height: 8),
         Text(
           value,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
             color: AppColors.textMain,
@@ -404,7 +404,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         const SizedBox(height: 2),
         Text(
           label,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 12,
             color: AppColors.textSub,
           ),
@@ -476,7 +476,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         children: [
           Text(
             label,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: AppColors.textSub,
@@ -495,7 +495,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
               hintStyle: TextStyle(color: AppColors.textSub.withOpacity(0.5)),
               prefixIcon: Icon(icon, size: 20, color: AppColors.textSub),
               suffixText: suffix,
-              suffixStyle: TextStyle(
+              suffixStyle: const TextStyle(
                 fontSize: 14,
                 color: AppColors.textSub,
               ),
@@ -548,7 +548,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         children: [
           Text(
             label,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: AppColors.textSub,
@@ -556,7 +556,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: value,
+            initialValue: value,
             isExpanded: true,
             icon: const Icon(Icons.keyboard_arrow_down_rounded),
             style: const TextStyle(
@@ -695,13 +695,13 @@ class _MyPageScreenState extends State<MyPageScreen> {
             if (value != null)
               Text(
                 value,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 14,
                   color: AppColors.textSub,
                 ),
               ),
             if (showArrow)
-              Icon(
+              const Icon(
                 Icons.chevron_right_rounded,
                 size: 20,
                 color: AppColors.textSub,
@@ -734,7 +734,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
+            child: const Text(
               "취소",
               style: TextStyle(color: AppColors.textSub),
             ),

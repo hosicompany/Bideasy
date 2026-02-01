@@ -4,8 +4,7 @@ import '../services/api_service.dart';
 class ScientificAnalysisDashboard extends StatefulWidget {
   final String bidNo;
 
-  const ScientificAnalysisDashboard({Key? key, required this.bidNo})
-      : super(key: key);
+  const ScientificAnalysisDashboard({super.key, required this.bidNo});
 
   @override
   _ScientificAnalysisDashboardState createState() =>
@@ -43,7 +42,7 @@ class _ScientificAnalysisDashboardState
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_error != null) {
@@ -51,7 +50,7 @@ class _ScientificAnalysisDashboardState
     }
 
     if (_analysisData == null) {
-      return Center(child: Text("데이터가 없습니다."));
+      return const Center(child: Text("데이터가 없습니다."));
     }
 
     final agency = _analysisData!['agency_profile'] ?? {};
@@ -63,12 +62,15 @@ class _ScientificAnalysisDashboardState
       children: [
         _buildSectionHeader("📊 1. 발주처 성향 분석 (Agency Profiling)"),
         _buildAgencyCard(agency),
-        SizedBox(height: 20),
+        const SizedBox(height: 20),
         _buildSectionHeader("🎰 2. 몬테카를로 시뮬레이션 (확률 1등)"),
         _buildMonteCarloCard(monteCarlo),
-        SizedBox(height: 20),
+        const SizedBox(height: 20),
         _buildSectionHeader("🔵 3. 블루오션 전략 (경쟁 회피)"),
         _buildBlueOceanCard(blueOcean),
+        const SizedBox(height: 20),
+        _buildSectionHeader("📈 4. 예상 경쟁률 분석 (AI Prediction)"),
+        _buildCompetitionCard(_analysisData!['competition'] ?? {}),
       ],
     );
   }
@@ -78,7 +80,7 @@ class _ScientificAnalysisDashboardState
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Text(
         title,
-        style: TextStyle(
+        style: const TextStyle(
             fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo),
       ),
     );
@@ -92,20 +94,20 @@ class _ScientificAnalysisDashboardState
         child: Column(
           children: [
             if (data['message'] != null)
-              Text(data['message'], style: TextStyle(color: Colors.grey))
+              Text(data['message'], style: const TextStyle(color: Colors.grey))
             else ...[
               Text("이 발주처의 과거 낙찰 평균 사정률",
                   style: TextStyle(fontSize: 14, color: Colors.grey[700])),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
                 "${data['avg_rate']}%",
-                style: TextStyle(
+                style: const TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
                     color: Colors.black),
               ),
               Text("표본수: ${data['sample_size']}건",
-                  style: TextStyle(color: Colors.grey)),
+                  style: const TextStyle(color: Colors.grey)),
             ]
           ],
         ),
@@ -123,8 +125,9 @@ class _ScientificAnalysisDashboardState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(data['description'] ?? "", style: TextStyle(fontSize: 14)),
-            SizedBox(height: 10),
+            Text(data['description'] ?? "",
+                style: const TextStyle(fontSize: 14)),
+            const SizedBox(height: 10),
             if (topRates.isNotEmpty)
               Wrap(
                 spacing: 8,
@@ -136,7 +139,7 @@ class _ScientificAnalysisDashboardState
                     .toList(),
               )
             else
-              Text("시뮬레이션 데이터 없음"),
+              const Text("시뮬레이션 데이터 없음"),
           ],
         ),
       ),
@@ -162,10 +165,81 @@ class _ScientificAnalysisDashboardState
               subtitle: Text(s['reason']),
               trailing: Text(
                 "${s['rate']}%",
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             );
           }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompetitionCard(Map data) {
+    if (data.isEmpty) return const SizedBox();
+
+    final count = data['predicted_count'] ?? 0;
+    final difficulty = data['difficulty'] ?? "MEDIUM";
+    final message = data['message'] ?? "";
+
+    Color color;
+    IconData icon;
+
+    if (difficulty == "HIGH") {
+      color = Colors.red;
+      icon = Icons.local_fire_department_rounded;
+    } else if (difficulty == "LOW") {
+      color = Colors.blue;
+      icon = Icons.pool_rounded;
+    } else {
+      color = Colors.orange;
+      icon = Icons.balance_rounded;
+    }
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 28),
+                const SizedBox(width: 8),
+                Text(
+                  difficulty == "HIGH"
+                      ? "경쟁 매우 치열"
+                      : (difficulty == "LOW" ? "경쟁 원활" : "경쟁 보통"),
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold, color: color),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              "예상 참여 업체 수",
+              style: TextStyle(color: Colors.grey[700], fontSize: 14),
+            ),
+            Text(
+              "$count개사",
+              style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black87),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8)),
+              child: Text(
+                message,
+                style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+                textAlign: TextAlign.center,
+              ),
+            )
+          ],
         ),
       ),
     );

@@ -59,13 +59,13 @@ class _OpeningResultTableState extends State<OpeningResultTable> {
                   Container(
                     padding:
                         const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: AppColors.backgroundGrey,
                       borderRadius:
-                          const BorderRadius.vertical(top: Radius.circular(8)),
+                          BorderRadius.vertical(top: Radius.circular(8)),
                     ),
-                    child: Row(
-                      children: const [
+                    child: const Row(
+                      children: [
                         SizedBox(
                             width: 40,
                             child: Text("순위",

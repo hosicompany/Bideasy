@@ -28,14 +28,46 @@ class AttachmentDownloader:
     async def get_attachment_list(bid_ntce_no: str, api_key: str) -> list:
         """
         입찰 공고의 첨부파일 목록 조회
-
-        Args:
-            bid_ntce_no: 입찰 공고 번호
-            api_key: 공공데이터 API 키
-
-        Returns:
-            첨부파일 정보 리스트
+        1. 상세 정보 API (BidDetail)에서 ntceSpecDocUrl 확인
+        2. 없으면 첨부파일 API 시도 (Fallback)
         """
+        attachments = []
+        
+        # 1. Try Bid Detail First (Reliable for ntceSpecDocUrl)
+        try:
+            # bid_ntce_no format: R25BK...-000 -> split to ID and Ord
+            if "-" in bid_ntce_no:
+                bid_no_only, bid_ord = bid_ntce_no.split("-")
+            else:
+                bid_no_only, bid_ord = bid_ntce_no, "00"
+                
+            print(f"[Attachment] Checking BidDetail for {bid_no_only}-{bid_ord}...", flush=True)
+            # Use the new robust method
+            detail = BidDetailService.fetch_bid_detail_robust(bid_no_only, bid_ord)
+            
+            if detail and "raw_data" in detail:
+                 item = detail["raw_data"]
+                 for i in range(1, 11):
+                     url_key = f"ntceSpecDocUrl{i}"
+                     name_key = f"ntceSpecFileNm{i}"
+                     
+                     url = item.get(url_key)
+                     name = item.get(name_key)
+                     
+                     if url and name:
+                         attachments.append({
+                             "atchFileNm": name,
+                             "atchFileUrl": url
+                         })
+        except Exception as e:
+             print(f"[Attachment] BidDetail Error: {e}")
+
+        if attachments:
+            print(f"[Attachment] Found {len(attachments)} files via BidDetail.", flush=True)
+            return attachments
+            
+        # 2. Fallback to Attachment API
+        print(f"[Attachment] Fallback to Attachment API for {bid_ntce_no}...", flush=True)
         params = {
             "serviceKey": api_key,
             "numOfRows": 100,
@@ -159,7 +191,7 @@ async def deep_analyze_bid(
 
             # 확장자 확인
             ext = os.path.splitext(file_name)[1].lower()
-            if ext not in {".hwp", ".pdf"}:
+            if ext not in {".hwp", ".hwpx", ".pdf"}:
                 print(f"[DeepAnalysis] 지원하지 않는 형식 스킵: {file_name}")
                 continue
 

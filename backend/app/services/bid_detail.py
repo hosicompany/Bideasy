@@ -15,6 +15,20 @@ class BidDetailService:
     BASE_URL = "https://apis.data.go.kr/1230000/PubDataOpnStdService/getDataSetOpnStdBidPblancInfo"
     
     @staticmethod
+    def fetch_bid_detail_robust(bid_ntce_no: str, bid_ntce_ord: str = "00") -> Optional[Dict]:
+        """
+        Try to fetch details from primary API, then fallback to List API.
+        """
+        result = BidDetailService.fetch_bid_detail(bid_ntce_no, bid_ntce_ord)
+        if result:
+            return result
+            
+        print("[BidDetail] Primary method returned None. Explicitly calling Fallback...", flush=True)
+        # Handle bid_no containing dash just in case
+        clean_bid_no = bid_ntce_no.split("-")[0] if "-" in bid_ntce_no else bid_ntce_no
+        return BidDetailService._fetch_from_list_api(clean_bid_no)
+
+    @staticmethod
     def fetch_bid_detail(bid_ntce_no: str, bid_ntce_ord: str = "00") -> Optional[Dict]:
         """
         Fetch detailed bid information from Public Data Portal API.
@@ -40,7 +54,8 @@ class BidDetailService:
             
             if response.status_code != 200:
                 print(f"[BidDetail] HTTP Error: {response.status_code}")
-                return None
+                # Don't return None here, raise exception to trigger fallback
+                raise Exception(f"HTTP Error {response.status_code}")
             
             try:
                 data = response.json()
@@ -74,7 +89,56 @@ class BidDetailService:
             
         except Exception as e:
             print(f"[BidDetail] Error: {e}")
-            return None
+            
+        print("[BidDetail] Primary API failed. Trying Fallback (List API - Construction)...", flush=True)
+        return BidDetailService._fetch_from_list_api(bid_ntce_no)
+
+    @staticmethod
+    def _fetch_from_list_api(bid_ntce_no: str) -> Optional[Dict]:
+        """Fallback: Fetch from Construction List API (Client-side filtering)"""
+        url = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk"
+        
+        # Recent 30 days (API fails if we send bidNtceNo param, so we fetch list and filter)
+        from datetime import datetime, timedelta
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+        
+        params = {
+            "serviceKey": settings.PUBLIC_DATA_KEY,
+            "numOfRows": 100, # Fetch enough to find it
+            "pageNo": 1,
+            "inqryDiv": 1,
+            "inqryBgnDt": start_date.strftime("%Y%m%d0000"),
+            "inqryEndDt": end_date.strftime("%Y%m%d2359"),
+            "type": "json"
+            # bidNtceNo param removed because it causes 0 results
+        }
+        
+        try:
+            print(f"[BidDetail] Fallback: Fetching list (30 days) to find {bid_ntce_no}...", flush=True)
+            response = requests.get(url, params=params, timeout=20)
+            if response.status_code != 200:
+                print(f"[BidDetail] Fallback HTTP Error: {response.status_code}")
+                return None
+                
+            data = response.json()
+            items = data.get("response", {}).get("body", {}).get("items", [])
+            
+            if isinstance(items, dict):
+                items = [items]
+            
+            # Client-side Filter
+            for item in items:
+                if item.get("bidNtceNo") == bid_ntce_no:
+                    print(f"[BidDetail] Found via Fallback List: {item.get('bidNtceNm', 'N/A')[:30]}", flush=True)
+                    return BidDetailService._format_bid_detail(item)
+                    
+            print(f"[BidDetail] Fallback: {bid_ntce_no} not found in recent {len(items)} items.")
+                
+        except Exception as e:
+            print(f"[BidDetail] Fallback Error: {e}")
+            
+        return None
     
     @staticmethod
     def _format_bid_detail(item: Dict) -> Dict:

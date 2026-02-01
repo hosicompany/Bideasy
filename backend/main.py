@@ -9,6 +9,20 @@ from app.db.session import engine
 # Create Tables (Simple migration for dev)
 Base.metadata.create_all(bind=engine)
 
+# Auto-migration for new fields (Dev mode)
+from sqlalchemy import text
+with engine.connect() as conn:
+    try:
+        conn.execute(text("SELECT a_value FROM notices LIMIT 1"))
+    except Exception:
+        print("Migrating DB: Adding a_value and net_cost columns...")
+        try:
+            conn.execute(text("ALTER TABLE notices ADD COLUMN a_value INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE notices ADD COLUMN net_cost INTEGER DEFAULT 0"))
+            conn.commit()
+        except Exception as e:
+            print(f"Migration failed: {e}")
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.PROJECT_VERSION,

@@ -139,6 +139,45 @@ async def analyze_bid(
             }
         
         analysis_result = generate_tips(bid_data, user_profile)
+        
+        # 4.1. Qualification Check (Phase 4)
+        if user:
+            from app.services.qualification_checker import QualificationChecker
+            # Prepare Notice Dict (bid_data has most fields, but need consistent keys)
+            # BidData keys: title, Organization, LmtRegion?
+            # Notice model might be better source if available, but bid_data is what we have blended.
+            
+            # Map bid_data to keys expected by Checker
+            # Checker expects: "LmtRegion" (from region), "bidNtceNm" (from title)
+            check_data = {
+                "bidNtceNm": bid_data.get("title", ""),
+                "LmtRegion": bid_data.get("region", ""),
+                "bidNtceNo": bid_no
+            }
+            
+            qual_result = QualificationChecker.check_qualification(check_data, user)
+            analysis_result["qualification"] = qual_result
+            
+            # Add top-level tip for Qualification
+            if qual_result["status"] == "FAIL":
+                analysis_result["tips"].insert(0, {
+                    "category": "eligibility",
+                    "icon": "⛔",
+                    "title": "입찰 불가: 자격 요건 미달",
+                    "content": qual_result["details"][0] if qual_result["details"] else "자격 요건을 확인해주세요.",
+                    "source": "자격분석엔진",
+                    "importance": "HIGH"
+                })
+            elif qual_result["status"] == "PASS":
+                analysis_result["tips"].insert(0, {
+                    "category": "eligibility",
+                    "icon": "✅",
+                    "title": "입찰 가능: 자격 요건 충족",
+                    "content": "지역 및 면허 요건을 만족합니다.",
+                    "source": "자격분석엔진",
+                    "importance": "LOW" # Positive info doesn't need "High" warning style usually, but good to show.
+                })
+
     except Exception as e:
         print(f"[AI] Tips generation error: {e}", flush=True)
         # Fallback (simplified)
