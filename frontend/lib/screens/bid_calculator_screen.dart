@@ -20,7 +20,7 @@ class BidCalculatorScreen extends StatefulWidget {
 }
 
 class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
-  final double _rate = -5.0; // 사정률 (기본값 -5%)
+  double _rate = -5.0; // 사정률 (기본값 -5%)
 
   // A값 (고정비용) - TODO: 백엔드에서 자동 추출
   int _aValue = 0;
@@ -587,6 +587,23 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
         ),
       ],
     );
+  }
+
+  void _updateRate(double newRate) {
+    // 범위 제한
+    final minRate = _minSafeRate > -15.0 ? _minSafeRate : -15.0;
+    final clampedRate = newRate.clamp(minRate, 5.0);
+
+    setState(() {
+      _rate = clampedRate;
+    });
+
+    // 위험 구간 진입/탈출 시 햅틱
+    if (_isDanger) {
+      HapticFeedback.heavyImpact();
+    } else {
+      HapticFeedback.lightImpact();
+    }
   }
 
   void _copyBidPrice() {
