@@ -34,6 +34,7 @@ kombu==5.6.2
 multidict==6.7.1
 olefile==0.47
 openai==2.21.0
+openpyxl>=3.1.0
 packaging==26.0
 passlib==1.7.4
 prompt_toolkit==3.0.52
@@ -44,6 +45,7 @@ pycparser==3.0
 pydantic==2.12.5
 pydantic-settings==2.13.0
 pydantic_core==2.41.5
+python-docx>=1.1.0
 PyMuPDF==1.27.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1

@@ -351,13 +351,100 @@ class PdfTextExtractor:
             return ""
 
 
+class ExcelTextExtractor:
+    """
+    Excel 파일(.xlsx, .xls)에서 텍스트 추출
+    openpyxl 사용
+    """
+
+    @staticmethod
+    def extract(file_path: str) -> str:
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            print("[Excel] openpyxl 라이브러리가 설치되지 않았습니다.")
+            return ""
+
+        if not os.path.exists(file_path):
+            print(f"[Excel] 파일을 찾을 수 없음: {file_path}")
+            return ""
+
+        try:
+            wb = load_workbook(file_path, read_only=True, data_only=True)
+            all_text = []
+
+            for sheet_name in wb.sheetnames:
+                sheet = wb[sheet_name]
+                sheet_text = [f"[시트: {sheet_name}]"]
+
+                for row in sheet.iter_rows():
+                    row_values = []
+                    for cell in row:
+                        if cell.value is not None:
+                            row_values.append(str(cell.value))
+                    if row_values:
+                        sheet_text.append("\t".join(row_values))
+
+                if len(sheet_text) > 1:
+                    all_text.append("\n".join(sheet_text))
+
+            wb.close()
+            return "\n\n".join(all_text)
+
+        except Exception as e:
+            print(f"[Excel] 텍스트 추출 실패: {e}")
+            return ""
+
+
+class WordTextExtractor:
+    """
+    Word 파일(.docx)에서 텍스트 추출
+    python-docx 사용
+    """
+
+    @staticmethod
+    def extract(file_path: str) -> str:
+        try:
+            from docx import Document
+        except ImportError:
+            print("[Word] python-docx 라이브러리가 설치되지 않았습니다.")
+            return ""
+
+        if not os.path.exists(file_path):
+            print(f"[Word] 파일을 찾을 수 없음: {file_path}")
+            return ""
+
+        try:
+            doc = Document(file_path)
+            all_text = []
+
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    all_text.append(para.text)
+
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            row_text.append(cell.text.strip())
+                    if row_text:
+                        all_text.append("\t".join(row_text))
+
+            return "\n".join(all_text)
+
+        except Exception as e:
+            print(f"[Word] 텍스트 추출 실패: {e}")
+            return ""
+
+
 class DocumentParser:
     """
     통합 문서 파서
     파일 확장자에 따라 적절한 파서 선택
     """
 
-    SUPPORTED_EXTENSIONS = {".hwp", ".hwpx", ".pdf"}
+    SUPPORTED_EXTENSIONS = {".hwp", ".hwpx", ".pdf", ".xlsx", ".xls", ".docx"}
 
     @staticmethod
     def extract_text(file_path: str) -> Optional[str]:
@@ -378,6 +465,10 @@ class DocumentParser:
             return HwpxTextExtractor.extract(file_path)
         elif ext == ".pdf":
             return PdfTextExtractor.extract(file_path)
+        elif ext in (".xlsx", ".xls"):
+            return ExcelTextExtractor.extract(file_path)
+        elif ext == ".docx":
+            return WordTextExtractor.extract(file_path)
         else:
             print(f"[DocumentParser] 지원하지 않는 파일 형식: {ext}")
             return None
@@ -387,3 +478,15 @@ class DocumentParser:
         """파일 형식 지원 여부 확인"""
         ext = os.path.splitext(file_path)[1].lower()
         return ext in DocumentParser.SUPPORTED_EXTENSIONS
+
+    @staticmethod
+    def get_supported_formats() -> list:
+        """지원하는 파일 형식 목록 반환"""
+        return [
+            {"ext": ".hwp", "name": "한글 5.0", "lib": "olefile"},
+            {"ext": ".hwpx", "name": "한글 2014+", "lib": "built-in"},
+            {"ext": ".pdf", "name": "PDF", "lib": "PyMuPDF"},
+            {"ext": ".xlsx", "name": "Excel", "lib": "openpyxl"},
+            {"ext": ".xls", "name": "Excel (구버전)", "lib": "openpyxl"},
+            {"ext": ".docx", "name": "Word", "lib": "python-docx"},
+        ]
