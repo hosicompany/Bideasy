@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../theme/style.dart';
 import '../widgets/state_widgets.dart';
 import '../utils/snackbar_utils.dart';
+import 'point_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -355,11 +356,22 @@ class _MyPageScreenState extends State<MyPageScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: _buildStatItem(
-                    label: "보유 포인트",
-                    value: "${_formatNumber(_user?.points ?? 0)}P",
-                    icon: Icons.monetization_on_rounded,
-                    color: AppColors.primaryBlue,
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PointScreen(),
+                        ),
+                      );
+                    },
+                    child: _buildStatItem(
+                      label: "보유 포인트",
+                      value: "${_formatNumber(_user?.points ?? 0)}P",
+                      icon: Icons.monetization_on_rounded,
+                      color: AppColors.primaryBlue,
+                    ),
                   ),
                 ),
                 Container(

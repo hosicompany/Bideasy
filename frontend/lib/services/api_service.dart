@@ -157,6 +157,74 @@ class ApiService {
     }
   }
 
+  // ─── Points API ───
+
+  Future<Map<String, dynamic>> getPointBalance() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/points/balance'));
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      } else {
+        throw Exception('Failed to load balance: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to load balance: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> deductPoints(String bidNo) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/points/deduct'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'bid_no': bidNo}),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      } else if (response.statusCode == 402) {
+        final body = jsonDecode(utf8.decode(response.bodyBytes));
+        throw Exception(body['detail'] ?? '포인트가 부족합니다');
+      } else {
+        throw Exception('Failed to deduct points: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('$e');
+    }
+  }
+
+  Future<Map<String, dynamic>> chargePoints(int amount) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/points/charge'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'amount': amount}),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      } else {
+        throw Exception('Failed to charge points: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to charge points: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getPointHistory({int limit = 20}) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/points/history?limit=$limit'),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
+        return body.cast<Map<String, dynamic>>();
+      } else {
+        throw Exception('Failed to load history: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to load history: $e');
+    }
+  }
+
   Future<Map<String, dynamic>> fetchScientificAnalysis(String bidNo) async {
     try {
       final response = await http.get(
