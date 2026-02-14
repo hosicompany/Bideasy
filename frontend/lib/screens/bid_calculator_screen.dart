@@ -6,6 +6,7 @@ import '../models/notice.dart';
 import '../widgets/ai_analysis_card.dart';
 import '../widgets/scientific_analysis_dashboard.dart';
 import '../widgets/opening_result_table.dart';
+import '../services/api_service.dart';
 import '../utils/snackbar_utils.dart';
 
 /// 공고 상세 화면 (통합)
@@ -21,6 +22,7 @@ class BidCalculatorScreen extends StatefulWidget {
 }
 
 class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
+  final ApiService _apiService = ApiService();
   double _rate = -5.0; // 사정률 (기본값 -5%)
 
   // A값 (고정비용)
@@ -631,9 +633,17 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ElevatedButton.icon(
-          onPressed: _isDanger ? null : _copyBidPrice,
-          icon: const Icon(Icons.copy_rounded, size: 20),
-          label: Text(_isDanger ? "하한선 미달 - 복사 불가" : "투찰금액 복사하기"),
+          onPressed: (_isDanger || _isCopying) ? null : _copyBidPrice,
+          icon: _isCopying
+              ? const SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.copy_rounded, size: 20),
+          label: Text(_isDanger
+              ? "하한선 미달 - 복사 불가"
+              : _isCopying
+                  ? "처리 중..."
+                  : "투찰금액 복사하기 (500P)"),
           style: ElevatedButton.styleFrom(
             backgroundColor:
                 _isDanger ? Colors.grey[400] : AppColors.primaryBlue,
@@ -686,10 +696,34 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
     }
   }
 
-  void _copyBidPrice() {
-    Clipboard.setData(ClipboardData(text: _bidPrice.toString()));
-    HapticFeedback.mediumImpact();
-    SnackBarUtils.showCopied(context, _formatPriceKorean(_bidPrice.toDouble()));
+  bool _isCopying = false;
+
+  Future<void> _copyBidPrice() async {
+    if (_isCopying) return;
+    setState(() => _isCopying = true);
+
+    try {
+      await _apiService.deductPoints(widget.notice.bidNo);
+      Clipboard.setData(ClipboardData(text: _bidPrice.toString()));
+      HapticFeedback.mediumImpact();
+      if (mounted) {
+        SnackBarUtils.showCopied(context, _formatPriceKorean(_bidPrice.toDouble()));
+      }
+    } catch (e) {
+      HapticFeedback.heavyImpact();
+      if (mounted) {
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        if (msg.contains('포인트') || msg.contains('402')) {
+          SnackBarUtils.showError(context, '포인트가 부족합니다. 충전 후 이용해주세요');
+        } else {
+          // 네트워크 에러 등의 경우 무료 복사 허용
+          Clipboard.setData(ClipboardData(text: _bidPrice.toString()));
+          SnackBarUtils.showCopied(context, _formatPriceKorean(_bidPrice.toDouble()));
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _isCopying = false);
+    }
   }
 
   String _formatPriceKorean(double price) {
