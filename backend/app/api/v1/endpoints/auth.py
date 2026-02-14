@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db import models
 from app.schemas import user as user_schemas
+from app.schemas.point import SIGNUP_BONUS
 from app.core.security import (
     verify_password,
     get_password_hash,
@@ -34,8 +35,20 @@ def register(user_in: user_schemas.UserCreate, db: Session = Depends(get_db)):
         location=user_in.location,
         capacity_cost=user_in.capacity_cost or 0,
         performance_record=user_in.performance_record or 0,
+        points=SIGNUP_BONUS,
     )
     db.add(user)
+    db.flush()  # user.id 확보
+
+    # 가입 보너스 거래 기록
+    tx = models.PointTransaction(
+        user_id=user.id,
+        amount=SIGNUP_BONUS,
+        balance_after=SIGNUP_BONUS,
+        tx_type="SIGNUP_BONUS",
+        description=f"신규 가입 보너스 {SIGNUP_BONUS:,}원",
+    )
+    db.add(tx)
     db.commit()
     db.refresh(user)
     return user
