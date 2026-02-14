@@ -15,3 +15,5 @@ psycopg2-binary>=2.9.0
 olefile>=0.47
 httpx>=0.24.0
 PyMuPDF>=1.23.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
