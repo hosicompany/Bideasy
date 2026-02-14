@@ -19,8 +19,9 @@ class User(Base):
     performance_record = Column(Integer, default=0) # Performance Record (Sil-jeok)
     
     points = Column(Integer, default=0)
-    
+
     bids = relationship("UserBid", back_populates="user")
+    point_transactions = relationship("PointTransaction", back_populates="user")
 
 class Notice(Base):
     __tablename__ = "notices"
@@ -153,6 +154,22 @@ class AIAnalysisLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     notice = relationship("Notice", back_populates="ai_log")
+
+class PointTransaction(Base):
+    """포인트 거래 이력"""
+    __tablename__ = "point_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    amount = Column(Integer, nullable=False)  # 양수=충전, 음수=차감
+    balance_after = Column(Integer, nullable=False)  # 거래 후 잔액
+    tx_type = Column(String, nullable=False)  # CHARGE, BID_COPY, SIGNUP_BONUS, AI_ANALYSIS
+    description = Column(String)
+    bid_no = Column(String, ForeignKey("notices.bid_no"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="point_transactions")
+
 
 class Favorite(Base):
     """
