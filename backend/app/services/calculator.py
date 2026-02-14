@@ -32,7 +32,6 @@ class BidCalculationResult:
     lower_limit_price_est_max: int  # 낙찰하한선 (예정가 최대 기준)
     
     # A값 정보
-    # A값 정보
     a_value: int                    # A값 (국민연금, 건강보험 등 고정비)
     a_value_applied: bool           # A값 적용 여부
     

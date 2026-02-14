@@ -51,7 +51,6 @@ class Notice(Base):
     emergency_bid = Column(String)
     rebid_yn = Column(String)
     attachment_url = Column(String)
-    attachment_url = Column(String)
     attachment_name = Column(String)
 
     # Calculator Fields
@@ -89,7 +88,6 @@ class Notice(Base):
             "bid_qualification": self.bid_qualification,
             "emergency_bid": self.emergency_bid,
             "rebid_yn": self.rebid_yn,
-            "attachment_url": self.attachment_url,
             "attachment_url": self.attachment_url,
             "attachment_name": self.attachment_name,
             "a_value": self.a_value,

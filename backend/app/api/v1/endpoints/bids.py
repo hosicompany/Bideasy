@@ -78,7 +78,6 @@ def calculate_bid_detailed(request: schemas.BidCalculationRequest):
 
 
 @router.get("/feed", response_model=List[schemas.Notice])
-@router.get("/feed", response_model=List[schemas.Notice])
 def get_feed(
     keyword: str = None, 
     exclude_closed: bool = False, 
