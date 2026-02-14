@@ -462,18 +462,15 @@ class _CalculatorViewState extends State<CalculatorView> {
   // Logic from backend/app/services/calculator.py
   // Real Logic: Calculate Lower Limit Rate based on Contract Type
   double get _lowerLimitRate {
-    // Basic values (Backend should ideally provide this, but calculation requires it here for slider)
-    // Construction: 87.745%
-    // Service: 87.995%
-    // Goods: 88.0%
+    // 법정 낙찰하한율 (국가계약법 기준, backend/app/services/calculator.py와 동기화)
     switch (widget.notice.contractType) {
       case 'SERVICE':
-        return 87.995;
+        return 60.0;    // 용역
       case 'GOODS':
-        return 88.0;
+        return 0.0;     // 물품 (최저가 방식, 하한선 없음)
       case 'CONSTRUCTION':
       default:
-        return 87.745;
+        return 87.745;  // 공사
     }
   }
 
