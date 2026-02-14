@@ -1,27 +1,13 @@
 from fastapi import FastAPI
-# Force reload trigger
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.api import api_router
 from app.db.base import Base
 from app.db.session import engine
 
-# Create Tables (Simple migration for dev)
+# Create Tables (a_value, net_cost 등 모든 컬럼이 models.py에 정의되어 있으므로
+# create_all이 신규 DB에서 올바르게 생성함. 기존 DB에 컬럼 추가가 필요하면 Alembic 사용 권장)
 Base.metadata.create_all(bind=engine)
-
-# Auto-migration for new fields (Dev mode)
-from sqlalchemy import text
-with engine.connect() as conn:
-    try:
-        conn.execute(text("SELECT a_value FROM notices LIMIT 1"))
-    except Exception:
-        print("Migrating DB: Adding a_value and net_cost columns...")
-        try:
-            conn.execute(text("ALTER TABLE notices ADD COLUMN a_value INTEGER DEFAULT 0"))
-            conn.execute(text("ALTER TABLE notices ADD COLUMN net_cost INTEGER DEFAULT 0"))
-            conn.commit()
-        except Exception as e:
-            print(f"Migration failed: {e}")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -29,18 +15,10 @@ app = FastAPI(
     description="BidEasy Backend API"
 )
 
-# Set all CORS enabled origins
-origins = [
-    "http://localhost",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:8080",
-    "*" 
-]
-
+# CORS (config에서 관리, 와일드카드 제거)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
