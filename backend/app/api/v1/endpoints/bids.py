@@ -186,66 +186,6 @@ def trigger_crawl(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/{bid_no}/analysis", response_model=schemas.BidAnalysisResponse)
-def get_bid_analysis(bid_no: str, db: Session = Depends(get_db)):
-    """
-    Get AI Analysis for a specific bid.
-    Checks cache first, then calls LLM if needed.
-    """
-    # 1. Check Cache
-    cached = db.query(models.AIAnalysisLog).filter(models.AIAnalysisLog.bid_no == bid_no).first()
-    if cached:
-        # Convert JSON back to objects
-        risks = [schemas.RiskFactor(**r) for r in cached.risk_factors]
-        return schemas.BidAnalysisResponse(summary=cached.summary_json, risks=risks)
-
-    # 2. Get Notice info for Context
-    notice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
-    if not notice:
-        raise HTTPException(status_code=404, detail="Notice not found")
-
-    # 3. Call LLM Agent
-    from app.services.llm_agent import llm_agent
-    from app.services.scraper import ScraperService
-    
-    # RAG: Fetch Real Content
-    print(f"Scraping URL: {notice.content}")
-    real_content = ScraperService.fetch_page_content(notice.content)
-    
-    if not real_content:
-        # Fallback to basic context if scraping fails
-        context_text = f"""
-        공고명: {notice.title}
-        공고번호: {notice.bid_no}
-        기초금액: {notice.basic_price}
-        상세링크: {notice.content}
-        """
-    else:
-        # Use Real Content (Truncated handled in scraper)
-        context_text = f"""
-        [공고 요약 정보]
-        공고명: {notice.title}
-        기초금액: {notice.basic_price}
-
-        [실제 공고 본문 (Scraped)]
-        {real_content}
-        """
-    
-    result = llm_agent.analyze_notice(context_text)
-    
-    # 4. Save to Cache
-    new_log = models.AIAnalysisLog(
-        bid_no=bid_no,
-        summary_json=result.get("summary", []),
-        risk_factors=result.get("risks", []),
-        token_usage=0 
-    )
-    db.add(new_log)
-    db.commit()
-
-    risks = [schemas.RiskFactor(**r) for r in result.get("risks", [])]
-    return schemas.BidAnalysisResponse(summary=result.get("summary", []), risks=risks)
-
 @router.post("/{bid_no}/favorite")
 def toggle_favorite(bid_no: str, db: Session = Depends(get_db)):
     """

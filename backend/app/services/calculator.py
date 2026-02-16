@@ -114,21 +114,22 @@ class CalculatorService:
         est_min = basic_price * (1 - ESTIMATED_PRICE_VARIANCE)
         est_max = basic_price * (1 + ESTIMATED_PRICE_VARIANCE)
         
-        # 3. 낙찰하한선 계산
+        # 3. 낙찰하한선 계산 (A값 반영)
         lower_rate = CalculatorService.get_lower_limit_rate(contract_type)
         
-        # 기초금액 기준 하한선
-        limit_base = CalculatorService.truncate_to_10_won(
-            basic_price * (lower_rate / 100)
-        )
-        
-        # 예정가격 범위 기준 하한선
-        limit_est_min = CalculatorService.truncate_to_10_won(
-            est_min * (lower_rate / 100)
-        )
-        limit_est_max = CalculatorService.truncate_to_10_won(
-            est_max * (lower_rate / 100)
-        )
+        # 기초금액 기준 하한선 (A값 적용 공식: (기초금액 - A) * 하한율 + A)
+        if a_value > 0:
+            limit_base_raw = ((basic_price - a_value) * (lower_rate / 100)) + a_value
+            limit_est_min_raw = ((est_min - a_value) * (lower_rate / 100)) + a_value
+            limit_est_max_raw = ((est_max - a_value) * (lower_rate / 100)) + a_value
+        else:
+            limit_base_raw = basic_price * (lower_rate / 100)
+            limit_est_min_raw = est_min * (lower_rate / 100)
+            limit_est_max_raw = est_max * (lower_rate / 100)
+
+        limit_base = CalculatorService.truncate_to_10_won(limit_base_raw)
+        limit_est_min = CalculatorService.truncate_to_10_won(limit_est_min_raw)
+        limit_est_max = CalculatorService.truncate_to_10_won(limit_est_max_raw)
         
         # 4. 안전도 계산
         # 기초금액 기준 하한선으로 판단 (보수적)

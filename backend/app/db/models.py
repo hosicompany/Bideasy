@@ -127,6 +127,8 @@ class OpeningResult(Base):
     # Bid Info
     open_date = Column(DateTime, index=True)
     basic_price = Column(Float)
+    reserved_price = Column(Float) # 예정가격 (추가됨)
+    bid_method = Column(String)    # 입찰방법 (추가됨)
     
     # Winning Info (The most important part)
     winner_company = Column(String)

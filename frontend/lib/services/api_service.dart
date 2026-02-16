@@ -53,8 +53,33 @@ class ApiService {
     }
   }
 
-  // Future<BidCalculationResponse> calculateBid(...)
-  // Implement this later when needed
+  Future<Map<String, dynamic>> calculateBidDetailed({
+    required double basicPrice,
+    required double rate,
+    String? contractType,
+    int? aValue,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/bids/calculate/detailed'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'basic_price': basicPrice,
+          'rate': rate,
+          'contract_type': contractType ?? 'CONSTRUCTION',
+          'a_value': aValue ?? 0,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      } else {
+        throw Exception('Failed to calculate bid: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to calculate bid: $e');
+    }
+  }
 
   Future<AiAnalysis> fetchBidAnalysis(
     String bidNo,
