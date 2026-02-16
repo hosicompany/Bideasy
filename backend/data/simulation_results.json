@@ -1,0 +1,242 @@
+[
+  {
+    "strategy": "전략1: 하한선 +0.001%",
+    "total": 804,
+    "skipped": 0,
+    "wins": 804,
+    "win_rate_pct": 100.0,
+    "above_limit": 804,
+    "below_limit": 0,
+    "below_limit_pct": 0.0,
+    "our_avg_rate": 85.7807,
+    "actual_avg_rate": 88.0271,
+    "avg_rate_diff": -2.2464,
+    "avg_price_diff": -43125173,
+    "rate_diff_min": -88.596,
+    "rate_diff_max": 1.1809,
+    "bracket_analysis": {
+      "1억 미만": {
+        "count": 473,
+        "win_rate_pct": 100.0,
+        "avg_rate_diff": -0.7134,
+        "above_limit_pct": 100.0
+      },
+      "1~5억": {
+        "count": 270,
+        "win_rate_pct": 100.0,
+        "avg_rate_diff": -1.7714,
+        "above_limit_pct": 100.0
+      },
+      "5~10억": {
+        "count": 33,
+        "win_rate_pct": 100.0,
+        "avg_rate_diff": -8.585,
+        "above_limit_pct": 100.0
+      },
+      "10~50억": {
+        "count": 26,
+        "win_rate_pct": 100.0,
+        "avg_rate_diff": -20.7345,
+        "above_limit_pct": 100.0
+      },
+      "50억 이상": {
+        "count": 2,
+        "win_rate_pct": 100.0,
+        "avg_rate_diff": -83.9705,
+        "above_limit_pct": 100.0
+      }
+    }
+  },
+  {
+    "strategy": "전략2: -12.0% (보수적)",
+    "total": 804,
+    "skipped": 0,
+    "wins": 79,
+    "win_rate_pct": 9.83,
+    "above_limit": 568,
+    "below_limit": 236,
+    "below_limit_pct": 29.35,
+    "our_avg_rate": 88.0,
+    "actual_avg_rate": 88.0271,
+    "avg_rate_diff": -0.0271,
+    "avg_price_diff": 1952216,
+    "rate_diff_min": -11.105,
+    "rate_diff_max": 6.368,
+    "bracket_analysis": {
+      "1억 미만": {
+        "count": 473,
+        "win_rate_pct": 4.9,
+        "avg_rate_diff": 0.009,
+        "above_limit_pct": 70.6
+      },
+      "1~5억": {
+        "count": 270,
+        "win_rate_pct": 16.3,
+        "avg_rate_diff": -0.1273,
+        "above_limit_pct": 69.3
+      },
+      "5~10억": {
+        "count": 33,
+        "win_rate_pct": 27.3,
+        "avg_rate_diff": -0.3459,
+        "above_limit_pct": 60.6
+      },
+      "10~50억": {
+        "count": 26,
+        "win_rate_pct": 11.5,
+        "avg_rate_diff": 0.4504,
+        "above_limit_pct": 96.2
+      },
+      "50억 이상": {
+        "count": 2,
+        "win_rate_pct": 0.0,
+        "avg_rate_diff": 4.0295,
+        "above_limit_pct": 100.0
+      }
+    }
+  },
+  {
+    "strategy": "전략3: -11.5% (중도)",
+    "total": 804,
+    "skipped": 0,
+    "wins": 70,
+    "win_rate_pct": 8.71,
+    "above_limit": 737,
+    "below_limit": 67,
+    "below_limit_pct": 8.33,
+    "our_avg_rate": 88.5,
+    "actual_avg_rate": 88.0271,
+    "avg_rate_diff": 0.4729,
+    "avg_price_diff": 3050002,
+    "rate_diff_min": -10.605,
+    "rate_diff_max": 6.868,
+    "bracket_analysis": {
+      "1억 미만": {
+        "count": 473,
+        "win_rate_pct": 3.8,
+        "avg_rate_diff": 0.509,
+        "above_limit_pct": 91.3
+      },
+      "1~5억": {
+        "count": 270,
+        "win_rate_pct": 14.8,
+        "avg_rate_diff": 0.3727,
+        "above_limit_pct": 91.9
+      },
+      "5~10억": {
+        "count": 33,
+        "win_rate_pct": 33.3,
+        "avg_rate_diff": 0.1541,
+        "above_limit_pct": 90.9
+      },
+      "10~50억": {
+        "count": 26,
+        "win_rate_pct": 3.8,
+        "avg_rate_diff": 0.9504,
+        "above_limit_pct": 96.2
+      },
+      "50억 이상": {
+        "count": 2,
+        "win_rate_pct": 0.0,
+        "avg_rate_diff": 4.5295,
+        "above_limit_pct": 100.0
+      }
+    }
+  },
+  {
+    "strategy": "전략4: -11.0% (적극적)",
+    "total": 804,
+    "skipped": 0,
+    "wins": 50,
+    "win_rate_pct": 6.22,
+    "above_limit": 797,
+    "below_limit": 7,
+    "below_limit_pct": 0.87,
+    "our_avg_rate": 89.0,
+    "actual_avg_rate": 88.0271,
+    "avg_rate_diff": 0.9729,
+    "avg_price_diff": 4147790,
+    "rate_diff_min": -10.105,
+    "rate_diff_max": 7.368,
+    "bracket_analysis": {
+      "1억 미만": {
+        "count": 473,
+        "win_rate_pct": 4.2,
+        "avg_rate_diff": 1.009,
+        "above_limit_pct": 99.2
+      },
+      "1~5억": {
+        "count": 270,
+        "win_rate_pct": 9.6,
+        "avg_rate_diff": 0.8727,
+        "above_limit_pct": 99.3
+      },
+      "5~10억": {
+        "count": 33,
+        "win_rate_pct": 12.1,
+        "avg_rate_diff": 0.6541,
+        "above_limit_pct": 100.0
+      },
+      "10~50억": {
+        "count": 26,
+        "win_rate_pct": 0.0,
+        "avg_rate_diff": 1.4504,
+        "above_limit_pct": 96.2
+      },
+      "50억 이상": {
+        "count": 2,
+        "win_rate_pct": 0.0,
+        "avg_rate_diff": 5.0295,
+        "above_limit_pct": 100.0
+      }
+    }
+  },
+  {
+    "strategy": "전략5: -10.0% (공격적)",
+    "total": 804,
+    "skipped": 0,
+    "wins": 11,
+    "win_rate_pct": 1.37,
+    "above_limit": 804,
+    "below_limit": 0,
+    "below_limit_pct": 0.0,
+    "our_avg_rate": 90.0,
+    "actual_avg_rate": 88.0271,
+    "avg_rate_diff": 1.9729,
+    "avg_price_diff": 6343363,
+    "rate_diff_min": -9.105,
+    "rate_diff_max": 8.368,
+    "bracket_analysis": {
+      "1억 미만": {
+        "count": 473,
+        "win_rate_pct": 1.5,
+        "avg_rate_diff": 2.009,
+        "above_limit_pct": 100.0
+      },
+      "1~5억": {
+        "count": 270,
+        "win_rate_pct": 1.5,
+        "avg_rate_diff": 1.8727,
+        "above_limit_pct": 100.0
+      },
+      "5~10억": {
+        "count": 33,
+        "win_rate_pct": 0.0,
+        "avg_rate_diff": 1.6541,
+        "above_limit_pct": 100.0
+      },
+      "10~50억": {
+        "count": 26,
+        "win_rate_pct": 0.0,
+        "avg_rate_diff": 2.4504,
+        "above_limit_pct": 100.0
+      },
+      "50억 이상": {
+        "count": 2,
+        "win_rate_pct": 0.0,
+        "avg_rate_diff": 6.0295,
+        "above_limit_pct": 100.0
+      }
+    }
+  }
+]

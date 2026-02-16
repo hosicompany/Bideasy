@@ -30,6 +30,10 @@ Thumbs.db
 *.log
 logs/
 
+# Crawl progress files (임시)
+backend/data/*_progress.json
+backend/data/crawl_progress.json
+
 # Build outputs
 build/
 dist/
