@@ -34,6 +34,18 @@ logs/
 backend/data/*_progress.json
 backend/data/crawl_progress.json
 
+# ML models (large binary files)
+backend/models/*.joblib
+backend/models/*.pkl
+backend/models/*.h5
+
+# Historical data
+backend/data/historical/
+
+# Temp outputs
+backend/hwp_test_output.txt
+backend/voice_transcription.txt
+
 # Build outputs
 build/
 dist/
