@@ -74,7 +74,7 @@ class CompetitionPrediction {
       competitionLevel: json['competition_level'] ?? '',
       blueOceanProbability:
           (json['blue_ocean_probability'] ?? 0).toDouble(),
-      strategy: json['strategy']?['desc'] ?? '',
+      strategy: json['strategy']?['description'] ?? '',
     );
   }
 }

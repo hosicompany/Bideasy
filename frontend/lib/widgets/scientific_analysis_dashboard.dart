@@ -399,7 +399,7 @@ class _ScientificAnalysisDashboardState
   Widget _buildBidRateCard() {
     final data = _bidRateData!;
     final predictedRate = (data['predicted_rate'] ?? 0).toDouble();
-    final confidence = data['confidence_interval'] as Map<String, dynamic>?;
+    final confidence = data['range'] as Map<String, dynamic>?;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
