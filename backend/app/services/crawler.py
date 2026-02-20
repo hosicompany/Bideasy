@@ -35,9 +35,10 @@ class CrawlerService:
         - keyword: Search by title (bidNtceNm)
         - region: Search by organization name (ntceInsttNm) for region filtering
         """
-        # Calculate date range (Recent 30 days to ensure data)
+        # Date range: Recent 5 days → returns mostly active (not-yet-opened) notices
+        # API returns oldest-first, so 14+ days yields all-closed notices
         end_date_str = datetime.now().strftime("%Y%m%d") + "2359"
-        start_date_str = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d") + "0000"
+        start_date_str = (datetime.now() - timedelta(days=5)).strftime("%Y%m%d") + "0000"
 
         params = {
             "serviceKey": settings.PUBLIC_DATA_KEY,
@@ -96,13 +97,14 @@ class CrawlerService:
                 # Map API fields to our model
                 bid_no = f"{item.get('bidNtceNo')}-{item.get('bidNtceOrd')}"
                 
-                # Date Parsing with Format Exception Handling
+                # Date Parsing: API provides opengDt (개찰일시) but NOT bidBegnDtm/bidClseDtm
+                # Use opengDt as the effective end_date (bidding closes before opening)
+                opening_str = item.get("opengDt", "")
                 try:
-                    start_dt = datetime.strptime(item.get("bidBegnDtm", ""), "%Y%m%d%H%M")
-                    end_dt = datetime.strptime(item.get("bidClseDtm", ""), "%Y%m%d%H%M")
+                    end_dt = datetime.strptime(opening_str, "%Y-%m-%d %H:%M:%S")
                 except (ValueError, TypeError):
-                    start_dt = datetime.now()
                     end_dt = datetime.now() + timedelta(days=7)
+                start_dt = datetime.now()
 
                 # Infer Contract Type
                 title = item.get("bidNtceNm", "No Title")

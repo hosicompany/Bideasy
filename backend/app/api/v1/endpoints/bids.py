@@ -126,41 +126,42 @@ def get_feed(
         return api_results
         
     else:
-        # Default Feed (Local DB)
-        # Using DB is faster for default feed.
-        # But for "Real Data", we should probably trigger crawl if DB is empty or stale.
-        # For this request, let's just paginate existing DB data + Real API fetch if DB empty?
-        # User wants "Real Data". Let's try fetching from API first if page=1, else DB?
-        # Actually, let's stick to DB for default feed (which is populated by crawler) 
-        # BUT we must ensure crawler runs.
-        # To support "Infinite Scroll" of REAL data, we should call API directly even for default feed?
-        # Standard pattern: Feed = DB. Crawler runs in background.
-        # But for 'Search', we hit API directly.
-        # Let's support API fetch for default feed too if requested?
-        # User said "Scroll down adds more".
-        
-        # Strategy:
-        # Default Feed -> DB (Pagination)
-        # But we need to make sure DB has data.
-        # If page=1 and DB empty, trigger crawl.
-        
-        query = db.query(models.Notice).order_by(models.Notice.start_date.desc())
+        # Default Feed: DB with active notices (bid still open) shown first
+        from sqlalchemy import case
+
+        now = datetime.now()
+
+        # Use end_date (DateTime column) for reliable comparison
+        # Active = bid closing date hasn't passed yet
+        is_active = case(
+            (models.Notice.end_date == None, 1),    # No end_date → treat as closed
+            (models.Notice.end_date > now, 0),      # Still accepting bids → active
+            else_=1                                  # Bid closed
+        )
+
+        query = db.query(models.Notice).order_by(
+            is_active,                              # Active notices first
+            models.Notice.end_date.desc()           # Then by deadline (newest first)
+        )
+
         if exclude_closed:
-             query = query.filter(models.Notice.opening_date > datetime.now())
-        
+            query = db.query(models.Notice).filter(
+                models.Notice.end_date > now
+            ).order_by(models.Notice.end_date.asc())  # Soonest deadline first
+
         # Pagination
         offset = (page - 1) * limit
         notices = query.offset(offset).limit(limit).all()
-        
+
         if not notices and page == 1:
-            # First load and no data? Try fetching from API directly
+            # First load and no data? Fetch from API
             from app.services.crawler import CrawlerService
             logger.info("DB empty, fetching initial batch from API...")
-            api_data = CrawlerService.fetch_notices(page=1, size=50) # Fetch valid batch
+            api_data = CrawlerService.fetch_notices(page=1, size=50)
             CrawlerService.save_notices(db, api_data)
             # Re-query
             notices = query.offset(offset).limit(limit).all()
-            
+
         return notices
 
 @router.post("/crawl")
