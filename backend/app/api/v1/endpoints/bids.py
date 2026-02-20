@@ -134,7 +134,7 @@ def get_feed(
         # Use end_date (DateTime column) for reliable comparison
         # Active = bid closing date hasn't passed yet
         is_active = case(
-            (models.Notice.end_date == None, 1),    # No end_date → treat as closed
+            (models.Notice.end_date.is_(None), 1),    # No end_date → treat as closed
             (models.Notice.end_date > now, 0),      # Still accepting bids → active
             else_=1                                  # Bid closed
         )
