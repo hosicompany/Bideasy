@@ -6,6 +6,7 @@ import '../models/notice.dart';
 import '../widgets/ai_analysis_card.dart';
 import '../widgets/scientific_analysis_dashboard.dart';
 import '../widgets/opening_result_table.dart';
+import '../widgets/smart_bid_card.dart';
 import '../services/api_service.dart';
 import '../utils/snackbar_utils.dart';
 
@@ -44,6 +45,14 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
       _netCost = widget.notice.netCost!;
       _netCostApplied = true;
     }
+  }
+
+  /// 스마트 투찰 추천 적용 (슬라이더 사정률 업데이트)
+  void _applySmartRate(double rate) {
+    setState(() {
+      _rate = rate.clamp(-15.0, 5.0);
+    });
+    HapticFeedback.mediumImpact();
   }
 
   // 법정 낙찰하한율 (공사: 87.745%)
@@ -230,7 +239,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        ScientificAnalysisDashboard(bidNo: widget.notice.bidNo),
+        ScientificAnalysisDashboard(bidNo: widget.notice.bidNo, notice: widget.notice),
       ],
     );
   }
@@ -252,6 +261,13 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
         _buildResultCard(),
         const SizedBox(height: 24),
 
+        // 스마트 투찰 추천
+        SmartBidCard(
+          notice: widget.notice,
+          onApplyRate: (rate) => _applySmartRate(rate),
+        ),
+        const SizedBox(height: 24),
+
         // AI 분석
         AiAnalysisCard(notice: widget.notice),
         const SizedBox(height: 24),
@@ -266,7 +282,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        ScientificAnalysisDashboard(bidNo: widget.notice.bidNo),
+        ScientificAnalysisDashboard(bidNo: widget.notice.bidNo, notice: widget.notice),
         const SizedBox(height: 40),
 
         // 액션 버튼

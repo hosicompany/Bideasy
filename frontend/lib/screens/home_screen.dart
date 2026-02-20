@@ -10,6 +10,7 @@ import '../widgets/opening_result_table.dart';
 import '../widgets/state_widgets.dart';
 import '../utils/snackbar_utils.dart';
 import '../models/notice.dart';
+import '../models/smart_bid.dart';
 import '../services/api_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -36,6 +37,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   late TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
+
+  // Competition level cache (progressive enhancement)
+  final Map<String, CompetitionLevel> _competitionCache = {};
 
   @override
   void initState() {
@@ -97,6 +101,8 @@ class _HomeScreenState extends State<HomeScreen> {
           _isLoading = false;
           _isLoadingMore = false;
         });
+        // 백그라운드에서 경쟁도 배지 로딩
+        _fetchCompetitionLevels();
       }
     } catch (e) {
       if (mounted) {
@@ -113,6 +119,32 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _isLoadingMore = true);
     _currentPage++;
     await _fetchNotices(isInitial: false);
+  }
+
+  /// 백그라운드에서 경쟁도 예측 (Progressive Enhancement)
+  Future<void> _fetchCompetitionLevels() async {
+    final uncached = _notices
+        .where((n) => !n.isClosed && !_competitionCache.containsKey(n.bidNo))
+        .toList();
+    if (uncached.isEmpty) return;
+
+    for (final notice in uncached) {
+      try {
+        final prediction = await apiService.predictCompetition(
+          bidType: normalizeBidType(notice.bidType),
+          estimatedAmount: notice.basicPrice,
+          agencyName: notice.organization ?? '',
+        );
+        if (mounted) {
+          setState(() {
+            _competitionCache[notice.bidNo] =
+                CompetitionLevel.fromBucket(prediction.predictedBucket);
+          });
+        }
+      } catch (_) {
+        // 실패 시 무시 — 배지만 안 보임
+      }
+    }
   }
 
   Future<void> _saveFilter({String? keyword, bool? excludeClosed}) async {
@@ -223,6 +255,7 @@ class _HomeScreenState extends State<HomeScreen> {
               return NoticeCard(
                 notice: notice,
                 isFavorite: true,
+                competitionLevel: _competitionCache[notice.bidNo],
                 onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
                 onTap: () => _showCalculator(context, notice),
               );
@@ -278,6 +311,7 @@ class _HomeScreenState extends State<HomeScreen> {
           return NoticeCard(
             notice: notice,
             isFavorite: isFav,
+            competitionLevel: _competitionCache[notice.bidNo],
             onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
             onTap: () => _showCalculator(context, notice),
           );

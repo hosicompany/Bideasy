@@ -4,6 +4,7 @@ import '../models/notice.dart';
 import '../models/ai_analysis.dart';
 import '../models/opening_result.dart';
 import '../models/user.dart';
+import '../models/smart_bid.dart';
 
 class ApiService {
   // Use 10.0.2.2 for Android emulator, 127.0.0.1 for Web/iOS/Windows
@@ -264,6 +265,124 @@ class ApiService {
       }
     } catch (e) {
       throw Exception('Failed to load scientific analysis: $e');
+    }
+  }
+
+  // ─── Smart Bid API ───
+
+  Future<CompetitionPrediction> predictCompetition({
+    required String bidType,
+    required double estimatedAmount,
+    String agencyName = '',
+    String? bidDate,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/smart-bid/competition/predict'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'bid_type': bidType,
+          'estimated_amount': estimatedAmount,
+          'agency_name': agencyName,
+          if (bidDate != null) 'bid_date': bidDate,
+        }),
+      );
+      if (response.statusCode == 200) {
+        final json = jsonDecode(utf8.decode(response.bodyBytes));
+        return CompetitionPrediction.fromJson(json['data']);
+      } else {
+        throw Exception('Failed to predict competition: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to predict competition: $e');
+    }
+  }
+
+  Future<SmartBidRecommendation> getSmartRecommendation({
+    required double baseAmount,
+    String bidType = 'construction',
+    double aValue = 0,
+    double? estimatedAmount,
+    String agencyName = '',
+    String? bidDate,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/smart-bid/recommend'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'base_amount': baseAmount,
+          'bid_type': bidType,
+          'a_value': aValue,
+          'agency_name': agencyName,
+          if (estimatedAmount != null) 'estimated_amount': estimatedAmount,
+          if (bidDate != null) 'bid_date': bidDate,
+        }),
+      );
+      if (response.statusCode == 200) {
+        final json = jsonDecode(utf8.decode(response.bodyBytes));
+        return SmartBidRecommendation.fromJson(json['data']);
+      } else {
+        throw Exception('Failed to get recommendation: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to get recommendation: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> predictBidRate({
+    required String bidType,
+    required double estimatedAmount,
+    int expectedParticipants = 10,
+    String agencyName = '',
+    String? bidDate,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/smart-bid/rate/predict'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'bid_type': bidType,
+          'estimated_amount': estimatedAmount,
+          'expected_participants': expectedParticipants,
+          'agency_name': agencyName,
+          if (bidDate != null) 'bid_date': bidDate,
+        }),
+      );
+      if (response.statusCode == 200) {
+        final json = jsonDecode(utf8.decode(response.bodyBytes));
+        return json['data'] as Map<String, dynamic>;
+      } else {
+        throw Exception('Failed to predict bid rate: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to predict bid rate: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getAgencyStats({
+    required String bidType,
+    String keyword = '',
+    int limit = 20,
+  }) async {
+    try {
+      final queryParams = {
+        'bid_type': bidType,
+        'keyword': keyword,
+        'limit': limit.toString(),
+      };
+      final uri = Uri.parse('$baseUrl/smart-bid/agency/stats')
+          .replace(queryParameters: queryParams);
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(utf8.decode(response.bodyBytes));
+        final List<dynamic> data = json['data'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      } else {
+        throw Exception('Failed to load agency stats: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to load agency stats: $e');
     }
   }
 }

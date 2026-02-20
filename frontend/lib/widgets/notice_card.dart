@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/style.dart';
 import '../models/notice.dart';
+import '../models/smart_bid.dart';
+import 'competition_badge.dart';
 
 import 'package:flutter/services.dart';
 import '../utils/snackbar_utils.dart';
@@ -10,6 +12,7 @@ class NoticeCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool isFavorite;
   final VoidCallback? onFavoriteChanged;
+  final CompetitionLevel? competitionLevel;
 
   const NoticeCard({
     super.key,
@@ -17,6 +20,7 @@ class NoticeCard extends StatelessWidget {
     required this.onTap,
     this.isFavorite = false,
     this.onFavoriteChanged,
+    this.competitionLevel,
   });
 
   @override
@@ -43,9 +47,8 @@ class NoticeCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header Row: Safe Badge + Star Icon
+              // Header Row: Status Badge + Competition Badge + Star Icon
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   // Status Badge
                   Container(
@@ -68,6 +71,12 @@ class NoticeCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  // Competition Badge
+                  if (competitionLevel != null) ...[
+                    const SizedBox(width: 8),
+                    CompetitionBadge(level: competitionLevel!),
+                  ],
+                  const Spacer(),
                   // Favorite Icon
                   GestureDetector(
                     onTap: onFavoriteChanged,

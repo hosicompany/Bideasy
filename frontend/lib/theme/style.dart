@@ -13,6 +13,13 @@ class AppColors {
   static const Color dangerRed = Color(0xFFFF3B30);
   
   static const Color divider = Color(0xFFE5E8EB);
+
+  // Competition level colors
+  static const Color competitionBlue = Color(0xFF3182F6);
+  static const Color competitionGreen = Color(0xFF34C759);
+  static const Color competitionYellow = Color(0xFFFFCC00);
+  static const Color competitionOrange = Color(0xFFFF9500);
+  static const Color competitionRed = Color(0xFFFF3B30);
 }
 
 class AppTextStyles {
