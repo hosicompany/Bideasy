@@ -6,6 +6,7 @@ import '../theme/style.dart';
 import '../widgets/state_widgets.dart';
 import '../utils/snackbar_utils.dart';
 import 'point_screen.dart';
+import 'login_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -86,6 +87,14 @@ class _MyPageScreenState extends State<MyPageScreen> {
             : "";
         _isLoading = false;
       });
+    } on AuthException {
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (_) => false,
+        );
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -752,12 +761,17 @@ class _MyPageScreenState extends State<MyPageScreen> {
             ),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // TODO: 로그아웃 로직 구현
+            onPressed: () async {
+              Navigator.pop(context); // close dialog
               HapticFeedback.mediumImpact();
-              SnackBarUtils.showInfo(context, "로그아웃되었어요");
-              Navigator.pop(context); // 마이페이지 닫기
+              await ApiService.clearToken();
+              if (mounted) {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (_) => false,
+                );
+              }
             },
             child: const Text(
               "로그아웃",

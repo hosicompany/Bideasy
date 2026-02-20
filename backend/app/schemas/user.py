@@ -18,8 +18,15 @@ class UserUpdate(UserBase):
 
 class UserResponse(UserBase):
     id: int
-    email: str
+    email: Optional[str] = None
     points: int
-    
+    social_provider: Optional[str] = None
+    profile_image_url: Optional[str] = None
+
     class Config:
         from_attributes = True
+
+
+class SocialLoginRequest(BaseModel):
+    provider: str       # 'kakao' | 'naver'
+    access_token: str   # social SDK token

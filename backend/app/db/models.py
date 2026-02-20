@@ -12,10 +12,15 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String(255), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(255), nullable=False)
-    company_name = Column(String(255), default="Hosi Company")
+    email = Column(String(255), unique=True, index=True, nullable=True)
+    hashed_password = Column(String(255), nullable=True)
+    company_name = Column(String(255), default="")
     ceo_name = Column(String(100))
+
+    # Social auth
+    social_provider = Column(String(20), nullable=True)  # 'kakao' | 'naver'
+    social_id = Column(String(100), nullable=True, index=True)
+    profile_image_url = Column(String(500), nullable=True)
 
     # My Page Fields
     licenses = Column(Text)
