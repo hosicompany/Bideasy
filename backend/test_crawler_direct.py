@@ -1,6 +1,4 @@
 import requests
-import os
-import json
 from datetime import datetime, timedelta
 
 # Load .env manually to avoid dependency issues

@@ -2,7 +2,7 @@
 낙찰가 예측 API 엔드포인트
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from enum import Enum
@@ -10,7 +10,6 @@ from enum import Enum
 from app.services.prediction_service import (
     get_prediction_service,
     BidType,
-    PredictionResult,
 )
 
 router = APIRouter(prefix="/prediction", tags=["예측"])

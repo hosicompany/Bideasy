@@ -1,8 +1,6 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from typing import List, Dict, Tuple
+from typing import List, Dict
 from app.db import models
-from datetime import datetime, timedelta
 import random
 import statistics
 

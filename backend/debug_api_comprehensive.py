@@ -1,7 +1,7 @@
 import requests
 import sys
 import os
-from urllib.parse import unquote, quote
+from urllib.parse import unquote
 from datetime import datetime, timedelta
 
 # Add backend to path
@@ -80,9 +80,9 @@ def test_api_configurations():
                     if "<errMsg>" in body:
                          print(f"      ❌ 200 OK but Logic Error: {body[:200]}")
                     elif "SERVICE_KEY_IS_NOT_REGISTERED_ERROR" in body:
-                         print(f"      ❌ 200 OK but Key Not Registered")
+                         print("      ❌ 200 OK but Key Not Registered")
                     else:
-                        print(f"      ✅ SUCCESS! (Status: 200)")
+                        print("      ✅ SUCCESS! (Status: 200)")
                         print(f"      📝 Sample: {body[:100]}...")
                         return # Stop if found working
                 else:

@@ -11,7 +11,6 @@
 """
 
 import json
-import math
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -123,7 +122,7 @@ def generate_report(questions, our_answers, grades, bid_methods):
     print(f"  총 문항: {total}건")
     print("=" * 65)
 
-    print(f"\n[ 종합 성적 ]")
+    print("\n[ 종합 성적 ]")
     print(f"  낙찰 성공: {wins}건 / {total}건 ({wins/total*100:.1f}%)")
     print(f"  하한선 통과: {passed}건 ({passed/total*100:.1f}%)")
     print(f"  하한선 탈락: {failed}건 ({failed/total*100:.1f}%)")
@@ -136,13 +135,13 @@ def generate_report(questions, our_answers, grades, bid_methods):
 
     # 예정가격 예측 정확도
     errors = [g["pred_error_pct"] for g in grades]
-    print(f"\n  예정가격 예측 오차 (기초금액 기준):")
+    print("\n  예정가격 예측 오차 (기초금액 기준):")
     print(f"    평균: {sum(errors)/len(errors):+.3f}%")
     within_1 = sum(1 for e in errors if -1 <= e <= 1)
     print(f"    ±1% 이내: {within_1}건 ({within_1/len(errors)*100:.1f}%)")
 
     # 입찰방법별 성적
-    print(f"\n[ 입찰방법별 성적 ]")
+    print("\n[ 입찰방법별 성적 ]")
     method_groups = {}
     for i, g in enumerate(grades):
         m = bid_methods[i]
@@ -164,7 +163,7 @@ def generate_report(questions, our_answers, grades, bid_methods):
         print(f"  {method:<20} {n:>5} {w/n*100:>6.1f}% {p/n*100:>7.1f}% {margin_used:>5.1f}%p")
 
     # 금액대별 성적
-    print(f"\n[ 금액대별 성적 ]")
+    print("\n[ 금액대별 성적 ]")
     brackets = [
         ("1억 미만", 0, 1e8),
         ("1~5억", 1e8, 5e8),
@@ -189,7 +188,7 @@ def generate_report(questions, our_answers, grades, bid_methods):
     close_misses.sort(key=lambda x: x[1])  # 가격 차이 작은 순
 
     if close_misses:
-        print(f"\n[ 오답노트: 아깝게 진 건 TOP 10 ]")
+        print("\n[ 오답노트: 아깝게 진 건 TOP 10 ]")
         print(f"  {'공사명':<30} {'우리가격':>12} {'낙찰가격':>12} {'차이':>10}")
         print(f"  {'-'*68}")
         for idx, gap, rdiff in close_misses[:10]:
@@ -202,10 +201,10 @@ def generate_report(questions, our_answers, grades, bid_methods):
     limit_fails = [(i, g) for i, g in enumerate(grades) if not g["passed_limit"]]
     if limit_fails:
         errors_fail = [g["pred_error_pct"] for _, g in limit_fails]
-        print(f"\n[ 오답노트: 하한선 탈락 원인 ]")
+        print("\n[ 오답노트: 하한선 탈락 원인 ]")
         print(f"  탈락 건수: {len(limit_fails)}건")
         print(f"  탈락 건의 예정가격 예측 오차 평균: {sum(errors_fail)/len(errors_fail):+.3f}%")
-        print(f"  → 기초금액이 예정가격보다 낮은 경우 하한선 미달 발생")
+        print("  → 기초금액이 예정가격보다 낮은 경우 하한선 미달 발생")
         above = sum(1 for e in errors_fail if e < 0)
         print(f"  → 기초금액 < 예정가격인 경우: {above}건 ({above/len(errors_fail)*100:.1f}%)")
 

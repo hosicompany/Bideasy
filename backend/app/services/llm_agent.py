@@ -1,6 +1,9 @@
 from openai import OpenAI
 import json
 from app.core.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class LLMAgent:
@@ -63,7 +66,7 @@ class LLMAgent:
 
         for model in [self.model, self.fallback_model]:
             try:
-                print(f"[LLM] Requesting analysis with model: {model}", flush=True)
+                logger.info(f"Requesting analysis with model: {model}")
                 response = self.client.chat.completions.create(
                     model=model,
                     messages=messages,
@@ -80,7 +83,7 @@ class LLMAgent:
 
                 return result
             except Exception as e:
-                print(f"[LLM] Model {model} failed: {e}", flush=True)
+                logger.error(f"Model {model} failed: {e}")
 
         return {"summary": [], "risks": []}
 

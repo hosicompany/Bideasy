@@ -8,7 +8,6 @@
 import json
 import math
 from pathlib import Path
-from collections import defaultdict
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 LOWER_LIMIT_RATE = 87.745
@@ -102,7 +101,7 @@ def main():
     print(f"  최소~최대: {min(counts_nz) if counts_nz else 0} ~ {max(counts_nz) if counts_nz else 0}개")
 
     brackets = [(1, 10), (11, 30), (31, 50), (51, 100), (101, 200), (201, 500), (501, 1000), (1001, 99999)]
-    print(f"\n  참가업체수 구간별:")
+    print("\n  참가업체수 구간별:")
     for lo, hi in brackets:
         cnt = sum(1 for c in counts_nz if lo <= c <= hi)
         pct = cnt / len(counts_nz) * 100 if counts_nz else 0

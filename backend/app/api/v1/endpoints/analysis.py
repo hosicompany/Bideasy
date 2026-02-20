@@ -5,8 +5,7 @@ Analyzes bid attachments (HWP, PDF) for toxic clauses, qualifications, etc.
 """
 import os
 import tempfile
-from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 import httpx
 
@@ -14,6 +13,9 @@ from app.services.bid_detail import BidDetailService
 from app.services.document_parser import DocumentParser
 from app.services.ai_analyzer import document_analyzer
 from app.schemas.analysis import DeepAnalysisResponse
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -41,7 +43,7 @@ class AttachmentDownloader:
             else:
                 bid_no_only, bid_ord = bid_ntce_no, "00"
                 
-            print(f"[Attachment] Checking BidDetail for {bid_no_only}-{bid_ord}...", flush=True)
+            logger.info(f"Checking BidDetail for {bid_no_only}-{bid_ord}...")
             # Use the new robust method
             detail = BidDetailService.fetch_bid_detail_robust(bid_no_only, bid_ord)
             
@@ -60,14 +62,14 @@ class AttachmentDownloader:
                              "atchFileUrl": url
                          })
         except Exception as e:
-             print(f"[Attachment] BidDetail Error: {e}")
+             logger.error(f"BidDetail Error: {e}")
 
         if attachments:
-            print(f"[Attachment] Found {len(attachments)} files via BidDetail.", flush=True)
+            logger.info(f"Found {len(attachments)} files via BidDetail.")
             return attachments
             
         # 2. Fallback to Attachment API
-        print(f"[Attachment] Fallback to Attachment API for {bid_ntce_no}...", flush=True)
+        logger.info(f"Fallback to Attachment API for {bid_ntce_no}...")
         params = {
             "serviceKey": api_key,
             "numOfRows": 100,
@@ -84,7 +86,7 @@ class AttachmentDownloader:
                 )
 
                 if response.status_code != 200:
-                    print(f"[Attachment] HTTP Error: {response.status_code}")
+                    logger.error(f"HTTP Error: {response.status_code}")
                     return []
 
                 data = response.json()
@@ -97,7 +99,7 @@ class AttachmentDownloader:
                 return items if items else []
 
         except Exception as e:
-            print(f"[Attachment] API Error: {e}")
+            logger.error(f"API Error: {e}")
             return []
 
     @staticmethod
@@ -121,11 +123,11 @@ class AttachmentDownloader:
                         f.write(response.content)
                     return True
                 else:
-                    print(f"[Download] Failed: {response.status_code}")
+                    logger.error(f"Download failed: {response.status_code}")
                     return False
 
         except Exception as e:
-            print(f"[Download] Error: {e}")
+            logger.error(f"Download error: {e}")
             return False
 
 
@@ -152,14 +154,14 @@ async def deep_analyze_bid(
     """
     from app.core.config import settings
 
-    print(f"[DeepAnalysis] 시작: {bid_id}", flush=True)
+    logger.info(f"심층 분석 시작: {bid_id}")
 
     # 1. 입찰 공고 정보 조회
     bid_detail = BidDetailService.fetch_bid_detail(bid_id)
     bid_title = bid_detail.get("title") if bid_detail else None
 
     if not bid_detail:
-        print(f"[DeepAnalysis] 공고 정보 조회 실패: {bid_id}")
+        logger.warning(f"공고 정보 조회 실패: {bid_id}")
         # 공고 정보 없이도 첨부파일 분석 시도
 
     # 2. 첨부파일 목록 조회
@@ -175,7 +177,7 @@ async def deep_analyze_bid(
             error="첨부파일을 찾을 수 없습니다."
         )
 
-    print(f"[DeepAnalysis] 첨부파일 {len(attachments)}개 발견", flush=True)
+    logger.info(f"첨부파일 {len(attachments)}개 발견")
 
     # 3. 지원 형식의 첨부파일 필터링 및 다운로드
     all_text_parts = []
@@ -192,28 +194,28 @@ async def deep_analyze_bid(
             # 확장자 확인
             ext = os.path.splitext(file_name)[1].lower()
             if ext not in {".hwp", ".hwpx", ".pdf"}:
-                print(f"[DeepAnalysis] 지원하지 않는 형식 스킵: {file_name}")
+                logger.info(f"지원하지 않는 형식 스킵: {file_name}")
                 continue
 
             # 파일 다운로드
             save_path = os.path.join(temp_dir, file_name)
-            print(f"[DeepAnalysis] 다운로드 중: {file_name}", flush=True)
+            logger.info(f"다운로드 중: {file_name}")
 
             success = await AttachmentDownloader.download_file(file_url, save_path)
             if not success:
-                print(f"[DeepAnalysis] 다운로드 실패: {file_name}")
+                logger.error(f"다운로드 실패: {file_name}")
                 continue
 
             # 텍스트 추출
-            print(f"[DeepAnalysis] 텍스트 추출 중: {file_name}", flush=True)
+            logger.info(f"텍스트 추출 중: {file_name}")
             text = DocumentParser.extract_text(save_path)
 
             if text and len(text.strip()) > 100:
                 all_text_parts.append(f"=== {file_name} ===\n{text}")
                 analyzed_files.append(file_name)
-                print(f"[DeepAnalysis] 추출 완료: {len(text)} 문자")
+                logger.info(f"추출 완료: {len(text)} 문자")
             else:
-                print(f"[DeepAnalysis] 추출된 텍스트 없음: {file_name}")
+                logger.warning(f"추출된 텍스트 없음: {file_name}")
 
     if not all_text_parts:
         return DeepAnalysisResponse(
@@ -225,7 +227,7 @@ async def deep_analyze_bid(
 
     # 4. 전체 텍스트 병합
     combined_text = "\n\n".join(all_text_parts)
-    print(f"[DeepAnalysis] 전체 텍스트: {len(combined_text)} 문자", flush=True)
+    logger.info(f"전체 텍스트: {len(combined_text)} 문자")
 
     # 5. AI 분석
     bid_info = {
@@ -252,7 +254,7 @@ async def deep_analyze_bid(
         error=analysis_result.get("error")
     )
 
-    print(f"[DeepAnalysis] 완료: 위험도 {response.risk_assessment}", flush=True)
+    logger.info(f"완료: 위험도 {response.risk_assessment}")
     return response
 
 

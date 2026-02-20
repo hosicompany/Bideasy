@@ -2,7 +2,6 @@ import sys
 import os
 import random
 from datetime import datetime, timedelta
-import collections
 
 # Add backend to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))

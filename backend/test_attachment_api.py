@@ -1,5 +1,4 @@
 import requests
-import os
 
 # Load .env manually
 def load_env():

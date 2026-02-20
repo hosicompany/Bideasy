@@ -23,7 +23,7 @@ import sys
 import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional
 import sqlite3
 
 # 상위 디렉토리 경로 추가
@@ -331,12 +331,12 @@ class HistoricalDataCollector:
         self.service = G2BApiService(self.api_key)
         
         self.stats["started_at"] = datetime.now().isoformat()
-        self.logger.info(f"=" * 60)
+        self.logger.info("=" * 60)
         self.logger.info(f"나라장터 낙찰 데이터 {months}개월치 수집 시작")
         self.logger.info(f"수집 유형: {', '.join(bid_types)}")
         self.logger.info(f"기준 종료일: {base_end_date or '20250207'}")
         self.logger.info(f"저장 위치: {self.db_file}")
-        self.logger.info(f"=" * 60)
+        self.logger.info("=" * 60)
         
         try:
             for bid_type in bid_types:
@@ -393,7 +393,7 @@ class HistoricalDataCollector:
         self._save_state(self.stats)
         
         self.logger.info(f"\n{'='*60}")
-        self.logger.info(f"수집 완료!")
+        self.logger.info("수집 완료!")
         self.logger.info(f"{'='*60}")
         self.logger.info(f"총 수집: {self.stats['total_collected']}건")
         self.logger.info(f"  - 물품: {self.stats['goods']}건")

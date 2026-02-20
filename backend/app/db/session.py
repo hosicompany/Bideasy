@@ -2,18 +2,21 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
-# Construct Database URL
-# For easier local setup without Docker, we will use SQLite by default.
-SQLALCHEMY_DATABASE_URL = "sqlite:///./bideasy.db"
+if settings.DATABASE_MODE == "postgresql":
+    engine = create_engine(
+        settings.database_url,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+    )
+else:
+    engine = create_engine(
+        settings.database_url,
+        connect_args={"check_same_thread": False},
+    )
 
-# connect_args={"check_same_thread": False} is required for SQLite
-import os
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, 
-    connect_args={"check_same_thread": False}
-)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 
 def get_db():
     db = SessionLocal()

@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from app.services.crawler import CrawlerService
-import json
 
 print("Testing CrawlerService.crawl_bids('부산')...")
 try:

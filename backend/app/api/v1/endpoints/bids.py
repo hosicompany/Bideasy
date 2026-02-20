@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -6,6 +6,9 @@ from app.db.session import get_db
 from app.schemas import bid as schemas
 from app.services.calculator import CalculatorService
 from app.db import models
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -93,7 +96,6 @@ def get_feed(
 
     if keyword:
         from app.services.crawler import CrawlerService
-        import sys
         
         # 1. Smart Detection: Is this a region search?
         is_region = CrawlerService.is_region_keyword(keyword)
@@ -119,7 +121,7 @@ def get_feed(
              if api_results:
                 CrawlerService.save_notices(db, api_results)
         except Exception as e:
-            print(f"DB save error (non-fatal): {e}", flush=True)
+            logger.warning(f"DB save error (non-fatal): {e}")
         
         return api_results
         
@@ -153,7 +155,7 @@ def get_feed(
         if not notices and page == 1:
             # First load and no data? Try fetching from API directly
             from app.services.crawler import CrawlerService
-            print("DB empty, fetching initial batch from API...", flush=True)
+            logger.info("DB empty, fetching initial batch from API...")
             api_data = CrawlerService.fetch_notices(page=1, size=50) # Fetch valid batch
             CrawlerService.save_notices(db, api_data)
             # Re-query
@@ -173,12 +175,12 @@ def trigger_crawl(db: Session = Depends(get_db)):
         try:
             db.execute(text("SELECT contract_type FROM notices LIMIT 1"))
         except Exception:
-            print("Auto-migration: Adding contract_type column...")
+            logger.info("Auto-migration: Adding contract_type column...")
             db.rollback() # Reset transaction
             db.execute(text("ALTER TABLE notices ADD COLUMN contract_type VARCHAR DEFAULT 'CONSTRUCTION'"))
             db.commit()
 
-        print("Triggering Crawl...")
+        logger.info("Triggering Crawl...")
         notices = CrawlerService.fetch_notices(size=50)
         saved_count = CrawlerService.save_notices(db, notices)
         return {"message": "Crawl Success", "fetched": len(notices), "saved": saved_count}

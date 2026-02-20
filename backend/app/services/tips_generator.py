@@ -8,7 +8,7 @@ Rule-based Tips Generator for Bid Analysis
 - "계산값": 수학적 계산으로 도출된 정보
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
@@ -94,7 +94,7 @@ class TipsGenerator:
                 price_formatted = f"{val:,.0f}원"
             else:
                 price_formatted = "금액 미상"
-        except:
+        except Exception:
             price_formatted = "금액 미상"
         
         contract_method = self.data.get("contract_method", "")
@@ -140,7 +140,7 @@ class TipsGenerator:
                 else:
                     end_dt = end_date
                 days_left = (end_dt - datetime.now()).days
-            except:
+            except Exception:
                 pass
         
         return {
@@ -307,7 +307,6 @@ class TipsGenerator:
         price_info = self._get_price_info()
         
         if "error" not in price_info:
-            basic = price_info.get("basic_price", 0)
             lower_limit = price_info.get("lower_limit", {})
             est_range = price_info.get("estimated_price_range", {})
             

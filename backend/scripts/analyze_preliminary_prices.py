@@ -10,7 +10,6 @@ import json
 import math
 from itertools import combinations
 from pathlib import Path
-from collections import defaultdict
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 LOWER_LIMIT_RATE = 87.745
@@ -76,7 +75,6 @@ def main():
     print("=" * 60)
 
     prediction_errors_basic = []  # 기초금액 기반 오차
-    prediction_errors_prob = []   # 확률분포 기반 오차 (최빈 구간)
     prediction_errors_median = [] # 확률분포 중앙값 오차
 
     matched = 0
@@ -99,7 +97,7 @@ def main():
             continue
 
         # C(n, 4) 조합의 평균 = 가능한 예정가격들
-        n = len(prices)
+        len(prices)
         possible_rps = []
         for combo in combinations(prices, 4):
             possible_rps.append(sum(combo) / 4)
@@ -222,7 +220,7 @@ def main():
     print(f"  {'C: 확률분포 30%ile 하한선':<27} {wins_c:>5}건 {wins_c/total*100:>7.1f}% {passes_c:>7}건 {passes_c/total*100:>7.1f}%")
 
     # 전략 C 여유분 조정 실험
-    print(f"\n  [ 전략 C 여유분 조정 실험 ]")
+    print("\n  [ 전략 C 여유분 조정 실험 ]")
     print(f"  {'percentile':>10} {'margin':>8} {'낙찰':>6} {'낙찰률':>8} {'통과률':>8}")
     print(f"  {'-'*45}")
 
@@ -306,7 +304,7 @@ def main():
         print(f"    범위: {min_rel:+.3f}% ~ {max_rel:+.3f}%")
         print(f"    5%ile ~ 95%ile: {p5:+.3f}% ~ {p95:+.3f}%")
         print(f"\n  → 기초금액 기준 ±{p95:.1f}% 범위에 90%의 예비가격이 분포")
-        print(f"  → 이 패턴을 학습하면 입찰 전에도 예비가격 범위를 추정 가능")
+        print("  → 이 패턴을 학습하면 입찰 전에도 예비가격 범위를 추정 가능")
 
 
 if __name__ == "__main__":

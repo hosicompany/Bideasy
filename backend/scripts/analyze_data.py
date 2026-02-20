@@ -80,7 +80,7 @@ for bid_type in ['goods', 'service', 'construction']:
 print("\n### 8. 발주기관 통계")
 org_counts = df['dminstt_nm'].value_counts()
 print(f"  - 총 기관 수: {len(org_counts):,}개")
-print(f"  - 상위 5개 기관:")
+print("  - 상위 5개 기관:")
 for org, count in org_counts.head(5).items():
     org_name = str(org)[:30] if org else "Unknown"
     print(f"    - {org_name}: {count:,}건")

@@ -13,7 +13,6 @@ import urllib.request
 import urllib.parse
 from pathlib import Path
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 API_KEY = "fa268326385baba6b21a78ceb898d00b382b4ac3cf1d610e3c647ef3422e5905"
@@ -137,7 +136,7 @@ def main():
 
     start_time = time.time()
     batch_count = 0
-    last_report = time.time()
+    time.time()
 
     for i, (bid_no, bid_ord) in enumerate(remaining):
         result = fetch_preliminary_prices(bid_no, bid_ord)
@@ -163,7 +162,7 @@ def main():
             elapsed = time.time() - start_time
             rate = (i + 1) / elapsed if elapsed > 0 else 0
             eta_min = (len(remaining) - i - 1) / rate / 60 if rate > 0 else 0
-            success_count = len(results) - len(progress.get("_prev_results", []))
+            len(results) - len(progress.get("_prev_results", []))
 
             now = datetime.now().strftime("%H:%M:%S")
             print(f"  [{now}] {len(completed_set)}/{len(bid_list)} "
@@ -181,7 +180,7 @@ def main():
 
     elapsed = time.time() - start_time
     print(f"\n{'='*50}")
-    print(f"  수집 완료!")
+    print("  수집 완료!")
     print(f"  총 소요: {elapsed/60:.1f}분")
     print(f"  성공: {len(results)}건")
     print(f"  에러: {len(errors)}건")

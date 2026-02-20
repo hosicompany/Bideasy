@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Test Document Parser and AI Analyzer directly"""
-import os
 import sys
 
 # Test 1: Document Parser Import
@@ -8,7 +7,7 @@ print("=" * 50)
 print("Test 1: Document Parser Import")
 print("=" * 50)
 try:
-    from app.services.document_parser import DocumentParser, HwpTextExtractor, PdfTextExtractor
+    from app.services.document_parser import DocumentParser
     print("[OK] DocumentParser imported successfully")
     print(f"  Supported formats: {DocumentParser.SUPPORTED_EXTENSIONS}")
 except Exception as e:
@@ -20,7 +19,7 @@ print("\n" + "=" * 50)
 print("Test 2: AI Analyzer Import")
 print("=" * 50)
 try:
-    from app.services.ai_analyzer import DocumentAnalyzer, document_analyzer
+    from app.services.ai_analyzer import document_analyzer
     print("[OK] DocumentAnalyzer imported successfully")
     print(f"  Model: {document_analyzer.model}")
     print(f"  Fallback: {document_analyzer.fallback_model}")
@@ -32,7 +31,7 @@ print("\n" + "=" * 50)
 print("Test 3: Analysis Schema Import")
 print("=" * 50)
 try:
-    from app.schemas.analysis import DeepAnalysisResponse, ToxicClause, QualificationRequirement
+    from app.schemas.analysis import DeepAnalysisResponse
     print("[OK] Analysis schemas imported successfully")
 
     # Test schema creation

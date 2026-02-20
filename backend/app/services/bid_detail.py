@@ -7,6 +7,9 @@ import requests
 import json
 from typing import Optional, Dict
 from app.core.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 class BidDetailService:
     """Service to fetch detailed bid information from Public Data Portal API."""
@@ -23,7 +26,7 @@ class BidDetailService:
         if result:
             return result
             
-        print("[BidDetail] Primary method returned None. Explicitly calling Fallback...", flush=True)
+        logger.warning("Primary method returned None. Explicitly calling Fallback...")
         # Handle bid_no containing dash just in case
         clean_bid_no = bid_ntce_no.split("-")[0] if "-" in bid_ntce_no else bid_ntce_no
         return BidDetailService._fetch_from_list_api(clean_bid_no)
@@ -49,18 +52,18 @@ class BidDetailService:
         }
         
         try:
-            print(f"[BidDetail] Fetching details for: {bid_ntce_no}", flush=True)
+            logger.info(f"Fetching details for: {bid_ntce_no}")
             response = requests.get(BidDetailService.BASE_URL, params=params, timeout=15)
             
             if response.status_code != 200:
-                print(f"[BidDetail] HTTP Error: {response.status_code}")
+                logger.error(f"HTTP Error: {response.status_code}")
                 # Don't return None here, raise exception to trigger fallback
                 raise Exception(f"HTTP Error {response.status_code}")
             
             try:
                 data = response.json()
             except json.JSONDecodeError:
-                print(f"[BidDetail] JSON Decode Error: {response.text[:200]}")
+                logger.error(f"JSON Decode Error: {response.text[:200]}")
                 return None
             
             # Parse response
@@ -68,7 +71,7 @@ class BidDetailService:
             items = body.get("items", [])
             
             if not items:
-                print(f"[BidDetail] No items found for {bid_ntce_no}")
+                logger.info(f"No items found for {bid_ntce_no}")
                 return None
             
             # Handle single item case (API sometimes returns dict instead of list)
@@ -78,7 +81,7 @@ class BidDetailService:
             # Find matching bid by order
             for item in items:
                 if item.get("bidNtceOrd", "") == bid_ntce_ord or bid_ntce_ord == "00":
-                    print(f"[BidDetail] Found: {item.get('bidNtceNm', 'N/A')[:50]}", flush=True)
+                    logger.info(f"Found: {item.get('bidNtceNm', 'N/A')[:50]}")
                     return BidDetailService._format_bid_detail(item)
             
             # Return first item if no exact match
@@ -88,9 +91,9 @@ class BidDetailService:
             return None
             
         except Exception as e:
-            print(f"[BidDetail] Error: {e}")
+            logger.error(f"Error: {e}")
             
-        print("[BidDetail] Primary API failed. Trying Fallback (List API - Construction)...", flush=True)
+        logger.warning("Primary API failed. Trying Fallback (List API - Construction)...")
         return BidDetailService._fetch_from_list_api(bid_ntce_no)
 
     @staticmethod
@@ -115,10 +118,10 @@ class BidDetailService:
         }
         
         try:
-            print(f"[BidDetail] Fallback: Fetching list (30 days) to find {bid_ntce_no}...", flush=True)
+            logger.info(f"Fallback: Fetching list (30 days) to find {bid_ntce_no}...")
             response = requests.get(url, params=params, timeout=20)
             if response.status_code != 200:
-                print(f"[BidDetail] Fallback HTTP Error: {response.status_code}")
+                logger.error(f"Fallback HTTP Error: {response.status_code}")
                 return None
                 
             data = response.json()
@@ -130,13 +133,13 @@ class BidDetailService:
             # Client-side Filter
             for item in items:
                 if item.get("bidNtceNo") == bid_ntce_no:
-                    print(f"[BidDetail] Found via Fallback List: {item.get('bidNtceNm', 'N/A')[:30]}", flush=True)
+                    logger.info(f"Found via Fallback List: {item.get('bidNtceNm', 'N/A')[:30]}")
                     return BidDetailService._format_bid_detail(item)
                     
-            print(f"[BidDetail] Fallback: {bid_ntce_no} not found in recent {len(items)} items.")
+            logger.warning(f"Fallback: {bid_ntce_no} not found in recent {len(items)} items.")
                 
         except Exception as e:
-            print(f"[BidDetail] Fallback Error: {e}")
+            logger.error(f"Fallback Error: {e}")
             
         return None
     

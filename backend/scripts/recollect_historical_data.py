@@ -2,7 +2,6 @@ import requests
 import json
 import sqlite3
 from datetime import datetime, timedelta
-import os
 import time
 
 # --- Configuration ---

@@ -56,23 +56,23 @@ try:
         print("=" * 70)
         
         # Summary
-        print(f"\n[Summary]")
+        print("\n[Summary]")
         print(f"  {data.get('summary', 'N/A')}")
         
         # Eligibility
         eligibility = data.get('eligibility', {})
-        print(f"\n[Eligibility]")
+        print("\n[Eligibility]")
         print(f"  Requirements: {eligibility.get('requirements', [])}")
         
         # Deadline Info
         deadline = data.get('deadline_info', {})
-        print(f"\n[Deadline Info]")
+        print("\n[Deadline Info]")
         print(f"  Days Remaining: {deadline.get('days_remaining')}")
         print(f"  Is Urgent: {deadline.get('is_urgent')}")
         
         # Price Info
         price = data.get('price_info', {})
-        print(f"\n[Price Info]")
+        print("\n[Price Info]")
         print(f"  Basic Price: {price.get('basic_price_formatted')}")
         lower = price.get('lower_limit', {})
         print(f"  Lower Limit: {lower.get('rate')}% = {lower.get('formatted')}")

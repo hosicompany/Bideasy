@@ -41,7 +41,7 @@ def verify_simple():
         "type": "json"
     }
 
-    print(f"--- Key Probe ---")
+    print("--- Key Probe ---")
     # Test 1: Notice (Control) - Try solving 401
     url_notice = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk"
     
@@ -58,14 +58,13 @@ def verify_simple():
         p = date_params.copy(); p["serviceKey"] = decoded_key
         r = requests.get(url_notice, params=p, timeout=5, verify=False)
         print(f"Notice (Decoded Key): {r.status_code}")
-        valid_key = decoded_key if r.status_code == 200 else raw_key
         # Note: If both fail, we have a bigger problem.
     except Exception as e: print(f"Decoded Err: {e}")
 
     # Use the best key for next tests? Or just try Decoded.
     best_key = decoded_key 
     
-    print(f"\n--- URL Probe: Standard Scsbid Info ---")
+    print("\n--- URL Probe: Standard Scsbid Info ---")
     
     # Correct URL for Standard Opening Results (Nakchal Info)
     url = "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdScsbidInfo"
@@ -87,7 +86,7 @@ def verify_simple():
         print(f"Scsbid Status: {r.status_code}")
         
         if r.status_code == 200:
-            print(f"  -> SUCCESS! Endpoint valid.")
+            print("  -> SUCCESS! Endpoint valid.")
             try:
                 data = r.json().get("response", {}).get("body", {})
                 items = data.get("items", [])

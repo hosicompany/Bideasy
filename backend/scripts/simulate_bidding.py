@@ -11,13 +11,12 @@ BidEasy 알고리즘 vs 실제 낙찰 결과 비교 분석
 
 import json
 import sys
-import os
 from pathlib import Path
 from dataclasses import dataclass
 
 # calculator.py 경로 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from app.services.calculator import CalculatorService, SafetyLevel
+from app.services.calculator import CalculatorService
 
 
 @dataclass
@@ -205,15 +204,15 @@ def print_stats(stats: dict):
     print(f"전략: {stats['strategy']}")
     print(f"{'='*60}")
     print(f"총 분석 건수: {stats['total']:,}건 (스킵: {stats['skipped']}건)")
-    print(f"\n--- 핵심 지표 ---")
+    print("\n--- 핵심 지표 ---")
     print(f"낙찰 성공률: {stats['win_rate_pct']}% ({stats['wins']:,}건/{stats['total']:,}건)")
     print(f"하한선 통과율: {100 - stats['below_limit_pct']}% (미달: {stats['below_limit']}건)")
-    print(f"\n--- 투찰률 분석 ---")
+    print("\n--- 투찰률 분석 ---")
     print(f"우리 평균 투찰률: {stats['our_avg_rate']}%")
     print(f"실제 평균 낙찰률: {stats['actual_avg_rate']}%")
     print(f"평균 차이: {stats['avg_rate_diff']}%p")
     print(f"차이 범위: {stats['rate_diff_min']}%p ~ {stats['rate_diff_max']}%p")
-    print(f"\n--- 금액대별 분석 ---")
+    print("\n--- 금액대별 분석 ---")
     for name, bs in stats.get("bracket_analysis", {}).items():
         print(f"  {name}: {bs['count']}건, 낙찰률 {bs['win_rate_pct']}%, "
               f"하한통과 {bs['above_limit_pct']}%, 평균차이 {bs['avg_rate_diff']}%p")

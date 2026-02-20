@@ -4,7 +4,9 @@ import re
 import asyncio
 import aiohttp
 from typing import List, Dict, Optional
-from concurrent.futures import ThreadPoolExecutor
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 class ScraperService:
     
@@ -58,7 +60,7 @@ class ScraperService:
             response.encoding = 'utf-8' # G2B is usually utf-8 or euc-kr
             
             if response.status_code != 200:
-                print(f"[Scraper] Failed to fetch {url}: {response.status_code}")
+                logger.error(f"Failed to fetch {url}: {response.status_code}")
                 return ""
 
             # 2. Parse HTML
@@ -93,7 +95,7 @@ class ScraperService:
             return cleaned_text[:5000]
 
         except Exception as e:
-            print(f"[Scraper] Error scraping {url}: {e}")
+            logger.error(f"Error scraping {url}: {e}")
             return ""
     
     @staticmethod
@@ -205,7 +207,7 @@ class ScraperService:
                 return {"url": url, "content": cleaned_text, "location": location}
                 
         except Exception as e:
-            print(f"[Scraper] Async Error: {e}")
+            logger.error(f"Async Error: {e}")
             return {"url": url, "content": "", "location": None}
     
     @staticmethod

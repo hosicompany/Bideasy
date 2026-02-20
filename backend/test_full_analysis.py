@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Test comprehensive AI analysis with extended fields"""
 import requests
-from urllib.parse import urlencode
 
 url = "http://127.0.0.1:8000/api/v1/ai/TEST-FULL-001/analysis"
 

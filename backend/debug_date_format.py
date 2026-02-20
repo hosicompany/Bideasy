@@ -20,15 +20,6 @@ def test_date_format():
     s_date = start_dt.strftime("%Y%m%d")
     e_date = end_dt.strftime("%Y%m%d")
     
-    params = {
-        "serviceKey": key,
-        "numOfRows": 1,
-        "pageNo": 1,
-        "inqryDiv": 1,
-        "inqryBgnDt": s_date, # 8 char
-        "inqryEndDt": e_date, # 8 char
-        "type": "json"
-    }
     
     # Manual URL
     query = f"serviceKey={key}&numOfRows=1&pageNo=1&inqryDiv=1&inqryBgnDt={s_date}&inqryEndDt={e_date}&type=json"

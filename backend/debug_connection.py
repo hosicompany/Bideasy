@@ -1,5 +1,4 @@
 import requests
-import sys
 
 try:
     print("Testing API connection...")

@@ -153,7 +153,7 @@ def main():
             save_progress(progress)
 
             elapsed = time.time() - start_time
-            rate = api_calls / elapsed if elapsed > 0 else 0
+            api_calls / elapsed if elapsed > 0 else 0
             eta_min = (len(periods) - i - 1) / ((i + 1) / elapsed * 60) if elapsed > 0 else 0
 
             now = datetime.now().strftime("%H:%M:%S")
@@ -178,7 +178,7 @@ def main():
     pct = matched / len(existing_bid_nos) * 100
 
     print(f"\n{'='*50}")
-    print(f"  수집 완료!")
+    print("  수집 완료!")
     print(f"  총 소요: {elapsed/60:.1f}분")
     print(f"  API 호출: {api_calls}회")
     print(f"  매칭 성공: {matched}/{len(existing_bid_nos)}건 ({pct:.1f}%)")

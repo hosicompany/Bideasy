@@ -1,70 +1,75 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from app.db.base import Base
+
+
+def _utcnow():
+    return datetime.now(timezone.utc)
+
 
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    company_name = Column(String, default="Hosi Company") 
-    ceo_name = Column(String) # Representative Name
-    
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    company_name = Column(String(255), default="Hosi Company")
+    ceo_name = Column(String(100))
+
     # My Page Fields
-    licenses = Column(Text) # JSON List or Comma-separated (e.g. "전기공사업, 소방시설업")
-    location = Column(String) # Region (e.g. "서울특별시")
-    capacity_cost = Column(Integer, default=0) # Construction Capacity Evaluation Amount (Si-pyeong)
-    performance_record = Column(Integer, default=0) # Performance Record (Sil-jeok)
-    
+    licenses = Column(Text)
+    location = Column(String(100))
+    capacity_cost = Column(Integer, default=0)
+    performance_record = Column(Integer, default=0)
+
     points = Column(Integer, default=0)
 
     bids = relationship("UserBid", back_populates="user")
     point_transactions = relationship("PointTransaction", back_populates="user")
 
+
 class Notice(Base):
     __tablename__ = "notices"
 
-    bid_no = Column(String, primary_key=True, index=True) # 공고번호
-    title = Column(String, index=True)
-    content = Column(Text) # HTML or Text content
-    basic_price = Column(Float) # 기초금액
-    contract_type = Column(String, default="CONSTRUCTION") # CONSTRUCTION(시설), SERVICE(용역), GOODS(물품)
+    bid_no = Column(String(100), primary_key=True, index=True)
+    title = Column(String(500), index=True)
+    content = Column(Text)
+    basic_price = Column(Float)
+    contract_type = Column(String(50), default="CONSTRUCTION")
     start_date = Column(DateTime)
     end_date = Column(DateTime)
-    
+
     # Extended fields
-    organization = Column(String)
-    demand_organization = Column(String)
-    bid_method = Column(String)
-    contract_method = Column(String)
-    bid_type = Column(String)
-    status = Column(String)
-    region = Column(String)
+    organization = Column(String(255))
+    demand_organization = Column(String(255))
+    bid_method = Column(String(100))
+    contract_method = Column(String(100))
+    bid_type = Column(String(100))
+    status = Column(String(50))
+    region = Column(String(100))
     budget_amount = Column(Float)
-    opening_date = Column(String)
-    international_bid = Column(String)
-    joint_contract = Column(String)
-    sme_only = Column(String)
-    big_company_ok = Column(String)
-    bid_qualification = Column(String)
-    emergency_bid = Column(String)
-    rebid_yn = Column(String)
-    attachment_url = Column(String)
-    attachment_name = Column(String)
+    opening_date = Column(String(100))
+    international_bid = Column(String(10))
+    joint_contract = Column(String(10))
+    sme_only = Column(String(10))
+    big_company_ok = Column(String(10))
+    bid_qualification = Column(String(255))
+    emergency_bid = Column(String(10))
+    rebid_yn = Column(String(10))
+    attachment_url = Column(String(500))
+    attachment_name = Column(String(255))
 
     # Calculator Fields
-    a_value = Column(Integer, default=0) # A값 (국민연금, 건강보험 등 고정비용)
-    net_cost = Column(Integer, default=0) # 순공사원가 (투찰 하한선 방어용)
-    
+    a_value = Column(Integer, default=0)
+    net_cost = Column(Integer, default=0)
+
     # Relationships
     bids = relationship("UserBid", back_populates="notice")
     ai_log = relationship("AIAnalysisLog", back_populates="notice", uselist=False)
     favorites = relationship("Favorite", back_populates="notice")
 
     def to_dict(self):
-        """Convert model instance to dictionary."""
         return {
             "bid_no": self.bid_no,
             "title": self.title,
@@ -95,93 +100,77 @@ class Notice(Base):
             "net_cost": self.net_cost,
         }
 
+
 class UserBid(Base):
     __tablename__ = "user_bids"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    notice_id = Column(String, ForeignKey("notices.bid_no"))
-    
-    bid_price = Column(Integer) # Calculated price (1 won precision)
-    rate = Column(Float) # Sagyeongyul (e.g. 1.25)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
+    notice_id = Column(String(100), ForeignKey("notices.bid_no"))
+
+    bid_price = Column(Integer)
+    rate = Column(Float)
+    created_at = Column(DateTime, default=_utcnow)
+
     user = relationship("User", back_populates="bids")
     notice = relationship("Notice", back_populates="bids")
 
 
 class OpeningResult(Base):
-    """
-    Historical Opening Results (개찰결과) for Data Analysis.
-    Used for 'Agency Profiling' and 'Monte Carlo Simulation'.
-    """
     __tablename__ = "opening_results"
 
-    bid_no = Column(String, primary_key=True, index=True)
-    
-    # Agency Info (For Aggregation)
-    organization = Column(String, index=True) # e.g. "강남구청"
-    region = Column(String, index=True)       # e.g. "서울특별시"
-    
-    # Bid Info
+    bid_no = Column(String(100), primary_key=True, index=True)
+
+    organization = Column(String(255), index=True)
+    region = Column(String(100), index=True)
+
     open_date = Column(DateTime, index=True)
     basic_price = Column(Float)
-    reserved_price = Column(Float) # 예정가격 (추가됨)
-    bid_method = Column(String)    # 입찰방법 (추가됨)
-    
-    # Winning Info (The most important part)
-    winner_company = Column(String)
+    reserved_price = Column(Float)
+    bid_method = Column(String(100))
+
+    winner_company = Column(String(255))
     winner_price = Column(Float)
-    winner_rate = Column(Float) # 낙찰하한율 대비가 아니라, '사정률' (예: -0.1234)
-    
-    # Competition Info
+    winner_rate = Column(Float)
+
     participants_count = Column(Integer)
-    
-    # Meta
-    crawled_at = Column(DateTime, default=datetime.utcnow)
+
+    crawled_at = Column(DateTime, default=_utcnow)
+
 
 class AIAnalysisLog(Base):
-    """
-    AI Logic Analysis Cache
-    Ref: TechSpec v2.2 - 2.2 AI_Analysis_Logs
-    """
     __tablename__ = "ai_analysis_logs"
 
-    bid_no = Column(String, ForeignKey("notices.bid_no"), primary_key=True)
-    summary_json = Column(JSON) # 3-line summary
-    risk_factors = Column(JSON) # Risk factors list
-    llm_model = Column(String, default="gpt-4o-mini")
+    bid_no = Column(String(100), ForeignKey("notices.bid_no"), primary_key=True)
+    summary_json = Column(JSON)
+    risk_factors = Column(JSON)
+    llm_model = Column(String(50), default="gpt-4o-mini")
     token_usage = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     notice = relationship("Notice", back_populates="ai_log")
 
+
 class PointTransaction(Base):
-    """포인트 거래 이력"""
     __tablename__ = "point_transactions"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    amount = Column(Integer, nullable=False)  # 양수=충전, 음수=차감
-    balance_after = Column(Integer, nullable=False)  # 거래 후 잔액
-    tx_type = Column(String, nullable=False)  # CHARGE, BID_COPY, SIGNUP_BONUS, AI_ANALYSIS
-    description = Column(String)
-    bid_no = Column(String, ForeignKey("notices.bid_no"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    amount = Column(Integer, nullable=False)
+    balance_after = Column(Integer, nullable=False)
+    tx_type = Column(String(50), nullable=False)
+    description = Column(String(255))
+    bid_no = Column(String(100), ForeignKey("notices.bid_no"), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
 
     user = relationship("User", back_populates="point_transactions")
 
 
 class Favorite(Base):
-    """
-    User Favorites (Bookmarks)
-    """
     __tablename__ = "favorites"
 
     id = Column(Integer, primary_key=True, index=True)
-    bid_no = Column(String, ForeignKey("notices.bid_no"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    bid_no = Column(String(100), ForeignKey("notices.bid_no"), nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
 
     notice = relationship("Notice", back_populates="favorites")
-

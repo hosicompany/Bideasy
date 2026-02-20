@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Test AI Analysis API with query parameters"""
 import requests
-from urllib.parse import quote
 
 url = "http://127.0.0.1:8000/api/v1/ai/TEST-001/analysis"
 params = {
@@ -9,7 +8,7 @@ params = {
     "basic_price": "830990000"
 }
 
-print(f"Testing AI Analysis API with query params...")
+print("Testing AI Analysis API with query params...")
 print(f"Title: {params['title']}")
 print(f"Basic Price: {params['basic_price']}")
 

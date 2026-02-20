@@ -5,8 +5,8 @@ import json
 import numpy as np
 from pathlib import Path
 from collections import defaultdict
-from datetime import datetime, date
-import sys, io
+import sys
+import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 db_path = Path(r"c:\Users\hosic\OneDrive\Coding\MyProject\01_Bid Easy\backend\data\historical\bid_results_5years.db")
@@ -148,7 +148,7 @@ for bid_type in ["construction"]:
         except:
             pass
     
-    print(f"\n  [공사] 월별:")
+    print("\n  [공사] 월별:")
     print(f"  {'월':>4} {'건수':>8} {'평균률':>8} {'표준편차':>8}")
     for month in range(1, 13):
         rates = monthly_rates[month]

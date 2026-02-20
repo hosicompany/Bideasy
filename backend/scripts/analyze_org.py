@@ -152,8 +152,6 @@ def main():
         orgs_with_custom += 1
         custom_total_items += len(items)
 
-        best_adj = None
-        best_margin = None
         best_wins = 0
 
         for adj_x10 in range(-10, 16):
@@ -178,8 +176,6 @@ def main():
                 pr = passes / len(items) * 100
                 if pr >= 85.0 and wins > best_wins:
                     best_wins = wins
-                    best_adj = adj
-                    best_margin = margin
 
         custom_total_wins += best_wins
 
@@ -202,7 +198,7 @@ def main():
         print(f"  기본 전략: {default_for_custom}건 ({default_for_custom/custom_total_items*100:.1f}%)")
         print(f"  기관별 최적: {custom_total_wins}건 ({custom_total_wins/custom_total_items*100:.1f}%)")
         print(f"  이론적 상한: +{custom_total_wins - default_for_custom}건 ({(custom_total_wins - default_for_custom)/custom_total_items*100:+.2f}%p)")
-        print(f"  (주의: 과적합 가능 — 실전 효과는 이보다 낮을 것)")
+        print("  (주의: 과적합 가능 — 실전 효과는 이보다 낮을 것)")
 
 
 if __name__ == "__main__":

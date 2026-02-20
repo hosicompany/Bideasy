@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Test LLM with current settings"""
 from app.services.llm_agent import llm_agent
-import time
 
 print(f"Current Model: {llm_agent.model}")
 

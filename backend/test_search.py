@@ -1,6 +1,5 @@
 """Automated Search Testing Script"""
 import requests
-import json
 from urllib.parse import quote
 
 BASE_URL = "http://127.0.0.1:8000/api/v1/bids/feed"
@@ -25,7 +24,7 @@ def test_search(keyword, expected_in_title_or_org, description):
         print(f"Total results: {len(data)}")
         
         if len(data) == 0:
-            print(f"❌ FAIL: No results returned")
+            print("❌ FAIL: No results returned")
             return False
         
         # Check how many results contain the expected keyword
@@ -40,7 +39,7 @@ def test_search(keyword, expected_in_title_or_org, description):
         print(f"Matches: {matches}/{len(data)} ({match_rate:.1f}%)")
         
         # Show first 5 results
-        print(f"\nFirst 5 results:")
+        print("\nFirst 5 results:")
         for i, item in enumerate(data[:5]):
             title = item.get("title", "N/A")[:60]
             print(f"  {i+1}. {title}")

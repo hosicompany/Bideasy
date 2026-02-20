@@ -9,7 +9,6 @@
 import requests
 import json
 import time
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed

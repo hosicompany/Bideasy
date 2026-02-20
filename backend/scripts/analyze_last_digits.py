@@ -8,7 +8,7 @@
 import json
 import math
 from pathlib import Path
-from collections import Counter, defaultdict
+from collections import Counter
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 LOWER_LIMIT_RATE = 87.745
@@ -58,7 +58,7 @@ def main():
         deviation = (cnt - expected) / expected * 100
         print(f"    {digit:>3}원: {cnt:>5}건 ({pct:>5.1f}%) {bar} [{deviation:+.1f}%]")
 
-    print(f"\n  100원 단위 끝자리 (상위 10개):")
+    print("\n  100원 단위 끝자리 (상위 10개):")
     for digit, cnt in last_100.most_common(10):
         pct = cnt / total * 100
         print(f"    {digit:>4}원: {cnt:>4}건 ({pct:>5.1f}%)")
@@ -87,7 +87,7 @@ def main():
         (0.1, 0.2), (0.2, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, 100)
     ]
 
-    print(f"\n  낙찰가의 하한선 대비 여유분 분포:")
+    print("\n  낙찰가의 하한선 대비 여유분 분포:")
     cumulative = 0
     for lo, hi in pct_brackets:
         cnt = sum(1 for m in margins_pct if lo <= m < hi)
@@ -149,7 +149,7 @@ def main():
         (0, 100), (100, 1000), (1000, 5000), (5000, 10000),
         (10000, 50000), (50000, 100000), (100000, float("inf"))
     ]
-    print(f"\n  낙찰가 대비 초과 금액 분포:")
+    print("\n  낙찰가 대비 초과 금액 분포:")
     for lo, hi in diff_brackets:
         cnt = sum(1 for cl in close_losses if lo <= cl["diff"] < hi)
         pct = cnt / len(close_losses) * 100 if close_losses else 0
@@ -177,7 +177,7 @@ def main():
 
     adjustments = [0, -10, -20, -30, -50, -100, -200, -500, -1000]
 
-    print(f"\n  투찰가 미세 조정 (기존 계산가에서 N원 감산):")
+    print("\n  투찰가 미세 조정 (기존 계산가에서 N원 감산):")
     print(f"  {'조정':>8} {'낙찰':>6} {'낙찰률':>8} {'하한통과':>8} {'통과율':>8} {'변화':>8}")
     print(f"  {'-'*55}")
 

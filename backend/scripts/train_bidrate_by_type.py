@@ -12,7 +12,6 @@ import numpy as np
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import joblib
 import json
@@ -127,7 +126,7 @@ for bid_type in ['construction', 'goods', 'service']:
     print(f"\n  [{type_name}] {len(type_df):,}건")
 
     if len(type_df) < 100:
-        print(f"    데이터 부족, 건너뜀")
+        print("    데이터 부족, 건너뜀")
         continue
 
     X = type_df[features].astype(float)
@@ -167,7 +166,7 @@ for bid_type in ['construction', 'goods', 'service']:
     metrics_all[bid_type] = {'mae': mae, 'rmse': rmse, 'r2': r2}
 
     # 특성 중요도
-    print(f"    특성 중요도:")
+    print("    특성 중요도:")
     for feat, imp in sorted(zip(features, model.feature_importances_), key=lambda x: -x[1])[:5]:
         print(f"      {feat}: {imp:.4f}")
 

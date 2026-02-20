@@ -1,6 +1,5 @@
 import requests
 import json
-import time
 
 # Backend URL
 BASE_URL = "http://localhost:8000/api/v1"

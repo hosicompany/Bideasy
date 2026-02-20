@@ -1,9 +1,12 @@
 import requests
 import json
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List
 from app.db import models
 from app.core.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 class CrawlerService:
     # BidPublicInfoService04 / getBidPblancListInfoCnstwk01 (Gongsa - Construction)
@@ -50,38 +53,38 @@ class CrawlerService:
         if region:
             # Region-based search: Use organization name filter
             params["ntceInsttNm"] = region
-            print(f"[Crawler] Region Search: ntceInsttNm={region}", flush=True)
+            logger.info(f"Region Search: ntceInsttNm={region}")
         elif keyword:
             # Keyword-based search: Use title filter
             params["bidNtceNm"] = keyword
-            print(f"[Crawler] Keyword Search: bidNtceNm={keyword}", flush=True)
+            logger.info(f"Keyword Search: bidNtceNm={keyword}")
 
         try:
-            print(f"[Crawler] Fetching from: {CrawlerService.BASE_URL}", flush=True)
+            logger.info(f"Fetching from: {CrawlerService.BASE_URL}")
             response = requests.get(CrawlerService.BASE_URL, params=params)
             
             # Check Status
             # Check Status
             if response.status_code != 200:
-                print(f"[Crawler] Error: {response.status_code}, {response.text}")
+                logger.error(f"HTTP Error: {response.status_code}, {response.text}")
                 return []
             
             # Parse JSON
             try:
                 data = response.json()
             except json.JSONDecodeError:
-                print("[Crawler] JSON Decode Error. Response might be XML or Invalid: {response.text[:200]}")
-                print("[Crawler] Falling back to Mock Data due to API Error", flush=True)
+                logger.error(f"JSON Decode Error. Response might be XML or Invalid: {response.text[:200]}")
+                logger.warning("Falling back to Mock Data due to API Error")
                 return CrawlerService.get_mock_data()
                 
             response_body = data.get("response", {}).get("body", {})
             if not response_body:
-                print(f"[Crawler] No body in response: {data}")
+                logger.warning(f"No body in response: {data}")
                 return CrawlerService.get_mock_data()
                 
             items = response_body.get("items", [])
             if not items:
-                print(f"[Crawler] No items found for page {page}. Returning Mock Data.", flush=True)
+                logger.warning(f"No items found for page {page}. Returning Mock Data.")
                 return CrawlerService.get_mock_data()
                 
             # Handle single item vs list
@@ -110,7 +113,7 @@ class CrawlerService:
                     ctype = "GOODS"
 
                 if item.get("ntceSpecDocUrl1"):
-                    print(f"[Crawler] Found attachment: {item.get('ntceSpecFileNm1')} for {bid_no}", flush=True)
+                    logger.info(f"Found attachment: {item.get('ntceSpecFileNm1')} for {bid_no}")
                 
                 notice_dict = {
                     # Core fields
@@ -144,11 +147,11 @@ class CrawlerService:
                 }
                 result_list.append(notice_dict)
                 
-            print(f"[Crawler] Successfully fetched {len(result_list)} items.", flush=True)
+            logger.info(f"Successfully fetched {len(result_list)} items.")
             return result_list
 
         except Exception as e:
-            print(f"[Crawler] Critical Error: {str(e)}")
+            logger.error(f"Critical Error: {str(e)}")
             return []
 
     @staticmethod

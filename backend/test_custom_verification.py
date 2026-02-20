@@ -20,7 +20,7 @@ def test_qualification():
         location="부산광역시",
         licenses="전기공사업"
     )
-    print(f"👤 User Profile:")
+    print("👤 User Profile:")
     print(f"   - Location: {user.location}")
     print(f"   - Licenses: {user.licenses}\n")
 
@@ -30,7 +30,7 @@ def test_qualification():
         "bidNtceNm": "서울 강남구 전기 공사",
         "LmtRegion": "서울특별시",
     }
-    print(f"📋 Case 1: Seoul Notice (Region Mismatch)")
+    print("📋 Case 1: Seoul Notice (Region Mismatch)")
     print(f"   - Notice Region: {notice_seoul['LmtRegion']}")
     
     result_fail = QualificationChecker.check_qualification(notice_seoul, user)
@@ -44,7 +44,7 @@ def test_qualification():
         "bidNtceNm": "부산 해운대구 전기 공사",
         "LmtRegion": "부산광역시",
     }
-    print(f"📋 Case 2: Busan Notice (Region Match)")
+    print("📋 Case 2: Busan Notice (Region Match)")
     print(f"   - Notice Region: {notice_busan['LmtRegion']}")
     
     result_pass = QualificationChecker.check_qualification(notice_busan, user)

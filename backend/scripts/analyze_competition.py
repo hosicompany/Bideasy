@@ -59,14 +59,14 @@ def main():
 
         # 분포
         brackets = [(1, 5), (6, 10), (11, 20), (21, 50), (51, 100), (101, 999)]
-        print(f"\n  참여자 수 분포:")
+        print("\n  참여자 수 분포:")
         for lo, hi in brackets:
             cnt = sum(1 for c in bid_counts if lo <= c <= hi)
             if cnt > 0:
                 print(f"    {lo}~{hi}개 업체: {cnt}건 ({cnt/len(bid_counts)*100:.1f}%)")
 
         # 입찰방법별
-        print(f"\n  입찰방법별 평균 참여자:")
+        print("\n  입찰방법별 평균 참여자:")
         for method in ["소액수의견적", "적격심사제"]:
             counts = by_method.get(method, [])
             if counts:
@@ -108,7 +108,7 @@ def main():
         within_05 = sum(1 for m in margins if m < 0.5) / len(margins) * 100
         within_1 = sum(1 for m in margins if m < 1.0) / len(margins) * 100
 
-        print(f"  낙찰가의 하한선 대비 여유도:")
+        print("  낙찰가의 하한선 대비 여유도:")
         print(f"    평균: +{avg_margin:.3f}%")
         print(f"    중앙값: +{median_margin:.3f}%")
         print(f"    10%ile: +{p10:.3f}%")
@@ -119,7 +119,7 @@ def main():
         print(f"  하한선 대비 1.0% 이내: {within_1:.1f}%")
 
     # 입찰방법별 경쟁도
-    print(f"\n  입찰방법별 낙찰가-하한선 간격:")
+    print("\n  입찰방법별 낙찰가-하한선 간격:")
     for method in ["소액수의견적", "적격심사제"]:
         method_margins = []
         for item in data:
@@ -147,10 +147,10 @@ def main():
         print(f"  랜덤 투찰 낙찰률 (이론): {random_rate:.1f}%")
         print(f"  우리 대비 랜덤: {our_win_rate / random_rate:.1f}배")
 
-    print(f"\n  시장 벤치마크 (업계 추정):")
-    print(f"    초보 업체 (감으로): ~3~5%")
-    print(f"    일반 업체 (기본 분석): ~5~8%")
-    print(f"    전문 솔루션 (비드프로 등): ~10~15%")
+    print("\n  시장 벤치마크 (업계 추정):")
+    print("    초보 업체 (감으로): ~3~5%")
+    print("    일반 업체 (기본 분석): ~5~8%")
+    print("    전문 솔루션 (비드프로 등): ~10~15%")
     print(f"    BidEasy 현재: {our_win_rate}% ← 전문 솔루션 수준")
 
 

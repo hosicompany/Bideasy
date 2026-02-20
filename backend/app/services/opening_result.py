@@ -1,8 +1,11 @@
 import requests
 import json
-from typing import List, Optional
-from datetime import datetime
+from typing import List
+from datetime import datetime, timedelta
 from app.core.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 class OpeningResultService:
     # Construction Opening Results (Standard Service)
@@ -21,7 +24,7 @@ class OpeningResultService:
         try:
             bid_ntce_no, bid_ntce_ord = bid_no.split("-")
         except ValueError:
-            print(f"[OpeningResult] Invalid bid_no format: {bid_no}")
+            logger.error(f"Invalid bid_no format: {bid_no}")
             return []
 
         url = OpeningResultService.BASE_URL_CNST
@@ -37,24 +40,24 @@ class OpeningResultService:
         }
         
         try:
-            print(f"[OpeningResult] Fetching result for {bid_no} from {url}", flush=True)
+            logger.info(f"Fetching result for {bid_no} from {url}")
             response = requests.get(url, params=params, timeout=5, verify=False)
             
             if response.status_code != 200:
-                print(f"[OpeningResult] API Error: {response.status_code} {response.text}")
+                logger.error(f"API Error: {response.status_code} {response.text}")
                 return OpeningResultService.get_mock_results(bid_no)
             
             try:
                 data = response.json()
             except json.JSONDecodeError:
-                print(f"[OpeningResult] JSON Decode Error: {response.text[:100]}")
+                logger.error(f"JSON Decode Error: {response.text[:100]}")
                 return OpeningResultService.get_mock_results(bid_no)
                 
             response_body = data.get("response", {}).get("body", {})
             items = response_body.get("items", [])
             
             if not items:
-                print("[OpeningResult] No items found in API response")
+                logger.info("No items found in API response")
                 return []
                 
             if isinstance(items, dict):
@@ -72,12 +75,12 @@ class OpeningResultService:
                 
                 try:
                     price = float(item.get("bidAmt", 0))
-                except:
+                except (ValueError, TypeError):
                     price = 0
-                
+
                 try:
                     rank = int(item.get("opengRank", 0))
-                except:
+                except (ValueError, TypeError):
                     rank = 999
                     
                 rate_str = item.get("succsbidRate", "0") # Check exact field name
@@ -102,7 +105,7 @@ class OpeningResultService:
             return results
             
         except Exception as e:
-            print(f"[OpeningResult] Exception: {e}")
+            logger.error(f"Exception: {e}")
             return OpeningResultService.get_mock_results(bid_no)
 
     @staticmethod
@@ -146,26 +149,25 @@ class OpeningResultService:
         
         results = []
         try:
-            print(f"[OpeningCrawler] Fetching history for {agency_name} ({start_str}~{end_str})...", flush=True)
+            logger.info(f"Fetching history for {agency_name} ({start_str}~{end_str})...")
             response = requests.get(url, params=params, timeout=10, verify=False)
             
             if response.status_code != 200:
-                print(f"[OpeningCrawler] Error: {response.status_code}")
+                logger.error(f"Error: {response.status_code}")
                 return []
                 
             data = response.json()
             items = data.get("response", {}).get("body", {}).get("items", [])
             
             if not items:
-                print(f"[OpeningCrawler] No history found for {agency_name}")
+                logger.info(f"No history found for {agency_name}")
                 return []
                 
             if isinstance(items, dict):
                 items = [items]
                 
-            print(f"[OpeningCrawler] Found {len(items)} raw items. Processing...", flush=True)
+            logger.info(f"Found {len(items)} raw items. Processing...")
             
-            from datetime import timedelta # Import if needed, or rely on top level
             
             for item in items:
                 # We need: bid_no, winner_rate, winner_price
@@ -199,7 +201,7 @@ class OpeningResultService:
                 try:
                     w_price = float(winner_price_str)
                     w_rate = float(winner_rate_str)
-                except:
+                except (ValueError, TypeError):
                     w_price = 0
                     w_rate = 0
                 
@@ -215,9 +217,9 @@ class OpeningResultService:
                     "winner_rate": w_rate
                 })
                 
-            print(f"[OpeningCrawler] Processed {len(results)} valid outcomes.", flush=True)
+            logger.info(f"Processed {len(results)} valid outcomes.")
             return results
             
         except Exception as e:
-            print(f"[OpeningCrawler] Failed: {e}")
+            logger.error(f"Failed: {e}")
             return []

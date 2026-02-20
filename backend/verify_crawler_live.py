@@ -1,12 +1,10 @@
 import requests
 import sys
 import os
-from datetime import datetime, timedelta
 
 # Minimal standalone verification script
 def verify_api_live():
     # Public Data Portal Endpoint (Construction Opening Results)
-    url = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getOpengResultListInfoCnstwk"
     
     # Needs API Key - Import from config or hardcode for test if needed
     # Using app imports to get settings safely
@@ -35,7 +33,7 @@ def verify_api_live():
 
     # 1. Test Notice Endpoint (Control Group)
     notice_url = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk"
-    print(f"\n--- Test 1: Notice List (Control) ---")
+    print("\n--- Test 1: Notice List (Control) ---")
     try:
         resp = requests.get(notice_url, params=params, timeout=10, verify=False)
         print(f"Notice API Status: {resp.status_code}")
@@ -44,7 +42,7 @@ def verify_api_live():
 
     # 2. Test Opening Result Endpoint (Target)
     opening_url = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getOpengResultListInfoCnstwk" 
-    print(f"\n--- Test 2: Opening Result (Target) ---")
+    print("\n--- Test 2: Opening Result (Target) ---")
     try:
         response = requests.get(opening_url, params=params, timeout=10, verify=False)
         print(f"Opening Result Status Code: {response.status_code}")

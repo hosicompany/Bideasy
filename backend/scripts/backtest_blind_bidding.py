@@ -15,7 +15,6 @@ BidEasy 모의 투찰 백테스트
 
 import sqlite3
 import json
-import numpy as np
 from pathlib import Path
 from datetime import date, datetime
 from collections import defaultdict
@@ -198,7 +197,7 @@ def run_backtest():
             r = results[name]
             valid = r["win"] + r["tie"] + r["lose"]
             win_rate = r["win"] / valid * 100 if valid > 0 else 0
-            tie_rate = r["tie"] / valid * 100 if valid > 0 else 0
+            r["tie"] / valid * 100 if valid > 0 else 0
             print(f"  {name:<20} {r['win']:>8,} {r['tie']:>8,} {r['lose']:>8,} {r['disqualified']:>8,} {win_rate:>9.1f}%")
 
         # 베스트 전략의 연도별 낙찰률

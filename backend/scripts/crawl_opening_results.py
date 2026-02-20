@@ -98,7 +98,6 @@ def crawl_week(start: datetime, end: datetime) -> list:
 
     results = []
     page = 1
-    prev_count = -1
 
     while True:
         items = fetch_page(start_dt, end_dt, page)

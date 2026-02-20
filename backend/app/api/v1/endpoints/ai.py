@@ -1,23 +1,27 @@
-import json
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from app.core.logging import get_logger
+from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.db import models
 from app.services.tips_generator import generate_tips
 from app.services.scraper import ScraperService
 
+logger = get_logger(__name__)
+
 router = APIRouter()
 
 
 @router.get("/{bid_no}/analysis")
+@limiter.limit("5/day")
 async def analyze_bid(
-    bid_no: str, 
+    request: Request,
+    bid_no: str,
     # Core fields
     title: Optional[str] = Query(None),
     basic_price: Optional[float] = Query(None),
@@ -53,7 +57,7 @@ async def analyze_bid(
     - LLM 의존성 최소화
     - 초보자를 위한 친절한 설명 포함
     """
-    print(f"[AI] Enhanced analysis request for bid_no={bid_no}", flush=True)
+    logger.info(f"Enhanced analysis request for bid_no={bid_no}")
     
     # 1. Check Cache
     cached_log = db.query(models.AIAnalysisLog).filter(
@@ -61,7 +65,7 @@ async def analyze_bid(
     ).first()
     
     if cached_log and cached_log.summary_json:
-        print(f"[AI] Cache hit for {bid_no}", flush=True)
+        logger.info(f"Cache hit for {bid_no}")
         # 캐시된 결과가 새 형식인지 확인
         if isinstance(cached_log.summary_json, dict) and "tips" in cached_log.summary_json:
             return cached_log.summary_json
@@ -73,7 +77,7 @@ async def analyze_bid(
     notice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
     
     if notice:
-        print(f"[AI] Using Notice from DB: {notice.title[:50] if notice.title else 'N/A'}...", flush=True)
+        logger.info(f"Using Notice from DB: {notice.title[:50] if notice.title else 'N/A'}...")
         try:
             bid_data = notice.to_dict()
         except AttributeError:
@@ -123,7 +127,7 @@ async def analyze_bid(
             detail="분석에 필요한 공고 정보가 부족합니다. (제목 또는 기초금액 필요)"
         )
     
-    print(f"[AI] Generating tips for: {bid_data.get('title', 'Unknown')[:30]}...", flush=True)
+    logger.info(f"Generating tips for: {bid_data.get('title', 'Unknown')[:30]}...")
     
     # 4. Generate tips using rule-based engine (Base Layer)
     try:
@@ -179,7 +183,7 @@ async def analyze_bid(
                 })
 
     except Exception as e:
-        print(f"[AI] Tips generation error: {e}", flush=True)
+        logger.error(f"Tips generation error: {e}")
         # Fallback (simplified)
         analysis_result = {"summary": "분석 오류", "tips": []}
 
@@ -188,7 +192,7 @@ async def analyze_bid(
     target_content = bid_data.get("content")
     if target_content and len(target_content) > 50:
         from app.services.llm_agent import llm_agent
-        print(f"[AI] Calling LLM for deeper analysis...", flush=True)
+        logger.info("Calling LLM for deeper analysis...")
         
         try:
             # Synchronous call (or use run_in_executor if needed for async)
@@ -206,7 +210,7 @@ async def analyze_bid(
                 # Replace the simple rule-based summary
                 formatted_summary = "\n".join([f"• {line}" for line in llm_summary_lines])
                 analysis_result["summary"] = formatted_summary
-                print(f"[AI] Replaced summary with LLM result", flush=True)
+                logger.info("Replaced summary with LLM result")
             
             # Merge 2: Risks
             # Add as High Priority Tips
@@ -222,16 +226,16 @@ async def analyze_bid(
                 })
                 
         except Exception as e:
-            print(f"[AI] LLM enhancement failed: {e}", flush=True)
+            logger.error(f"LLM enhancement failed: {e}")
             # Continue with rule-based result
     
-    print(f"[AI] Generated {len(analysis_result.get('tips', []))} tips", flush=True)
+    logger.info(f"Generated {len(analysis_result.get('tips', []))} tips")
     
     # 4.6. Extract A-value and Net Cost if URL is available (Async Scrape)
     target_url = bid_data.get("notice_url") or notice_url
     
     if target_url:
-        print(f"[AI] Scraping for A-value from {target_url}...", flush=True)
+        logger.info(f"Scraping for A-value from {target_url}...")
         try:
             loop = asyncio.get_event_loop()
             # Run blocking scrape in thread pool
@@ -254,9 +258,9 @@ async def analyze_bid(
                         "text": f"A값(국민연금 등) {total_a:,}원이 자동 추출되었습니다. 투찰 계산 시 이 금액은 낙찰률이 적용되지 않습니다.",
                         "importance": "high"
                     })
-                    print(f"[AI] A-value found: {total_a}", flush=True)
+                    logger.info(f"A-value found: {total_a}")
         except Exception as e:
-            print(f"[AI] Scraping A-value failed: {e}", flush=True)
+            logger.error(f"Scraping A-value failed: {e}")
     
     # 5. Cache the result
     try:
@@ -277,9 +281,9 @@ async def analyze_bid(
             db.add(new_log)
         
         db.commit()
-        print(f"[AI] Cached analysis for {bid_no}", flush=True)
+        logger.info(f"Cached analysis for {bid_no}")
     except Exception as e:
-        print(f"[AI] Cache save error (non-fatal): {e}", flush=True)
+        logger.warning(f"Cache save error (non-fatal): {e}")
         db.rollback()
     
     return analysis_result

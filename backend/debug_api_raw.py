@@ -1,6 +1,4 @@
 import requests
-import os
-import sys
 
 # Mock Settings if needed, or import
 from app.core.config import settings

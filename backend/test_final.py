@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Final Automated Search Test"""
 import requests
-from urllib.parse import quote
 
 BASE_URL = "http://127.0.0.1:8000/api/v1/bids/feed"
 

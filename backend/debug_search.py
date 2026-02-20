@@ -1,6 +1,5 @@
 """Debug script for Smart Search API testing"""
 import requests
-import json
 
 # Test the Public Data API directly
 BASE_URL = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk"

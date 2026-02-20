@@ -155,7 +155,7 @@ def main():
 
     # 하한 통과율 85%로 완화한 탐색도 별도
     print(f"\n{'='*60}")
-    print(f"  === 하한통과 85% 완화 기준 ===")
+    print("  === 하한통과 85% 완화 기준 ===")
     print(f"{'='*60}")
 
     for method in target_methods:

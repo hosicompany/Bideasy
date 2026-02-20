@@ -17,9 +17,7 @@ BidEasy 스마트 투찰 백테스트
 
 import sqlite3
 import json
-import numpy as np
 from pathlib import Path
-from datetime import date, datetime
 from collections import defaultdict
 import sys
 import io
@@ -165,7 +163,7 @@ def run_backtest():
             print(f"  {name:<20} {r['win']:>8,} {r['tie']:>8,} {r['lose']:>8,} {win_rate:>9.1f}%")
 
         # 참여수 구간별 상세 비교
-        print(f"\n  참여수 구간별 낙찰률 비교:")
+        print("\n  참여수 구간별 낙찰률 비교:")
         print(f"  {'구간':>6} {'건수':>8}  {'고정+0.01%':>12}  {'스마트(적응형)':>14}  {'차이':>8}")
         print("  " + "-" * 56)
 

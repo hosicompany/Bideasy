@@ -3,7 +3,6 @@ import os
 import time
 from datetime import datetime, timedelta
 import requests
-from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
 # Add backend to path logic (existing)
@@ -25,7 +24,7 @@ def crawl_nationwide_history(months: int = 12):
     if settings.PUBLIC_DATA_KEY:
         print(f"🔑 Key loaded! Length: {len(settings.PUBLIC_DATA_KEY)}")
     else:
-        print(f"❌ WARNING: API Key is EMPTY!")
+        print("❌ WARNING: API Key is EMPTY!")
     
     # Ensure tables exist
     models.Base.metadata.create_all(bind=engine)
@@ -92,7 +91,7 @@ def crawl_nationwide_history(months: int = 12):
                     # Filter: Only Completed
                     # Note: New API might use different status key. 
                     # If 'opengResultNm' missing, try to detect or skip filter for now to see data.
-                    status = item.get("opengResultNm", item.get("bidNtceSttusNm", ""))
+                    item.get("opengResultNm", item.get("bidNtceSttusNm", ""))
                     
                     # For now, if status is empty, we might let it through or log.
                     # But if we rely on "succsbidderNm", that's the main filter.
@@ -151,7 +150,7 @@ def crawl_nationwide_history(months: int = 12):
                 # allow continue
                 
     elapsed = time.time() - start_time
-    print(f"\n🎉 Nationwide Crawl Complete!")
+    print("\n🎉 Nationwide Crawl Complete!")
     print(f"⏱️ Time Taken: {elapsed/60:.1f} minutes")
     print(f"📊 Total Records Added: {total_saved}")
     db.close()

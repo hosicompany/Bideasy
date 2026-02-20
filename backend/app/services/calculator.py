@@ -4,7 +4,6 @@ Advanced Bidding Calculator Service
 """
 import math
 from dataclasses import dataclass
-from typing import Literal
 from enum import Enum
 
 

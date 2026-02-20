@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict
 from app.db import models
 
 class QualificationChecker:

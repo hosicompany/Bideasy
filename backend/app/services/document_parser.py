@@ -10,13 +10,16 @@ import struct
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import Optional
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 try:
     import olefile
     HAS_OLEFILE = True
 except ImportError:
     HAS_OLEFILE = False
-    print("[DocumentParser] Warning: olefile not installed. HWP parsing disabled.")
+    logger.warning("olefile not installed. HWP parsing disabled.")
 
 
 class HwpTextExtractor:
@@ -44,17 +47,17 @@ class HwpTextExtractor:
             추출된 텍스트 (실패시 빈 문자열)
         """
         if not HAS_OLEFILE:
-            print("[HWP] olefile 라이브러리가 설치되지 않았습니다.")
+            logger.error("olefile 라이브러리가 설치되지 않았습니다.")
             return ""
 
         if not os.path.exists(file_path):
-            print(f"[HWP] 파일을 찾을 수 없음: {file_path}")
+            logger.error(f"파일을 찾을 수 없음: {file_path}")
             return ""
 
         try:
             ole = olefile.OleFileIO(file_path)
         except Exception as e:
-            print(f"[HWP] OLE 파일 열기 실패: {e}")
+            logger.error(f"OLE 파일 열기 실패: {e}")
             return ""
 
         try:
@@ -90,14 +93,14 @@ class HwpTextExtractor:
                         all_text.append(text)
 
                 except Exception as e:
-                    print(f"[HWP] 섹션 읽기 실패 {section_path}: {e}")
+                    logger.error(f"섹션 읽기 실패 {section_path}: {e}")
                     continue
 
             ole.close()
             return "\n".join(all_text)
 
         except Exception as e:
-            print(f"[HWP] 텍스트 추출 실패: {e}")
+            logger.error(f"텍스트 추출 실패: {e}")
             ole.close()
             return ""
 
@@ -233,7 +236,7 @@ class HwpxTextExtractor:
             추출된 텍스트 (실패시 빈 문자열)
         """
         if not os.path.exists(file_path):
-            print(f"[HWPX] 파일을 찾을 수 없음: {file_path}")
+            logger.error(f"파일을 찾을 수 없음: {file_path}")
             return ""
 
         try:
@@ -245,7 +248,7 @@ class HwpxTextExtractor:
                         section_files.append(name)
 
                 if not section_files:
-                    print(f"[HWPX] 섹션 파일을 찾을 수 없음: {file_path}")
+                    logger.warning(f"섹션 파일을 찾을 수 없음: {file_path}")
                     return ""
 
                 # 섹션 번호순 정렬 (section0.xml, section1.xml, ...)
@@ -259,16 +262,16 @@ class HwpxTextExtractor:
                         if text:
                             all_text.append(text)
                     except Exception as e:
-                        print(f"[HWPX] 섹션 파싱 실패 {section_file}: {e}")
+                        logger.error(f"섹션 파싱 실패 {section_file}: {e}")
                         continue
 
                 return "\n".join(all_text)
 
         except zipfile.BadZipFile:
-            print(f"[HWPX] 잘못된 ZIP 파일: {file_path}")
+            logger.error(f"잘못된 ZIP 파일: {file_path}")
             return ""
         except Exception as e:
-            print(f"[HWPX] 텍스트 추출 실패: {e}")
+            logger.error(f"텍스트 추출 실패: {e}")
             return ""
 
     @staticmethod
@@ -285,7 +288,7 @@ class HwpxTextExtractor:
         try:
             root = ET.fromstring(xml_content)
         except ET.ParseError as e:
-            print(f"[HWPX] XML 파싱 오류: {e}")
+            logger.error(f"XML 파싱 오류: {e}")
             return ""
 
         texts = []
@@ -326,11 +329,11 @@ class PdfTextExtractor:
         try:
             import fitz  # PyMuPDF
         except ImportError:
-            print("[PDF] PyMuPDF(fitz) 라이브러리가 설치되지 않았습니다.")
+            logger.error("PyMuPDF(fitz) 라이브러리가 설치되지 않았습니다.")
             return ""
 
         if not os.path.exists(file_path):
-            print(f"[PDF] 파일을 찾을 수 없음: {file_path}")
+            logger.error(f"파일을 찾을 수 없음: {file_path}")
             return ""
 
         try:
@@ -347,7 +350,7 @@ class PdfTextExtractor:
             return "\n".join(text_parts)
 
         except Exception as e:
-            print(f"[PDF] 텍스트 추출 실패: {e}")
+            logger.error(f"텍스트 추출 실패: {e}")
             return ""
 
 
@@ -362,11 +365,11 @@ class ExcelTextExtractor:
         try:
             from openpyxl import load_workbook
         except ImportError:
-            print("[Excel] openpyxl 라이브러리가 설치되지 않았습니다.")
+            logger.error("openpyxl 라이브러리가 설치되지 않았습니다.")
             return ""
 
         if not os.path.exists(file_path):
-            print(f"[Excel] 파일을 찾을 수 없음: {file_path}")
+            logger.error(f"파일을 찾을 수 없음: {file_path}")
             return ""
 
         try:
@@ -392,7 +395,7 @@ class ExcelTextExtractor:
             return "\n\n".join(all_text)
 
         except Exception as e:
-            print(f"[Excel] 텍스트 추출 실패: {e}")
+            logger.error(f"텍스트 추출 실패: {e}")
             return ""
 
 
@@ -407,11 +410,11 @@ class WordTextExtractor:
         try:
             from docx import Document
         except ImportError:
-            print("[Word] python-docx 라이브러리가 설치되지 않았습니다.")
+            logger.error("python-docx 라이브러리가 설치되지 않았습니다.")
             return ""
 
         if not os.path.exists(file_path):
-            print(f"[Word] 파일을 찾을 수 없음: {file_path}")
+            logger.error(f"파일을 찾을 수 없음: {file_path}")
             return ""
 
         try:
@@ -434,7 +437,7 @@ class WordTextExtractor:
             return "\n".join(all_text)
 
         except Exception as e:
-            print(f"[Word] 텍스트 추출 실패: {e}")
+            logger.error(f"텍스트 추출 실패: {e}")
             return ""
 
 
@@ -470,7 +473,7 @@ class DocumentParser:
         elif ext == ".docx":
             return WordTextExtractor.extract(file_path)
         else:
-            print(f"[DocumentParser] 지원하지 않는 파일 형식: {ext}")
+            logger.warning(f"지원하지 않는 파일 형식: {ext}")
             return None
 
     @staticmethod

@@ -3,10 +3,14 @@
 *.sqlite
 *.sqlite3
 
-# Environment
+# Environment & Secrets
 .env
 .env.local
 .env.*.local
+.env.backup
+*.pem
+*.key
+*.p12
 
 # Python
 __pycache__/

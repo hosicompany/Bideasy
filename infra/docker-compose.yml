@@ -1,6 +1,49 @@
-version: '3.8'
-
 services:
+  app:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: bideasy_app
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../backend/.env
+    environment:
+      - DATABASE_MODE=postgresql
+      - POSTGRES_SERVER=db
+      - REDIS_HOST=redis
+    volumes:
+      - ../backend/models:/app/models:ro
+      - ../backend/data/historical:/app/data/historical:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery_worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: bideasy_celery
+    command: celery -A app.core.celery_app:celery_app worker --loglevel=info
+    env_file:
+      - ../backend/.env
+    environment:
+      - DATABASE_MODE=postgresql
+      - POSTGRES_SERVER=db
+      - REDIS_HOST=redis
+    volumes:
+      - ../backend/models:/app/models:ro
+      - ../backend/data/historical:/app/data/historical:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   db:
     image: postgres:15-alpine
     container_name: bideasy_db
@@ -12,6 +55,11 @@ services:
       - POSTGRES_DB=bideasy_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bideasy -d bideasy_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -20,6 +68,11 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
   postgres_data:

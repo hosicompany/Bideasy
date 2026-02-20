@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+*.pyo
+.env
+.env.*
+*.db
+*.sqlite3
+models/*.joblib
+data/historical/
+alembic/versions/__pycache__
+.git
+.gitignore
+tests/
+scripts/
+*.md

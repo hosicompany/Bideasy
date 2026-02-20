@@ -1,0 +1,13 @@
+line-length = 120
+
+[lint]
+select = ["E", "F"]
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# Scripts, debug, verify, and standalone test files - relaxed rules
+"scripts/*.py" = ["E402", "E701", "E702", "E722"]
+"test_*.py" = ["E402", "E701", "E702", "E722"]
+"debug_*.py" = ["E402", "E701", "E702", "E722"]
+"verify_*.py" = ["E402", "E701", "E702", "E722"]
+"crawl_*.py" = ["E402", "E701", "E702", "E722"]

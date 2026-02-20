@@ -1,7 +1,6 @@
 
 import sys
 import os
-import locale
 
 # Force UTF-8 for Windows console
 sys.stdout.reconfigure(encoding='utf-8')

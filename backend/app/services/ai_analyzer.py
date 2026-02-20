@@ -4,9 +4,12 @@ AI Document Analyzer - Deep analysis of bid attachments using OpenAI
 Analyzes full document text for toxic clauses, qualification requirements, etc.
 """
 import json
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from openai import OpenAI
 from app.core.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DocumentAnalyzer:
@@ -42,8 +45,8 @@ class DocumentAnalyzer:
         user_prompt = self._build_user_prompt(document_text, bid_info)
 
         try:
-            print(f"[AIAnalyzer] 심층 분석 시작 (모델: {self.model})", flush=True)
-            print(f"[AIAnalyzer] 문서 길이: {len(document_text)} 문자", flush=True)
+            logger.info(f"심층 분석 시작 (모델: {self.model})")
+            logger.info(f"문서 길이: {len(document_text)} 문자")
 
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -59,16 +62,16 @@ class DocumentAnalyzer:
             result_json = response.choices[0].message.content
             result = json.loads(result_json)
 
-            print(f"[AIAnalyzer] 분석 완료", flush=True)
+            logger.info("분석 완료")
             return self._validate_result(result)
 
         except Exception as e:
-            print(f"[AIAnalyzer] 기본 모델 실패: {e}", flush=True)
+            logger.error(f"기본 모델 실패: {e}")
 
             # Fallback to gpt-4o-mini
             if self.model != self.fallback_model:
                 try:
-                    print(f"[AIAnalyzer] 폴백 모델 시도: {self.fallback_model}", flush=True)
+                    logger.info(f"폴백 모델 시도: {self.fallback_model}")
                     response = self.client.chat.completions.create(
                         model=self.fallback_model,
                         messages=[
@@ -85,7 +88,7 @@ class DocumentAnalyzer:
                     return self._validate_result(result)
 
                 except Exception as fallback_e:
-                    print(f"[AIAnalyzer] 폴백 모델도 실패: {fallback_e}", flush=True)
+                    logger.error(f"폴백 모델도 실패: {fallback_e}")
 
             return self._empty_result(f"분석 실패: {str(e)}")
 
