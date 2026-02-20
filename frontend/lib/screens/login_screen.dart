@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import '../theme/style.dart';
 import '../services/api_service.dart';
+import '../utils/web_utils.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
 
@@ -59,16 +62,52 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _handleSocialLogin(String provider) {
+  Future<void> _handleSocialLogin(String provider) async {
     HapticFeedback.lightImpact();
-    final name = provider == 'kakao' ? '카카오' : '네이버';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$name 개발자 앱 등록 후 사용할 수 있어요'),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiService.baseUrl}/auth/social-urls'),
+      );
+
+      if (response.statusCode == 200) {
+        final urls = jsonDecode(response.body) as Map<String, dynamic>;
+        final authUrl = urls[provider] as String?;
+
+        if (authUrl != null) {
+          navigateToUrl(authUrl);
+          return; // Browser will navigate away
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('소셜 로그인 URL을 가져오지 못했어요'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('소셜 로그인 중 오류가 발생했어요'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override

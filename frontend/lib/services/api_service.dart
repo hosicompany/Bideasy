@@ -49,6 +49,11 @@ class ApiService {
 
   static bool get isLoggedIn => _token != null;
 
+  /// Save a JWT received from OAuth redirect (public access for AuthGate).
+  static Future<void> saveTokenDirect(String token) async {
+    await _saveToken(token);
+  }
+
   // ─── Auth API (static) ───
 
   static Future<void> login({

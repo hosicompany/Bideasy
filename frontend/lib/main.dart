@@ -6,6 +6,7 @@ import 'screens/login_screen.dart';
 import 'screens/bid_calculator_screen.dart';
 import 'services/api_service.dart';
 import 'models/notice.dart';
+import 'utils/web_utils.dart';
 
 void main() {
   runApp(const ProviderScope(child: BidEasyApp()));
@@ -52,6 +53,27 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _checkAuth() async {
+    // Check if we arrived via OAuth redirect (?token=...)
+    final tokenFromUrl = getTokenFromUrl();
+    if (tokenFromUrl != null && tokenFromUrl.isNotEmpty) {
+      await ApiService.saveTokenDirect(tokenFromUrl);
+      cleanUrl();
+      if (mounted) {
+        setState(() {
+          _loggedIn = true;
+          _checking = false;
+        });
+      }
+      return;
+    }
+
+    // Check for OAuth error
+    final errorFromUrl = getErrorFromUrl();
+    if (errorFromUrl != null) {
+      cleanUrl();
+    }
+
+    // Normal flow: check saved token
     final hasToken = await ApiService.loadToken();
     if (mounted) {
       setState(() {

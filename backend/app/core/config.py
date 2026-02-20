@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     PUBLIC_DATA_KEY: str = ""
 
+    # === OAuth (Social Login) ===
+    KAKAO_REST_API_KEY: str = ""
+    KAKAO_NATIVE_APP_KEY: str = ""  # Flutter mobile SDK (not used by backend)
+    NAVER_CLIENT_ID: str = ""
+    NAVER_CLIENT_SECRET: str = ""
+    FRONTEND_URL: str = "http://localhost:5000"
+
     # === ML Models ===
     ML_MODELS_PATH: str = "./models"
     HISTORICAL_DB_PATH: str = "./data/historical/bid_results_5years.db"
