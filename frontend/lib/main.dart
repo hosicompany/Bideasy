@@ -45,6 +45,9 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool _checking = true;
   bool _loggedIn = false;
+  String? _paymentResult;
+  String? _paymentAmount;
+  String? _paymentMessage;
 
   @override
   void initState() {
@@ -53,6 +56,15 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _checkAuth() async {
+    // Check if we arrived via payment redirect (?payment=success|fail)
+    final paymentResult = getPaymentResultFromUrl();
+    if (paymentResult != null) {
+      _paymentResult = paymentResult;
+      _paymentAmount = getPaymentAmountFromUrl();
+      _paymentMessage = getPaymentMessageFromUrl();
+      cleanUrl();
+    }
+
     // Check if we arrived via OAuth redirect (?token=...)
     final tokenFromUrl = getTokenFromUrl();
     if (tokenFromUrl != null && tokenFromUrl.isNotEmpty) {
@@ -83,6 +95,34 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
+  void _showPaymentSnackbar() {
+    if (_paymentResult == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_paymentResult == 'success') {
+        final amount = _paymentAmount ?? '';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$amount원 충전이 완료되었어요!'),
+            backgroundColor: AppColors.safeGreen,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else if (_paymentResult == 'fail') {
+        final message = _paymentMessage ?? '결제가 취소되었습니다';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: AppColors.dangerRed,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      _paymentResult = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_checking) {
@@ -95,6 +135,11 @@ class _AuthGateState extends State<AuthGate> {
         ),
       );
     }
-    return _loggedIn ? const HomeScreen() : const LoginScreen();
+
+    if (_loggedIn) {
+      _showPaymentSnackbar();
+      return const HomeScreen();
+    }
+    return const LoginScreen();
   }
 }

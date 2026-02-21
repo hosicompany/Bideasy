@@ -31,6 +31,24 @@
 
   <title>bideasy_app</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Toss Payments JS SDK v2 -->
+  <script src="https://js.tosspayments.com/v2/standard"></script>
+  <script>
+    function requestTossPaymentJS(clientKey, orderId, amount, orderName, customerName, successUrl, failUrl) {
+      var toss = TossPayments(clientKey);
+      var payment = toss.payment({ customerKey: "ANONYMOUS" });
+      payment.requestPayment({
+        method: "CARD",
+        amount: { currency: "KRW", value: amount },
+        orderId: orderId,
+        orderName: orderName,
+        customerName: customerName,
+        successUrl: successUrl,
+        failUrl: failUrl,
+      });
+    }
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

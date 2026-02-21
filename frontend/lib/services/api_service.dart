@@ -353,6 +353,23 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> createPaymentOrder(int amount) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/payments/create-order'),
+      headers: _authHeaders,
+      body: jsonEncode({'amount': amount}),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes));
+    } else if (response.statusCode == 401) {
+      await clearToken();
+      throw AuthException('로그인이 만료되었어요');
+    } else {
+      final body = jsonDecode(utf8.decode(response.bodyBytes));
+      throw Exception(body['detail'] ?? '주문 생성에 실패했습니다');
+    }
+  }
+
   Future<Map<String, dynamic>> chargePoints(int amount) async {
     final response = await http.post(
       Uri.parse('$baseUrl/points/charge'),

@@ -171,6 +171,24 @@ class PointTransaction(Base):
     user = relationship("User", back_populates="point_transactions")
 
 
+class PaymentOrder(Base):
+    __tablename__ = "payment_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    order_id = Column(String(64), unique=True, index=True, nullable=False)
+    amount = Column(Integer, nullable=False)
+    status = Column(String(20), default="PENDING")  # PENDING/CONFIRMED/FAILED
+    payment_key = Column(String(200), unique=True, nullable=True)
+    method = Column(String(50), nullable=True)
+    point_transaction_id = Column(Integer, ForeignKey("point_transactions.id"), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    confirmed_at = Column(DateTime, nullable=True)
+    fail_reason = Column(String(500), nullable=True)
+
+    user = relationship("User")
+
+
 class Favorite(Base):
     __tablename__ = "favorites"
 

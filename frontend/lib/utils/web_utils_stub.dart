@@ -7,3 +7,9 @@ String? getErrorFromUrl() => null;
 void cleanUrl() {}
 
 void navigateToUrl(String url) {}
+
+String? getPaymentResultFromUrl() => null;
+
+String? getPaymentAmountFromUrl() => null;
+
+String? getPaymentMessageFromUrl() => null;

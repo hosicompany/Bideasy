@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
+import '../services/toss_payments.dart';
 import '../theme/style.dart';
 import '../widgets/state_widgets.dart';
 import '../utils/snackbar_utils.dart';
@@ -61,21 +62,25 @@ class _PointScreenState extends State<PointScreen> {
     setState(() => _isCharging = true);
 
     try {
-      final result = await _apiService.chargePoints(amount);
-      setState(() {
-        _points = result['remaining_points'] ?? _points;
-        _isCharging = false;
-      });
+      final order = await _apiService.createPaymentOrder(amount);
+      final backendBase = ApiService.baseUrl;
+      final successUrl = '$backendBase/payments/success';
+      final failUrl = '$backendBase/payments/fail';
 
-      if (mounted) {
-        SnackBarUtils.showSuccess(context, result['message'] ?? '충전 완료');
-      }
-      // 내역 새로고침
-      _loadData();
+      await requestTossPayment(
+        clientKey: order['toss_client_key'],
+        orderId: order['order_id'],
+        amount: order['amount'],
+        orderName: order['order_name'],
+        customerName: order['customer_name'],
+        successUrl: successUrl,
+        failUrl: failUrl,
+      );
+      // Browser navigates to Toss — this code won't execute further
     } catch (e) {
       setState(() => _isCharging = false);
       if (mounted) {
-        SnackBarUtils.showError(context, '충전에 실패했어요. 다시 시도해주세요');
+        SnackBarUtils.showError(context, '결제를 시작할 수 없어요. 다시 시도해주세요');
       }
     }
   }
@@ -190,6 +195,8 @@ class _PointScreenState extends State<PointScreen> {
         return '투찰금액 복사';
       case 'CHARGE':
         return '포인트 충전';
+      case 'FREE_DAILY_COPY':
+        return '무료 복사';
       case 'SIGNUP_BONUS':
         return '가입 보너스';
       case 'AI_ANALYSIS':
@@ -203,6 +210,8 @@ class _PointScreenState extends State<PointScreen> {
     switch (txType) {
       case 'BID_COPY':
         return Icons.content_copy_rounded;
+      case 'FREE_DAILY_COPY':
+        return Icons.card_giftcard_rounded;
       case 'CHARGE':
         return Icons.add_circle_rounded;
       case 'SIGNUP_BONUS':

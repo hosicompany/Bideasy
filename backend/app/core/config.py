@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     NAVER_CLIENT_SECRET: str = ""
     FRONTEND_URL: str = "http://localhost:5000"
 
+    # === Toss Payments ===
+    TOSS_CLIENT_KEY: str = ""
+    TOSS_SECRET_KEY: str = ""
+
     # === ML Models ===
     ML_MODELS_PATH: str = "./models"
     HISTORICAL_DB_PATH: str = "./data/historical/bid_results_5years.db"

@@ -21,3 +21,18 @@ void cleanUrl() {
 void navigateToUrl(String url) {
   html.window.location.href = url;
 }
+
+/// Read ?payment= from the current browser URL.
+String? getPaymentResultFromUrl() {
+  return Uri.base.queryParameters['payment'];
+}
+
+/// Read ?amount= from the current browser URL.
+String? getPaymentAmountFromUrl() {
+  return Uri.base.queryParameters['amount'];
+}
+
+/// Read ?message= from the current browser URL.
+String? getPaymentMessageFromUrl() {
+  return Uri.base.queryParameters['message'];
+}
