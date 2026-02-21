@@ -6,6 +6,7 @@ from datetime import datetime
 # 과금 상수
 BID_COPY_COST = 500  # 투찰금액 복사 1건당 500원
 SIGNUP_BONUS = 3000  # 신규 가입 보너스 3,000원
+DAILY_FREE_COPIES = 1  # 일일 무료 복사 횟수
 
 
 class PointBalance(BaseModel):
@@ -39,6 +40,7 @@ class PointDeductResponse(BaseModel):
     remaining_points: int
     cost: int
     message: str
+    was_free: bool = False
 
 
 class PointChargeResponse(BaseModel):
@@ -46,3 +48,9 @@ class PointChargeResponse(BaseModel):
     charged_amount: int
     remaining_points: int
     message: str
+
+
+class DailyFreeStatus(BaseModel):
+    available: bool
+    used_today: int
+    max_daily: int = DAILY_FREE_COPIES

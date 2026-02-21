@@ -338,6 +338,21 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> getDailyFreeStatus() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/points/daily-free'),
+      headers: _authHeaders,
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes));
+    } else if (response.statusCode == 401) {
+      await clearToken();
+      throw AuthException('로그인이 만료되었어요');
+    } else {
+      throw Exception('Failed to load daily free status: ${response.statusCode}');
+    }
+  }
+
   Future<Map<String, dynamic>> chargePoints(int amount) async {
     final response = await http.post(
       Uri.parse('$baseUrl/points/charge'),

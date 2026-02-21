@@ -34,6 +34,9 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
   int _netCost = 0;
   bool _netCostApplied = false;
 
+  // 일일 무료 복사
+  bool _hasFreeToday = false;
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +47,16 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
     if (widget.notice.netCost != null && widget.notice.netCost! > 0) {
       _netCost = widget.notice.netCost!;
       _netCostApplied = true;
+    }
+    _loadFreeStatus();
+  }
+
+  Future<void> _loadFreeStatus() async {
+    try {
+      final status = await _apiService.getDailyFreeStatus();
+      if (mounted) setState(() => _hasFreeToday = status['available'] ?? false);
+    } catch (_) {
+      // Silently fail - default to paid mode
     }
   }
 
@@ -659,7 +672,9 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
               ? "하한선 미달 - 복사 불가"
               : _isCopying
                   ? "처리 중..."
-                  : "투찰금액 복사하기 (500P)"),
+                  : _hasFreeToday
+                      ? "투찰금액 복사하기 (무료 1회)"
+                      : "투찰금액 복사하기 (500P)"),
           style: ElevatedButton.styleFrom(
             backgroundColor:
                 _isDanger ? Colors.grey[400] : AppColors.primaryBlue,
@@ -719,11 +734,17 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
     setState(() => _isCopying = true);
 
     try {
-      await _apiService.deductPoints(widget.notice.bidNo);
+      final result = await _apiService.deductPoints(widget.notice.bidNo);
       Clipboard.setData(ClipboardData(text: _bidPrice.toString()));
       HapticFeedback.mediumImpact();
       if (mounted) {
-        SnackBarUtils.showCopied(context, _formatPriceKorean(_bidPrice.toDouble()));
+        final wasFree = result['was_free'] == true;
+        if (wasFree) {
+          setState(() => _hasFreeToday = false);
+          SnackBarUtils.showSuccess(context, '무료 복사 완료! ${_formatPriceKorean(_bidPrice.toDouble())}');
+        } else {
+          SnackBarUtils.showCopied(context, _formatPriceKorean(_bidPrice.toDouble()));
+        }
       }
     } catch (e) {
       HapticFeedback.heavyImpact();

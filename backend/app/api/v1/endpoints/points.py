@@ -1,3 +1,5 @@
+from datetime import datetime, timezone, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
@@ -9,6 +11,25 @@ from app.core.security import get_current_user
 
 router = APIRouter()
 
+# KST offset
+_KST = timezone(timedelta(hours=9))
+
+
+def _get_today_free_count(db: Session, user_id: int) -> int:
+    """오늘(KST) 사용한 무료 복사 횟수 조회"""
+    today_start = datetime.now(_KST).replace(
+        hour=0, minute=0, second=0, microsecond=0,
+    ).astimezone(timezone.utc)
+    return (
+        db.query(models.PointTransaction)
+        .filter(
+            models.PointTransaction.user_id == user_id,
+            models.PointTransaction.tx_type == "FREE_DAILY_COPY",
+            models.PointTransaction.created_at >= today_start,
+        )
+        .count()
+    )
+
 
 @router.get("/balance", response_model=point_schemas.PointBalance)
 def get_balance(current_user: models.User = Depends(get_current_user)):
@@ -19,26 +40,63 @@ def get_balance(current_user: models.User = Depends(get_current_user)):
     )
 
 
+@router.get("/daily-free", response_model=point_schemas.DailyFreeStatus)
+def get_daily_free_status(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """일일 무료 복사 상태 조회"""
+    used = _get_today_free_count(db, current_user.id)
+    max_daily = point_schemas.DAILY_FREE_COPIES
+    return point_schemas.DailyFreeStatus(
+        available=used < max_daily,
+        used_today=used,
+        max_daily=max_daily,
+    )
+
+
 @router.post("/deduct", response_model=point_schemas.PointDeductResponse)
 def deduct_points(
     request: point_schemas.PointDeductRequest,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """투찰금액 복사 시 포인트 차감 (건당 500원)"""
-    cost = point_schemas.BID_COPY_COST
+    """투찰금액 복사 시 포인트 차감 (일일 무료 1회, 이후 건당 500원)"""
+    used_free = _get_today_free_count(db, current_user.id)
+    is_free = used_free < point_schemas.DAILY_FREE_COPIES
 
+    if is_free:
+        # 무료 복사
+        balance_after = current_user.points
+        tx = models.PointTransaction(
+            user_id=current_user.id,
+            amount=0,
+            balance_after=balance_after,
+            tx_type="FREE_DAILY_COPY",
+            description=f"일일 무료 복사 ({request.bid_no})",
+            bid_no=request.bid_no,
+        )
+        db.add(tx)
+        db.commit()
+        return point_schemas.PointDeductResponse(
+            success=True,
+            remaining_points=balance_after,
+            cost=0,
+            message="오늘의 무료 복사를 사용했어요!",
+            was_free=True,
+        )
+
+    # 유료 복사
+    cost = point_schemas.BID_COPY_COST
     if current_user.points < cost:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=f"포인트가 부족합니다. 현재 {current_user.points:,}원, 필요 {cost:,}원",
         )
 
-    # 차감
     current_user.points -= cost
     balance_after = current_user.points
 
-    # 거래 기록
     tx = models.PointTransaction(
         user_id=current_user.id,
         amount=-cost,
