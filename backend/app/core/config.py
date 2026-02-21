@@ -69,6 +69,7 @@ class Settings(BaseSettings):
 
     # === OAuth (Social Login) ===
     KAKAO_REST_API_KEY: str = ""
+    KAKAO_CLIENT_SECRET: str = ""
     KAKAO_NATIVE_APP_KEY: str = ""  # Flutter mobile SDK (not used by backend)
     NAVER_CLIENT_ID: str = ""
     NAVER_CLIENT_SECRET: str = ""

@@ -120,7 +120,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(data={"sub": user.id})
+    access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -173,7 +173,7 @@ async def social_login(
         email=email, profile_image=profile_image,
     )
 
-    access_token = create_access_token(data={"sub": user.id})
+    access_token = create_access_token(data={"sub": str(user.id)})
     logger.info(f"Social login: provider={payload.provider}, user_id={user.id}")
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -214,6 +214,7 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
             data={
                 "grant_type": "authorization_code",
                 "client_id": settings.KAKAO_REST_API_KEY,
+                "client_secret": settings.KAKAO_CLIENT_SECRET,
                 "redirect_uri": callback_url,
                 "code": code,
             },
@@ -243,7 +244,7 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
         email=email, profile_image=profile_image,
     )
 
-    jwt_token = create_access_token(data={"sub": user.id})
+    jwt_token = create_access_token(data={"sub": str(user.id)})
     logger.info(f"Kakao OAuth callback: user_id={user.id}")
     return RedirectResponse(f"{settings.FRONTEND_URL}/?token={jwt_token}")
 
@@ -292,6 +293,6 @@ async def naver_callback(code: str, state: str, db: Session = Depends(get_db)):
         email=email, profile_image=profile_image,
     )
 
-    jwt_token = create_access_token(data={"sub": user.id})
+    jwt_token = create_access_token(data={"sub": str(user.id)})
     logger.info(f"Naver OAuth callback: user_id={user.id}")
     return RedirectResponse(f"{settings.FRONTEND_URL}/?token={jwt_token}")

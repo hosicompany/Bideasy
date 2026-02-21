@@ -1,6 +1,6 @@
 class User {
   final int id;
-  final String email;
+  final String? email;
   final String? companyName;
   final String? ceoName;
   final String? licenses; // Comma-separated
@@ -11,7 +11,7 @@ class User {
 
   User({
     required this.id,
-    required this.email,
+    this.email,
     this.companyName,
     this.ceoName,
     this.licenses,
