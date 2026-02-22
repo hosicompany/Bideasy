@@ -436,7 +436,10 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.notifications_outlined),
-              onPressed: () {},
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                SnackBarUtils.showInfo(context, '알림 기능은 준비 중이에요');
+              },
             ),
             IconButton(
               icon: const Icon(Icons.person),
@@ -604,7 +607,10 @@ class _CalculatorViewState extends State<CalculatorView> {
                 onPressed: _isDangerous
                     ? null
                     : () {
-                        // Submit logic
+                        Clipboard.setData(ClipboardData(text: _calculatedPrice.toString()));
+                        HapticFeedback.mediumImpact();
+                        SnackBarUtils.showSuccess(context, '투찰가 $_calculatedPrice원이 복사됐어요');
+                        Navigator.pop(context);
                       },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _isDangerous
