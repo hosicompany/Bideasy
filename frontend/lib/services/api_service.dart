@@ -405,7 +405,7 @@ class ApiService {
   Future<Map<String, dynamic>> fetchScientificAnalysis(String bidNo) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/analysis/$bidNo/recommend points'),
+        Uri.parse('$baseUrl/prediction/$bidNo/recommend-points'),
       );
       if (response.statusCode == 200) {
         return jsonDecode(utf8.decode(response.bodyBytes));

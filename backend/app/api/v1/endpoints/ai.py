@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.core.rate_limit import limiter
+from app.core.security import get_current_user
 from app.db.session import get_db
 from app.db import models
 from app.services.tips_generator import generate_tips
@@ -47,7 +48,8 @@ async def analyze_bid(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     notice_url: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Get AI Analysis for a specific bid.
@@ -132,8 +134,7 @@ async def analyze_bid(
     # 4. Generate tips using rule-based engine (Base Layer)
     try:
         # Fetch User Profile for Personalization
-        user_id = 1
-        user = db.query(models.User).filter(models.User.id == user_id).first()
+        user = current_user
         user_profile = None
         if user:
             user_profile = {

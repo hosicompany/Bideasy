@@ -8,7 +8,7 @@ from app.services.winning_rate import WinningRateService
 
 router = APIRouter()
 
-@router.get("/{bid_no}/recommend points", response_model=Dict)
+@router.get("/{bid_no}/recommend-points", response_model=Dict)
 async def get_scientific_recommendation(
     bid_no: str,
     db: Session = Depends(get_db)
