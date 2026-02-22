@@ -4,6 +4,8 @@
 - 참여수 적응형 최적 투찰가 추천
 - 유형별 낙찰률 예측
 - 기관별 낙찰률 통계
+- 발주처 인사이트 (Historical DB)
+- 투찰 역검증 ("왜 떨어졌을까?")
 """
 
 from fastapi import APIRouter, HTTPException, Query
@@ -44,6 +46,13 @@ class BidRatePredictRequest(BaseModel):
     expected_participants: int = Field(10, description="예상 참여업체수")
     agency_name: str = Field("", description="발주기관명")
     bid_date: Optional[str] = Field(None, description="입찰일")
+
+
+class BidVerifyRequest(BaseModel):
+    bid_no: str = Field(..., description="공고번호")
+    my_bid_price: float = Field(..., description="내 투찰가")
+    basic_price: float = Field(..., description="기초금액")
+    organization: str = Field("", description="발주기관명")
 
 
 # ============================================================
@@ -208,6 +217,56 @@ async def search_agencies(
 
     except Exception as e:
         logger.error(f"기관 검색 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/agency/insights")
+async def get_agency_insights_endpoint(
+    agency_name: str = Query(..., description="발주기관명"),
+    bid_type: str = Query(None, description="입찰 유형 (construction, goods, service)"),
+) -> Dict[str, Any]:
+    """
+    발주처 인사이트 — Historical DB 직접 조회
+
+    - 평균/중앙값 낙찰률, 참여업체 수, 최근 트렌드
+    - 전체 평균 대비 비교 + 한줄 인사이트
+    """
+    try:
+        from app.services.organization_insights import get_agency_insights
+
+        result = get_agency_insights(agency_name, bid_type)
+        return {"status": "success", "data": result}
+
+    except Exception as e:
+        logger.error(f"발주처 인사이트 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# 6. 투찰 역검증 ("왜 떨어졌을까?")
+# ============================================================
+
+@router.post("/verify")
+async def verify_bid_result(req: BidVerifyRequest) -> Dict[str, Any]:
+    """
+    투찰 역검증 — 내 투찰가를 입력하면 순위/편차/개선점 분석
+
+    - 개찰 결과에서 해당 공고의 낙찰 데이터 조회
+    - 사용자 투찰가 대비 순위, 편차, 한줄 분석
+    """
+    try:
+        from app.services.bid_verifier import verify_bid
+
+        result = verify_bid(
+            bid_no=req.bid_no,
+            my_bid_price=req.my_bid_price,
+            basic_price=req.basic_price,
+            organization=req.organization,
+        )
+        return {"status": "success", "data": result}
+
+    except Exception as e:
+        logger.error(f"투찰 역검증 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

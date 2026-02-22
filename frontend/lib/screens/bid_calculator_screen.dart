@@ -7,6 +7,8 @@ import '../widgets/ai_analysis_card.dart';
 import '../widgets/scientific_analysis_dashboard.dart';
 import '../widgets/opening_result_table.dart';
 import '../widgets/smart_bid_card.dart';
+import '../widgets/bid_verify_card.dart';
+import '../widgets/glossary_chip.dart';
 import '../services/api_service.dart';
 import '../utils/snackbar_utils.dart';
 
@@ -229,6 +231,10 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
         OpeningResultTable(notice: widget.notice),
         const SizedBox(height: 24),
 
+        // 역검증 카드
+        BidVerifyCard(notice: widget.notice),
+        const SizedBox(height: 24),
+
         // AI 분석 (참고용)
         const Text(
           "📊 공고 분석",
@@ -369,20 +375,22 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
       ),
       child: Column(
         children: [
-          _buildPriceRow("기초금액", _formatPriceKorean(_basicPrice), isBold: true),
+          _buildPriceRow("기초금액", _formatPriceKorean(_basicPrice), isBold: true, glossaryTerm: '기초금액'),
           const Divider(height: 20),
           _buildPriceRow("예정가격 범위",
-              "${_formatPriceKorean(_estimatedMin)} ~ ${_formatPriceKorean(_estimatedMax)}"),
+              "${_formatPriceKorean(_estimatedMin)} ~ ${_formatPriceKorean(_estimatedMax)}",
+              glossaryTerm: '예정가격'),
           const SizedBox(height: 8),
           _buildPriceRow("낙찰하한선 ($_lowerLimitRate%)",
               _formatPriceKorean(_lowerLimitPrice.toDouble()),
-              highlight: true),
+              highlight: true, glossaryTerm: '낙찰하한율'),
           if (_netCostApplied) ...[
             const SizedBox(height: 8),
             _buildPriceRow(
               "순공사원가 (투찰불가)",
               _formatPriceKorean(_netCost.toDouble()),
               highlight: true,
+              glossaryTerm: '순공사원가',
             ),
           ],
           if (_aValueApplied) ...[
@@ -417,22 +425,29 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
               ),
             ),
           ),
+          const GlossaryChip(term: 'A값'),
         ],
       ),
     );
   }
 
   Widget _buildPriceRow(String label, String value,
-      {bool isBold = false, bool highlight = false}) {
+      {bool isBold = false, bool highlight = false, String? glossaryTerm}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            color: highlight ? AppColors.dangerRed : AppColors.textSub,
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: highlight ? AppColors.dangerRed : AppColors.textSub,
+              ),
+            ),
+            if (glossaryTerm != null) GlossaryChip(term: glossaryTerm),
+          ],
         ),
         Text(
           value,

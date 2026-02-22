@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../models/ai_analysis.dart';
 import '../models/notice.dart';
 import '../utils/snackbar_utils.dart';
+import 'glossary_chip.dart';
 
 class AiAnalysisCard extends StatefulWidget {
   final Notice notice;
@@ -502,6 +503,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
             title: "기초금액",
             value: data.priceInfo.basicPriceFormatted ?? "-",
             isHighlighted: false,
+            glossaryTerm: '기초금액',
           ),
         ),
       ],
@@ -514,6 +516,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
     required String title,
     required String value,
     required bool isHighlighted,
+    String? glossaryTerm,
   }) {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -542,6 +545,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
                   color: AppColors.textSub,
                 ),
               ),
+              if (glossaryTerm != null) GlossaryChip(term: glossaryTerm),
             ],
           ),
           const SizedBox(height: 6),

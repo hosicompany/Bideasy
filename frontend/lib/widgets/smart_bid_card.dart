@@ -6,6 +6,7 @@ import '../models/notice.dart';
 import '../models/smart_bid.dart';
 import '../services/api_service.dart';
 import 'competition_badge.dart';
+import 'glossary_chip.dart';
 
 /// 스마트 투찰 추천 카드
 class SmartBidCard extends StatefulWidget {
@@ -239,6 +240,7 @@ class _SmartBidCardState extends State<SmartBidCard>
                   icon: Icons.percent_rounded,
                   label: '투찰률',
                   value: '${rec.effectiveRate.toStringAsFixed(3)}%',
+                  glossaryTerm: '투찰률',
                 ),
               ),
             ],
@@ -251,6 +253,7 @@ class _SmartBidCardState extends State<SmartBidCard>
                   icon: Icons.shield_outlined,
                   label: '낙찰하한률',
                   value: rec.lowerLimitPct,
+                  glossaryTerm: '낙찰하한율',
                 ),
               ),
               const SizedBox(width: 12),
@@ -454,6 +457,7 @@ class _SmartBidCardState extends State<SmartBidCard>
     required IconData icon,
     required String label,
     required String value,
+    String? glossaryTerm,
   }) {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -477,6 +481,7 @@ class _SmartBidCardState extends State<SmartBidCard>
                   fontFamily: 'Pretendard',
                 ),
               ),
+              if (glossaryTerm != null) GlossaryChip(term: glossaryTerm),
             ],
           ),
           const SizedBox(height: 6),

@@ -3,7 +3,8 @@ import '../theme/style.dart';
 import '../models/notice.dart';
 import '../models/smart_bid.dart';
 import '../services/api_service.dart';
-import 'competition_badge.dart';
+import 'competition_gauge.dart';
+import 'glossary_chip.dart';
 
 class ScientificAnalysisDashboard extends StatefulWidget {
   final String bidNo;
@@ -26,6 +27,7 @@ class _ScientificAnalysisDashboardState
   Map<String, dynamic>? _analysisData;
   CompetitionPrediction? _competition;
   Map<String, dynamic>? _bidRateData;
+  Map<String, dynamic>? _agencyInsights;
   bool _isLoading = true;
   String? _error;
 
@@ -45,16 +47,23 @@ class _ScientificAnalysisDashboardState
       // Notice가 있으면 ML API도 호출
       if (widget.notice != null) {
         final bidType = normalizeBidType(widget.notice!.bidType);
+        final agencyName = widget.notice!.organization ?? '';
         futures.add(_apiService.predictCompetition(
           bidType: bidType,
           estimatedAmount: widget.notice!.basicPrice,
-          agencyName: widget.notice!.organization ?? '',
+          agencyName: agencyName,
         ));
         futures.add(_apiService.predictBidRate(
           bidType: bidType,
           estimatedAmount: widget.notice!.basicPrice,
-          agencyName: widget.notice!.organization ?? '',
+          agencyName: agencyName,
         ));
+        if (agencyName.isNotEmpty) {
+          futures.add(_apiService.fetchAgencyInsights(
+            agencyName: agencyName,
+            bidType: bidType,
+          ));
+        }
       }
 
       final results = await Future.wait(
@@ -70,6 +79,9 @@ class _ScientificAnalysisDashboardState
           }
           if (results.length > 2 && results[2] is Map<String, dynamic>) {
             _bidRateData = results[2] as Map<String, dynamic>;
+          }
+          if (results.length > 3 && results[3] is Map<String, dynamic>) {
+            _agencyInsights = results[3] as Map<String, dynamic>;
           }
           _isLoading = false;
         });
@@ -112,7 +124,9 @@ class _ScientificAnalysisDashboardState
         _buildSection(
           icon: Icons.business_rounded,
           title: '발주처 성향 분석',
-          child: _buildAgencyCard(agency),
+          child: _agencyInsights != null && _agencyInsights!['found'] == true
+              ? _buildAgencyInsightsCard(_agencyInsights!)
+              : _buildAgencyCard(agency),
         ),
         const SizedBox(height: 16),
         _buildSection(
@@ -218,9 +232,11 @@ class _ScientificAnalysisDashboardState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '과거 낙찰 평균 사정률',
-                style: AppTextStyles.caption,
+              const Row(
+                children: [
+                  Text('과거 낙찰 평균 사정률', style: AppTextStyles.caption),
+                  GlossaryChip(term: '사정률'),
+                ],
               ),
               const SizedBox(height: 4),
               Text(
@@ -245,6 +261,261 @@ class _ScientificAnalysisDashboardState
             '표본 ${data['sample_size']}건',
             style: AppTextStyles.caption,
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAgencyInsightsCard(Map<String, dynamic> data) {
+    final avgRate = (data['avg_rate'] as num?)?.toDouble() ?? 0;
+    final medianRate = (data['median_rate'] as num?)?.toDouble() ?? 0;
+    final minRate = (data['min_rate'] as num?)?.toDouble() ?? 0;
+    final maxRate = (data['max_rate'] as num?)?.toDouble() ?? 0;
+    final totalBids = data['total_bids'] as int? ?? 0;
+    final avgParticipants = data['avg_participants'];
+    final recent6m = data['recent_6m_count'] as int? ?? 0;
+    final trend = data['rate_trend'] as String? ?? 'stable';
+    final diffFromGlobal = (data['diff_from_global'] as num?)?.toDouble() ?? 0;
+    final insight = data['insight'] as String? ?? '';
+
+    IconData trendIcon;
+    Color trendColor;
+    String trendLabel;
+    switch (trend) {
+      case 'rising':
+        trendIcon = Icons.trending_up_rounded;
+        trendColor = AppColors.safeGreen;
+        trendLabel = '상승';
+      case 'falling':
+        trendIcon = Icons.trending_down_rounded;
+        trendColor = AppColors.dangerRed;
+        trendLabel = '하락';
+      default:
+        trendIcon = Icons.trending_flat_rounded;
+        trendColor = AppColors.textSub;
+        trendLabel = '안정';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Row 1: avg rate + trend + participants
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('평균 낙찰률', style: AppTextStyles.caption),
+                      GlossaryChip(term: '낙찰률'),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '$avgRate%',
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textMain,
+                          fontFamily: 'Pretendard',
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(trendIcon, size: 20, color: trendColor),
+                      Text(
+                        trendLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: trendColor,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Pretendard',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (avgParticipants != null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Text('참여 중앙값', style: AppTextStyles.caption),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${(avgParticipants as num).toInt()}개사',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textMain,
+                      fontFamily: 'Pretendard',
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // Row 2: stat chips
+        Row(
+          children: [
+            _buildStatChip('최근 6개월', '$recent6m건'),
+            const SizedBox(width: 8),
+            _buildStatChip('총 건수', '$totalBids건'),
+            const SizedBox(width: 8),
+            _buildStatChip(
+              '낙찰 범위',
+              '${minRate.toStringAsFixed(0)}~${maxRate.toStringAsFixed(0)}%',
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // Rate gauge (median position within min-max range)
+        _buildRangeGauge(minRate, maxRate, medianRate, avgRate),
+        // Insight comment
+        if (insight.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: diffFromGlobal > 0
+                  ? AppColors.safeGreen.withValues(alpha: 0.06)
+                  : diffFromGlobal < -1
+                      ? AppColors.dangerRed.withValues(alpha: 0.06)
+                      : AppColors.backgroundGrey,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('💡 ', style: TextStyle(fontSize: 14)),
+                Expanded(
+                  child: Text(
+                    insight,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textMain,
+                      fontFamily: 'Pretendard',
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildStatChip(String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.backgroundGrey,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSub,
+                fontFamily: 'Pretendard',
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textMain,
+                fontFamily: 'Pretendard',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRangeGauge(
+    double min, double max, double median, double avg,
+  ) {
+    if (max <= min) return const SizedBox();
+    final range = max - min;
+    final avgPos = ((avg - min) / range).clamp(0.0, 1.0);
+
+    return Column(
+      children: [
+        Stack(
+          children: [
+            Container(
+              height: 6,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [
+                    AppColors.dangerRed,
+                    AppColors.competitionYellow,
+                    AppColors.safeGreen,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            Positioned(
+              left: avgPos * (MediaQuery.of(context).size.width - 112) - 4,
+              top: -3,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryBlue,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 3,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '${min.toStringAsFixed(1)}%',
+              style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+            ),
+            Text(
+              '평균 ${avg.toStringAsFixed(1)}%',
+              style: const TextStyle(
+                fontSize: 10,
+                color: AppColors.primaryBlue,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '${max.toStringAsFixed(1)}%',
+              style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+            ),
+          ],
         ),
       ],
     );
@@ -306,38 +577,11 @@ class _ScientificAnalysisDashboardState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            CompetitionBadge(level: level, compact: false),
-            const Spacer(),
-            Text(
-              '블루오션 확률: ${(comp.blueOceanProbability * 100).toStringAsFixed(0)}%',
-              style: AppTextStyles.caption,
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Text(
-              '${comp.predictedCount}개사',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                color: level.color,
-                fontFamily: 'Pretendard',
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              '참여 예상',
-              style: TextStyle(
-                fontSize: 15,
-                color: AppColors.textSub,
-                fontFamily: 'Pretendard',
-              ),
-            ),
-          ],
+        // Visual gauge replaces the old text-only display
+        CompetitionGauge(
+          predictedCount: comp.predictedCount,
+          level: level,
+          blueOceanProb: comp.blueOceanProbability,
         ),
         if (comp.strategy.isNotEmpty) ...[
           const SizedBox(height: 12),

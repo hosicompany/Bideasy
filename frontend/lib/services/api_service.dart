@@ -515,6 +515,60 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> verifyBid({
+    required String bidNo,
+    required double myBidPrice,
+    required double basicPrice,
+    String organization = '',
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/smart-bid/verify'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'bid_no': bidNo,
+          'my_bid_price': myBidPrice,
+          'basic_price': basicPrice,
+          'organization': organization,
+        }),
+      );
+      if (response.statusCode == 200) {
+        final json = jsonDecode(utf8.decode(response.bodyBytes));
+        return json['data'] as Map<String, dynamic>;
+      } else {
+        throw Exception('Failed to verify bid: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to verify bid: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchAgencyInsights({
+    required String agencyName,
+    String? bidType,
+  }) async {
+    try {
+      final queryParams = {
+        'agency_name': agencyName,
+        if (bidType != null) 'bid_type': bidType,
+      };
+      final uri = Uri.parse(
+        '$baseUrl/smart-bid/agency/insights',
+      ).replace(queryParameters: queryParams);
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(utf8.decode(response.bodyBytes));
+        return json['data'] as Map<String, dynamic>;
+      } else {
+        throw Exception(
+          'Failed to load agency insights: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Failed to load agency insights: $e');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getAgencyStats({
     required String bidType,
     String keyword = '',
