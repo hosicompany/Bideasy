@@ -5,8 +5,11 @@ import '../services/api_service.dart';
 import '../theme/style.dart';
 import '../widgets/state_widgets.dart';
 import '../utils/snackbar_utils.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'point_screen.dart';
 import 'login_screen.dart';
+import 'terms_screen.dart';
+import 'privacy_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -648,7 +651,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
             showArrow: true,
             onTap: () {
               HapticFeedback.lightImpact();
-              // TODO: 이용약관 페이지로 이동
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const TermsScreen()));
             },
           ),
           const Divider(height: 24),
@@ -658,7 +661,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
             showArrow: true,
             onTap: () {
               HapticFeedback.lightImpact();
-              // TODO: 개인정보처리방침 페이지로 이동
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyScreen()));
             },
           ),
           const Divider(height: 24),
@@ -668,7 +671,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
             showArrow: true,
             onTap: () {
               HapticFeedback.lightImpact();
-              // TODO: 문의하기 기능
+              launchUrl(Uri.parse('mailto:support@bideasy.kr?subject=[BidEasy] 문의하기'));
             },
           ),
           const Divider(height: 24),
