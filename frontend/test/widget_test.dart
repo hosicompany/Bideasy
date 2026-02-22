@@ -1,5 +1,6 @@
 // This is a basic Flutter widget test for BidEasy app.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,7 +11,7 @@ void main() {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const ProviderScope(child: BidEasyApp()));
 
-    // Verify that app title is displayed
-    expect(find.text('BidEasy'), findsOneWidget);
+    // AuthGate starts in checking state, showing a loading spinner
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 }
