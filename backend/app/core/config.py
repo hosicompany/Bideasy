@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     # === Toss Payments ===
     TOSS_CLIENT_KEY: str = ""
     TOSS_SECRET_KEY: str = ""
+    TOSS_WEBHOOK_SECRET: str = ""
 
     # === ML Models ===
     ML_MODELS_PATH: str = "./models"
