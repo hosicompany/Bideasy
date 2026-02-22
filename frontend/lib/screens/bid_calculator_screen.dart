@@ -9,6 +9,8 @@ import '../widgets/opening_result_table.dart';
 import '../widgets/smart_bid_card.dart';
 import '../widgets/bid_verify_card.dart';
 import '../widgets/glossary_chip.dart';
+import '../widgets/deep_analysis_card.dart';
+import '../widgets/agency_profile_sheet.dart';
 import '../services/api_service.dart';
 import '../utils/snackbar_utils.dart';
 
@@ -248,6 +250,10 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
         AiAnalysisCard(notice: widget.notice),
         const SizedBox(height: 24),
 
+        // 첨부파일 심층 분석
+        DeepAnalysisCard(bidNo: widget.notice.bidNo),
+        const SizedBox(height: 24),
+
         // 과학적 분석
         const Text(
           "🧪 과학적 분석 (Scientific Bidding)",
@@ -289,6 +295,10 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
 
         // AI 분석
         AiAnalysisCard(notice: widget.notice),
+        const SizedBox(height: 24),
+
+        // 첨부파일 심층 분석
+        DeepAnalysisCard(bidNo: widget.notice.bidNo),
         const SizedBox(height: 24),
 
         // 과학적 분석
@@ -352,11 +362,23 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 8),
-          Text(
-            widget.notice.organization ?? "발주처 미상",
-            style: const TextStyle(
-              fontSize: 13,
-              color: AppColors.textSub,
+          GestureDetector(
+            onTap: () {
+              final org = widget.notice.organization;
+              if (org != null && org.isNotEmpty) {
+                AgencyProfileSheet.show(context, org);
+              }
+            },
+            child: Text(
+              widget.notice.organization ?? "발주처 미상",
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textSub,
+                decoration: widget.notice.organization != null
+                    ? TextDecoration.underline
+                    : null,
+                decorationColor: AppColors.textSub,
+              ),
             ),
           ),
         ],

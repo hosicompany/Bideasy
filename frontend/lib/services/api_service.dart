@@ -6,6 +6,8 @@ import '../models/ai_analysis.dart';
 import '../models/opening_result.dart';
 import '../models/user.dart';
 import '../models/smart_bid.dart';
+import '../models/deep_analysis.dart';
+import '../models/agency_profile.dart';
 
 class AuthException implements Exception {
   final String message;
@@ -595,6 +597,99 @@ class ApiService {
       }
     } catch (e) {
       throw Exception('Failed to load agency stats: $e');
+    }
+  }
+
+  // ─── Deep Analysis API ───
+
+  Future<DeepAnalysis> fetchDeepAnalysis(String bidId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/analysis/$bidId/deep'),
+      );
+      if (response.statusCode == 200) {
+        return DeepAnalysis.fromJson(
+            jsonDecode(utf8.decode(response.bodyBytes)));
+      } else {
+        throw Exception(
+          'Failed to load deep analysis: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Failed to load deep analysis: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAttachments(String bidId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/analysis/$bidId/attachments'),
+      );
+      if (response.statusCode == 200) {
+        final json = jsonDecode(utf8.decode(response.bodyBytes));
+        final List<dynamic> data = json['attachments'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      } else {
+        throw Exception(
+          'Failed to load attachments: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Failed to load attachments: $e');
+    }
+  }
+
+  // ─── Agency Profile API (auth required) ───
+
+  Future<AgencyProfile> fetchAgencyProfile({
+    required String organization,
+    int months = 6,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/agency/profile'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        'organization': organization,
+        'months': months,
+      }),
+    );
+    if (response.statusCode == 200) {
+      return AgencyProfile.fromJson(
+          jsonDecode(utf8.decode(response.bodyBytes)));
+    } else if (response.statusCode == 401) {
+      await clearToken();
+      throw AuthException('로그인이 만료되었어요');
+    } else {
+      throw Exception(
+        'Failed to load agency profile: ${response.statusCode}',
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> searchAgencies(
+    String keyword, {
+    int limit = 10,
+  }) async {
+    try {
+      final queryParams = {
+        'keyword': keyword,
+        'limit': limit.toString(),
+      };
+      final uri = Uri.parse(
+        '$baseUrl/smart-bid/agency/search',
+      ).replace(queryParameters: queryParams);
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(utf8.decode(response.bodyBytes));
+        final List<dynamic> data = json['data'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      } else {
+        throw Exception(
+          'Failed to search agencies: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Failed to search agencies: $e');
     }
   }
 }

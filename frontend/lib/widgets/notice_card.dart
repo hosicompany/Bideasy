@@ -6,6 +6,7 @@ import 'competition_badge.dart';
 
 import 'package:flutter/services.dart';
 import '../utils/snackbar_utils.dart';
+import 'agency_profile_sheet.dart';
 
 class NoticeCard extends StatelessWidget {
   final Notice notice;
@@ -132,6 +133,24 @@ class NoticeCard extends StatelessWidget {
                 "기초금액: ${notice.formattedPrice}원",
                 style: AppTextStyles.body1,
               ),
+              if (notice.organization != null &&
+                  notice.organization!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: () {
+                    AgencyProfileSheet.show(context, notice.organization!);
+                  },
+                  child: Text(
+                    notice.organization!,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSub,
+                      decoration: TextDecoration.underline,
+                      decorationColor: AppColors.textSub,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
