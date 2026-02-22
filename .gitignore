@@ -49,6 +49,24 @@ backend/data/historical/
 # Temp outputs
 backend/hwp_test_output.txt
 backend/voice_transcription.txt
+*_output.txt
+*_result.json
+models_list.txt
+
+# Ad-hoc debug/test scripts (prevent future re-commits)
+backend/debug_*.py
+backend/test_*.py
+!backend/tests/
+
+# Frontend temp
+frontend/doctor_output.txt
+frontend/*.log
+
+# Root-level temp
+verify_output.txt
+
+# Reproduction scripts
+reproduction_scripts/
 
 # Build outputs
 build/
