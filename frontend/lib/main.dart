@@ -4,9 +4,8 @@ import 'theme/style.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/bid_calculator_screen.dart';
-import 'services/api_service.dart';
 import 'models/notice.dart';
-import 'utils/web_utils.dart';
+import 'providers/auth_provider.dart';
 
 void main() {
   runApp(const ProviderScope(child: BidEasyApp()));
@@ -35,73 +34,27 @@ class BidEasyApp extends StatelessWidget {
   }
 }
 
-class AuthGate extends StatefulWidget {
+class AuthGate extends ConsumerStatefulWidget {
   const AuthGate({super.key});
 
   @override
-  State<AuthGate> createState() => _AuthGateState();
+  ConsumerState<AuthGate> createState() => _AuthGateState();
 }
 
-class _AuthGateState extends State<AuthGate> {
-  bool _checking = true;
-  bool _loggedIn = false;
-  String? _paymentResult;
-  String? _paymentAmount;
-  String? _paymentMessage;
-
+class _AuthGateState extends ConsumerState<AuthGate> {
   @override
   void initState() {
     super.initState();
-    _checkAuth();
+    ref.read(authProvider.notifier).checkAuth();
   }
 
-  Future<void> _checkAuth() async {
-    // Check if we arrived via payment redirect (?payment=success|fail)
-    final paymentResult = getPaymentResultFromUrl();
-    if (paymentResult != null) {
-      _paymentResult = paymentResult;
-      _paymentAmount = getPaymentAmountFromUrl();
-      _paymentMessage = getPaymentMessageFromUrl();
-      cleanUrl();
-    }
-
-    // Check if we arrived via OAuth redirect (?token=...)
-    final tokenFromUrl = getTokenFromUrl();
-    if (tokenFromUrl != null && tokenFromUrl.isNotEmpty) {
-      await ApiService.saveTokenDirect(tokenFromUrl);
-      cleanUrl();
-      if (mounted) {
-        setState(() {
-          _loggedIn = true;
-          _checking = false;
-        });
-      }
-      return;
-    }
-
-    // Check for OAuth error
-    final errorFromUrl = getErrorFromUrl();
-    if (errorFromUrl != null) {
-      cleanUrl();
-    }
-
-    // Normal flow: check saved token
-    final hasToken = await ApiService.loadToken();
-    if (mounted) {
-      setState(() {
-        _loggedIn = hasToken;
-        _checking = false;
-      });
-    }
-  }
-
-  void _showPaymentSnackbar() {
-    if (_paymentResult == null) return;
+  void _showPaymentSnackbar(AuthState authState) {
+    if (authState.paymentResult == null) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (_paymentResult == 'success') {
-        final amount = _paymentAmount ?? '';
+      if (authState.paymentResult == 'success') {
+        final amount = authState.paymentAmount ?? '';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('$amount원 충전이 완료되었어요!'),
@@ -109,8 +62,8 @@ class _AuthGateState extends State<AuthGate> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-      } else if (_paymentResult == 'fail') {
-        final message = _paymentMessage ?? '결제가 취소되었습니다';
+      } else if (authState.paymentResult == 'fail') {
+        final message = authState.paymentMessage ?? '결제가 취소되었습니다';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
@@ -119,13 +72,15 @@ class _AuthGateState extends State<AuthGate> {
           ),
         );
       }
-      _paymentResult = null;
+      ref.read(authProvider.notifier).clearPayment();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_checking) {
+    final authState = ref.watch(authProvider);
+
+    if (authState.status == AuthStatus.checking) {
       return const Scaffold(
         backgroundColor: AppColors.surfaceWhite,
         body: Center(
@@ -136,8 +91,8 @@ class _AuthGateState extends State<AuthGate> {
       );
     }
 
-    if (_loggedIn) {
-      _showPaymentSnackbar();
+    if (authState.status == AuthStatus.authenticated) {
+      _showPaymentSnackbar(authState);
       return const HomeScreen();
     }
     return const LoginScreen();

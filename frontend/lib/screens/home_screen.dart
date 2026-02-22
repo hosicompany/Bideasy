@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'my_page_screen.dart';
 import '../theme/style.dart';
 import '../widgets/notice_card.dart';
@@ -10,36 +10,19 @@ import '../widgets/opening_result_table.dart';
 import '../widgets/state_widgets.dart';
 import '../utils/snackbar_utils.dart';
 import '../models/notice.dart';
-import '../models/smart_bid.dart';
-import '../services/api_service.dart';
+import '../providers/notices_provider.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  final ApiService apiService = ApiService();
-
-  // Infinite Scroll State
-  List<Notice> _notices = [];
-  bool _isLoading = false;
-  bool _isLoadingMore = false;
-  int _currentPage = 1;
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   final ScrollController _scrollController = ScrollController();
-
-  late Future<List<Notice>> futureFavorites;
-  String? _keyword;
-  final Set<String> _favoriteIds = {};
-  bool _excludeClosed = false;
-
   late TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
-
-  // Competition level cache (progressive enhancement)
-  final Map<String, CompetitionLevel> _competitionCache = {};
 
   @override
   void initState() {
@@ -47,16 +30,20 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController = TextEditingController();
     _scrollController.addListener(_scrollListener);
 
-    _loadFilters(); // This triggers initial load
-    futureFavorites = Future.value([]);
-    _fetchFavorites();
+    // Initialize provider (loads filters + fetches data)
+    ref.read(noticesProvider.notifier).init().then((_) {
+      // Sync search controller with loaded keyword
+      final keyword = ref.read(noticesProvider).keyword;
+      _searchController.text = keyword ?? '';
+    });
   }
 
   void _scrollListener() {
     if (_scrollController.position.pixels ==
         _scrollController.position.maxScrollExtent) {
-      if (!_isLoading && !_isLoadingMore) {
-        _loadMoreNotices();
+      final s = ref.read(noticesProvider);
+      if (!s.isLoading && !s.isLoadingMore) {
+        ref.read(noticesProvider.notifier).loadMore();
       }
     }
   }
@@ -68,139 +55,16 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _loadFilters() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _keyword = prefs.getString('keyword');
-      _searchController.text = _keyword ?? "";
-      _excludeClosed = prefs.getBool('exclude_closed') ?? false;
-
-      // Reset and Load First Page
-      _currentPage = 1;
-      _notices = [];
-      _fetchNotices(isInitial: true);
-    });
-  }
-
-  Future<void> _fetchNotices({bool isInitial = false}) async {
-    if (isInitial) {
-      setState(() => _isLoading = true);
-    }
-
-    try {
-      final newNotices = await apiService.fetchNotices(
-          keyword: _keyword, excludeClosed: _excludeClosed, page: _currentPage);
-
-      if (mounted) {
-        setState(() {
-          if (isInitial) {
-            _notices = newNotices;
-          } else {
-            _notices.addAll(newNotices);
-          }
-          _isLoading = false;
-          _isLoadingMore = false;
-        });
-        // 백그라운드에서 경쟁도 배지 로딩
-        _fetchCompetitionLevels();
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _isLoadingMore = false;
-        });
-        // Show error only if it's initial load or meaningful
-      }
-    }
-  }
-
-  Future<void> _loadMoreNotices() async {
-    setState(() => _isLoadingMore = true);
-    _currentPage++;
-    await _fetchNotices(isInitial: false);
-  }
-
-  /// 백그라운드에서 경쟁도 예측 (Progressive Enhancement)
-  Future<void> _fetchCompetitionLevels() async {
-    final uncached = _notices
-        .where((n) => !n.isClosed && !_competitionCache.containsKey(n.bidNo))
-        .toList();
-    if (uncached.isEmpty) return;
-
-    for (final notice in uncached) {
-      try {
-        final prediction = await apiService.predictCompetition(
-          bidType: normalizeBidType(notice.bidType),
-          estimatedAmount: notice.basicPrice,
-          agencyName: notice.organization ?? '',
-        );
-        if (mounted) {
-          setState(() {
-            _competitionCache[notice.bidNo] =
-                CompetitionLevel.fromBucket(prediction.predictedBucket);
-          });
-        }
-      } catch (_) {
-        // 실패 시 무시 — 배지만 안 보임
-      }
-    }
-  }
-
-  Future<void> _saveFilter({String? keyword, bool? excludeClosed}) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (keyword != null) {
-      if (keyword.isEmpty) {
-        await prefs.remove('keyword');
-      } else {
-        await prefs.setString('keyword', keyword);
-      }
-    }
-    if (excludeClosed != null) {
-      await prefs.setBool('exclude_closed', excludeClosed);
-    }
-  }
-
-  Future<void> _fetchFavorites() async {
-    try {
-      final favorites = await apiService.fetchFavorites();
-      setState(() {
-        _favoriteIds.clear();
-        _favoriteIds.addAll(favorites.map((n) => n.bidNo));
-        futureFavorites = Future.value(favorites);
-      });
-    } catch (e) {
-      // Handle error cleanly or log
-      print("Failed to fetch favorites: $e");
-      futureFavorites = Future.value([]);
-    }
+  void _triggerSearch() {
+    _searchFocusNode.unfocus();
+    ref.read(noticesProvider.notifier).search(_searchController.text);
   }
 
   Future<void> _toggleFavorite(String bidNo) async {
+    HapticFeedback.lightImpact();
     try {
-      // Haptic Feedback for favorite toggle
-      HapticFeedback.lightImpact();
-      // Optimistic Update
-      setState(() {
-        if (_favoriteIds.contains(bidNo)) {
-          _favoriteIds.remove(bidNo);
-        } else {
-          _favoriteIds.add(bidNo);
-        }
-      });
-      // Call Backend
-      await apiService.toggleFavorite(bidNo);
-      // Refresh Favorites List in background
-      _fetchFavorites();
-    } catch (e) {
-      // Revert if failed
-      setState(() {
-        if (_favoriteIds.contains(bidNo)) {
-          _favoriteIds.remove(bidNo);
-        } else {
-          _favoriteIds.add(bidNo);
-        }
-      });
+      await ref.read(noticesProvider.notifier).toggleFavorite(bidNo);
+    } catch (_) {
       if (mounted) {
         SnackBarUtils.showError(context, "즐겨찾기 변경에 실패했어요");
       }
@@ -209,22 +73,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _refreshNotices() async {
     try {
-      await apiService.triggerCrawl(); // Still crawl all
-      await _fetchFavorites(); // Sync favorites
-      await apiService.triggerCrawl();
-      await _fetchFavorites();
-
-      // Reset list
-      _currentPage = 1;
-      _notices = [];
-      await _fetchNotices(isInitial: true);
+      await ref.read(noticesProvider.notifier).refreshNotices();
       if (mounted) {
+        final keyword = ref.read(noticesProvider).keyword;
         SnackBarUtils.showSuccess(
           context,
-          _keyword != null ? "검색 결과가 업데이트됐어요" : "최신 공고를 불러왔어요",
+          keyword != null ? "검색 결과가 업데이트됐어요" : "최신 공고를 불러왔어요",
         );
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         SnackBarUtils.showError(context, "업데이트에 실패했어요. 다시 시도해주세요");
       }
@@ -232,53 +89,46 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildNoticeList({bool isFavoriteTab = false}) {
-    // 1. Favorites Tab (Keep FutureBuilder for now)
+    final s = ref.watch(noticesProvider);
+
+    // 1. Favorites Tab
     if (isFavoriteTab) {
-      return FutureBuilder<List<Notice>>(
-        future: futureFavorites,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const LoadingStateWidget(
-                message: "불러오는 중...", skeletonCount: 4);
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const EmptyStateWidget(
-              icon: Icons.star_border_rounded,
-              title: "즐겨찾기한 공고가 없어요",
-              message: "관심 있는 공고의 별 아이콘을 눌러\n즐겨찾기에 추가해보세요",
-            );
-          }
-          return ListView.builder(
-            itemCount: snapshot.data!.length,
-            itemBuilder: (context, index) {
-              final notice = snapshot.data![index];
-              return NoticeCard(
-                notice: notice,
-                isFavorite: true,
-                competitionLevel: _competitionCache[notice.bidNo],
-                onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
-                onTap: () => _showCalculator(context, notice),
-              );
-            },
+      if (s.favorites.isEmpty && s.favoriteIds.isEmpty) {
+        return const EmptyStateWidget(
+          icon: Icons.star_border_rounded,
+          title: "즐겨찾기한 공고가 없어요",
+          message: "관심 있는 공고의 별 아이콘을 눌러\n즐겨찾기에 추가해보세요",
+        );
+      }
+      return ListView.builder(
+        itemCount: s.favorites.length,
+        itemBuilder: (context, index) {
+          final notice = s.favorites[index];
+          return NoticeCard(
+            notice: notice,
+            isFavorite: true,
+            competitionLevel: s.competitionCache[notice.bidNo],
+            onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
+            onTap: () => _showCalculator(context, notice),
           );
         },
       );
     }
 
     // 2. Main Feed (Infinite Scroll)
-    if (_isLoading && _notices.isEmpty) {
+    if (s.isLoading && s.notices.isEmpty) {
       return const LoadingStateWidget(
           message: "최신 공고를 불러옵니다...", skeletonCount: 4);
     }
 
-    if (_notices.isEmpty) {
+    if (s.notices.isEmpty) {
       return EmptyStateWidget(
         icon: Icons.search_off_rounded,
-        title: _keyword != null ? "검색 결과가 없어요" : "공고가 없어요",
-        message: _keyword != null
-            ? "'$_keyword' 검색 결과가 없습니다."
+        title: s.keyword != null ? "검색 결과가 없어요" : "공고가 없어요",
+        message: s.keyword != null
+            ? "'${s.keyword}' 검색 결과가 없습니다."
             : "새로운 공고가 등록되면 알려드릴게요",
-        action: _keyword != null
+        action: s.keyword != null
             ? TextButton.icon(
                 onPressed: () {
                   _searchController.clear();
@@ -297,21 +147,21 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView.builder(
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: _notices.length + (_isLoadingMore ? 1 : 0),
+        itemCount: s.notices.length + (s.isLoadingMore ? 1 : 0),
         itemBuilder: (context, index) {
-          if (index == _notices.length) {
+          if (index == s.notices.length) {
             return const Padding(
               padding: EdgeInsets.all(20.0),
               child: Center(child: CircularProgressIndicator()),
             );
           }
 
-          final notice = _notices[index];
-          final isFav = _favoriteIds.contains(notice.bidNo);
+          final notice = s.notices[index];
+          final isFav = s.favoriteIds.contains(notice.bidNo);
           return NoticeCard(
             notice: notice,
             isFavorite: isFav,
-            competitionLevel: _competitionCache[notice.bidNo],
+            competitionLevel: s.competitionCache[notice.bidNo],
             onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
             onTap: () => _showCalculator(context, notice),
           );
@@ -320,23 +170,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _triggerSearch() {
-    // Dismiss keyboard
-    _searchFocusNode.unfocus();
-
-    final newKeyword = _searchController.text.trim();
-    setState(() {
-      _keyword = newKeyword.isEmpty ? null : newKeyword;
-      // Reset list logic
-      _currentPage = 1;
-      _notices = [];
-      _fetchNotices(isInitial: true);
-    });
-    _saveFilter(keyword: _keyword);
-  }
-
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(noticesProvider);
+
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -355,7 +192,6 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: InputDecoration(
                 hintText: "공고명, 키워드 검색",
                 hintStyle: TextStyle(color: Colors.grey[500], fontSize: 14),
-                // Change prefixIcon to IconButton
                 prefixIcon: IconButton(
                   icon: const Icon(Icons.search, color: Colors.grey),
                   onPressed: _triggerSearch,
@@ -366,26 +202,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     // Exclude Closed Checkbox
                     InkWell(
                       onTap: () {
-                        setState(() {
-                          _excludeClosed = !_excludeClosed;
-                          _currentPage = 1;
-                          _notices = [];
-                          _fetchNotices(isInitial: true);
-                        });
-                        _saveFilter(excludeClosed: _excludeClosed);
+                        ref.read(noticesProvider.notifier).toggleExcludeClosed();
                       },
                       child: Row(
                         children: [
                           Checkbox(
-                            value: _excludeClosed,
-                            onChanged: (val) {
-                              setState(() {
-                                _excludeClosed = val ?? false;
-                                _currentPage = 1;
-                                _notices = [];
-                                _fetchNotices(isInitial: true);
-                              });
-                              _saveFilter(excludeClosed: _excludeClosed);
+                            value: s.excludeClosed,
+                            onChanged: (_) {
+                              ref.read(noticesProvider.notifier).toggleExcludeClosed();
                             },
                             materialTapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
@@ -407,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           icon: const Icon(Icons.clear, size: 20),
                           onPressed: () {
                             _searchController.clear();
-                            _triggerSearch(); // Trigger search with empty (reset)
+                            _triggerSearch();
                           },
                         );
                       },

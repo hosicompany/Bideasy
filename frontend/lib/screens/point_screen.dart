@@ -1,24 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/api_service.dart';
 import '../services/toss_payments.dart';
 import '../theme/style.dart';
 import '../widgets/state_widgets.dart';
 import '../utils/snackbar_utils.dart';
+import '../providers/api_service_provider.dart';
+import '../providers/points_provider.dart';
 
-class PointScreen extends StatefulWidget {
+class PointScreen extends ConsumerStatefulWidget {
   const PointScreen({super.key});
 
   @override
-  State<PointScreen> createState() => _PointScreenState();
+  ConsumerState<PointScreen> createState() => _PointScreenState();
 }
 
-class _PointScreenState extends State<PointScreen> {
-  final ApiService _apiService = ApiService();
-  bool _isLoading = true;
-  String? _error;
-  int _points = 0;
-  List<Map<String, dynamic>> _history = [];
+class _PointScreenState extends ConsumerState<PointScreen> {
   bool _isCharging = false;
 
   static const List<int> _chargeOptions = [5000, 10000, 30000, 50000];
@@ -26,35 +24,7 @@ class _PointScreenState extends State<PointScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      final results = await Future.wait([
-        _apiService.getPointBalance(),
-        _apiService.getPointHistory(limit: 50),
-      ]);
-
-      final balance = results[0] as Map<String, dynamic>;
-      final history = results[1] as List<Map<String, dynamic>>;
-
-      setState(() {
-        _points = balance['points'] ?? 0;
-        _history = history;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
-    }
+    ref.read(pointsProvider.notifier).loadData();
   }
 
   Future<void> _chargePoints(int amount) async {
@@ -62,7 +32,8 @@ class _PointScreenState extends State<PointScreen> {
     setState(() => _isCharging = true);
 
     try {
-      final order = await _apiService.createPaymentOrder(amount);
+      final api = ref.read(apiServiceProvider);
+      final order = await api.createPaymentOrder(amount);
       final backendBase = ApiService.baseUrl;
       final successUrl = '$backendBase/payments/success';
       final failUrl = '$backendBase/payments/fail';
@@ -238,31 +209,33 @@ class _PointScreenState extends State<PointScreen> {
   }
 
   Widget _buildBody() {
-    if (_isLoading) {
+    final s = ref.watch(pointsProvider);
+
+    if (s.isLoading) {
       return const LoadingStateWidget(
         message: "포인트 정보를 불러오는 중...",
         skeletonCount: 3,
       );
     }
 
-    if (_error != null) {
+    if (s.error != null) {
       return ErrorStateWidget(
         title: "포인트 정보를 불러오지 못했어요",
         message: "네트워크 연결을 확인해주세요",
-        onRetry: _loadData,
+        onRetry: () => ref.read(pointsProvider.notifier).loadData(),
       );
     }
 
     return RefreshIndicator(
-      onRefresh: _loadData,
+      onRefresh: () => ref.read(pointsProvider.notifier).loadData(),
       color: AppColors.primaryBlue,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: Column(
           children: [
-            _buildBalanceCard(),
+            _buildBalanceCard(s),
             const SizedBox(height: 12),
-            _buildHistorySection(),
+            _buildHistorySection(s),
             const SizedBox(height: 32),
           ],
         ),
@@ -270,7 +243,7 @@ class _PointScreenState extends State<PointScreen> {
     );
   }
 
-  Widget _buildBalanceCard() {
+  Widget _buildBalanceCard(PointsState s) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -288,7 +261,7 @@ class _PointScreenState extends State<PointScreen> {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
-                _formatNumber(_points),
+                _formatNumber(s.balance),
                 style: const TextStyle(
                   fontSize: 36,
                   fontWeight: FontWeight.w800,
@@ -308,7 +281,7 @@ class _PointScreenState extends State<PointScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            "투찰금액 복사 ${_points ~/ 500}회 가능",
+            "투찰금액 복사 ${s.balance ~/ 500}회 가능",
             style: const TextStyle(fontSize: 13, color: AppColors.textSub),
           ),
           const SizedBox(height: 20),
@@ -349,7 +322,7 @@ class _PointScreenState extends State<PointScreen> {
     );
   }
 
-  Widget _buildHistorySection() {
+  Widget _buildHistorySection(PointsState s) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.all(20),
@@ -382,7 +355,7 @@ class _PointScreenState extends State<PointScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          if (_history.isEmpty)
+          if (s.history.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(
@@ -393,7 +366,7 @@ class _PointScreenState extends State<PointScreen> {
               ),
             )
           else
-            ..._history.map((tx) => _buildHistoryItem(tx)),
+            ...s.history.map((tx) => _buildHistoryItem(tx)),
         ],
       ),
     );
