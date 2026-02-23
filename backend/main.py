@@ -13,7 +13,7 @@ from app.db.session import engine
 setup_logging()
 
 # Sentry error tracking (only when DSN is configured)
-if settings.SENTRY_DSN:
+if settings.SENTRY_DSN and settings.SENTRY_DSN.strip().startswith("https://"):
     import sentry_sdk
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,

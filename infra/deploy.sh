@@ -43,17 +43,18 @@ case "${1:-deploy}" in
   ssl-init)
     echo "=== Issuing SSL Certificate ==="
 
-    # Stop nginx temporarily for standalone challenge
-    dc stop nginx
-
-    # Get certificate
+    # Get certificate using webroot challenge (nginx stays running for HTTP)
     dc run --rm certbot \
       certbot certonly --webroot -w /var/www/certbot \
       --email "$EMAIL" --agree-tos --no-eff-email \
       -d "$DOMAIN" -d "www.$DOMAIN"
 
+    # Switch nginx to SSL config
+    echo "Switching nginx to SSL config..."
+    sed -i 's|NGINX_CONF_DIR=.*|NGINX_CONF_DIR=./nginx/conf.d|' "$ENV_FILE"
+
     # Restart nginx with SSL
-    dc up -d nginx
+    dc up -d --force-recreate nginx
 
     echo "=== SSL setup complete ==="
     ;;
