@@ -45,7 +45,7 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
   @override
   void initState() {
     super.initState();
-    ref.read(userProvider.notifier).loadUser();
+    Future(() => ref.read(userProvider.notifier).loadUser());
   }
 
   @override

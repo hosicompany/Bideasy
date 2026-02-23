@@ -63,7 +63,7 @@ class _AuthGateState extends ConsumerState<AuthGate> {
   @override
   void initState() {
     super.initState();
-    ref.read(authProvider.notifier).checkAuth();
+    Future(() => ref.read(authProvider.notifier).checkAuth());
   }
 
   void _initPushNotifications() {

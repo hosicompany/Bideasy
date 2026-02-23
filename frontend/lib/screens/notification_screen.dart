@@ -15,7 +15,7 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
   @override
   void initState() {
     super.initState();
-    ref.read(notificationProvider.notifier).fetchNotifications();
+    Future(() => ref.read(notificationProvider.notifier).fetchNotifications());
   }
 
   String _formatTime(String isoString) {

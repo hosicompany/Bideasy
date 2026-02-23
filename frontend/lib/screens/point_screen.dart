@@ -24,7 +24,7 @@ class _PointScreenState extends ConsumerState<PointScreen> {
   @override
   void initState() {
     super.initState();
-    ref.read(pointsProvider.notifier).loadData();
+    Future(() => ref.read(pointsProvider.notifier).loadData());
   }
 
   Future<void> _chargePoints(int amount) async {

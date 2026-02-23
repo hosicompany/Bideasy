@@ -33,14 +33,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _scrollController.addListener(_scrollListener);
 
     // Initialize provider (loads filters + fetches data)
-    ref.read(noticesProvider.notifier).init().then((_) {
-      // Sync search controller with loaded keyword
-      final keyword = ref.read(noticesProvider).keyword;
-      _searchController.text = keyword ?? '';
+    Future(() {
+      ref.read(noticesProvider.notifier).init().then((_) {
+        // Sync search controller with loaded keyword
+        final keyword = ref.read(noticesProvider).keyword;
+        _searchController.text = keyword ?? '';
+      });
+      // Fetch unread notification count for badge
+      ref.read(notificationProvider.notifier).fetchUnreadCount();
     });
-
-    // Fetch unread notification count for badge
-    ref.read(notificationProvider.notifier).fetchUnreadCount();
   }
 
   void _scrollListener() {
