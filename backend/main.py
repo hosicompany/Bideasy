@@ -12,6 +12,18 @@ from app.db.session import engine
 
 setup_logging()
 
+# Sentry error tracking (only when DSN is configured)
+if settings.SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.APP_ENV,
+        release=f"bideasy-backend@{settings.PROJECT_VERSION}",
+        traces_sample_rate=0.1 if settings.APP_ENV == "production" else 1.0,
+        profiles_sample_rate=0.1 if settings.APP_ENV == "production" else 0,
+        send_default_pii=False,
+    )
+
 # Production: trust X-Forwarded-For from Nginx reverse proxy
 if settings.APP_ENV == "production":
     from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware

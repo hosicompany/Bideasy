@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'theme/style.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -7,8 +8,22 @@ import 'screens/bid_calculator_screen.dart';
 import 'models/notice.dart';
 import 'providers/auth_provider.dart';
 
-void main() {
-  runApp(const ProviderScope(child: BidEasyApp()));
+const String _sentryDsn = String.fromEnvironment('SENTRY_DSN', defaultValue: '');
+
+Future<void> main() async {
+  if (_sentryDsn.isNotEmpty) {
+    await SentryFlutter.init(
+      (options) {
+        options.dsn = _sentryDsn;
+        options.environment = const String.fromEnvironment('APP_ENV', defaultValue: 'development');
+        options.tracesSampleRate = 0.1;
+        options.sendDefaultPii = false;
+      },
+      appRunner: () => runApp(const ProviderScope(child: BidEasyApp())),
+    );
+  } else {
+    runApp(const ProviderScope(child: BidEasyApp()));
+  }
 }
 
 class BidEasyApp extends StatelessWidget {

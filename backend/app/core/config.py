@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     # === Rate Limiting ===
     AI_ANALYSIS_FREE_LIMIT: int = 1  # Free tier: 1 AI analysis per day
 
+    # === Monitoring ===
+    SENTRY_DSN: str = ""  # Leave empty to disable Sentry
+
     # === Logging ===
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "text"  # "json" | "text"
