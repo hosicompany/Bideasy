@@ -201,3 +201,31 @@ class Favorite(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     notice = relationship("Notice", back_populates="favorites")
+
+
+class DeviceToken(Base):
+    __tablename__ = "device_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    fcm_token = Column(String(500), nullable=False, index=True)
+    device_type = Column(String(20), nullable=False)  # android | ios | web
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    user = relationship("User")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(255), nullable=False)
+    body = Column(String(1000), nullable=False)
+    noti_type = Column(String(50), nullable=False)  # new_bid | favorite_update | subscription_expiry
+    data_json = Column(JSON, nullable=True)  # extra payload (bid_no, etc.)
+    is_read = Column(Integer, default=0)  # 0=unread, 1=read
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = relationship("User")

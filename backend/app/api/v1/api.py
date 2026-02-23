@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import bids, ai, users, prediction, analysis, auth, points, payments, agency, smart_bid
+from app.api.v1.endpoints import bids, ai, users, prediction, analysis, auth, points, payments, agency, smart_bid, notifications
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -12,3 +12,4 @@ api_router.include_router(prediction.router, prefix="/prediction", tags=["predic
 api_router.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
 api_router.include_router(agency.router, prefix="/agency", tags=["agency"])
 api_router.include_router(smart_bid.router, prefix="/smart-bid", tags=["smart-bid"])
+api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])

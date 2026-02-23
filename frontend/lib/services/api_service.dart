@@ -656,6 +656,83 @@ class ApiService {
     _throwForStatus(response);
   }
 
+  // --- Push Notifications ---
+
+  Future<void> registerDeviceToken(String fcmToken, String deviceType) async {
+    final response = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/notifications/register-device'),
+        headers: {..._authHeaders, 'Content-Type': 'application/json'},
+        body: jsonEncode({'fcm_token': fcmToken, 'device_type': deviceType}),
+      ),
+    );
+    if (response.statusCode == 204) return;
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
+  }
+
+  Future<void> unregisterDeviceToken(String fcmToken, String deviceType) async {
+    final response = await _request(
+      () => http.delete(
+        Uri.parse('$baseUrl/notifications/unregister-device'),
+        headers: {..._authHeaders, 'Content-Type': 'application/json'},
+        body: jsonEncode({'fcm_token': fcmToken, 'device_type': deviceType}),
+      ),
+    );
+    if (response.statusCode == 204) return;
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
+  }
+
+  Future<List<Map<String, dynamic>>> getNotifications({bool unreadOnly = false}) async {
+    final uri = Uri.parse('$baseUrl/notifications/list').replace(
+      queryParameters: unreadOnly ? {'unread_only': 'true'} : {},
+    );
+    final response = await _request(() => http.get(uri, headers: _authHeaders));
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(utf8.decode(response.bodyBytes));
+      return data.cast<Map<String, dynamic>>();
+    }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final response = await _request(
+      () => http.get(Uri.parse('$baseUrl/notifications/unread-count'), headers: _authHeaders),
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      return data['count'] as int;
+    }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
+  }
+
+  Future<void> markNotificationRead(int notificationId) async {
+    final response = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/notifications/$notificationId/read'),
+        headers: _authHeaders,
+      ),
+    );
+    if (response.statusCode == 204) return;
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    final response = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/notifications/read-all'),
+        headers: _authHeaders,
+      ),
+    );
+    if (response.statusCode == 204) return;
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
+  }
+
   Future<List<Map<String, dynamic>>> searchAgencies(
     String keyword, {
     int limit = 10,

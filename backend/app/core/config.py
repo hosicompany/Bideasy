@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     # === Rate Limiting ===
     AI_ANALYSIS_FREE_LIMIT: int = 1  # Free tier: 1 AI analysis per day
 
+    # === Firebase (FCM Push Notifications) ===
+    FIREBASE_CREDENTIALS_JSON: str = ""  # Path to service account JSON file
+
     # === Monitoring ===
     SENTRY_DSN: str = ""  # Leave empty to disable Sentry
 

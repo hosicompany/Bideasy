@@ -7,6 +7,7 @@ import 'screens/login_screen.dart';
 import 'screens/bid_calculator_screen.dart';
 import 'models/notice.dart';
 import 'providers/auth_provider.dart';
+import 'services/push_notification_service.dart';
 
 const String _sentryDsn = String.fromEnvironment('SENTRY_DSN', defaultValue: '');
 
@@ -57,10 +58,18 @@ class AuthGate extends ConsumerStatefulWidget {
 }
 
 class _AuthGateState extends ConsumerState<AuthGate> {
+  bool _fcmInitialized = false;
+
   @override
   void initState() {
     super.initState();
     ref.read(authProvider.notifier).checkAuth();
+  }
+
+  void _initPushNotifications() {
+    if (_fcmInitialized) return;
+    _fcmInitialized = true;
+    PushNotificationService().initialize();
   }
 
   void _showPaymentSnackbar(AuthState authState) {
@@ -107,6 +116,7 @@ class _AuthGateState extends ConsumerState<AuthGate> {
     }
 
     if (authState.status == AuthStatus.authenticated) {
+      _initPushNotifications();
       _showPaymentSnackbar(authState);
       return const HomeScreen();
     }
