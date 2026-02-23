@@ -93,10 +93,33 @@
 | GET | `/api/v1/feed` | 맞춤 공고 피드 조회 |
 | POST | `/api/v1/bids/calculate` | 투찰가 계산 및 안전성 검증 |
 
-### AI 분석 (Phase 2)
+### AI 분석
 | Method | Endpoint | 설명 |
 |--------|----------|------|
-| GET | `/api/v1/bids/{bid_no}/analysis` | AI 공고 분석 (요약 + 위험요소) |
+| GET | `/api/v1/ai/{bid_no}/analysis` | AI 공고 분석 (요약 + 위험요소) |
+
+### 첨부파일 분석
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/api/v1/analysis/{bid_id}/deep` | 첨부파일 심층 분석 (독소조항 탐지) |
+| GET | `/api/v1/analysis/{bid_id}/attachments` | 첨부파일 목록 조회 |
+
+### 기관 프로파일링
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/api/v1/agency/profile` | 기관 프로파일 분석 (인증 필요) |
+| GET | `/api/v1/smart-bid/agency/search` | 기관명 검색 |
+| GET | `/api/v1/smart-bid/agency/insights` | 기관 입찰 인사이트 |
+| GET | `/api/v1/smart-bid/agency/stats` | 기관 통계 |
+
+### 스마트 입찰 (ML)
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/api/v1/smart-bid/competition/predict` | 경쟁 강도 예측 |
+| POST | `/api/v1/smart-bid/recommend` | 스마트 투찰 추천 |
+| POST | `/api/v1/smart-bid/rate/predict` | 사정률 예측 |
+| POST | `/api/v1/smart-bid/verify` | 투찰가 검증 |
+| GET | `/api/v1/prediction/{bid_no}/recommend-points` | 과학적 분석 추천 포인트 |
 
 **AI 분석 응답 예시:**
 ```json
