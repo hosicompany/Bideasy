@@ -1,0 +1,136 @@
+# Production Docker Compose — BidEasy
+# Usage:
+#   cp .env.production.example .env.production
+#   # fill in real values in .env.production
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  app:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: bideasy_app
+    expose:
+      - "8000"
+    env_file:
+      - .env.production
+    environment:
+      - DATABASE_MODE=postgresql
+      - POSTGRES_SERVER=db
+      - REDIS_HOST=redis
+      - APP_ENV=production
+      - LOG_FORMAT=json
+    volumes:
+      - ../backend/models:/app/models:ro
+      - ../backend/data/historical:/app/data/historical:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+
+  celery_worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: bideasy_celery
+    command: celery -A app.core.celery_app:celery_app worker --loglevel=info --concurrency=2
+    env_file:
+      - .env.production
+    environment:
+      - DATABASE_MODE=postgresql
+      - POSTGRES_SERVER=db
+      - REDIS_HOST=redis
+      - APP_ENV=production
+      - LOG_FORMAT=json
+    volumes:
+      - ../backend/models:/app/models:ro
+      - ../backend/data/historical:/app/data/historical:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  db:
+    image: postgres:15-alpine
+    container_name: bideasy_db
+    expose:
+      - "5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-bideasy}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-bideasy_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bideasy} -d ${POSTGRES_DB:-bideasy_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    container_name: bideasy_redis
+    expose:
+      - "6379"
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  nginx:
+    image: nginx:alpine
+    container_name: bideasy_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot_webroot:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+    depends_on:
+      - app
+    restart: always
+
+  certbot:
+    image: certbot/certbot
+    container_name: bideasy_certbot
+    volumes:
+      - certbot_webroot:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    # Run renewal check every 12 hours
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done'"
+
+volumes:
+  postgres_data:
+  redis_data:
+  certbot_webroot:
+  certbot_certs:

@@ -8,6 +8,8 @@
 .env.local
 .env.*.local
 .env.backup
+.env.production
+infra/.env.production
 *.pem
 *.key
 *.p12

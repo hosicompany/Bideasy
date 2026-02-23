@@ -1,0 +1,40 @@
+# Initial HTTP-only config (before SSL certificate is issued)
+# Usage:
+#   1. Copy this to default.conf: cp initial.conf.example default.conf
+#   2. Start services: docker compose -f docker-compose.prod.yml up -d
+#   3. Run SSL init: ./deploy.sh ssl-init
+#   4. Replace default.conf with the HTTPS version (rename default.conf.ssl)
+
+server {
+    listen 80;
+    server_name bideasy.kr www.bideasy.kr;
+
+    # Let's Encrypt challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Proxy API requests (HTTP only, before SSL)
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+
+        proxy_pass http://bideasy_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /health {
+        proxy_pass http://bideasy_api;
+        proxy_set_header Host $host;
+    }
+
+    location /auth/callback/ {
+        proxy_pass http://bideasy_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

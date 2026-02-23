@@ -12,6 +12,10 @@ from app.db.session import engine
 
 setup_logging()
 
+# Production: trust X-Forwarded-For from Nginx reverse proxy
+if settings.APP_ENV == "production":
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
 # SQLite 개발 모드에서만 자동 테이블 생성 (PostgreSQL은 Alembic 마이그레이션 사용)
 if settings.DATABASE_MODE == "sqlite":
     Base.metadata.create_all(bind=engine)
@@ -19,8 +23,13 @@ if settings.DATABASE_MODE == "sqlite":
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.PROJECT_VERSION,
-    description="BidEasy Backend API"
+    description="BidEasy Backend API",
+    docs_url="/docs" if settings.APP_ENV == "development" else None,
+    redoc_url=None,
 )
+
+if settings.APP_ENV == "production":
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 
 # Rate Limiting
 app.state.limiter = limiter
