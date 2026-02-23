@@ -608,6 +608,54 @@ class ApiService {
     _throwForStatus(response);
   }
 
+  // ─── Subscription API ───
+
+  Future<Map<String, dynamic>> createSubscriptionOrder({
+    required String tier,
+    required String billingCycle,
+  }) async {
+    final response = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/payments/subscribe'),
+        headers: _authHeaders,
+        body: jsonEncode({'tier': tier, 'billing_cycle': billingCycle}),
+      ),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes));
+    }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
+  }
+
+  Future<Map<String, dynamic>> getSubscription() async {
+    final response = await _request(
+      () => http.get(
+        Uri.parse('$baseUrl/payments/subscription'),
+        headers: _authHeaders,
+      ),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes));
+    }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
+  }
+
+  Future<Map<String, dynamic>> cancelSubscription() async {
+    final response = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/payments/subscribe/cancel'),
+        headers: _authHeaders,
+      ),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes));
+    }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
+  }
+
   Future<List<Map<String, dynamic>>> searchAgencies(
     String keyword, {
     int limit = 10,

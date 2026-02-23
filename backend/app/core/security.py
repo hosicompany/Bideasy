@@ -71,6 +71,13 @@ def require_tier(minimum_tier: str):
 
     def _check(current_user: models.User = Depends(get_current_user)):
         user_tier = getattr(current_user, "tier", "free") or "free"
+
+        # Check subscription expiration
+        if user_tier != "free":
+            expires_at = getattr(current_user, "subscription_expires_at", None)
+            if expires_at and expires_at < datetime.now(timezone.utc):
+                user_tier = "free"
+
         if not tier_at_least(user_tier, minimum_tier):
             tier_name = TIER_DISPLAY_NAMES_KO.get(minimum_tier, minimum_tier)
             raise HTTPException(

@@ -13,6 +13,7 @@ import 'point_screen.dart';
 import 'login_screen.dart';
 import 'terms_screen.dart';
 import 'privacy_screen.dart';
+import 'subscription_screen.dart';
 
 class MyPageScreen extends ConsumerStatefulWidget {
   const MyPageScreen({super.key});
@@ -236,7 +237,17 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
         const SizedBox(height: 4),
         Text(user.email ?? "-", style: const TextStyle(fontSize: 14, color: AppColors.textSub)),
         const SizedBox(height: 8),
-        _buildTierBadge(user.tier),
+        GestureDetector(
+          onTap: () { HapticFeedback.lightImpact(); Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen())); },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildTierBadge(user.tier),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded, size: 16, color: AppColors.textSub),
+            ],
+          ),
+        ),
         const SizedBox(height: 20),
         Container(
           padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppColors.backgroundGrey, borderRadius: BorderRadius.circular(12)),

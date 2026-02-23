@@ -103,18 +103,22 @@ class SubscriptionInfo(BaseModel):
     tier_display: str
     expires_at: Optional[datetime] = None
     is_active: bool
+    billing_cycle: Optional[str] = None  # monthly | annual
 
     class Config:
         from_attributes = True
 
 
-class SubscriptionUpgradeRequest(BaseModel):
+class SubscribeRequest(BaseModel):
     tier: str  # "pro" or "pro_plus"
     billing_cycle: str = "monthly"  # "monthly" or "annual"
 
 
-class SubscriptionUpgradeResponse(BaseModel):
-    success: bool
-    tier: str
+class SubscribeOrderResponse(BaseModel):
+    order_id: str
     amount: int
-    message: str
+    order_name: str
+    customer_name: str
+    toss_client_key: str
+    tier: str
+    billing_cycle: str
