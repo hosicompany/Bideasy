@@ -20,6 +20,17 @@ class AppColors {
   static const Color competitionYellow = Color(0xFFFFCC00);
   static const Color competitionOrange = Color(0xFFFF9500);
   static const Color competitionRed = Color(0xFFFF3B30);
+
+  // Brand / external service colors
+  static const Color kakaoYellow = Color(0xFFFEE500);
+  static const Color naverGreen = Color(0xFF03C75A);
+
+  // Semantic colors
+  static const Color warningOrange = Color(0xFFFF9500);
+  static const Color closedBadgeGrey = Color(0xFFF0F0F0);
+  static const Color closedTextGrey = Color(0xFF888888);
+  static const Color starGold = Color(0xFFFFD700);
+  static const Color starInactive = Color(0xFFC4C4C4);
 }
 
 class AppTextStyles {
@@ -50,6 +61,76 @@ class AppTextStyles {
     color: AppColors.textSub,
     fontFamily: 'Pretendard',
   );
+}
+
+class AppSpacing {
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 16;
+  static const double lg = 20;
+  static const double xl = 24;
+  static const double xxl = 32;
+}
+
+class AppShadow {
+  static final List<BoxShadow> card = [
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.05),
+      blurRadius: 10,
+      offset: const Offset(0, 2),
+    ),
+  ];
+
+  static final List<BoxShadow> cardSubtle = [
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.03),
+      blurRadius: 10,
+      offset: const Offset(0, 2),
+    ),
+  ];
+}
+
+class AppAnimation {
+  static const Duration fast = Duration(milliseconds: 200);
+  static const Duration normal = Duration(milliseconds: 400);
+  static const Duration slow = Duration(milliseconds: 600);
+}
+
+class AppInputDecoration {
+  static InputDecoration standard({
+    required String hint,
+    IconData? icon,
+    String? suffix,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(color: AppColors.textSub.withValues(alpha: 0.5)),
+      prefixIcon: icon != null
+          ? Icon(icon, size: 20, color: AppColors.textSub)
+          : null,
+      suffixText: suffix,
+      suffixStyle: const TextStyle(fontSize: 14, color: AppColors.textSub),
+      filled: true,
+      fillColor: AppColors.backgroundGrey,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primaryBlue, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.dangerRed, width: 1),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.dangerRed, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    );
+  }
 }
 
 class AppTheme {

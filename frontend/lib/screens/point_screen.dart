@@ -292,7 +292,7 @@ class _PointScreenState extends ConsumerState<PointScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primaryBlue,
                 foregroundColor: Colors.white,
-                disabledBackgroundColor: AppColors.primaryBlue.withOpacity(0.5),
+                disabledBackgroundColor: AppColors.primaryBlue.withValues(alpha:0.5),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -331,7 +331,7 @@ class _PointScreenState extends ConsumerState<PointScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha:0.03),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -398,8 +398,8 @@ class _PointScreenState extends ConsumerState<PointScreen> {
             height: 36,
             decoration: BoxDecoration(
               color: isPositive
-                  ? AppColors.safeGreen.withOpacity(0.1)
-                  : AppColors.dangerRed.withOpacity(0.1),
+                  ? AppColors.safeGreen.withValues(alpha:0.1)
+                  : AppColors.dangerRed.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(

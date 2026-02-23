@@ -207,7 +207,7 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryBlue,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: AppColors.primaryBlue.withOpacity(0.5),
+                  disabledBackgroundColor: AppColors.primaryBlue.withValues(alpha:0.5),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   elevation: 0,
@@ -229,7 +229,7 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
     return Container(
       width: double.infinity, padding: const EdgeInsets.all(24), color: AppColors.surfaceWhite,
       child: Column(children: [
-        Container(width: 80, height: 80, decoration: BoxDecoration(color: AppColors.primaryBlue.withOpacity(0.1), borderRadius: BorderRadius.circular(40)),
+        Container(width: 80, height: 80, decoration: BoxDecoration(color: AppColors.primaryBlue.withValues(alpha:0.1), borderRadius: BorderRadius.circular(40)),
           child: const Icon(Icons.person_rounded, size: 40, color: AppColors.primaryBlue)),
         const SizedBox(height: 16),
         Text(user.companyName?.isNotEmpty == true ? user.companyName! : "회사 정보를 입력해주세요",
@@ -263,7 +263,7 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6), padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: AppColors.surfaceWhite, borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 2))]),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.03), blurRadius: 10, offset: const Offset(0, 2))]),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [Icon(icon, size: 20, color: AppColors.primaryBlue), const SizedBox(width: 8),
           Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textMain))]),
@@ -280,14 +280,8 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
         const SizedBox(height: 8),
         TextField(controller: controller, keyboardType: keyboardType,
           style: const TextStyle(fontSize: 15, color: AppColors.textMain),
-          decoration: InputDecoration(hintText: hint, hintStyle: TextStyle(color: AppColors.textSub.withOpacity(0.5)),
-            prefixIcon: Icon(icon, size: 20, color: AppColors.textSub), suffixText: suffix,
-            suffixStyle: const TextStyle(fontSize: 14, color: AppColors.textSub),
-            filled: true, fillColor: AppColors.backgroundGrey,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primaryBlue, width: 1.5)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14))),
-        if (helperText != null) ...[const SizedBox(height: 6), Text(helperText, style: TextStyle(fontSize: 12, color: AppColors.textSub.withOpacity(0.7)))],
+          decoration: AppInputDecoration.standard(hint: hint, icon: icon, suffix: suffix)),
+        if (helperText != null) ...[const SizedBox(height: 6), Text(helperText, style: TextStyle(fontSize: 12, color: AppColors.textSub.withValues(alpha:0.7)))],
       ]),
     );
   }
@@ -301,12 +295,8 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
         DropdownButtonFormField<String>(initialValue: value, isExpanded: true,
           icon: const Icon(Icons.keyboard_arrow_down_rounded),
           style: const TextStyle(fontSize: 15, color: AppColors.textMain),
-          decoration: InputDecoration(prefixIcon: Icon(icon, size: 20, color: AppColors.textSub),
-            filled: true, fillColor: AppColors.backgroundGrey,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primaryBlue, width: 1.5)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
-          hint: Text("선택해주세요", style: TextStyle(color: AppColors.textSub.withOpacity(0.5))),
+          decoration: AppInputDecoration.standard(hint: '선택해주세요', icon: icon),
+          hint: Text("선택해주세요", style: TextStyle(color: AppColors.textSub.withValues(alpha:0.5))),
           items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
           onChanged: onChanged),
       ]),
@@ -317,7 +307,7 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20), padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: AppColors.surfaceWhite, borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 2))]),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.03), blurRadius: 10, offset: const Offset(0, 2))]),
       child: Column(children: [
         _buildInfoRow(icon: Icons.info_outline_rounded, label: "앱 버전", value: "2.2.0"),
         const Divider(height: 24),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,10 +18,52 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
+class ApiException implements Exception {
+  final String message;
+  final int? statusCode;
+  ApiException(this.message, {this.statusCode});
+
+  @override
+  String toString() => message;
+}
+
 class ApiService {
   // Use 10.0.2.2 for Android emulator, 127.0.0.1 for Web/iOS/Windows
   // Using 127.0.0.1 avoids localhost resolution issues (IPv4 vs IPv6)
   static const String baseUrl = 'http://127.0.0.1:8000/api/v1';
+  static const Duration _timeout = Duration(seconds: 30);
+
+  /// Wraps an HTTP call with timeout and user-friendly error handling.
+  static Future<http.Response> _request(
+    Future<http.Response> Function() call,
+  ) async {
+    try {
+      return await call().timeout(_timeout);
+    } on TimeoutException {
+      throw ApiException('서버 응답 시간이 초과됐어요. 잠시 후 다시 시도해주세요');
+    } on http.ClientException {
+      throw ApiException('인터넷 연결을 확인해주세요');
+    }
+  }
+
+  /// Maps HTTP error status codes to Korean messages.
+  static Never _throwForStatus(http.Response response) {
+    final detail = _parseDetail(response);
+    switch (response.statusCode) {
+      case 401:
+        throw AuthException(detail ?? '로그인이 필요해요');
+      case 403:
+        throw ApiException(detail ?? '접근 권한이 없어요', statusCode: 403);
+      case 404:
+        throw ApiException(detail ?? '요청한 데이터를 찾을 수 없어요', statusCode: 404);
+      case 429:
+        throw ApiException(detail ?? '요청이 너무 많아요. 잠시 후 다시 시도해주세요', statusCode: 429);
+      case >= 500:
+        throw ApiException(detail ?? '서버에 문제가 생겼어요. 잠시 후 다시 시도해주세요', statusCode: response.statusCode);
+      default:
+        throw ApiException(detail ?? '요청에 실패했어요 (${response.statusCode})', statusCode: response.statusCode);
+    }
+  }
 
   // ─── Auth Token Management ───
 
@@ -136,39 +179,32 @@ class ApiService {
     bool excludeClosed = false,
     int page = 1,
   }) async {
-    try {
-      final queryParams = <String, String>{};
-      if (keyword != null && keyword.isNotEmpty) {
-        queryParams['keyword'] = keyword;
-      }
-      queryParams['exclude_closed'] = excludeClosed.toString();
-      queryParams['page'] = page.toString();
-      queryParams['limit'] = '20';
-
-      final uri = Uri.parse(
-        '$baseUrl/bids/feed',
-      ).replace(queryParameters: queryParams);
-      final response = await http.get(uri);
-
-      if (response.statusCode == 200) {
-        List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
-        return body.map((dynamic item) => Notice.fromJson(item)).toList();
-      } else {
-        throw Exception('Failed to load notices: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Failed to load notices: $e');
+    final queryParams = <String, String>{};
+    if (keyword != null && keyword.isNotEmpty) {
+      queryParams['keyword'] = keyword;
     }
+    queryParams['exclude_closed'] = excludeClosed.toString();
+    queryParams['page'] = page.toString();
+    queryParams['limit'] = '20';
+
+    final uri = Uri.parse(
+      '$baseUrl/bids/feed',
+    ).replace(queryParameters: queryParams);
+    final response = await _request(() => http.get(uri));
+
+    if (response.statusCode == 200) {
+      List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
+      return body.map((dynamic item) => Notice.fromJson(item)).toList();
+    }
+    _throwForStatus(response);
   }
 
   Future<void> triggerCrawl() async {
-    try {
-      final response = await http.post(Uri.parse('$baseUrl/bids/crawl'));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to trigger crawl: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Failed to trigger crawl: $e');
+    final response = await _request(
+      () => http.post(Uri.parse('$baseUrl/bids/crawl')),
+    );
+    if (response.statusCode != 200) {
+      _throwForStatus(response);
     }
   }
 
@@ -178,8 +214,8 @@ class ApiService {
     String? contractType,
     int? aValue,
   }) async {
-    try {
-      final response = await http.post(
+    final response = await _request(
+      () => http.post(
         Uri.parse('$baseUrl/bids/calculate/detailed'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -188,237 +224,190 @@ class ApiService {
           'contract_type': contractType ?? 'CONSTRUCTION',
           'a_value': aValue ?? 0,
         }),
-      );
+      ),
+    );
 
-      if (response.statusCode == 200) {
-        return jsonDecode(utf8.decode(response.bodyBytes));
-      } else {
-        throw Exception('Failed to calculate bid: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Failed to calculate bid: $e');
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes));
     }
+    _throwForStatus(response);
   }
 
   Future<AiAnalysis> fetchBidAnalysis(
     String bidNo,
     Map<String, String> params,
   ) async {
-    try {
-      String url = '$baseUrl/ai/$bidNo/analysis';
-      if (params.isNotEmpty) {
-        url +=
-            '?${params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')}';
-      }
-
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        return AiAnalysis.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
-      } else {
-        throw Exception('Failed to load analysis: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Failed to load analysis: $e');
+    String url = '$baseUrl/ai/$bidNo/analysis';
+    if (params.isNotEmpty) {
+      url +=
+          '?${params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')}';
     }
+
+    final response = await _request(() => http.get(Uri.parse(url)));
+
+    if (response.statusCode == 200) {
+      return AiAnalysis.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
+    }
+    _throwForStatus(response);
   }
 
   Future<void> toggleFavorite(String bidNo) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/bids/$bidNo/favorite'),
-      );
-      if (response.statusCode != 200) {
-        throw Exception('Failed to toggle favorite: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Failed to toggle favorite: $e');
+    final response = await _request(
+      () => http.post(Uri.parse('$baseUrl/bids/$bidNo/favorite')),
+    );
+    if (response.statusCode != 200) {
+      _throwForStatus(response);
     }
   }
 
   Future<List<Notice>> fetchFavorites() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/bids/favorites/list'),
-      );
-      if (response.statusCode == 200) {
-        List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
-        return body.map((dynamic item) => Notice.fromJson(item)).toList();
-      } else {
-        throw Exception('Failed to load favorites: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Failed to load favorites: $e');
+    final response = await _request(
+      () => http.get(Uri.parse('$baseUrl/bids/favorites/list')),
+    );
+    if (response.statusCode == 200) {
+      List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
+      return body.map((dynamic item) => Notice.fromJson(item)).toList();
     }
+    _throwForStatus(response);
   }
 
   Future<List<OpeningResult>> fetchOpeningResults(String bidNo) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/bids/$bidNo/results'),
-      );
-
-      if (response.statusCode == 200) {
-        List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
-        return body
-            .map((dynamic item) => OpeningResult.fromJson(item))
-            .toList();
-      } else {
-        throw Exception('Failed to load results: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Failed to load results: $e');
+    final response = await _request(
+      () => http.get(Uri.parse('$baseUrl/bids/$bidNo/results')),
+    );
+    if (response.statusCode == 200) {
+      List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
+      return body
+          .map((dynamic item) => OpeningResult.fromJson(item))
+          .toList();
     }
+    _throwForStatus(response);
   }
 
   // ─── Protected API (auth required) ───
 
   Future<User> getUserMe() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/users/me'),
-      headers: _authHeaders,
+    final response = await _request(
+      () => http.get(Uri.parse('$baseUrl/users/me'), headers: _authHeaders),
     );
     if (response.statusCode == 200) {
       return User.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
-    } else if (response.statusCode == 401) {
-      await clearToken();
-      throw AuthException('로그인이 만료되었어요');
-    } else {
-      throw Exception('Failed to load user: ${response.statusCode}');
     }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
   }
 
   Future<User> updateUserMe(Map<String, dynamic> data) async {
-    final response = await http.put(
-      Uri.parse('$baseUrl/users/me'),
-      headers: _authHeaders,
-      body: jsonEncode(data),
+    final response = await _request(
+      () => http.put(
+        Uri.parse('$baseUrl/users/me'),
+        headers: _authHeaders,
+        body: jsonEncode(data),
+      ),
     );
     if (response.statusCode == 200) {
       return User.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
-    } else if (response.statusCode == 401) {
-      await clearToken();
-      throw AuthException('로그인이 만료되었어요');
-    } else {
-      throw Exception('Failed to update user: ${response.statusCode}');
     }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
   }
 
   // ─── Points API (auth required) ───
 
   Future<Map<String, dynamic>> getPointBalance() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/points/balance'),
-      headers: _authHeaders,
+    final response = await _request(
+      () => http.get(Uri.parse('$baseUrl/points/balance'), headers: _authHeaders),
     );
     if (response.statusCode == 200) {
       return jsonDecode(utf8.decode(response.bodyBytes));
-    } else if (response.statusCode == 401) {
-      await clearToken();
-      throw AuthException('로그인이 만료되었어요');
-    } else {
-      throw Exception('Failed to load balance: ${response.statusCode}');
     }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
   }
 
   Future<Map<String, dynamic>> deductPoints(String bidNo) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/points/deduct'),
-      headers: _authHeaders,
-      body: jsonEncode({'bid_no': bidNo}),
+    final response = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/points/deduct'),
+        headers: _authHeaders,
+        body: jsonEncode({'bid_no': bidNo}),
+      ),
     );
     if (response.statusCode == 200) {
       return jsonDecode(utf8.decode(response.bodyBytes));
-    } else if (response.statusCode == 401) {
-      await clearToken();
-      throw AuthException('로그인이 만료되었어요');
-    } else if (response.statusCode == 402) {
-      final body = jsonDecode(utf8.decode(response.bodyBytes));
-      throw Exception(body['detail'] ?? '포인트가 부족합니다');
-    } else {
-      throw Exception('Failed to deduct points: ${response.statusCode}');
     }
+    if (response.statusCode == 401) await clearToken();
+    if (response.statusCode == 402) {
+      final body = jsonDecode(utf8.decode(response.bodyBytes));
+      throw ApiException(body['detail'] ?? '포인트가 부족해요', statusCode: 402);
+    }
+    _throwForStatus(response);
   }
 
   Future<Map<String, dynamic>> getDailyFreeStatus() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/points/daily-free'),
-      headers: _authHeaders,
+    final response = await _request(
+      () => http.get(Uri.parse('$baseUrl/points/daily-free'), headers: _authHeaders),
     );
     if (response.statusCode == 200) {
       return jsonDecode(utf8.decode(response.bodyBytes));
-    } else if (response.statusCode == 401) {
-      await clearToken();
-      throw AuthException('로그인이 만료되었어요');
-    } else {
-      throw Exception('Failed to load daily free status: ${response.statusCode}');
     }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
   }
 
   Future<Map<String, dynamic>> createPaymentOrder(int amount) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/payments/create-order'),
-      headers: _authHeaders,
-      body: jsonEncode({'amount': amount}),
+    final response = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/payments/create-order'),
+        headers: _authHeaders,
+        body: jsonEncode({'amount': amount}),
+      ),
     );
     if (response.statusCode == 200) {
       return jsonDecode(utf8.decode(response.bodyBytes));
-    } else if (response.statusCode == 401) {
-      await clearToken();
-      throw AuthException('로그인이 만료되었어요');
-    } else {
-      final body = jsonDecode(utf8.decode(response.bodyBytes));
-      throw Exception(body['detail'] ?? '주문 생성에 실패했습니다');
     }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
   }
 
   Future<Map<String, dynamic>> chargePoints(int amount) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/points/charge'),
-      headers: _authHeaders,
-      body: jsonEncode({'amount': amount}),
+    final response = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/points/charge'),
+        headers: _authHeaders,
+        body: jsonEncode({'amount': amount}),
+      ),
     );
     if (response.statusCode == 200) {
       return jsonDecode(utf8.decode(response.bodyBytes));
-    } else if (response.statusCode == 401) {
-      await clearToken();
-      throw AuthException('로그인이 만료되었어요');
-    } else {
-      throw Exception('Failed to charge points: ${response.statusCode}');
     }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
   }
 
   Future<List<Map<String, dynamic>>> getPointHistory({int limit = 20}) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/points/history?limit=$limit'),
-      headers: _authHeaders,
+    final response = await _request(
+      () => http.get(
+        Uri.parse('$baseUrl/points/history?limit=$limit'),
+        headers: _authHeaders,
+      ),
     );
     if (response.statusCode == 200) {
       final List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
       return body.cast<Map<String, dynamic>>();
-    } else if (response.statusCode == 401) {
-      await clearToken();
-      throw AuthException('로그인이 만료되었어요');
-    } else {
-      throw Exception('Failed to load history: ${response.statusCode}');
     }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
   }
 
   Future<Map<String, dynamic>> fetchScientificAnalysis(String bidNo) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/prediction/$bidNo/recommend-points'),
-      );
-      if (response.statusCode == 200) {
-        return jsonDecode(utf8.decode(response.bodyBytes));
-      } else {
-        throw Exception(
-          'Failed to load scientific analysis: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Failed to load scientific analysis: $e');
+    final response = await _request(
+      () => http.get(Uri.parse('$baseUrl/prediction/$bidNo/recommend-points')),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes));
     }
+    _throwForStatus(response);
   }
 
   // ─── Smart Bid API ───
@@ -429,8 +418,8 @@ class ApiService {
     String agencyName = '',
     String? bidDate,
   }) async {
-    try {
-      final response = await http.post(
+    final response = await _request(
+      () => http.post(
         Uri.parse('$baseUrl/smart-bid/competition/predict'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -439,18 +428,13 @@ class ApiService {
           'agency_name': agencyName,
           if (bidDate != null) 'bid_date': bidDate,
         }),
-      );
-      if (response.statusCode == 200) {
-        final json = jsonDecode(utf8.decode(response.bodyBytes));
-        return CompetitionPrediction.fromJson(json['data']);
-      } else {
-        throw Exception(
-          'Failed to predict competition: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Failed to predict competition: $e');
+      ),
+    );
+    if (response.statusCode == 200) {
+      final json = jsonDecode(utf8.decode(response.bodyBytes));
+      return CompetitionPrediction.fromJson(json['data']);
     }
+    _throwForStatus(response);
   }
 
   Future<SmartBidRecommendation> getSmartRecommendation({
@@ -461,8 +445,8 @@ class ApiService {
     String agencyName = '',
     String? bidDate,
   }) async {
-    try {
-      final response = await http.post(
+    final response = await _request(
+      () => http.post(
         Uri.parse('$baseUrl/smart-bid/recommend'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -473,18 +457,13 @@ class ApiService {
           if (estimatedAmount != null) 'estimated_amount': estimatedAmount,
           if (bidDate != null) 'bid_date': bidDate,
         }),
-      );
-      if (response.statusCode == 200) {
-        final json = jsonDecode(utf8.decode(response.bodyBytes));
-        return SmartBidRecommendation.fromJson(json['data']);
-      } else {
-        throw Exception(
-          'Failed to get recommendation: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Failed to get recommendation: $e');
+      ),
+    );
+    if (response.statusCode == 200) {
+      final json = jsonDecode(utf8.decode(response.bodyBytes));
+      return SmartBidRecommendation.fromJson(json['data']);
     }
+    _throwForStatus(response);
   }
 
   Future<Map<String, dynamic>> predictBidRate({
@@ -494,8 +473,8 @@ class ApiService {
     String agencyName = '',
     String? bidDate,
   }) async {
-    try {
-      final response = await http.post(
+    final response = await _request(
+      () => http.post(
         Uri.parse('$baseUrl/smart-bid/rate/predict'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -505,16 +484,13 @@ class ApiService {
           'agency_name': agencyName,
           if (bidDate != null) 'bid_date': bidDate,
         }),
-      );
-      if (response.statusCode == 200) {
-        final json = jsonDecode(utf8.decode(response.bodyBytes));
-        return json['data'] as Map<String, dynamic>;
-      } else {
-        throw Exception('Failed to predict bid rate: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Failed to predict bid rate: $e');
+      ),
+    );
+    if (response.statusCode == 200) {
+      final json = jsonDecode(utf8.decode(response.bodyBytes));
+      return json['data'] as Map<String, dynamic>;
     }
+    _throwForStatus(response);
   }
 
   Future<Map<String, dynamic>> verifyBid({
@@ -523,8 +499,8 @@ class ApiService {
     required double basicPrice,
     String organization = '',
   }) async {
-    try {
-      final response = await http.post(
+    final response = await _request(
+      () => http.post(
         Uri.parse('$baseUrl/smart-bid/verify'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -533,42 +509,32 @@ class ApiService {
           'basic_price': basicPrice,
           'organization': organization,
         }),
-      );
-      if (response.statusCode == 200) {
-        final json = jsonDecode(utf8.decode(response.bodyBytes));
-        return json['data'] as Map<String, dynamic>;
-      } else {
-        throw Exception('Failed to verify bid: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Failed to verify bid: $e');
+      ),
+    );
+    if (response.statusCode == 200) {
+      final json = jsonDecode(utf8.decode(response.bodyBytes));
+      return json['data'] as Map<String, dynamic>;
     }
+    _throwForStatus(response);
   }
 
   Future<Map<String, dynamic>> fetchAgencyInsights({
     required String agencyName,
     String? bidType,
   }) async {
-    try {
-      final queryParams = {
-        'agency_name': agencyName,
-        if (bidType != null) 'bid_type': bidType,
-      };
-      final uri = Uri.parse(
-        '$baseUrl/smart-bid/agency/insights',
-      ).replace(queryParameters: queryParams);
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(utf8.decode(response.bodyBytes));
-        return json['data'] as Map<String, dynamic>;
-      } else {
-        throw Exception(
-          'Failed to load agency insights: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Failed to load agency insights: $e');
+    final queryParams = {
+      'agency_name': agencyName,
+      if (bidType != null) 'bid_type': bidType,
+    };
+    final uri = Uri.parse(
+      '$baseUrl/smart-bid/agency/insights',
+    ).replace(queryParameters: queryParams);
+    final response = await _request(() => http.get(uri));
+    if (response.statusCode == 200) {
+      final json = jsonDecode(utf8.decode(response.bodyBytes));
+      return json['data'] as Map<String, dynamic>;
     }
+    _throwForStatus(response);
   }
 
   Future<List<Map<String, dynamic>>> getAgencyStats({
@@ -576,67 +542,46 @@ class ApiService {
     String keyword = '',
     int limit = 20,
   }) async {
-    try {
-      final queryParams = {
-        'bid_type': bidType,
-        'keyword': keyword,
-        'limit': limit.toString(),
-      };
-      final uri = Uri.parse(
-        '$baseUrl/smart-bid/agency/stats',
-      ).replace(queryParameters: queryParams);
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(utf8.decode(response.bodyBytes));
-        final List<dynamic> data = json['data'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      } else {
-        throw Exception(
-          'Failed to load agency stats: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Failed to load agency stats: $e');
+    final queryParams = {
+      'bid_type': bidType,
+      'keyword': keyword,
+      'limit': limit.toString(),
+    };
+    final uri = Uri.parse(
+      '$baseUrl/smart-bid/agency/stats',
+    ).replace(queryParameters: queryParams);
+    final response = await _request(() => http.get(uri));
+    if (response.statusCode == 200) {
+      final json = jsonDecode(utf8.decode(response.bodyBytes));
+      final List<dynamic> data = json['data'] ?? [];
+      return data.cast<Map<String, dynamic>>();
     }
+    _throwForStatus(response);
   }
 
   // ─── Deep Analysis API ───
 
   Future<DeepAnalysis> fetchDeepAnalysis(String bidId) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/analysis/$bidId/deep'),
-      );
-      if (response.statusCode == 200) {
-        return DeepAnalysis.fromJson(
-            jsonDecode(utf8.decode(response.bodyBytes)));
-      } else {
-        throw Exception(
-          'Failed to load deep analysis: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Failed to load deep analysis: $e');
+    final response = await _request(
+      () => http.post(Uri.parse('$baseUrl/analysis/$bidId/deep')),
+    );
+    if (response.statusCode == 200) {
+      return DeepAnalysis.fromJson(
+          jsonDecode(utf8.decode(response.bodyBytes)));
     }
+    _throwForStatus(response);
   }
 
   Future<List<Map<String, dynamic>>> fetchAttachments(String bidId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/analysis/$bidId/attachments'),
-      );
-      if (response.statusCode == 200) {
-        final json = jsonDecode(utf8.decode(response.bodyBytes));
-        final List<dynamic> data = json['attachments'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      } else {
-        throw Exception(
-          'Failed to load attachments: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Failed to load attachments: $e');
+    final response = await _request(
+      () => http.get(Uri.parse('$baseUrl/analysis/$bidId/attachments')),
+    );
+    if (response.statusCode == 200) {
+      final json = jsonDecode(utf8.decode(response.bodyBytes));
+      final List<dynamic> data = json['attachments'] ?? [];
+      return data.cast<Map<String, dynamic>>();
     }
+    _throwForStatus(response);
   }
 
   // ─── Agency Profile API (auth required) ───
@@ -645,51 +590,41 @@ class ApiService {
     required String organization,
     int months = 6,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/agency/profile'),
-      headers: _authHeaders,
-      body: jsonEncode({
-        'organization': organization,
-        'months': months,
-      }),
+    final response = await _request(
+      () => http.post(
+        Uri.parse('$baseUrl/agency/profile'),
+        headers: _authHeaders,
+        body: jsonEncode({
+          'organization': organization,
+          'months': months,
+        }),
+      ),
     );
     if (response.statusCode == 200) {
       return AgencyProfile.fromJson(
           jsonDecode(utf8.decode(response.bodyBytes)));
-    } else if (response.statusCode == 401) {
-      await clearToken();
-      throw AuthException('로그인이 만료되었어요');
-    } else {
-      throw Exception(
-        'Failed to load agency profile: ${response.statusCode}',
-      );
     }
+    if (response.statusCode == 401) await clearToken();
+    _throwForStatus(response);
   }
 
   Future<List<Map<String, dynamic>>> searchAgencies(
     String keyword, {
     int limit = 10,
   }) async {
-    try {
-      final queryParams = {
-        'keyword': keyword,
-        'limit': limit.toString(),
-      };
-      final uri = Uri.parse(
-        '$baseUrl/smart-bid/agency/search',
-      ).replace(queryParameters: queryParams);
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final json = jsonDecode(utf8.decode(response.bodyBytes));
-        final List<dynamic> data = json['data'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      } else {
-        throw Exception(
-          'Failed to search agencies: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Failed to search agencies: $e');
+    final queryParams = {
+      'keyword': keyword,
+      'limit': limit.toString(),
+    };
+    final uri = Uri.parse(
+      '$baseUrl/smart-bid/agency/search',
+    ).replace(queryParameters: queryParams);
+    final response = await _request(() => http.get(uri));
+    if (response.statusCode == 200) {
+      final json = jsonDecode(utf8.decode(response.bodyBytes));
+      final List<dynamic> data = json['data'] ?? [];
+      return data.cast<Map<String, dynamic>>();
     }
+    _throwForStatus(response);
   }
 }

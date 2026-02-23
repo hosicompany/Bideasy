@@ -100,18 +100,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           message: "관심 있는 공고의 별 아이콘을 눌러\n즐겨찾기에 추가해보세요",
         );
       }
-      return ListView.builder(
-        itemCount: s.favorites.length,
-        itemBuilder: (context, index) {
-          final notice = s.favorites[index];
-          return NoticeCard(
-            notice: notice,
-            isFavorite: true,
-            competitionLevel: s.competitionCache[notice.bidNo],
-            onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
-            onTap: () => _showCalculator(context, notice),
-          );
-        },
+      return RefreshIndicator(
+        onRefresh: _refreshNotices,
+        color: AppColors.primaryBlue,
+        child: ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          itemCount: s.favorites.length,
+          itemBuilder: (context, index) {
+            final notice = s.favorites[index];
+            return NoticeCard(
+              key: ValueKey(notice.bidNo),
+              notice: notice,
+              isFavorite: true,
+              competitionLevel: s.competitionCache[notice.bidNo],
+              onFavoriteChanged: () => _toggleFavorite(notice.bidNo),
+              onTap: () => _showCalculator(context, notice),
+            );
+          },
+        ),
       );
     }
 
@@ -159,6 +165,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final notice = s.notices[index];
           final isFav = s.favoriteIds.contains(notice.bidNo);
           return NoticeCard(
+            key: ValueKey(notice.bidNo),
             notice: notice,
             isFavorite: isFav,
             competitionLevel: s.competitionCache[notice.bidNo],
@@ -256,10 +263,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh),
+              tooltip: '새로고침',
               onPressed: _refreshNotices,
             ),
             IconButton(
               icon: const Icon(Icons.notifications_outlined),
+              tooltip: '알림',
               onPressed: () {
                 HapticFeedback.lightImpact();
                 SnackBarUtils.showInfo(context, '알림 기능은 준비 중이에요');
@@ -267,6 +276,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.person),
+              tooltip: '마이페이지',
               onPressed: () {
                 Navigator.push(
                     context,

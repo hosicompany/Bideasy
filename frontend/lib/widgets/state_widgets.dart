@@ -95,7 +95,7 @@ class _SkeletonNoticeCardState extends State<SkeletonNoticeCard>
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha:0.03),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -130,7 +130,7 @@ class _SkeletonNoticeCardState extends State<SkeletonNoticeCard>
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(opacity),
+        color: Colors.grey.withValues(alpha:opacity),
         borderRadius: BorderRadius.circular(4),
       ),
     );
@@ -164,7 +164,7 @@ class ErrorStateWidget extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: AppColors.dangerRed.withOpacity(0.1),
+                color: AppColors.dangerRed.withValues(alpha:0.1),
                 borderRadius: BorderRadius.circular(36),
               ),
               child: Icon(
@@ -252,7 +252,7 @@ class EmptyStateWidget extends StatelessWidget {
               ),
               child: Icon(
                 icon,
-                color: AppColors.textSub.withOpacity(0.5),
+                color: AppColors.textSub.withValues(alpha:0.5),
                 size: 40,
               ),
             ),

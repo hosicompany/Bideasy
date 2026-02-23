@@ -107,7 +107,7 @@ class _OpeningResultTableState extends State<OpeningResultTable> {
                       final isWinner = index == 0;
                       return Container(
                         color: isWinner
-                            ? AppColors.primaryBlue.withOpacity(0.05)
+                            ? AppColors.primaryBlue.withValues(alpha:0.05)
                             : Colors.white,
                         padding: const EdgeInsets.symmetric(
                             vertical: 12, horizontal: 8),

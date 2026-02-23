@@ -185,7 +185,7 @@ class _AgencyProfileSheetState extends State<AgencyProfileSheet> {
                     border: Border.all(color: AppColors.divider),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha:0.05),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -303,7 +303,7 @@ class _AgencyProfileSheetState extends State<AgencyProfileSheet> {
             gradient: LinearGradient(
               colors: [
                 AppColors.primaryBlue,
-                AppColors.primaryBlue.withOpacity(0.8),
+                AppColors.primaryBlue.withValues(alpha:0.8),
               ],
             ),
             borderRadius: BorderRadius.circular(14),
@@ -324,7 +324,7 @@ class _AgencyProfileSheetState extends State<AgencyProfileSheet> {
                 "최근 6개월 입찰 데이터 분석",
                 style: TextStyle(
                   fontSize: 13,
-                  color: Colors.white.withOpacity(0.8),
+                  color: Colors.white.withValues(alpha:0.8),
                 ),
               ),
             ],
@@ -412,10 +412,10 @@ class _AgencyProfileSheetState extends State<AgencyProfileSheet> {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.primaryBlue.withOpacity(0.05),
+              color: AppColors.primaryBlue.withValues(alpha:0.05),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                  color: AppColors.primaryBlue.withOpacity(0.2)),
+                  color: AppColors.primaryBlue.withValues(alpha:0.2)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -539,7 +539,7 @@ class _AgencyProfileSheetState extends State<AgencyProfileSheet> {
                     child: Container(
                       height: 8,
                       decoration: BoxDecoration(
-                        color: AppColors.primaryBlue.withOpacity(0.3),
+                        color: AppColors.primaryBlue.withValues(alpha:0.3),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -614,7 +614,7 @@ class _AgencyProfileSheetState extends State<AgencyProfileSheet> {
                     minHeight: 14,
                     backgroundColor: Colors.grey[100],
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.primaryBlue.withOpacity(0.6),
+                      AppColors.primaryBlue.withValues(alpha:0.6),
                     ),
                   ),
                 ),

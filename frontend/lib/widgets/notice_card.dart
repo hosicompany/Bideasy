@@ -57,7 +57,7 @@ class NoticeCard extends StatelessWidget {
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: notice.isClosed
-                          ? const Color(0xFFF0F0F0) // Gray for closed
+                          ? AppColors.closedBadgeGrey
                           : AppColors.safeGreen.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
@@ -65,7 +65,7 @@ class NoticeCard extends StatelessWidget {
                       notice.isClosed ? "개찰 완료" : "안전한 공고",
                       style: TextStyle(
                         color: notice.isClosed
-                            ? const Color(0xFF888888)
+                            ? AppColors.closedTextGrey
                             : AppColors.safeGreen,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -86,8 +86,8 @@ class NoticeCard extends StatelessWidget {
                           ? Icons.star_rounded
                           : Icons.star_border_rounded,
                       color: isFavorite
-                          ? const Color(0xFFFFD700)
-                          : const Color(0xFFC4C4C4),
+                          ? AppColors.starGold
+                          : AppColors.starInactive,
                       size: 28,
                     ),
                   ),
@@ -116,7 +116,7 @@ class NoticeCard extends StatelessWidget {
                     Icon(
                       Icons.copy_rounded,
                       size: 12,
-                      color: AppColors.textSub.withOpacity(0.6),
+                      color: AppColors.textSub.withValues(alpha:0.6),
                     ),
                   ],
                 ),

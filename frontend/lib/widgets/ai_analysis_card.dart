@@ -142,7 +142,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
             "잠시만 기다려주세요...",
             style: TextStyle(
               fontSize: 13,
-              color: AppColors.textSub.withOpacity(0.8),
+              color: AppColors.textSub.withValues(alpha:0.8),
             ),
           ),
           const SizedBox(height: 20),
@@ -201,7 +201,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: AppColors.dangerRed.withOpacity(0.1),
+              color: AppColors.dangerRed.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(28),
             ),
             child: const Icon(
@@ -224,7 +224,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
             "네트워크 연결을 확인해주세요",
             style: TextStyle(
               fontSize: 13,
-              color: AppColors.textSub.withOpacity(0.8),
+              color: AppColors.textSub.withValues(alpha:0.8),
             ),
           ),
           const SizedBox(height: 20),
@@ -261,7 +261,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
         border: Border.all(color: AppColors.divider),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha:0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -325,7 +325,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha:0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -371,13 +371,13 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text("• ",
-                          style: TextStyle(color: color.withOpacity(0.7))),
+                          style: TextStyle(color: color.withValues(alpha:0.7))),
                       Expanded(
                         child: Text(
                           detail,
                           style: TextStyle(
                             fontSize: 14,
-                            color: AppColors.textMain.withOpacity(0.8),
+                            color: AppColors.textMain.withValues(alpha:0.8),
                             height: 1.4,
                           ),
                         ),
@@ -397,17 +397,17 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
       AnalysisSentiment.safe => (
           "안전해요",
           AppColors.safeGreen,
-          AppColors.safeGreen.withOpacity(0.1)
+          AppColors.safeGreen.withValues(alpha:0.1)
         ),
       AnalysisSentiment.caution => (
           "주의 필요",
-          const Color(0xFFFF9500),
-          const Color(0xFFFF9500).withOpacity(0.1)
+          AppColors.warningOrange,
+          AppColors.warningOrange.withValues(alpha:0.1)
         ),
       AnalysisSentiment.danger => (
           "위험해요",
           AppColors.dangerRed,
-          AppColors.dangerRed.withOpacity(0.1)
+          AppColors.dangerRed.withValues(alpha:0.1)
         ),
     };
 
@@ -462,7 +462,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.primaryBlue.withOpacity(0.05),
+        color: AppColors.primaryBlue.withValues(alpha:0.05),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
@@ -522,12 +522,12 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: isHighlighted
-            ? AppColors.dangerRed.withOpacity(0.08)
+            ? AppColors.dangerRed.withValues(alpha:0.08)
             : Colors.grey[50],
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isHighlighted
-              ? AppColors.dangerRed.withOpacity(0.3)
+              ? AppColors.dangerRed.withValues(alpha:0.3)
               : AppColors.divider,
         ),
       ),
@@ -662,7 +662,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
         importanceColor = AppColors.dangerRed;
         break;
       case 'MEDIUM':
-        importanceColor = const Color(0xFFFF9500);
+        importanceColor = AppColors.warningOrange;
         break;
       default:
         importanceColor = AppColors.safeGreen;
@@ -702,7 +702,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: importanceColor.withOpacity(0.1),
+                        color: importanceColor.withValues(alpha:0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
@@ -732,7 +732,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
                   "📊 ${tip.source}",
                   style: TextStyle(
                     fontSize: 11,
-                    color: AppColors.textSub.withOpacity(0.7),
+                    color: AppColors.textSub.withValues(alpha:0.7),
                   ),
                 ),
               ],
@@ -781,7 +781,7 @@ class _AiAnalysisCardState extends State<AiAnalysisCard>
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: AppColors.primaryBlue.withOpacity(0.05),
+                  color: AppColors.primaryBlue.withValues(alpha:0.05),
                   borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(12),
                     bottomRight: Radius.circular(12),

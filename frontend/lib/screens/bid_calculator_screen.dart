@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import '../utils/format_utils.dart';
 import '../theme/style.dart';
 import '../models/notice.dart';
 import '../widgets/ai_analysis_card.dart';
@@ -179,7 +180,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             gradient: LinearGradient(
               colors: [
                 AppColors.primaryBlue,
-                AppColors.primaryBlue.withOpacity(0.8),
+                AppColors.primaryBlue.withValues(alpha:0.8),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -187,7 +188,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primaryBlue.withOpacity(0.3),
+                color: AppColors.primaryBlue.withValues(alpha:0.3),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -337,8 +338,8 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: _isClosed
-                  ? AppColors.primaryBlue.withOpacity(0.1)
-                  : AppColors.safeGreen.withOpacity(0.1),
+                  ? AppColors.primaryBlue.withValues(alpha:0.1)
+                  : AppColors.safeGreen.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
@@ -428,9 +429,9 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.safeGreen.withOpacity(0.1),
+        color: AppColors.safeGreen.withValues(alpha:0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.safeGreen.withOpacity(0.3)),
+        border: Border.all(color: AppColors.safeGreen.withValues(alpha:0.3)),
       ),
       child: Row(
         children: [
@@ -487,13 +488,13 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
   Widget _buildSliderSection() {
     final activeColor = _isDanger
         ? AppColors.dangerRed
-        : (_isWarning ? const Color(0xFFFF9500) : AppColors.safeGreen);
+        : (_isWarning ? AppColors.warningOrange : AppColors.safeGreen);
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _isDanger
-            ? AppColors.dangerRed.withOpacity(0.1)
+            ? AppColors.dangerRed.withValues(alpha:0.1)
             : AppColors.surfaceWhite,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
@@ -525,7 +526,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
                 enabledThumbRadius: 14,
                 elevation: 4,
               ),
-              overlayColor: activeColor.withOpacity(0.2),
+              overlayColor: activeColor.withValues(alpha:0.2),
             ),
             child: Slider(
               value: _rate < _minSafeRate ? _minSafeRate : _rate,
@@ -562,7 +563,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: AppColors.dangerRed.withOpacity(0.1),
+                    color: AppColors.dangerRed.withValues(alpha:0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -589,9 +590,9 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha:0.3)),
           borderRadius: BorderRadius.circular(8),
-          color: color.withOpacity(0.05),
+          color: color.withValues(alpha:0.05),
         ),
         child: Text(label,
             style:
@@ -604,7 +605,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
   Widget _buildResultCard() {
     final statusColor = _isDanger
         ? AppColors.dangerRed
-        : (_isWarning ? const Color(0xFFFF9500) : AppColors.safeGreen);
+        : (_isWarning ? AppColors.warningOrange : AppColors.safeGreen);
 
     String statusText;
     if (_isBelowNetCost) {
@@ -627,7 +628,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha:0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -653,8 +654,8 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: _isDanger
-                  ? Colors.white.withOpacity(0.2)
-                  : statusColor.withOpacity(0.1),
+                  ? Colors.white.withValues(alpha:0.2)
+                  : statusColor.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -729,7 +730,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: AppColors.primaryBlue.withOpacity(0.05),
+            color: AppColors.primaryBlue.withValues(alpha:0.05),
             borderRadius: BorderRadius.circular(10),
           ),
           child: const Row(
@@ -800,12 +801,5 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
     }
   }
 
-  String _formatPriceKorean(double price) {
-    if (price >= 100000000) {
-      return "${(price / 100000000).toStringAsFixed(1)}억원";
-    } else if (price >= 10000) {
-      return "${(price / 10000).toStringAsFixed(0)}만원";
-    }
-    return "${NumberFormat('#,###').format(price.toInt())}원";
-  }
+  String _formatPriceKorean(double price) => formatPriceKorean(price);
 }

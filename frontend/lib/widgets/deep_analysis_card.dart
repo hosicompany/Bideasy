@@ -74,7 +74,7 @@ class _DeepAnalysisCardState extends State<DeepAnalysisCard> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: Colors.deepPurple.withOpacity(0.1),
+                    color: Colors.deepPurple.withValues(alpha:0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
@@ -154,7 +154,7 @@ class _DeepAnalysisCardState extends State<DeepAnalysisCard> {
             "파일 다운로드 및 AI 분석 중... 잠시 기다려주세요",
             style: TextStyle(
               fontSize: 13,
-              color: AppColors.textSub.withOpacity(0.8),
+              color: AppColors.textSub.withValues(alpha:0.8),
             ),
           ),
         ],
@@ -306,7 +306,7 @@ class _DeepAnalysisCardState extends State<DeepAnalysisCard> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: Colors.deepPurple.withOpacity(0.1),
+              color: Colors.deepPurple.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(
@@ -329,7 +329,7 @@ class _DeepAnalysisCardState extends State<DeepAnalysisCard> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: riskColor.withOpacity(0.1),
+              color: riskColor.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -418,7 +418,7 @@ class _DeepAnalysisCardState extends State<DeepAnalysisCard> {
                     const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: isRequired
-                      ? AppColors.dangerRed.withOpacity(0.1)
+                      ? AppColors.dangerRed.withValues(alpha:0.1)
                       : Colors.grey[100],
                   borderRadius: BorderRadius.circular(4),
                 ),
@@ -470,9 +470,9 @@ class _DeepAnalysisCardState extends State<DeepAnalysisCard> {
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: severityColor.withOpacity(0.04),
+            color: severityColor.withValues(alpha:0.04),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: severityColor.withOpacity(0.2)),
+            border: Border.all(color: severityColor.withValues(alpha:0.2)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -483,7 +483,7 @@ class _DeepAnalysisCardState extends State<DeepAnalysisCard> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: severityColor.withOpacity(0.1),
+                      color: severityColor.withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(

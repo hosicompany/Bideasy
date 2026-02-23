@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
+import '../utils/format_utils.dart';
 import '../theme/style.dart';
 import '../models/notice.dart';
 import '../models/smart_bid.dart';
@@ -514,12 +514,5 @@ class _SmartBidCardState extends State<SmartBidCard>
     );
   }
 
-  String _formatPrice(double price) {
-    if (price >= 100000000) {
-      return '${(price / 100000000).toStringAsFixed(1)}억원';
-    } else if (price >= 10000) {
-      return '${NumberFormat('#,###').format((price / 10000).round())}만원';
-    }
-    return '${NumberFormat('#,###').format(price.toInt())}원';
-  }
+  String _formatPrice(double price) => formatPriceKorean(price);
 }

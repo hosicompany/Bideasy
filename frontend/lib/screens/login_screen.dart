@@ -167,7 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
-                        decoration: _inputDecoration(
+                        decoration: AppInputDecoration.standard(
                           hint: '이메일',
                           icon: Icons.email_outlined,
                         ),
@@ -189,7 +189,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         obscureText: _obscurePassword,
                         textInputAction: TextInputAction.done,
                         onFieldSubmitted: (_) => _handleLogin(),
-                        decoration: _inputDecoration(
+                        decoration: AppInputDecoration.standard(
                           hint: '비밀번호',
                           icon: Icons.lock_outline,
                         ).copyWith(
@@ -294,7 +294,7 @@ class _LoginScreenState extends State<LoginScreen> {
               // Kakao Button
               _SocialButton(
                 label: '카카오로 시작하기',
-                backgroundColor: const Color(0xFFFEE500),
+                backgroundColor: AppColors.kakaoYellow,
                 textColor: const Color(0xFF191919),
                 iconPath: null,
                 icon: Icons.chat_bubble,
@@ -307,7 +307,7 @@ class _LoginScreenState extends State<LoginScreen> {
               // Naver Button
               _SocialButton(
                 label: '네이버로 시작하기',
-                backgroundColor: const Color(0xFF03C75A),
+                backgroundColor: AppColors.naverGreen,
                 textColor: Colors.white,
                 iconPath: null,
                 icon: Icons.north_east,
@@ -353,38 +353,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  InputDecoration _inputDecoration({
-    required String hint,
-    required IconData icon,
-  }) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: TextStyle(color: AppColors.textSub, fontSize: 15),
-      prefixIcon: Icon(icon, color: AppColors.textSub, size: 20),
-      filled: true,
-      fillColor: AppColors.backgroundGrey,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.primaryBlue, width: 1.5),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.dangerRed, width: 1),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.dangerRed, width: 1.5),
-      ),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 14,
-      ),
-    );
-  }
 }
 
 class _SocialButton extends StatelessWidget {
