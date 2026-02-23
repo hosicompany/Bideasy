@@ -182,7 +182,7 @@ async def social_login(
 def get_social_login_urls():
     """OAuth 인가 URL 반환 (프론트엔드에서 호출)"""
     naver_state = stdlib_secrets.token_urlsafe(16)
-    base = f"http://127.0.0.1:8000{settings.API_V1_STR}"
+    base = f"{settings.BACKEND_URL}{settings.API_V1_STR}"
     kakao_cb = f"{base}/auth/callback/kakao"
     naver_cb = f"{base}/auth/callback/naver"
 
@@ -206,7 +206,7 @@ def get_social_login_urls():
 @router.get("/callback/kakao")
 async def kakao_callback(code: str, db: Session = Depends(get_db)):
     """카카오 OAuth 콜백 - 인가 코드 → JWT → 프론트엔드 리다이렉트"""
-    callback_url = f"http://127.0.0.1:8000{settings.API_V1_STR}/auth/callback/kakao"
+    callback_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/auth/callback/kakao"
 
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(
@@ -252,7 +252,7 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
 @router.get("/callback/naver")
 async def naver_callback(code: str, state: str, db: Session = Depends(get_db)):
     """네이버 OAuth 콜백 - 인가 코드 → JWT → 프론트엔드 리다이렉트"""
-    callback_url = f"http://127.0.0.1:8000{settings.API_V1_STR}/auth/callback/naver"
+    callback_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/auth/callback/naver"
 
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(

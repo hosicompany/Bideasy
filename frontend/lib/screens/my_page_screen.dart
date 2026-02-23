@@ -229,8 +229,7 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
     return Container(
       width: double.infinity, padding: const EdgeInsets.all(24), color: AppColors.surfaceWhite,
       child: Column(children: [
-        Container(width: 80, height: 80, decoration: BoxDecoration(color: AppColors.primaryBlue.withValues(alpha:0.1), borderRadius: BorderRadius.circular(40)),
-          child: const Icon(Icons.person_rounded, size: 40, color: AppColors.primaryBlue)),
+        _buildAvatar(user),
         const SizedBox(height: 16),
         Text(user.companyName?.isNotEmpty == true ? user.companyName! : "회사 정보를 입력해주세요",
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: user.companyName?.isNotEmpty == true ? AppColors.textMain : AppColors.textSub)),
@@ -249,6 +248,26 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
             Expanded(child: _buildStatItem(label: "시공능력", value: _formatCurrency(user.capacityCost), icon: Icons.account_balance_rounded, color: AppColors.safeGreen)),
           ])),
       ]),
+    );
+  }
+
+  Widget _buildAvatar(User user) {
+    if (user.profileImageUrl != null && user.profileImageUrl!.isNotEmpty) {
+      return CircleAvatar(
+        radius: 40,
+        backgroundImage: NetworkImage(user.profileImageUrl!),
+        backgroundColor: AppColors.primaryBlue.withValues(alpha: 0.1),
+        onBackgroundImageError: (_, __) {},
+        child: null,
+      );
+    }
+    return Container(
+      width: 80, height: 80,
+      decoration: BoxDecoration(
+        color: AppColors.primaryBlue.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(40),
+      ),
+      child: const Icon(Icons.person_rounded, size: 40, color: AppColors.primaryBlue),
     );
   }
 

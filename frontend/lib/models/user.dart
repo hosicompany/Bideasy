@@ -9,6 +9,8 @@ class User {
   final int? performanceRecord;
   final int points;
   final String tier; // free | pro | pro_plus
+  final String? socialProvider; // kakao | naver | null
+  final String? profileImageUrl;
 
   User({
     required this.id,
@@ -21,6 +23,8 @@ class User {
     this.performanceRecord,
     required this.points,
     this.tier = 'free',
+    this.socialProvider,
+    this.profileImageUrl,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -35,6 +39,8 @@ class User {
       performanceRecord: json['performance_record'],
       points: json['points'] ?? 0,
       tier: json['tier'] ?? 'free',
+      socialProvider: json['social_provider'],
+      profileImageUrl: json['profile_image_url'],
     );
   }
 

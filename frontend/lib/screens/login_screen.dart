@@ -7,6 +7,8 @@ import '../services/api_service.dart';
 import '../utils/web_utils.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
+import 'terms_screen.dart';
+import 'privacy_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,6 +24,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _errorMessage;
+  bool _agreeTerms = false;
+  bool _agreePrivacy = false;
 
   @override
   void dispose() {
@@ -60,6 +64,18 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  bool get _canSocialLogin => _agreeTerms && _agreePrivacy;
+
+  void _showTermsAlert() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('이용약관과 개인정보처리방침에 동의해주세요'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
 
   Future<void> _handleSocialLogin(String provider) async {
@@ -291,6 +307,29 @@ class _LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 20),
 
+              // Terms consent
+              _TermsCheckRow(
+                checked: _agreeTerms,
+                label: '이용약관 동의',
+                onChanged: (v) => setState(() => _agreeTerms = v ?? false),
+                onTapDetail: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const TermsScreen()),
+                ),
+              ),
+              const SizedBox(height: 4),
+              _TermsCheckRow(
+                checked: _agreePrivacy,
+                label: '개인정보처리방침 동의',
+                onChanged: (v) => setState(() => _agreePrivacy = v ?? false),
+                onTapDetail: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
               // Kakao Button
               _SocialButton(
                 label: '카카오로 시작하기',
@@ -299,7 +338,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 iconPath: null,
                 icon: Icons.chat_bubble,
                 iconColor: const Color(0xFF191919),
-                onTap: () => _handleSocialLogin('kakao'),
+                onTap: _canSocialLogin
+                    ? () => _handleSocialLogin('kakao')
+                    : _showTermsAlert,
               ),
 
               const SizedBox(height: 12),
@@ -312,7 +353,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 iconPath: null,
                 icon: Icons.north_east,
                 iconColor: Colors.white,
-                onTap: () => _handleSocialLogin('naver'),
+                onTap: _canSocialLogin
+                    ? () => _handleSocialLogin('naver')
+                    : _showTermsAlert,
               ),
 
               const SizedBox(height: 28),
@@ -353,6 +396,65 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+}
+
+class _TermsCheckRow extends StatelessWidget {
+  final bool checked;
+  final String label;
+  final ValueChanged<bool?> onChanged;
+  final VoidCallback onTapDetail;
+
+  const _TermsCheckRow({
+    required this.checked,
+    required this.label,
+    required this.onChanged,
+    required this.onTapDetail,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 24,
+          height: 24,
+          child: Checkbox(
+            value: checked,
+            onChanged: onChanged,
+            activeColor: AppColors.primaryBlue,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+            side: const BorderSide(color: AppColors.textSub),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () => onChanged(!checked),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.textMain,
+            ),
+          ),
+        ),
+        const Spacer(),
+        GestureDetector(
+          onTap: onTapDetail,
+          child: const Text(
+            '보기',
+            style: TextStyle(
+              fontSize: 13,
+              color: AppColors.primaryBlue,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _SocialButton extends StatelessWidget {

@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     NAVER_CLIENT_ID: str = ""
     NAVER_CLIENT_SECRET: str = ""
     FRONTEND_URL: str = "http://localhost:5000"
+    BACKEND_URL: str = "http://127.0.0.1:8000"  # OAuth callback base URL
 
     # === Toss Payments ===
     TOSS_CLIENT_KEY: str = ""
