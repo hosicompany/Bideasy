@@ -1,5 +1,5 @@
 name: bideasy_app
-description: "A new Flutter project for BidEasy."
+description: "BidEasy - 공공입찰 안전 비서. 데이터 기반 투찰가 분석과 AI 공고 분석."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -24,6 +24,8 @@ dev_dependencies:
   mocktail: ^1.0.4
   riverpod_generator: ^2.3.3
   build_runner: ^2.4.7
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.5
   integration_test:
     sdk: flutter
 

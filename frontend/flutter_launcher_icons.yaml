@@ -1,0 +1,29 @@
+# App Icon Configuration
+# 1. Place your 1024x1024 PNG icon at: assets/icon/app_icon.png
+# 2. Run: flutter pub run flutter_launcher_icons
+#
+# Icon design guidelines:
+# - 1024x1024 PNG (no transparency for iOS)
+# - Simple, recognizable at small sizes
+# - BidEasy brand blue (#3182F6) recommended as accent
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+
+  # Android adaptive icon (Android 8.0+)
+  adaptive_icon_background: "#3182F6"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+
+  # Web favicon
+  web:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    background_color: "#FFFFFF"
+    theme_color: "#3182F6"
+
+  # Windows
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"

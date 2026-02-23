@@ -1,0 +1,10 @@
+# Android Release Signing Configuration
+# 1. Generate a keystore:
+#    keytool -genkey -v -keystore bideasy-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias bideasy
+# 2. Copy this file to key.properties and fill in the values
+# 3. NEVER commit key.properties or .jks files to git
+
+storePassword=your_store_password
+keyPassword=your_key_password
+keyAlias=bideasy
+storeFile=../bideasy-release.jks

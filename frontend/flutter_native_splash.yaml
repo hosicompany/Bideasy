@@ -1,0 +1,24 @@
+# Splash Screen Configuration
+# 1. Place your splash logo at: assets/icon/splash_logo.png
+# 2. Run: flutter pub run flutter_native_splash:create
+#
+# Logo guidelines:
+# - Centered logo, ~400x400 PNG with transparency
+# - Keep it simple (icon only, no text at small sizes)
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: "assets/icon/splash_logo.png"
+
+  # Android 12+ splash screen
+  android_12:
+    color: "#FFFFFF"
+    image: "assets/icon/splash_logo.png"
+    icon_background_color: "#FFFFFF"
+
+  # Web splash
+  web: true
+  web_image_mode: center
+
+  # Fullscreen (hide status bar during splash)
+  fullscreen: false
