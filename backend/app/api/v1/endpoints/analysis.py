@@ -5,7 +5,7 @@ Analyzes bid attachments (HWP, PDF) for toxic clauses, qualifications, etc.
 """
 import os
 import tempfile
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 import httpx
 
@@ -14,6 +14,7 @@ from app.services.document_parser import DocumentParser
 from app.services.ai_analyzer import document_analyzer
 from app.schemas.analysis import DeepAnalysisResponse
 from app.core.logging import get_logger
+from app.core.security import require_tier
 
 logger = get_logger(__name__)
 
@@ -137,7 +138,8 @@ async def deep_analyze_bid(
     include_raw_text: bool = Query(
         default=False,
         description="추출된 원문 텍스트 포함 여부"
-    )
+    ),
+    _user=Depends(require_tier("pro")),
 ) -> DeepAnalysisResponse:
     """
     입찰 공고 첨부파일 심층 분석

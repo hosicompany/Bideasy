@@ -8,11 +8,13 @@
 - 투찰 역검증 ("왜 떨어졌을까?")
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from datetime import date
 import logging
+
+from app.core.security import require_tier
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -60,7 +62,7 @@ class BidVerifyRequest(BaseModel):
 # ============================================================
 
 @router.post("/competition/predict")
-async def predict_competition(req: CompetitionPredictRequest) -> Dict[str, Any]:
+async def predict_competition(req: CompetitionPredictRequest, _user=Depends(require_tier("pro"))) -> Dict[str, Any]:
     """
     입찰 참여업체수 예측 및 블루오션 판별
 
@@ -93,7 +95,7 @@ async def predict_competition(req: CompetitionPredictRequest) -> Dict[str, Any]:
 # ============================================================
 
 @router.post("/recommend")
-async def get_smart_recommendation(req: SmartBidRequest) -> Dict[str, Any]:
+async def get_smart_recommendation(req: SmartBidRequest, _user=Depends(require_tier("pro_plus"))) -> Dict[str, Any]:
     """
     참여수 적응형 최적 투찰가 추천
 
@@ -137,7 +139,7 @@ async def get_smart_recommendation(req: SmartBidRequest) -> Dict[str, Any]:
 # ============================================================
 
 @router.post("/rate/predict")
-async def predict_bid_rate(req: BidRatePredictRequest) -> Dict[str, Any]:
+async def predict_bid_rate(req: BidRatePredictRequest, _user=Depends(require_tier("pro_plus"))) -> Dict[str, Any]:
     """
     유형별 낙찰률 예측
 
@@ -247,7 +249,7 @@ async def get_agency_insights_endpoint(
 # ============================================================
 
 @router.post("/verify")
-async def verify_bid_result(req: BidVerifyRequest) -> Dict[str, Any]:
+async def verify_bid_result(req: BidVerifyRequest, _user=Depends(require_tier("pro"))) -> Dict[str, Any]:
     """
     투찰 역검증 — 내 투찰가를 입력하면 순위/편차/개선점 분석
 

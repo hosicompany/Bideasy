@@ -20,6 +20,8 @@ class UserResponse(UserBase):
     id: int
     email: Optional[str] = None
     points: int
+    tier: str = "free"
+    subscription_expires_at: Optional[str] = None
     social_provider: Optional[str] = None
     profile_image_url: Optional[str] = None
 

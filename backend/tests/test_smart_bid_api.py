@@ -43,8 +43,17 @@ def test_insights_endpoint_missing_param(client):
 
 # ── POST /verify ─────────────────────────────────────────────
 
-def test_verify_endpoint_200(client):
+def test_verify_endpoint_401_without_auth(client):
     resp = client.post("/api/v1/smart-bid/verify", json={
+        "bid_no": "BID001",
+        "my_bid_price": 89000000,
+        "basic_price": 100000000,
+    })
+    assert resp.status_code == 401
+
+
+def test_verify_endpoint_200(pro_client):
+    resp = pro_client.post("/api/v1/smart-bid/verify", json={
         "bid_no": "BID001",
         "my_bid_price": 89000000,
         "basic_price": 100000000,
@@ -55,8 +64,8 @@ def test_verify_endpoint_200(client):
     assert data["my_rate"] == 89.0
 
 
-def test_verify_endpoint_zero_basic(client):
-    resp = client.post("/api/v1/smart-bid/verify", json={
+def test_verify_endpoint_zero_basic(pro_client):
+    resp = pro_client.post("/api/v1/smart-bid/verify", json={
         "bid_no": "BID001",
         "my_bid_price": 89000000,
         "basic_price": 0,

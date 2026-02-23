@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.security import get_current_user
+from app.core.security import require_tier
 from app.db.models import User
 from app.schemas.agency import AgencyProfileRequest, AgencyProfile
 from app.services.agency_profiler import AgencyProfiler
@@ -14,7 +14,7 @@ router = APIRouter()
 @router.post("/profile", response_model=AgencyProfile)
 def get_agency_profile(
     req: AgencyProfileRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_tier("pro_plus")),
     db: Session = Depends(get_db),
 ):
     """

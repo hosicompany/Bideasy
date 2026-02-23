@@ -30,6 +30,10 @@ class User(Base):
 
     points = Column(Integer, default=0)
 
+    # Subscription
+    tier = Column(String(20), default="free")  # free | pro | pro_plus
+    subscription_expires_at = Column(DateTime, nullable=True)
+
     bids = relationship("UserBid", back_populates="user")
     point_transactions = relationship("PointTransaction", back_populates="user")
 

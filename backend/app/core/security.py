@@ -56,3 +56,27 @@ def get_current_user(
     if user is None:
         raise credentials_exception
     return user
+
+
+def require_tier(minimum_tier: str):
+    """
+    Dependency that checks if the current user meets the minimum tier.
+
+    Usage:
+        @router.get("/premium-feature")
+        def endpoint(user=Depends(require_tier("pro"))):
+            ...
+    """
+    from app.schemas.subscription import tier_at_least, TIER_DISPLAY_NAMES_KO
+
+    def _check(current_user: models.User = Depends(get_current_user)):
+        user_tier = getattr(current_user, "tier", "free") or "free"
+        if not tier_at_least(user_tier, minimum_tier):
+            tier_name = TIER_DISPLAY_NAMES_KO.get(minimum_tier, minimum_tier)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"이 기능은 {tier_name} 이상 구독이 필요해요.",
+            )
+        return current_user
+
+    return _check

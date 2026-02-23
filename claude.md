@@ -259,18 +259,48 @@ flutter run
 
 ## 비즈니스 모델
 
-### Track 1: Basic (건당 500~1,000원)
-- 맞춤 공고 피드 + 안전 투찰가 계산기
-- 타겟: 월 1~3회 입찰하는 소규모 사업자
+### 포지셔닝
+- **브랜드**: "입찰 안전 비서" — 잃지 않게 지켜주는 비서
+- **슬로건**: "입찰, 지는 게임은 안 합니다"
+- **GTM**: 기존 입찰정보 서비스의 "보완재"로 진입 → 독립 확장
 
-### Track 2: AI Premium (월 9,900원)
-- Basic + AI 3줄 요약 + 독소조항 자동 탐지
-- 타겟: 월 10회 이상 입찰하는 전문 사업자
+### 가격 구조 (3-Tier SaaS)
+
+| | Free | Pro | Pro+ |
+|---|---|---|---|
+| **월 가격** | 무료 | 14,900원 | 29,900원 |
+| **연간 가격** | — | 12,400원/월 (2개월 무료) | 24,900원/월 (2개월 무료) |
+| 공고 피드 | ✅ | ✅ | ✅ |
+| 투찰가 계산기 | ✅ | ✅ | ✅ |
+| AI 분석 | 일 1회 | 무제한 | 무제한 |
+| Deep Analysis (첨부파일) | ❌ | ✅ | ✅ |
+| 경쟁 강도 예측 | ❌ | ✅ | ✅ |
+| 투찰가 검증 | ❌ | ✅ | ✅ |
+| 기관 프로파일링 | ❌ | ❌ | ✅ |
+| 스마트 추천 | ❌ | ❌ | ✅ |
+| 사정률 예측 | ❌ | ❌ | ✅ |
+
+### Tier 상수 (코드)
+```python
+# backend/app/schemas/subscription.py
+TIER_FREE = "free"
+TIER_PRO = "pro"
+TIER_PRO_PLUS = "pro_plus"
+
+SIGNUP_BONUS = 3000          # 가입 보너스 포인트
+FREE_AI_DAILY_LIMIT = 1      # Free 티어 AI 분석 일일 한도
+```
+
+### Unit Economics
+- OpenAI API 비용: ~2,000~3,000원/유저/월 (gpt-4o-mini)
+- Pro 마진: ~60~80%
+- 12개월 MRR 목표: 180만~2,500만원 (유료 전환율 3~5%)
 
 ---
 
 ## 보안 및 최적화
 
-- **Rate Limiting**: AI 분석 API는 유저당 일일 5회(무료) / 무제한(유료)
+- **Rate Limiting**: AI 분석 — Free 일 1회 / Pro·Pro+ 무제한
+- **Feature Gating**: Deep Analysis, 경쟁 예측, 기관 프로파일링은 티어별 접근 제한
 - **Data Encryption**: 사업자번호 등 민감 정보 AES-256 암호화
 - **AI 캐싱**: `AI_Analysis_Logs` 테이블에 분석 결과 영구 캐싱 (LLM 비용 절감)

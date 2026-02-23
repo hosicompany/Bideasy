@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.core.rate_limit import limiter
+from app.core.rate_limit import limiter, get_user_tier
 from app.core.security import get_current_user
 from app.db.session import get_db
 from app.db import models
@@ -18,8 +18,17 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
+def _ai_rate_limit(request: Request) -> str:
+    """Free tier: 1/day, Pro/Pro+: 1000/day (effectively unlimited)."""
+    from app.schemas.subscription import tier_at_least, TIER_PRO
+    user_tier = get_user_tier(request)
+    if tier_at_least(user_tier, TIER_PRO):
+        return "1000/day"
+    return "1/day"
+
+
 @router.get("/{bid_no}/analysis")
-@limiter.limit("5/day")
+@limiter.limit(_ai_rate_limit)
 async def analyze_bid(
     request: Request,
     bid_no: str,

@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     HISTORICAL_DB_PATH: str = "./data/historical/bid_results_5years.db"
 
     # === Rate Limiting ===
-    AI_ANALYSIS_FREE_LIMIT: int = 5  # per user per day
+    AI_ANALYSIS_FREE_LIMIT: int = 1  # Free tier: 1 AI analysis per day
 
     # === Logging ===
     LOG_LEVEL: str = "INFO"

@@ -8,6 +8,7 @@ class User {
   final int? capacityCost;
   final int? performanceRecord;
   final int points;
+  final String tier; // free | pro | pro_plus
 
   User({
     required this.id,
@@ -19,6 +20,7 @@ class User {
     this.capacityCost,
     this.performanceRecord,
     required this.points,
+    this.tier = 'free',
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -32,6 +34,7 @@ class User {
       capacityCost: json['capacity_cost'],
       performanceRecord: json['performance_record'],
       points: json['points'] ?? 0,
+      tier: json['tier'] ?? 'free',
     );
   }
 
@@ -44,5 +47,19 @@ class User {
       'capacity_cost': capacityCost,
       'performance_record': performanceRecord,
     };
+  }
+
+  bool get isPro => tier == 'pro' || tier == 'pro_plus';
+  bool get isProPlus => tier == 'pro_plus';
+
+  String get tierDisplayName {
+    switch (tier) {
+      case 'pro':
+        return 'Pro';
+      case 'pro_plus':
+        return 'Pro+';
+      default:
+        return 'Free';
+    }
   }
 }

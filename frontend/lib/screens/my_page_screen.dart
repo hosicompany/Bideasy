@@ -236,6 +236,8 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: user.companyName?.isNotEmpty == true ? AppColors.textMain : AppColors.textSub)),
         const SizedBox(height: 4),
         Text(user.email ?? "-", style: const TextStyle(fontSize: 14, color: AppColors.textSub)),
+        const SizedBox(height: 8),
+        _buildTierBadge(user.tier),
         const SizedBox(height: 20),
         Container(
           padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppColors.backgroundGrey, borderRadius: BorderRadius.circular(12)),
@@ -247,6 +249,31 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
             Expanded(child: _buildStatItem(label: "시공능력", value: _formatCurrency(user.capacityCost), icon: Icons.account_balance_rounded, color: AppColors.safeGreen)),
           ])),
       ]),
+    );
+  }
+
+  Widget _buildTierBadge(String tier) {
+    final Color bgColor;
+    final Color textColor;
+    final String label;
+    switch (tier) {
+      case 'pro_plus':
+        bgColor = const Color(0xFFFFF3E0);
+        textColor = const Color(0xFFE65100);
+        label = 'Pro+';
+      case 'pro':
+        bgColor = const Color(0xFFE3F2FD);
+        textColor = AppColors.primaryBlue;
+        label = 'Pro';
+      default:
+        bgColor = AppColors.backgroundGrey;
+        textColor = AppColors.textSub;
+        label = 'Free';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(20)),
+      child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: textColor)),
     );
   }
 

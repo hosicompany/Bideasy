@@ -48,6 +48,31 @@ def client(db_session):
 
 
 @pytest.fixture
+def pro_client(db_session):
+    """TestClient with a Pro-tier user already authenticated."""
+    from app.db import models
+    from app.core.security import create_access_token, get_current_user
+
+    user = db_session.query(models.User).filter(models.User.email == "test-pro@test.com").first()
+    if not user:
+        user = models.User(email="test-pro@test.com", hashed_password="x", tier="pro")
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+
+    token = create_access_token({"sub": str(user.id)})
+
+    def _override():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override
+    with TestClient(app) as c:
+        c.headers["Authorization"] = f"Bearer {token}"
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
 def historical_test_db(tmp_path):
     """Small SQLite DB mirroring bid_results table for testing
     organization_insights and bid_verifier services."""
