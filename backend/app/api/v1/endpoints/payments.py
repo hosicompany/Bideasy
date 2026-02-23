@@ -17,7 +17,6 @@ from app.schemas.subscription import (
     TIER_FREE,
     TIER_PRO,
     TIER_PRO_PLUS,
-    VALID_TIERS,
     MONTHLY_PRICES,
     ANNUAL_MONTHLY_PRICES,
     TIER_DISPLAY_NAMES,

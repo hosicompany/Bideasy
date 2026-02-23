@@ -51,7 +51,7 @@ def client(db_session):
 def pro_client(db_session):
     """TestClient with a Pro-tier user already authenticated."""
     from app.db import models
-    from app.core.security import create_access_token, get_current_user
+    from app.core.security import create_access_token
 
     user = db_session.query(models.User).filter(models.User.email == "test-pro@test.com").first()
     if not user:
