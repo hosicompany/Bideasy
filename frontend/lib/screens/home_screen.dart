@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'my_page_screen.dart';
+import 'notification_screen.dart';
 import '../theme/style.dart';
 import '../widgets/notice_card.dart';
 import '../widgets/bid_slider.dart';
@@ -11,6 +12,7 @@ import '../widgets/state_widgets.dart';
 import '../utils/snackbar_utils.dart';
 import '../models/notice.dart';
 import '../providers/notices_provider.dart';
+import '../providers/notification_provider.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -36,6 +38,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final keyword = ref.read(noticesProvider).keyword;
       _searchController.text = keyword ?? '';
     });
+
+    // Fetch unread notification count for badge
+    ref.read(notificationProvider.notifier).fetchUnreadCount();
   }
 
   void _scrollListener() {
@@ -86,6 +91,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         SnackBarUtils.showError(context, "업데이트에 실패했어요. 다시 시도해주세요");
       }
     }
+  }
+
+  Widget _buildNotificationBell() {
+    final unreadCount = ref.watch(notificationProvider).unreadCount;
+    return IconButton(
+      icon: Badge(
+        isLabelVisible: unreadCount > 0,
+        label: Text(
+          unreadCount > 99 ? '99+' : '$unreadCount',
+          style: const TextStyle(fontSize: 10, color: Colors.white),
+        ),
+        child: const Icon(Icons.notifications_outlined),
+      ),
+      tooltip: '알림',
+      onPressed: () {
+        HapticFeedback.lightImpact();
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const NotificationScreen()),
+        ).then((_) {
+          // Refresh count when returning from notification screen
+          ref.read(notificationProvider.notifier).fetchUnreadCount();
+        });
+      },
+    );
   }
 
   Widget _buildNoticeList({bool isFavoriteTab = false}) {
@@ -266,14 +296,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               tooltip: '새로고침',
               onPressed: _refreshNotices,
             ),
-            IconButton(
-              icon: const Icon(Icons.notifications_outlined),
-              tooltip: '알림',
-              onPressed: () {
-                HapticFeedback.lightImpact();
-                SnackBarUtils.showInfo(context, '알림 기능은 준비 중이에요');
-              },
-            ),
+            _buildNotificationBell(),
             IconButton(
               icon: const Icon(Icons.person),
               tooltip: '마이페이지',

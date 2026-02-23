@@ -14,6 +14,7 @@ import 'login_screen.dart';
 import 'terms_screen.dart';
 import 'privacy_screen.dart';
 import 'subscription_screen.dart';
+import 'notification_settings_screen.dart';
 
 class MyPageScreen extends ConsumerStatefulWidget {
   const MyPageScreen({super.key});
@@ -367,6 +368,8 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.03), blurRadius: 10, offset: const Offset(0, 2))]),
       child: Column(children: [
         _buildInfoRow(icon: Icons.info_outline_rounded, label: "앱 버전", value: "2.2.0"),
+        const Divider(height: 24),
+        _buildInfoRow(icon: Icons.notifications_outlined, label: "알림 설정", showArrow: true, onTap: () { HapticFeedback.lightImpact(); Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationSettingsScreen())); }),
         const Divider(height: 24),
         _buildInfoRow(icon: Icons.description_outlined, label: "이용약관", showArrow: true, onTap: () { HapticFeedback.lightImpact(); Navigator.push(context, MaterialPageRoute(builder: (_) => const TermsScreen())); }),
         const Divider(height: 24),

@@ -5,11 +5,17 @@
 set -euo pipefail
 
 COMPOSE_FILE="docker-compose.prod.yml"
+ENV_FILE=".env.production"
 PROJECT_NAME="bideasy"
 DOMAIN="bideasy.kr"
 EMAIL="support@bideasy.kr"
 
 cd "$(dirname "$0")"
+
+# Helper: run docker compose with consistent flags
+dc() {
+  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" -p "$PROJECT_NAME" "$@"
+}
 
 case "${1:-deploy}" in
 
@@ -24,11 +30,11 @@ case "${1:-deploy}" in
     fi
 
     # Build and start services
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d --build
+    dc up -d --build
 
     # Run database migrations
     echo "Running database migrations..."
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" \
+    dc \
       exec app alembic upgrade head
 
     echo "=== Init complete. Run './deploy.sh ssl-init' to set up HTTPS. ==="
@@ -38,16 +44,16 @@ case "${1:-deploy}" in
     echo "=== Issuing SSL Certificate ==="
 
     # Stop nginx temporarily for standalone challenge
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" stop nginx
+    dc stop nginx
 
     # Get certificate
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" run --rm certbot \
+    dc run --rm certbot \
       certbot certonly --webroot -w /var/www/certbot \
       --email "$EMAIL" --agree-tos --no-eff-email \
       -d "$DOMAIN" -d "www.$DOMAIN"
 
     # Restart nginx with SSL
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d nginx
+    dc up -d nginx
 
     echo "=== SSL setup complete ==="
     ;;
@@ -61,15 +67,15 @@ case "${1:-deploy}" in
     cd infra
 
     # Build new images
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" build app celery_worker
+    dc build app celery_worker
 
     # Rolling restart: app first, then celery
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d --no-deps app
+    dc up -d --no-deps app
     echo "Waiting for app health check..."
     sleep 10
 
     # Verify health
-    if docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" \
+    if dc \
       exec app curl -sf http://localhost:8000/health > /dev/null 2>&1; then
       echo "App is healthy."
     else
@@ -77,10 +83,10 @@ case "${1:-deploy}" in
     fi
 
     # Update celery worker
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d --no-deps celery_worker
+    dc up -d --no-deps celery_worker
 
     # Run migrations
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" \
+    dc \
       exec app alembic upgrade head
 
     echo "=== Deploy complete ==="
@@ -88,15 +94,15 @@ case "${1:-deploy}" in
 
   logs)
     SERVICE="${2:-app}"
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" logs -f --tail=100 "$SERVICE"
+    dc logs -f --tail=100 "$SERVICE"
     ;;
 
   status)
     echo "=== Service Status ==="
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" ps
+    dc ps
     echo ""
     echo "=== Health Check ==="
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" \
+    dc \
       exec app curl -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo "Health check unavailable"
     ;;
 
@@ -107,7 +113,7 @@ case "${1:-deploy}" in
     echo "Rolling back to: $PREV_COMMIT"
     git checkout "$PREV_COMMIT"
     cd infra
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d --build app celery_worker
+    dc up -d --build app celery_worker
     echo "=== Rollback complete. Run migrations manually if needed. ==="
     ;;
 
@@ -115,7 +121,7 @@ case "${1:-deploy}" in
     echo "=== Database Backup ==="
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     BACKUP_FILE="backup_${TIMESTAMP}.sql.gz"
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" \
+    dc \
       exec -T db pg_dump -U "${POSTGRES_USER:-bideasy}" "${POSTGRES_DB:-bideasy_db}" \
       | gzip > "$BACKUP_FILE"
     echo "Backup saved: $BACKUP_FILE"
