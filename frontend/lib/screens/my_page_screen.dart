@@ -15,6 +15,7 @@ import 'terms_screen.dart';
 import 'privacy_screen.dart';
 import 'subscription_screen.dart';
 import 'notification_settings_screen.dart';
+import '../services/analytics_service.dart';
 
 class MyPageScreen extends ConsumerStatefulWidget {
   const MyPageScreen({super.key});
@@ -46,6 +47,7 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
   void initState() {
     super.initState();
     Future(() => ref.read(userProvider.notifier).loadUser());
+    AnalyticsService().logScreenView('my_page');
   }
 
   @override

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
+from app.core.analytics import log_event
 from app.core.rate_limit import limiter, get_user_tier
 from app.core.security import get_current_user
 from app.db.session import get_db
@@ -69,6 +70,7 @@ async def analyze_bid(
     - 초보자를 위한 친절한 설명 포함
     """
     logger.info(f"Enhanced analysis request for bid_no={bid_no}")
+    log_event("ai_analysis_requested", user_id=current_user.id, bid_no=bid_no)
     
     # 1. Check Cache
     cached_log = db.query(models.AIAnalysisLog).filter(

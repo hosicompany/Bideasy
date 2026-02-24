@@ -136,3 +136,77 @@ def historical_test_db(tmp_path):
     conn.commit()
     conn.close()
     return db_file
+
+
+@pytest.fixture
+def pro_plus_client(db_session):
+    """TestClient with a Pro+ tier user already authenticated."""
+    from app.db import models
+    from app.core.security import create_access_token
+
+    user = db_session.query(models.User).filter(models.User.email == "test-proplus@test.com").first()
+    if not user:
+        user = models.User(email="test-proplus@test.com", hashed_password="x", tier="pro_plus")
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+
+    token = create_access_token({"sub": str(user.id)})
+
+    def _override():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override
+    with TestClient(app) as c:
+        c.headers["Authorization"] = f"Bearer {token}"
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def free_client(db_session):
+    """TestClient with a Free tier user already authenticated."""
+    from app.db import models
+    from app.core.security import create_access_token
+
+    user = db_session.query(models.User).filter(models.User.email == "test-free@test.com").first()
+    if not user:
+        user = models.User(
+            email="test-free@test.com", hashed_password="x", tier="free", points=3000,
+        )
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+
+    token = create_access_token({"sub": str(user.id)})
+
+    def _override():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override
+    with TestClient(app) as c:
+        c.headers["Authorization"] = f"Bearer {token}"
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def sample_notice(db_session):
+    """Insert a sample Notice into the test DB and return it."""
+    from app.db import models
+
+    notice = db_session.query(models.Notice).filter(models.Notice.bid_no == "TEST-001").first()
+    if not notice:
+        notice = models.Notice(
+            bid_no="TEST-001",
+            title="서울시 강남구 구민회관 리모델링 공사",
+            basic_price=500000000,
+            contract_type="CONSTRUCTION",
+            organization="강남구청",
+            start_date=datetime.now(),
+            end_date=datetime.now() + timedelta(days=7),
+        )
+        db_session.add(notice)
+        db_session.commit()
+        db_session.refresh(notice)
+    return notice

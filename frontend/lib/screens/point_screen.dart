@@ -8,6 +8,7 @@ import '../widgets/state_widgets.dart';
 import '../utils/snackbar_utils.dart';
 import '../providers/api_service_provider.dart';
 import '../providers/points_provider.dart';
+import '../services/analytics_service.dart';
 
 class PointScreen extends ConsumerStatefulWidget {
   const PointScreen({super.key});
@@ -29,6 +30,7 @@ class _PointScreenState extends ConsumerState<PointScreen> {
 
   Future<void> _chargePoints(int amount) async {
     HapticFeedback.mediumImpact();
+    AnalyticsService().logPaymentStarted(amount);
     setState(() => _isCharging = true);
 
     try {

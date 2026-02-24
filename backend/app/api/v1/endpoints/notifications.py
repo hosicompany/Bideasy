@@ -63,7 +63,7 @@ def register_device(
         db.add(token)
 
     db.commit()
-    logger.info("device_token_registered", user_id=current_user.id, device_type=req.device_type)
+    logger.info(f"device_token_registered: user_id={current_user.id}, device_type={req.device_type}")
 
 
 @router.delete("/unregister-device", status_code=status.HTTP_204_NO_CONTENT)

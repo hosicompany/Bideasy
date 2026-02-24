@@ -44,7 +44,8 @@ case "${1:-deploy}" in
     echo "=== Issuing SSL Certificate ==="
 
     # Get certificate using webroot challenge (nginx stays running for HTTP)
-    dc run --rm certbot \
+    # --entrypoint "" overrides the renewal-loop entrypoint in docker-compose
+    dc run --rm --entrypoint "" certbot \
       certbot certonly --webroot -w /var/www/certbot \
       --email "$EMAIL" --agree-tos --no-eff-email \
       -d "$DOMAIN" -d "www.$DOMAIN"

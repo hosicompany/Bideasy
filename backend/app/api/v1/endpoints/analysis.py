@@ -14,6 +14,7 @@ from app.services.document_parser import DocumentParser
 from app.services.ai_analyzer import document_analyzer
 from app.schemas.analysis import DeepAnalysisResponse
 from app.core.logging import get_logger
+from app.core.analytics import log_event
 from app.core.security import require_tier
 
 logger = get_logger(__name__)
@@ -157,6 +158,7 @@ async def deep_analyze_bid(
     from app.core.config import settings
 
     logger.info(f"심층 분석 시작: {bid_id}")
+    log_event("deep_analysis_requested", user_id=_user.id, bid_id=bid_id)
 
     # 1. 입찰 공고 정보 조회
     bid_detail = BidDetailService.fetch_bid_detail(bid_id)

@@ -24,6 +24,7 @@ from app.schemas.subscription import (
 from app.core.security import get_current_user
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.analytics import log_event
 
 logger = get_logger(__name__)
 
@@ -60,6 +61,7 @@ def create_order(
 
     customer_name = current_user.company_name or current_user.email or "BidEasy User"
     logger.info(f"Payment order created: order_id={order_id}, amount={request.amount}")
+    log_event("payment_order_created", user_id=current_user.id, amount=request.amount)
 
     return payment_schemas.CreateOrderResponse(
         order_id=order_id,
@@ -155,6 +157,7 @@ async def payment_success(
     logger.info(
         f"Payment confirmed: order_id={orderId}, amount={order.amount}, user_id={user.id}"
     )
+    log_event("payment_confirmed", user_id=user.id, amount=order.amount)
     params = urlencode({"payment": "success", "amount": str(order.amount)})
     return RedirectResponse(f"{settings.FRONTEND_URL}/?{params}")
 
@@ -226,6 +229,7 @@ def create_subscription_order(
         f"Subscription order created: order_id={order_id}, "
         f"tier={request.tier}, cycle={request.billing_cycle}, amount={amount}"
     )
+    log_event("subscription_order_created", user_id=current_user.id, tier=request.tier, cycle=request.billing_cycle, amount=amount)
 
     return SubscribeOrderResponse(
         order_id=order_id,

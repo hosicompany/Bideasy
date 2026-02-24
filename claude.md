@@ -242,9 +242,9 @@ flutter run
 
 ## 개발 체크리스트
 
-- [ ] Flutter 프로젝트에 Pretendard 폰트 에셋 추가
-- [ ] ThemeData에 컬러 팔레트 전역 변수 설정
-- [ ] OpenAI API 호출 시 `temperature=0` 설정 (답변 일관성)
+- [x] Flutter 프로젝트에 Pretendard 폰트 에셋 추가
+- [x] ThemeData에 컬러 팔레트 전역 변수 설정
+- [x] OpenAI API 호출 시 `temperature=0` 설정 (답변 일관성)
 - [x] 슬라이더 조작 시 햅틱 피드백 적용 (`HapticFeedback.lightImpact()`)
 - [x] 위험 구간 진입/탈출 시 강한 햅틱 피드백 (`HapticFeedback.heavyImpact()`)
 - [x] 즐겨찾기 토글 시 햅틱 피드백 적용

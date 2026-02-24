@@ -6,6 +6,7 @@ import '../services/toss_payments.dart';
 import '../theme/style.dart';
 import '../utils/snackbar_utils.dart';
 import '../providers/api_service_provider.dart';
+import '../services/analytics_service.dart';
 
 class SubscriptionScreen extends ConsumerStatefulWidget {
   const SubscriptionScreen({super.key});
@@ -25,6 +26,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   void initState() {
     super.initState();
     _loadSubscription();
+    AnalyticsService().logSubscriptionViewed();
   }
 
   Future<void> _loadSubscription() async {
@@ -45,6 +47,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
   Future<void> _subscribe(String tier) async {
     HapticFeedback.mediumImpact();
+    AnalyticsService().logSubscriptionStarted(tier, _isAnnual ? 'annual' : 'monthly');
     setState(() => _isProcessing = true);
 
     try {

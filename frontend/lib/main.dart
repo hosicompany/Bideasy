@@ -8,6 +8,7 @@ import 'screens/bid_calculator_screen.dart';
 import 'models/notice.dart';
 import 'providers/auth_provider.dart';
 import 'services/push_notification_service.dart';
+import 'services/analytics_service.dart';
 
 const String _sentryDsn = String.fromEnvironment('SENTRY_DSN', defaultValue: '');
 
@@ -70,6 +71,7 @@ class _AuthGateState extends ConsumerState<AuthGate> {
     if (_fcmInitialized) return;
     _fcmInitialized = true;
     PushNotificationService().initialize();
+    AnalyticsService().initialize();
   }
 
   void _showPaymentSnackbar(AuthState authState) {

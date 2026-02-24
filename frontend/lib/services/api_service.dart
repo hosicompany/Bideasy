@@ -31,7 +31,7 @@ class ApiException implements Exception {
 class ApiService {
   // Release build → production server, Debug → local dev server
   static const String baseUrl = kReleaseMode
-      ? 'http://43.203.66.120/api/v1'
+      ? 'https://bideasy.kr/api/v1'
       : 'http://127.0.0.1:8000/api/v1';
   static const Duration _timeout = Duration(seconds: 30);
 

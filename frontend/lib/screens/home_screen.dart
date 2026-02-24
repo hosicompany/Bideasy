@@ -13,6 +13,7 @@ import '../utils/snackbar_utils.dart';
 import '../models/notice.dart';
 import '../providers/notices_provider.dart';
 import '../providers/notification_provider.dart';
+import '../services/analytics_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -63,7 +64,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _triggerSearch() {
     _searchFocusNode.unfocus();
-    ref.read(noticesProvider.notifier).search(_searchController.text);
+    final keyword = _searchController.text;
+    ref.read(noticesProvider.notifier).search(keyword);
+    if (keyword.isNotEmpty) {
+      AnalyticsService().logSearch(keyword);
+    }
   }
 
   Future<void> _toggleFavorite(String bidNo) async {

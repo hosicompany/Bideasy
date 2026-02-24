@@ -26,13 +26,13 @@ class G2BApiService:
         "bid_status_construction": "/as/ScsbidInfoService/getScsbidListSttusCnstwk",  # 공사 낙찰현황
         "bid_status_service": "/as/ScsbidInfoService/getScsbidListSttusServc",  # 용역 낙찰현황
         
-        # 낙찰정보서비스 (TODO: 정확한 URL 확인 필요)
+        # 낙찰정보서비스
         "bid_result_goods": "/BidResultInfoService/getBidResultListInfoThngPPSSrch",  # 물품
         "bid_result_service": "/BidResultInfoService/getBidResultListInfoServcPPSSrch",  # 용역
         "bid_result_construction": "/BidResultInfoService/getBidResultListInfoCnstwkPPSSrch",  # 공사
         "bid_result_foreign": "/BidResultInfoService/getBidResultListInfoFrgcptPPSSrch",  # 외자
         
-        # 입찰공고정보서비스 (TODO: 정확한 URL 확인 필요)
+        # 입찰공고정보서비스
         "bid_notice_goods": "/BidPublicInfoService/getBidPblancListInfoThngPPSSrch",  # 물품
         "bid_notice_service": "/BidPublicInfoService/getBidPblancListInfoServcPPSSrch",  # 용역
         "bid_notice_construction": "/BidPublicInfoService/getBidPblancListInfoCnstwkPPSSrch",  # 공사

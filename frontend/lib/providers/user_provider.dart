@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
 import 'api_service_provider.dart';
+import '../services/analytics_service.dart';
 
 class UserNotifier extends StateNotifier<AsyncValue<User?>> {
   final ApiService _api;
@@ -12,6 +13,7 @@ class UserNotifier extends StateNotifier<AsyncValue<User?>> {
     state = const AsyncValue.loading();
     try {
       final user = await _api.getUserMe();
+      AnalyticsService().setUserTier(user.tier);
       state = AsyncValue.data(user);
     } catch (e, st) {
       state = AsyncValue.error(e, st);

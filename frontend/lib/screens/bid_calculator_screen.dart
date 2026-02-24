@@ -14,6 +14,7 @@ import '../widgets/deep_analysis_card.dart';
 import '../widgets/agency_profile_sheet.dart';
 import '../services/api_service.dart';
 import '../utils/snackbar_utils.dart';
+import '../services/analytics_service.dart';
 
 /// 공고 상세 화면 (통합)
 /// - 개찰 완료: 낙찰 결과 표시
@@ -775,8 +776,9 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
       final result = await _apiService.deductPoints(widget.notice.bidNo);
       Clipboard.setData(ClipboardData(text: _bidPrice.toString()));
       HapticFeedback.mediumImpact();
+      final wasFree = result['was_free'] == true;
+      AnalyticsService().logBidCopied(bidNo: widget.notice.bidNo, wasFree: wasFree);
       if (mounted) {
-        final wasFree = result['was_free'] == true;
         if (wasFree) {
           setState(() => _hasFreeToday = false);
           SnackBarUtils.showSuccess(context, '무료 복사 완료! ${_formatPriceKorean(_bidPrice.toDouble())}');
