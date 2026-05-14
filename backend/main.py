@@ -47,11 +47,11 @@ if settings.APP_ENV == "production":
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS: Development allows all localhost origins, production uses explicit list
+# CORS: Development allows all localhost origins + Chrome extensions; production uses explicit list
 if settings.APP_ENV == "development":
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        allow_origin_regex=r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|chrome-extension://[a-z]{32})$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -60,6 +60,7 @@ else:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.BACKEND_CORS_ORIGINS,
+        allow_origin_regex=r"^chrome-extension://[a-z]{32}$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
