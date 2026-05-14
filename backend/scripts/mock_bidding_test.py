@@ -15,6 +15,13 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
+# Windows 콘솔에서 한글이 깨지지 않도록 stdout/stderr를 UTF-8로 강제
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.services.calculator import CalculatorService
 
@@ -25,7 +32,7 @@ def load_exam_data(data_dir: Path) -> list:
     for year in range(2021, 2027):
         f = data_dir / f"opening_results_{year}.json"
         if f.exists():
-            with open(f) as fh:
+            with open(f, encoding="utf-8") as fh:
                 items = json.load(fh)
                 all_data.extend(items)
                 print(f"  [{year}년] {len(items)}건 로드")
