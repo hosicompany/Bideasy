@@ -1,8 +1,9 @@
 import asyncio
-from datetime import datetime
+from collections import defaultdict, deque
+from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
@@ -11,6 +12,7 @@ from app.core.rate_limit import limiter, get_user_tier
 from app.core.security import get_current_user
 from app.db.session import get_db
 from app.db import models
+from app.schemas.subscription import tier_at_least, TIER_PRO, TIER_PRO_PLUS
 from app.services.tips_generator import generate_tips
 from app.services.scraper import ScraperService
 
@@ -19,17 +21,57 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
-def _ai_rate_limit(request: Request) -> str:
-    """Free tier: 1/day, Pro/Pro+: 1000/day (effectively unlimited)."""
-    from app.schemas.subscription import tier_at_least, TIER_PRO
-    user_tier = get_user_tier(request)
-    if tier_at_least(user_tier, TIER_PRO):
-        return "1000/day"
-    return "1/day"
+# tier별 일일 분석 한도 (B 시나리오)
+AI_DAILY_LIMIT = {
+    "free": 3,
+    "pro": 50,
+    "pro_plus": None,  # None = 무제한
+}
+
+# in-memory rate counter (운영 시 redis로 교체 권장)
+_user_call_log: dict[int, deque[datetime]] = defaultdict(deque)
+
+
+def check_ai_rate_limit(user: models.User) -> int:
+    """사용자 tier에 따라 일일 AI 분석 호출 한도 적용.
+
+    Returns: 이번 호출 후 사용한 횟수 (응답 헤더에 노출 가능).
+    Raises: 429 Too Many Requests — 한도 초과 시.
+    """
+    user_tier = (getattr(user, "tier", "free") or "free")
+
+    # Pro+ 무제한
+    if tier_at_least(user_tier, TIER_PRO_PLUS):
+        return 0
+
+    limit_per_day = AI_DAILY_LIMIT.get(user_tier, AI_DAILY_LIMIT["free"])
+    if limit_per_day is None:
+        return 0
+
+    user_id = getattr(user, "id", 0)
+    now = datetime.now()
+    cutoff = now - timedelta(days=1)
+    log = _user_call_log[user_id]
+
+    # 24시간 이전 기록 제거
+    while log and log[0] < cutoff:
+        log.popleft()
+
+    if len(log) >= limit_per_day:
+        upgrade_target = "Pro" if user_tier == "free" else "Pro+"
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"하루 AI 분석 한도({limit_per_day}회)를 초과했어요. "
+                f"{upgrade_target}로 업그레이드하면 더 많이 분석 가능합니다."
+            ),
+        )
+
+    log.append(now)
+    return len(log)
 
 
 @router.get("/{bid_no}/analysis")
-@limiter.limit(_ai_rate_limit)
 async def analyze_bid(
     request: Request,
     bid_no: str,
@@ -71,7 +113,11 @@ async def analyze_bid(
     """
     logger.info(f"Enhanced analysis request for bid_no={bid_no}")
     log_event("ai_analysis_requested", user_id=current_user.id, bid_no=bid_no)
-    
+
+    # Rate limit (B 시나리오: free 3/일, pro 50/일, pro+ 무제한)
+    used_count = check_ai_rate_limit(current_user)
+    logger.info(f"AI rate check passed: user={current_user.id} tier={current_user.tier} used_today={used_count}")
+
     # 1. Check Cache
     cached_log = db.query(models.AIAnalysisLog).filter(
         models.AIAnalysisLog.bid_no == bid_no
