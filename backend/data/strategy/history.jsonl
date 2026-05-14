@@ -1,0 +1,2 @@
+{"at": "2026-05-14T23:17:00", "event": "BOOTSTRAP", "version_id": "v0_bootstrap"}
+{"at": "2026-05-14T23:34:33", "event": "ADOPTED", "version_id": "v20260514_233433_17c8a1", "detail": {"parent": "v0_bootstrap", "metrics": {"total": 4848, "win_rate": 14.707, "pass_rate": 92.512, "dropout_rate": 7.488, "rate_error": 0.6688, "risk_calibration_error": 0.00068}}}

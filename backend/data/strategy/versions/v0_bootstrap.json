@@ -1,0 +1,78 @@
+{
+  "version_id": "v0_bootstrap",
+  "created_at": "2026-05-14T23:17:00",
+  "params": {
+    "적격심사제": {
+      "small": [
+        -1.0,
+        1.4
+      ],
+      "medium": [
+        0.7,
+        0.2
+      ],
+      "large": [
+        -0.9,
+        1.5
+      ],
+      "xlarge": [
+        -0.2,
+        0.9
+      ],
+      "xxlarge": [
+        -0.7,
+        1.5
+      ]
+    },
+    "소액수의견적": {
+      "small": [
+        -0.2,
+        0.9
+      ],
+      "medium": [
+        0.6,
+        0.3
+      ],
+      "large": [
+        0.6,
+        0.3
+      ],
+      "xlarge": [
+        0.6,
+        0.3
+      ],
+      "xxlarge": [
+        0.6,
+        0.3
+      ]
+    },
+    "DEFAULT": {
+      "small": [
+        -0.3,
+        1.0
+      ],
+      "medium": [
+        0.5,
+        0.3
+      ],
+      "large": [
+        -0.3,
+        1.0
+      ],
+      "xlarge": [
+        -0.2,
+        0.9
+      ],
+      "xxlarge": [
+        -0.5,
+        1.2
+      ]
+    }
+  },
+  "status": "archived",
+  "parent_version": null,
+  "data_fingerprint": null,
+  "year_weights": null,
+  "metrics": null,
+  "notes": "calculator.BID_STRATEGY 정적 딕셔너리 부트스트랩"
+}

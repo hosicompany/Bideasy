@@ -94,6 +94,39 @@ def _get_price_bracket(basic_price: float) -> str:
         return "xxlarge"     # 50억 이상
 
 
+# ── 동적 전략 파라미터 로딩 ─────────────────────────────────
+# BID_STRATEGY(위)는 부트스트랩 기본값. 실제 운영 파라미터는
+# autocalibrate.strategy_store 의 버전 관리 저장소에서 동적 조회한다.
+# 저장소 접근 실패 시 BID_STRATEGY 로 안전하게 폴백.
+_strategy_cache: dict | None = None
+_strategy_mtime: float | None = None
+
+
+def _get_active_strategy() -> dict:
+    """현재 active 전략 파라미터를 반환 (캐시 + mtime 무효화)."""
+    global _strategy_cache, _strategy_mtime
+    try:
+        from app.services.autocalibrate.strategy_store import get_default_store
+
+        store = get_default_store()
+        store.ensure_bootstrap(BID_STRATEGY)  # 최초 1회 v0_bootstrap 저장
+        mtime = store.active_mtime()
+        if _strategy_cache is None or mtime != _strategy_mtime:
+            _strategy_cache = store.load_active().params
+            _strategy_mtime = mtime
+        return _strategy_cache
+    except Exception:
+        # 저장소 미초기화/오류 시 정적 기본값으로 폴백
+        return BID_STRATEGY
+
+
+def reload_strategy_cache() -> None:
+    """전략 캐시 강제 무효화 (자가보정 사이클 채택 직후 호출용)."""
+    global _strategy_cache, _strategy_mtime
+    _strategy_cache = None
+    _strategy_mtime = None
+
+
 class CalculatorService:
     
     @staticmethod
@@ -249,6 +282,7 @@ class CalculatorService:
         bid_method: str = "DEFAULT",
         contract_type: str = "CONSTRUCTION",
         a_value: float = 0,
+        strategy_override: dict | None = None,
     ) -> dict:
         """
         입찰방법 + 금액대별 최적 투찰가 추천 (실전용)
@@ -263,6 +297,8 @@ class CalculatorService:
             bid_method: 입찰방법 (적격심사제, 소액수의견적 등)
             contract_type: 계약유형 (CONSTRUCTION, SERVICE, GOODS)
             a_value: A값 (고정비용)
+            strategy_override: 임의 파라미터셋 주입 (백테스트/최적화/가드 검증용).
+                None 이면 autocalibrate 저장소의 active 파라미터 사용.
 
         Returns:
             dict with recommended_price, bid_rate, margin, strategy_desc
@@ -270,9 +306,13 @@ class CalculatorService:
         lower_rate = CalculatorService.get_lower_limit_rate(contract_type)
         bracket = _get_price_bracket(basic_price)
 
-        # 입찰방법 + 금액대별 최적 파라미터 조회
-        method_strategy = BID_STRATEGY.get(bid_method, BID_STRATEGY["DEFAULT"])
-        adjustment, margin = method_strategy.get(bracket, (-0.3, 1.0))
+        # 입찰방법 + 금액대별 최적 파라미터 조회 (동적 또는 주입)
+        strategy = strategy_override if strategy_override is not None else _get_active_strategy()
+        default_method = strategy.get("DEFAULT", BID_STRATEGY["DEFAULT"])
+        method_strategy = strategy.get(bid_method, default_method)
+        _params = method_strategy.get(bracket, (-0.3, 1.0))
+        # JSON 저장소는 list, 정적 딕셔너리는 tuple — 둘 다 호환
+        adjustment, margin = float(_params[0]), float(_params[1])
 
         # 예정가격 예측: 기초금액에 보정값 적용
         predicted_reserved = basic_price * (1 + adjustment / 100)

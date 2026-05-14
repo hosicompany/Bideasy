@@ -24,6 +24,7 @@ except (AttributeError, ValueError):
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.services.calculator import CalculatorService
+from app.services.autocalibrate import dataset as ds
 
 
 def load_exam_data(data_dir: Path) -> list:
@@ -58,17 +59,85 @@ def split_question_and_answer(item: dict) -> tuple[dict, dict]:
     return question, answer
 
 
-def solve(question: dict) -> dict:
+def solve(question: dict, strategy: dict | None = None) -> dict:
     """
     [풀이] 문제지만 보고 투찰가 결정
     우리 알고리즘(recommend_bid_price)을 호출
+
+    Args:
+        question: 문제지 (입찰 전 공개 정보)
+        strategy: 임의 파라미터셋 주입 (None 이면 autocalibrate active 파라미터)
     """
     return CalculatorService.recommend_bid_price(
         basic_price=question["basic_price"],
         bid_method=question["bid_method"],
         contract_type="CONSTRUCTION",
         a_value=0,
+        strategy_override=strategy,
     )
+
+
+def _record_to_question(r: "ds.BidRecord") -> dict:
+    """BidRecord → 문제지 dict (입찰 전 공개 정보)."""
+    return {
+        "bid_no": r.bid_no,
+        "title": r.title,
+        "org": r.org,
+        "basic_price": r.basic_price,
+        "estimated_price": r.estimated_price,
+        "bid_method": r.bid_method,
+        "lower_limit_rate": r.lower_limit_rate,
+    }
+
+
+def _record_to_answer(r: "ds.BidRecord") -> dict:
+    """BidRecord → 정답지 dict (개찰 후 공개 정보)."""
+    return {
+        "reserved_price": r.reserved_price,
+        "winner_price": r.winner_price,
+        "winner_rate": r.winner_rate,
+    }
+
+
+def backtest(records: list, strategy: dict | None = None) -> dict:
+    """
+    재사용 가능한 백테스트 함수 (optimizer / guard 가 공유).
+    BidRecord 리스트 + 임의 파라미터셋 → 풀이·채점 → metrics + 상세.
+
+    Returns:
+        {
+          "metrics": {total, wins, win_rate, passed_limit, pass_rate, dropout_rate},
+          "questions", "answers", "our_answers", "grades": 상세 (리포트용)
+        }
+    """
+    questions, answers, our_answers, grades = [], [], [], []
+    for r in records:
+        q = _record_to_question(r)
+        a = _record_to_answer(r)
+        ours = solve(q, strategy)
+        g = grade(q, ours, a)
+        questions.append(q)
+        answers.append(a)
+        our_answers.append(ours)
+        grades.append(g)
+
+    total = len(grades)
+    wins = sum(1 for g in grades if g["won"])
+    passed = sum(1 for g in grades if g["passed_limit"])
+    return {
+        "metrics": {
+            "total": total,
+            "wins": wins,
+            "win_rate": round(wins / total * 100, 2) if total else 0.0,
+            "passed_limit": passed,
+            "pass_rate": round(passed / total * 100, 2) if total else 0.0,
+            "dropout_rate": round((total - passed) / total * 100, 2) if total else 0.0,
+        },
+        "questions": questions,
+        "answers": answers,
+        "our_answers": our_answers,
+        "grades": grades,
+    }
 
 
 def grade(question: dict, our_answer: dict, real_answer: dict) -> dict:
@@ -216,7 +285,7 @@ def generate_report(questions, our_answers, grades, bid_methods):
         print(f"  → 기초금액 < 예정가격인 경우: {above}건 ({above/len(errors_fail)*100:.1f}%)")
 
 
-def main():
+def main(strategy: dict | None = None):
     data_dir = Path(__file__).parent.parent / "data"
 
     print("=" * 65)
@@ -224,45 +293,22 @@ def main():
     print("  [문제 출제] → [풀이] → [채점] → [성적표]")
     print("=" * 65)
 
-    # 1. 문제 로드
+    # 1. 문제 로드 (dataset 모듈 위임 — 로딩·정제 일원화)
     print("\n[1단계] 시험 문제 로드...")
-    raw_data = load_exam_data(data_dir)
-    if not raw_data:
+    records = ds.load_records(data_dir=data_dir)
+    if not records:
         print("  데이터 없음. 크롤링 먼저 실행하세요.")
         return
+    print(f"  유효 {len(records)}건 로드")
 
-    # 유효 데이터만 (기초금액 > 0, 낙찰가 > 0, 예정가격 > 0)
-    valid = [d for d in raw_data
-             if d.get("basic_price", 0) > 0
-             and d.get("winner_price", 0) > 0
-             and d.get("reserved_price", 0) > 0]
-    print(f"  전체 {len(raw_data)}건 중 유효 {len(valid)}건")
-
-    # 2. 문제지/정답지 분리
-    print("\n[2단계] 문제지와 정답지 분리...")
-    questions = []
-    answers = []
-    for item in valid:
-        q, a = split_question_and_answer(item)
-        questions.append(q)
-        answers.append(a)
-    print(f"  문제지 {len(questions)}건 준비 완료")
-
-    # 3. 풀이 (우리 알고리즘으로 투찰가 결정)
-    print("\n[3단계] 풀이 중... (정답지 안 봄!)")
-    our_answers = []
-    for q in questions:
-        ans = solve(q)
-        our_answers.append(ans)
-    print(f"  {len(our_answers)}건 풀이 완료")
-
-    # 4. 채점
-    print("\n[4단계] 채점 중...")
-    grades = []
-    for q, ours, real in zip(questions, our_answers, answers):
-        g = grade(q, ours, real)
-        grades.append(g)
-    print(f"  {len(grades)}건 채점 완료")
+    # 2~4. 풀이·채점 (재사용 backtest 함수)
+    print("\n[2~4단계] 풀이 → 채점... (정답지 안 봄!)")
+    result = backtest(records, strategy)
+    questions = result["questions"]
+    answers = result["answers"]
+    our_answers = result["our_answers"]
+    grades = result["grades"]
+    print(f"  {len(grades)}건 완료")
 
     # 5. 성적표
     bid_methods = [q["bid_method"] for q in questions]
