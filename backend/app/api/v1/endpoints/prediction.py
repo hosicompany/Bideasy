@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+from app.core.security import get_current_user_optional
 from app.db.session import get_db
 from app.db import models
 from app.services.winning_rate import WinningRateService
@@ -11,7 +12,8 @@ router = APIRouter()
 @router.get("/{bid_no}/recommend-points", response_model=Dict)
 async def get_scientific_recommendation(
     bid_no: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
 ) -> Any:
     """
     Get Scientific Bidding Recommendations (Phase 3).
@@ -48,23 +50,18 @@ async def get_scientific_recommendation(
     # Algo 3: Blue Ocean
     blue_ocean = WinningRateService.get_blue_ocean_strategy(db, bid_no)
 
-    # 4. Phase 4: Qualification Check
-    # Get User (Mock ID 1)
-    user = db.query(models.User).filter(models.User.id == 1).first()
-    qualification = {}
-    
-    if user:
+    # 4. Phase 4: Qualification Check (로그인 사용자에 한해 본인 자격 검사)
+    # 익명 호출이면 current_user 가 None → qualification 은 빈 객체로 반환.
+    qualification: Dict[str, Any] = {}
+    if current_user is not None:
         from app.services.qualification_checker import QualificationChecker
-        # Convert SQLAlchemy model to Dict-like for Checker if needed, but Checker expects model for User and Dict for Notice
-        # Notice is model, convert to dict for checker compatibility or update checker
-        # Let's adjust checker call to pass model.Notice as dict
+
         notice_dict = {
             "bidNtceNm": notice.title,
             "LmtRegion": notice.region,
             # "sucsfbidMthdNm": notice.contract_method # If needed
         }
-        
-        qualification = QualificationChecker.check_qualification(notice_dict, user)
+        qualification = QualificationChecker.check_qualification(notice_dict, current_user)
         
     # 5. Algo 4: Competition Prediction
     competition = WinningRateService.predict_competition_rate(notice)

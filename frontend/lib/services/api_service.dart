@@ -403,8 +403,14 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> fetchScientificAnalysis(String bidNo) async {
+    // 익명도 허용되지만, 로그인 시 토큰을 전달해야 본인 자격 검사(qualification)가
+    // 응답에 포함된다. _authHeaders 는 _token == null 이면 Authorization 헤더를
+    // 빼고 보내므로 익명 호출도 안전하다.
     final response = await _request(
-      () => http.get(Uri.parse('$baseUrl/prediction/$bidNo/recommend-points')),
+      () => http.get(
+        Uri.parse('$baseUrl/prediction/$bidNo/recommend-points'),
+        headers: _authHeaders,
+      ),
     );
     if (response.statusCode == 200) {
       return jsonDecode(utf8.decode(response.bodyBytes));

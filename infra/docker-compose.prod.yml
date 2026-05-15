@@ -64,6 +64,40 @@ services:
           memory: 512M
           cpus: "0.5"
 
+  # Celery beat — 정기 스케줄러. 이 서비스가 없으면 celery_app.py 의
+  # beat_schedule(주간 자가보정 등)이 실제로 트리거되지 않는다.
+  celery_beat:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: bideasy_celery_beat
+    command: >-
+      celery -A app.core.celery_app:celery_app beat --loglevel=info
+      --schedule=/app/celerybeat/celerybeat-schedule.db
+      --pidfile=
+    env_file:
+      - .env.production
+    environment:
+      - DATABASE_MODE=postgresql
+      - POSTGRES_SERVER=db
+      - REDIS_HOST=redis
+      - APP_ENV=production
+      - LOG_FORMAT=json
+    volumes:
+      - ../backend/models:/app/models:ro
+      - ../backend/data/historical:/app/data/historical:ro
+      # 마지막 실행 시각 영속화 — 컨테이너 재시작 시 스케줄 중복/누락 방지
+      - celerybeat_data:/app/celerybeat
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
   db:
     image: postgres:15-alpine
     container_name: bideasy_db
@@ -135,3 +169,4 @@ volumes:
   redis_data:
   certbot_webroot:
   certbot_certs:
+  celerybeat_data:
