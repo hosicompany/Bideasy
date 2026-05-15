@@ -49,6 +49,10 @@ services:
       - REDIS_HOST=redis
       - APP_ENV=production
       - LOG_FORMAT=json
+      # 컨테이너 내부에서 root 로 실행 중이라 Celery 가 거부함. 격리된 컨테이너 환경에서는
+      # root 실행이 일반적이므로 명시적으로 허용. (장기적으로는 Dockerfile 에 비-root USER
+      # 디렉터티브 추가가 더 정석)
+      - C_FORCE_ROOT=true
     volumes:
       - ../backend/models:/app/models:ro
       - ../backend/data/historical:/app/data/historical:ro
@@ -83,6 +87,7 @@ services:
       - REDIS_HOST=redis
       - APP_ENV=production
       - LOG_FORMAT=json
+      - C_FORCE_ROOT=true
     volumes:
       - ../backend/models:/app/models:ro
       - ../backend/data/historical:/app/data/historical:ro

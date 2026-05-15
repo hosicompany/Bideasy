@@ -29,9 +29,10 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  // Release build → production server, Debug → local dev server
+  // Release build → production API server (api.bideasy.kr), Debug → local dev server.
+  // 분리 아키텍처: bideasy.kr 은 Vercel(랜딩), API 호출은 api.bideasy.kr(Lightsail).
   static const String baseUrl = kReleaseMode
-      ? 'https://bideasy.kr/api/v1'
+      ? 'https://api.bideasy.kr/api/v1'
       : 'http://127.0.0.1:8000/api/v1';
   static const Duration _timeout = Duration(seconds: 30);
 

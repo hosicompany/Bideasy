@@ -60,6 +60,30 @@ case "${1:-deploy}" in
     echo "=== SSL setup complete ==="
     ;;
 
+  ssl-init-api)
+    echo "=== Issuing SSL Certificate for api.$DOMAIN ==="
+
+    # api.bideasy.kr 전용 인증서 발급.
+    # 사전 조건: nginx 가 이미 실행 중이고 conf.d/default.conf 의 HTTP server_name 에
+    # api.$DOMAIN 이 포함되어 있어야 함 (ACME challenge 응답 위해).
+    dc run --rm --entrypoint "" certbot \
+      certbot certonly --webroot -w /var/www/certbot \
+      --email "$EMAIL" --agree-tos --no-eff-email \
+      -d "api.$DOMAIN"
+
+    # 발급 성공 시 api.bideasy.kr.conf 활성화 (.disabled → .conf)
+    if [ -f ./nginx/conf.d/api.bideasy.kr.conf.disabled ]; then
+      echo "Activating nginx config for api.$DOMAIN..."
+      mv ./nginx/conf.d/api.bideasy.kr.conf.disabled \
+         ./nginx/conf.d/api.bideasy.kr.conf
+      dc restart nginx
+    else
+      echo "WARN: ./nginx/conf.d/api.bideasy.kr.conf.disabled 없음 — 수동 활성화 필요"
+    fi
+
+    echo "=== api SSL setup complete: https://api.$DOMAIN/health 로 확인 ==="
+    ;;
+
   deploy)
     echo "=== Deploying BidEasy ==="
 
@@ -130,16 +154,17 @@ case "${1:-deploy}" in
     ;;
 
   *)
-    echo "Usage: $0 {init|deploy|ssl-init|logs|status|rollback|backup}"
+    echo "Usage: $0 {init|deploy|ssl-init|ssl-init-api|logs|status|rollback|backup}"
     echo ""
     echo "Commands:"
-    echo "  init      - First-time setup (build, start, migrate)"
-    echo "  deploy    - Pull latest code, rebuild, rolling restart"
-    echo "  ssl-init  - Issue Let's Encrypt SSL certificate"
-    echo "  logs      - Tail service logs (default: app)"
-    echo "  status    - Show service status and health"
-    echo "  rollback  - Revert to previous git commit"
-    echo "  backup    - Dump PostgreSQL database"
+    echo "  init          - First-time setup (build, start, migrate)"
+    echo "  deploy        - Pull latest code, rebuild, rolling restart"
+    echo "  ssl-init      - Issue Let's Encrypt SSL for bideasy.kr + www"
+    echo "  ssl-init-api  - Issue Let's Encrypt SSL for api.bideasy.kr + activate api conf"
+    echo "  logs          - Tail service logs (default: app)"
+    echo "  status        - Show service status and health"
+    echo "  rollback      - Revert to previous git commit"
+    echo "  backup        - Dump PostgreSQL database"
     exit 1
     ;;
 esac

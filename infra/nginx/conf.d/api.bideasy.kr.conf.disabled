@@ -1,32 +1,30 @@
-# HTTP — redirect to HTTPS + ACME challenge (bideasy.kr / www / api 모두 처리)
-# api.bideasy.kr 의 ACME 검증도 같이 받아주기 위해 server_name 에 포함.
-# api 의 HTTPS 블록은 별도 파일(api.bideasy.kr.conf)에 두고, cert 발급 후 활성화.
-server {
-    listen 80;
-    server_name bideasy.kr www.bideasy.kr api.bideasy.kr;
-
-    # Let's Encrypt challenge (^~ ensures priority over regex location)
-    location ^~ /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    # Redirect all other traffic to HTTPS
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
+# api.bideasy.kr — Lightsail 백엔드 API 전용 서버 블록
+# ====================================================
+# 사용자 도메인은 Vercel(bideasy.kr), API 호출은 이 서브도메인이 받는다.
+# 분리 아키텍처로 백엔드 배포·재시작이 랜딩 페이지 가용성에 영향 없게 한다.
+#
+# 파일명이 ".conf.disabled" 인 이유:
+#   nginx 는 /etc/nginx/conf.d/*.conf 만 로드한다. api.bideasy.kr SSL 인증서가
+#   존재하지 않는 상태에서 nginx 가 이 파일을 로드하면 즉시 startup 실패한다.
+#   따라서 인증서 발급 후 ".disabled" 를 제거(mv → .conf)하여 활성화한다.
+#
+# 활성화 절차 (서버에서):
+#   1. ./deploy.sh ssl-init  (또는 certbot 직접 호출로 api.bideasy.kr cert 발급)
+#   2. mv infra/nginx/conf.d/api.bideasy.kr.conf.disabled \
+#         infra/nginx/conf.d/api.bideasy.kr.conf
+#   3. docker compose -f docker-compose.prod.yml -p bideasy restart nginx
 
 # HTTPS
 server {
     listen 443 ssl;
     http2 on;
-    server_name bideasy.kr www.bideasy.kr;
+    server_name api.bideasy.kr;
 
     # SSL certificates (managed by certbot)
-    ssl_certificate /etc/letsencrypt/live/bideasy.kr/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/bideasy.kr/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/api.bideasy.kr/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.bideasy.kr/privkey.pem;
 
-    # SSL settings
+    # SSL settings (bideasy.kr 와 동일)
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
@@ -36,7 +34,7 @@ server {
     # HSTS
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-    # API endpoints
+    # API endpoints — 일반 rate limit
     location /api/ {
         limit_req zone=api burst=20 nodelay;
 
@@ -68,7 +66,7 @@ server {
         proxy_set_header Host $host;
     }
 
-    # OAuth callbacks
+    # OAuth callbacks — 백엔드가 직접 받음 (Kakao/Naver redirect_uri 가 여기로 옴)
     location /auth/callback/ {
         proxy_pass http://bideasy_api;
         proxy_set_header Host $host;
@@ -77,7 +75,7 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Payment callbacks
+    # Payment callbacks (Toss webhook 등)
     location /api/v1/payments/ {
         proxy_pass http://bideasy_api;
         proxy_set_header Host $host;
@@ -86,13 +84,13 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Landing page
-    location = / {
-        root /var/www/html;
-        try_files /index.html =404;
+    # 이 도메인은 API 전용 — 그 외 경로는 404
+    location / {
+        default_type text/plain;
+        return 404 "api.bideasy.kr is API-only. Visit https://bideasy.kr for the main site.\n";
     }
 
-    # Deny access to hidden files
+    # Deny hidden files
     location ~ /\. {
         deny all;
         return 404;
