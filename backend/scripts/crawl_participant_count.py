@@ -6,6 +6,7 @@ API: 조달청 낙찰정보서비스
 엔드포인트: getOpengResultListInfoCnstwk
 """
 
+import os
 import json
 import time
 import sys
@@ -15,7 +16,12 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 DATA_DIR = Path(__file__).parent.parent / "data"
-API_KEY = "fa268326385baba6b21a78ceb898d00b382b4ac3cf1d610e3c647ef3422e5905"
+API_KEY = os.environ.get("PUBLIC_DATA_KEY") or ""
+if not API_KEY:
+    raise SystemExit(
+        "PUBLIC_DATA_KEY 환경 변수가 없습니다. "
+        "backend/.env 에 설정하거나 export PUBLIC_DATA_KEY=... 후 재실행하세요."
+    )
 BASE_URL = "https://apis.data.go.kr/1230000/as/ScsbidInfoService/getOpengResultListInfoCnstwk"
 
 OUTPUT_FILE = DATA_DIR / "participant_counts.json"

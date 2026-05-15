@@ -1,3 +1,4 @@
+import os
 import requests
 import json
 import sqlite3
@@ -5,7 +6,12 @@ from datetime import datetime, timedelta
 import time
 
 # --- Configuration ---
-PUBLIC_DATA_KEY = "fa268326385baba6b21a78ceb898d00b382b4ac3cf1d610e3c647ef3422e5905"
+PUBLIC_DATA_KEY = os.environ.get("PUBLIC_DATA_KEY") or ""
+if not PUBLIC_DATA_KEY:
+    raise SystemExit(
+        "PUBLIC_DATA_KEY 환경 변수가 없습니다. "
+        "backend/.env 에 설정하거나 export PUBLIC_DATA_KEY=... 후 재실행하세요."
+    )
 DB_PATH = "historical_results_v2.db"
 PROGRESS_PATH = "collection_progress.json"
 

@@ -6,13 +6,19 @@
 주의: totalCount는 전체 건수를 반환하므로 무시, 데이터가 빌 때까지 수집
 """
 
+import os
 import requests
 import json
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-API_KEY = "fa268326385baba6b21a78ceb898d00b382b4ac3cf1d610e3c647ef3422e5905"
+API_KEY = os.environ.get("PUBLIC_DATA_KEY") or ""
+if not API_KEY:
+    raise SystemExit(
+        "PUBLIC_DATA_KEY 환경 변수가 없습니다. "
+        "backend/.env 에 설정하거나 export PUBLIC_DATA_KEY=... 후 재실행하세요."
+    )
 BASE_URL = "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdScsbidInfo"
 
 DATA_DIR = Path(__file__).parent.parent / "data"
