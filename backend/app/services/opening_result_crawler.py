@@ -63,7 +63,15 @@ def _fetch_page(start_dt: str, end_dt: str, page: int = 1, num_rows: int = 100) 
 def _parse_item_to_kwargs(item: dict) -> dict | None:
     """API 응답 item 을 OpeningResult 모델 kwargs 로 변환.
 
-    None 반환 = skip (필수 필드 누락).
+    조달청_나라장터 공공데이터개방표준서비스 응답 스키마:
+    - 참가자별로 row 가 분리되어 옴 (한 bid_no 에 N개)
+    - opengRank: 개찰 순위 (1 = 최저가)
+    - sucsfYn: 'Y' = 적격검사 통과 winner, 'N' = 미통과/검사중
+    - fnlSucsfAmt: 최종 낙찰금액 (검사 완료 시 설정)
+    - bidprcAmt: 그 참가자의 투찰금액
+
+    낙찰자 row 만 OpeningResult 로 저장 (winner row).
+    검사 진행 중인 입찰은 다음 크롤 사이클에 잡힘.
     """
     bid_no_raw = item.get("bidNtceNo")
     ord_raw = item.get("bidNtceOrd")
@@ -71,7 +79,6 @@ def _parse_item_to_kwargs(item: dict) -> dict | None:
         return None
     bid_no = f"{bid_no_raw}-{ord_raw or '000'}"
 
-    # 가격 파싱 (str -> float)
     def _f(v):
         if v in (None, ""):
             return None
@@ -80,41 +87,60 @@ def _parse_item_to_kwargs(item: dict) -> dict | None:
         except (TypeError, ValueError):
             return None
 
-    basic_price = _f(item.get("presmptPrce"))  # 기초금액
-    reserved_price = _f(item.get("plnprc"))  # 예정가격
-    winner_price = _f(item.get("scsbidPrce"))  # 낙찰금액
-    winner_rate = _f(item.get("scsbidRate"))   # 낙찰률
+    # 낙찰자 판별 — fnlSucsfAmt 우선, 없으면 sucsfYn=Y + bidprcAmt
+    fnl_amt = _f(item.get("fnlSucsfAmt"))
+    fnl_rate = _f(item.get("fnlSucsfRt"))
+    sucsf_yn = (item.get("sucsfYn") or "").strip().upper()
+    bid_amt = _f(item.get("bidprcAmt"))
+    bid_rate = _f(item.get("bidprcRt"))
 
-    if not winner_price or winner_price <= 0:
+    winner_price = None
+    winner_rate = None
+    winner_company = ""
+    if fnl_amt and fnl_amt > 0:
+        winner_price = fnl_amt
+        winner_rate = fnl_rate
+        winner_company = item.get("fnlSucsfCorpNm") or item.get("bidprcCorpNm") or ""
+    elif sucsf_yn == "Y" and bid_amt and bid_amt > 0:
+        winner_price = bid_amt
+        winner_rate = bid_rate
+        winner_company = item.get("bidprcCorpNm") or ""
+    else:
+        # 낙찰자 row 가 아님 (참가자 row 또는 검사 진행중) → skip
         return None
 
-    # 낙찰률이 없거나 0 이면 계산
+    basic_price = _f(item.get("presmptPrce"))   # 기초금액
+    reserved_price = _f(item.get("rsrvtnPrce")) # 예정가격
+
+    # 낙찰률 계산 fallback (기초금액 대비)
     if (not winner_rate or winner_rate <= 0) and basic_price and basic_price > 0:
         winner_rate = round(winner_price / basic_price * 100, 4)
 
-    # opengDt: "2026-05-19 11:00:00" or "20260519110000" 형태 가능
-    open_dt = item.get("opengDt") or item.get("scsbidDecsnDt")
+    # 개찰 일시 — opengDate + opengTm 합쳐서 datetime
     parsed_open_dt = None
-    if open_dt:
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y%m%d%H%M%S", "%Y-%m-%d"):
+    od = item.get("opengDate")
+    ot = item.get("opengTm") or "00:00"
+    if od:
+        try:
+            parsed_open_dt = datetime.strptime(f"{od} {ot}", "%Y-%m-%d %H:%M")
+        except ValueError:
             try:
-                parsed_open_dt = datetime.strptime(str(open_dt)[:19].replace("-", "-"), fmt)
-                break
-            except (ValueError, TypeError):
-                continue
+                parsed_open_dt = datetime.strptime(od, "%Y-%m-%d")
+            except ValueError:
+                parsed_open_dt = None
 
     return {
         "bid_no": bid_no,
-        "organization": item.get("ntceInsttNm") or item.get("dminsttNm") or "",
-        "region": item.get("prtcptLmtRgnNm") or "",
+        "organization": item.get("ntceInsttNm") or item.get("dmndInsttNm") or "",
+        "region": "",  # 본 API 에 없음
         "open_date": parsed_open_dt,
         "basic_price": basic_price,
         "reserved_price": reserved_price,
-        "bid_method": item.get("bidMthdNm") or "",
-        "winner_company": item.get("scsbidCorpNm") or "",
+        "bid_method": item.get("bidwinrDcsnMthdNm") or item.get("cntrctCnclsMthdNm") or "",
+        "winner_company": winner_company,
         "winner_price": winner_price,
         "winner_rate": winner_rate,
-        "participants_count": None,  # 본 API 응답에 없음, 다른 API 필요
+        "participants_count": None,  # 본 API 직접 노출 안 됨 (rank 카운트로 추정 가능)
         "crawled_at": datetime.now(timezone.utc),
     }
 
