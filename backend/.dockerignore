@@ -11,5 +11,5 @@ alembic/versions/__pycache__
 .git
 .gitignore
 tests/
-scripts/
+# scripts/ — 운영 점검·검증 스크립트는 이미지에 포함 (CLI 실행 및 Celery task 에서 import)
 *.md
