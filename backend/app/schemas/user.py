@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 
@@ -21,7 +22,10 @@ class UserResponse(UserBase):
     email: Optional[str] = None
     points: int
     tier: str = "free"
-    subscription_expires_at: Optional[str] = None
+    # Optional[str] 였으나 SQLAlchemy 모델은 datetime 을 반환 → Pydantic V2 가 자동
+    # 캐스팅 안 함 → ResponseValidationError 발생했음. datetime 으로 정정.
+    # FastAPI JSON 응답에서는 자동으로 ISO 8601 문자열로 직렬화된다.
+    subscription_expires_at: Optional[datetime] = None
     social_provider: Optional[str] = None
     profile_image_url: Optional[str] = None
 
