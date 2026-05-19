@@ -6,7 +6,10 @@ celery_app = Celery(
     "bideasy",
     broker=settings.celery_broker,
     backend=settings.celery_backend,
-    include=["app.tasks.calibration_tasks"],
+    include=[
+        "app.tasks.calibration_tasks",
+        "app.tasks.verification_tasks",
+    ],
 )
 
 celery_app.conf.update(
@@ -20,9 +23,21 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
 )
 
-# 정기 자가보정 스케줄 — 매주 월요일 새벽 4시 (개찰 데이터가 주중 누적된 후)
-# should_recalibrate() 가드로 새 데이터 없으면 즉시 스킵하므로 비용 없음.
+# 정기 스케줄 — Asia/Seoul 기준
+# 1) 매일 19:00 — 어제 개찰결과 크롤 → opening_results 적재
+# 2) 매일 20:00 — notices ↔ opening_results 비교 → predictions_log.jsonl 누적
+# 3) 매주 월요일 04:00 — 누적된 predictions_log 와 historical 데이터로 자가보정 1 사이클
 celery_app.conf.beat_schedule = {
+    "daily-crawl-opening-results": {
+        "task": "verification.daily_crawl_opening_results",
+        "schedule": crontab(hour=19, minute=0),
+        "kwargs": {"days_back": 2},
+    },
+    "daily-verify-predictions": {
+        "task": "verification.daily_verify_predictions",
+        "schedule": crontab(hour=20, minute=0),
+        "kwargs": {"days_back": 30, "limit": 500},
+    },
     "weekly-strategy-recalibration": {
         "task": "autocalibrate.recalibrate_strategy",
         "schedule": crontab(hour=4, minute=0, day_of_week=1),
