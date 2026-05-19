@@ -6,7 +6,10 @@ set -euo pipefail
 
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env.production"
-PROJECT_NAME="bideasy"
+# 실제 운영 인스턴스가 -p infra (디렉터리명 기본값) 로 떠있어서 일치시킴.
+# 옛 deploy.sh 가 PROJECT_NAME=bideasy 였으나 실 서버 컨테이너 라벨과 안 맞아
+# `up -d` 시 새 컨테이너를 만들려고 시도하다 이름 충돌 발생.
+PROJECT_NAME="infra"
 DOMAIN="bideasy.kr"
 EMAIL="support@bideasy.kr"
 
