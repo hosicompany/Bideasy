@@ -104,10 +104,15 @@ def require_tier(minimum_tier: str):
         user_tier = getattr(current_user, "tier", "free") or "free"
 
         # Check subscription expiration
+        # subscription_expires_at 컬럼이 DateTime (naive) 이라 SQLAlchemy 가 naive 객체를
+        # 반환. UTC 로 가정하고 aware 변환 후 비교 (둘 다 aware 여야 < 동작).
         if user_tier != "free":
             expires_at = getattr(current_user, "subscription_expires_at", None)
-            if expires_at and expires_at < datetime.now(timezone.utc):
-                user_tier = "free"
+            if expires_at:
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                if expires_at < datetime.now(timezone.utc):
+                    user_tier = "free"
 
         if not tier_at_least(user_tier, minimum_tier):
             tier_name = TIER_DISPLAY_NAMES_KO.get(minimum_tier, minimum_tier)
