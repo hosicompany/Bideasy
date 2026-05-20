@@ -145,9 +145,19 @@ def _parse_item_to_kwargs(item: dict) -> dict | None:
     }
 
 
-def _upsert_opening_result(db: Session, kwargs: dict) -> bool:
-    """OpeningResult upsert. 반환: 신규 삽입 True / 업데이트 False."""
+def _upsert_opening_result(db: Session, kwargs: dict, seen: set[str]) -> bool:
+    """OpeningResult upsert. 반환: 신규 삽입 True / 업데이트 False.
+
+    `seen` 은 이번 크롤 세션 내 처리한 bid_no 집합. DB 조회는 미커밋 행을
+    못 봐서, 동일 bid_no 가 응답에 여러 번(참가자 분리) 나오는 경우
+    중복 INSERT → IntegrityError 가 발생하므로 set 으로 차단.
+    """
     bid_no = kwargs["bid_no"]
+    if bid_no in seen:
+        # 이미 이 세션에서 처리한 bid_no — skip
+        return False
+    seen.add(bid_no)
+
     existing = db.query(models.OpeningResult).filter(
         models.OpeningResult.bid_no == bid_no
     ).first()
@@ -180,6 +190,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 20) -> dict:
     updated = 0
     skipped = 0
     pages_fetched = 0
+    seen: set[str] = set()  # 이번 세션 dedupe (API 가 동일 bid_no 를 여러 row 로 반환)
 
     try:
         for page in range(1, max_pages + 1):
@@ -192,7 +203,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 20) -> dict:
                 if kwargs is None:
                     skipped += 1
                     continue
-                if _upsert_opening_result(db, kwargs):
+                if _upsert_opening_result(db, kwargs, seen):
                     inserted += 1
                 else:
                     updated += 1
