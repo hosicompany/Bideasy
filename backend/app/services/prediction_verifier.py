@@ -92,8 +92,9 @@ def compute_recommendations(notice: models.Notice) -> dict[str, dict]:
     return {
         "standard": {"rate": std_rate, "price": std_price},
         "auto_recommended": {
-            "rate": auto.get("rate"),
-            "price": auto.get("price"),
+            # recommend_bid_price 는 'recommended_price' 와 'bid_rate' 를 반환 (price/rate 아님)
+            "rate": auto.get("bid_rate"),
+            "price": auto.get("recommended_price"),
             "adjustment": auto.get("adjustment"),
             "margin": auto.get("margin"),
         },

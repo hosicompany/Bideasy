@@ -116,6 +116,17 @@ def _parse_item_to_kwargs(item: dict) -> dict | None:
     if (not winner_rate or winner_rate <= 0) and basic_price and basic_price > 0:
         winner_rate = round(winner_price / basic_price * 100, 4)
 
+    # Sanity check — 단가계약·데이터오류 등으로 winner/basic 비율이 비정상이면 skip
+    # 정상 입찰의 사정률은 거의 항상 70~120% 사이. 그 외는 API 데이터 품질 의심.
+    if basic_price and basic_price > 0:
+        ratio = winner_price / basic_price
+        if ratio < 0.5 or ratio > 1.5:
+            logger.warning(
+                f"opening_crawler: suspicious ratio for {bid_no} "
+                f"(basic={basic_price:,.0f}, winner={winner_price:,.0f}, ratio={ratio:.2%}) — skipped"
+            )
+            return None
+
     # 개찰 일시 — opengDate + opengTm 합쳐서 datetime
     parsed_open_dt = None
     od = item.get("opengDate")
