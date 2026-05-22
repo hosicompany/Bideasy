@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>로그인 - BidEasy</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #F2F4F6;
+      color: #191F28;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 20px;
+      padding: 40px 32px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .logo h1 {
+      font-size: 28px;
+      font-weight: 800;
+      color: #3182F6;
+      letter-spacing: -0.5px;
+    }
+    .logo p {
+      font-size: 14px;
+      color: #8B95A1;
+      margin-top: 6px;
+    }
+    .form-group {
+      margin-bottom: 14px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #4E5968;
+      margin-bottom: 6px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 1px solid #E5E8EB;
+      border-radius: 12px;
+      font-size: 15px;
+      font-family: inherit;
+      color: #191F28;
+      transition: border-color 0.15s;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: #3182F6;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-primary {
+      background: #3182F6;
+      color: #fff;
+      margin-top: 8px;
+    }
+    .btn-primary:hover { background: #1B64DA; }
+    .btn-primary:disabled { background: #B0B8C1; cursor: not-allowed; }
+    .divider {
+      display: flex;
+      align-items: center;
+      margin: 24px 0 18px;
+      color: #B0B8C1;
+      font-size: 12px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #E5E8EB;
+    }
+    .divider span { padding: 0 12px; }
+    .btn-social {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .btn-kakao { background: #FEE500; color: #191F28; }
+    .btn-kakao:hover { background: #FCDC00; }
+    .btn-naver { background: #03C75A; color: #fff; }
+    .btn-naver:hover { background: #02B751; }
+    .alert {
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .alert-error {
+      background: #FFF0F0;
+      color: #E53935;
+      border: 1px solid #FFCDD2;
+    }
+    .alert-success {
+      background: #E8F5E9;
+      color: #2E7D32;
+      border: 1px solid #C8E6C9;
+    }
+    .alert.show { display: block; }
+    .footer-links {
+      text-align: center;
+      margin-top: 22px;
+      font-size: 13px;
+      color: #8B95A1;
+    }
+    .footer-links a {
+      color: #3182F6;
+      text-decoration: none;
+      margin: 0 6px;
+    }
+    .footer-links a:hover { text-decoration: underline; }
+    .extension-hint {
+      background: #EBF5FF;
+      border: 1px solid #C6E0FF;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 13px;
+      color: #1B64DA;
+      margin-top: 18px;
+      display: none;
+    }
+    .extension-hint.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <h1>BidEasy</h1>
+      <p>나라장터 입찰 도우미 · 로그인</p>
+    </div>
+
+    <div id="alert" class="alert"></div>
+
+    <form id="login-form" autocomplete="on">
+      <div class="form-group">
+        <label for="email">이메일</label>
+        <input type="email" id="email" name="email" required autocomplete="username" placeholder="email@example.com">
+      </div>
+      <div class="form-group">
+        <label for="password">비밀번호</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="비밀번호">
+      </div>
+      <button type="submit" id="submit-btn" class="btn btn-primary">로그인</button>
+    </form>
+
+    <div class="divider"><span>또는</span></div>
+
+    <button id="btn-kakao" class="btn btn-social btn-kakao">
+      <span>💬</span> 카카오로 로그인
+    </button>
+    <button id="btn-naver" class="btn btn-social btn-naver">
+      <span>N</span> 네이버로 로그인
+    </button>
+
+    <div class="footer-links">
+      <a href="/">홈</a> ·
+      <a href="/privacy">개인정보처리방침</a> ·
+      <a href="mailto:support@bideasy.kr">문의</a>
+    </div>
+
+    <div id="extension-hint" class="extension-hint">
+      ✓ 로그인 성공! BidEasy 익스텐션이 이 페이지에서 토큰을 받아갑니다.
+      <br>이 탭을 잠시 열어두세요.
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'https://api.bideasy.kr/api/v1';
+    const form = document.getElementById('login-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const alertBox = document.getElementById('alert');
+    const extHint = document.getElementById('extension-hint');
+
+    function showAlert(message, type = 'error') {
+      alertBox.textContent = message;
+      alertBox.className = 'alert alert-' + type + ' show';
+    }
+
+    function hideAlert() {
+      alertBox.className = 'alert';
+    }
+
+    function saveTokenAndNotify(token) {
+      // 익스텐션 content script 가 다음 셋 중 하나로 토큰을 수집:
+      try { localStorage.setItem('access_token', token); } catch {}
+      try { localStorage.setItem('jwt', token); } catch {}
+      // postMessage — content script 가 같은 윈도우에서 수신
+      try {
+        window.postMessage({ type: 'BIDEASY_TOKEN', token }, window.location.origin);
+      } catch {}
+    }
+
+    function handleQueryToken() {
+      // OAuth 콜백 후 ?token= 쿼리로 돌아오는 경우 처리
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      if (token) {
+        saveTokenAndNotify(token);
+        showAlert('소셜 로그인 성공! 익스텐션에 토큰 전달 중...', 'success');
+        extHint.classList.add('show');
+        // URL 정리
+        history.replaceState(null, '', window.location.pathname);
+        return true;
+      }
+      const err = params.get('error');
+      if (err) {
+        showAlert('OAuth 오류: ' + err);
+        history.replaceState(null, '', window.location.pathname);
+      }
+      return false;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAlert();
+      submitBtn.disabled = true;
+      submitBtn.textContent = '로그인 중...';
+
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      try {
+        const body = new URLSearchParams({ username: email, password });
+        const resp = await fetch(API_BASE + '/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        });
+        if (!resp.ok) {
+          const errText = await resp.text();
+          let msg = '이메일 또는 비밀번호가 올바르지 않아요';
+          try {
+            const j = JSON.parse(errText);
+            if (j.detail) msg = j.detail;
+          } catch {}
+          throw new Error(msg);
+        }
+        const data = await resp.json();
+        saveTokenAndNotify(data.access_token);
+        showAlert('로그인 성공! 익스텐션에 토큰 전달 중...', 'success');
+        extHint.classList.add('show');
+      } catch (err) {
+        showAlert(err.message || '네트워크 오류');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '로그인';
+      }
+    });
+
+    async function startSocial(provider) {
+      try {
+        const resp = await fetch(API_BASE + '/auth/social-urls');
+        const data = await resp.json();
+        const url = data[provider];
+        if (!url) throw new Error('소셜 로그인 URL 없음');
+        window.location.href = url;
+      } catch (err) {
+        showAlert('소셜 로그인 시작 실패: ' + err.message);
+      }
+    }
+
+    document.getElementById('btn-kakao').addEventListener('click', () => startSocial('kakao'));
+    document.getElementById('btn-naver').addEventListener('click', () => startSocial('naver'));
+
+    // 페이지 로드 시 OAuth 콜백 토큰 처리
+    handleQueryToken();
+  </script>
+</body>
+</html>

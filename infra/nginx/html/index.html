@@ -181,6 +181,29 @@
   <div class="footer">
     <p>&copy; 2025 BidEasy. All rights reserved.</p>
     <p>호시(HOSI) | 사업자등록번호 420-29-00113</p>
+    <p style="margin-top:12px;">
+      <a href="/login" style="color:#3182F6;text-decoration:none;">로그인</a> ·
+      <a href="/privacy" style="color:#3182F6;text-decoration:none;">개인정보처리방침</a>
+    </p>
   </div>
+
+  <script>
+    // OAuth 콜백에서 ?token= 으로 돌아오는 경우 처리
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      if (!token) return;
+      try { localStorage.setItem('access_token', token); } catch {}
+      try { localStorage.setItem('jwt', token); } catch {}
+      try { window.postMessage({ type: 'BIDEASY_TOKEN', token }, window.location.origin); } catch {}
+      history.replaceState(null, '', window.location.pathname);
+      // 사용자에게 알림
+      const note = document.createElement('div');
+      note.style.cssText = 'position:fixed;top:16px;right:16px;background:#3182F6;color:#fff;padding:14px 18px;border-radius:12px;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,0.15);z-index:9999;';
+      note.textContent = '✓ 로그인 성공! 익스텐션이 토큰을 받아갑니다.';
+      document.body.appendChild(note);
+      setTimeout(() => note.remove(), 4000);
+    })();
+  </script>
 </body>
 </html>
