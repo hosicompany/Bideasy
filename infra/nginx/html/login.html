@@ -189,8 +189,18 @@
     </div>
 
     <div id="extension-hint" class="extension-hint">
-      ✓ 로그인 성공! BidEasy 익스텐션이 이 페이지에서 토큰을 받아갑니다.
-      <br>이 탭을 잠시 열어두세요.
+      <strong>✓ 로그인 완료</strong>
+      <div style="margin-top:6px;font-size:13px;color:#4E5968;">
+        익스텐션이 토큰을 받아갔습니다.
+        <br>이제 BidEasy 사이드패널을 <strong>다시 열거나 새로고침</strong> 하세요.
+      </div>
+      <div id="countdown" style="margin-top:10px;font-size:12px;color:#8B95A1;">
+        3초 후 자동으로 홈으로 이동합니다...
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button id="btn-go-home" style="flex:1;padding:8px;border:none;border-radius:8px;background:#3182F6;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">홈으로 이동</button>
+        <button id="btn-close" style="flex:1;padding:8px;border:1px solid #E5E8EB;border-radius:8px;background:#fff;color:#4E5968;font-size:13px;font-weight:600;cursor:pointer;">탭 닫기</button>
+      </div>
     </div>
   </div>
 
@@ -269,6 +279,7 @@
         saveTokenAndNotify(data.access_token);
         showAlert('로그인 성공! 익스텐션에 토큰 전달 중...', 'success');
         extHint.classList.add('show');
+        startSuccessFlow();
       } catch (err) {
         showAlert(err.message || '네트워크 오류');
       } finally {
@@ -292,8 +303,38 @@
     document.getElementById('btn-kakao').addEventListener('click', () => startSocial('kakao'));
     document.getElementById('btn-naver').addEventListener('click', () => startSocial('naver'));
 
+    // 로그인 성공 후 자동 홈 이동 + 수동 컨트롤
+    let successFlowStarted = false;
+    function startSuccessFlow() {
+      if (successFlowStarted) return;
+      successFlowStarted = true;
+
+      const countdownEl = document.getElementById('countdown');
+      let sec = 3;
+      const timer = setInterval(() => {
+        sec--;
+        if (sec > 0) {
+          if (countdownEl) countdownEl.textContent = `${sec}초 후 자동으로 홈으로 이동합니다...`;
+        } else {
+          clearInterval(timer);
+          window.location.href = '/';
+        }
+      }, 1000);
+
+      document.getElementById('btn-go-home').addEventListener('click', () => {
+        clearInterval(timer);
+        window.location.href = '/';
+      });
+      document.getElementById('btn-close').addEventListener('click', () => {
+        clearInterval(timer);
+        window.close();
+      });
+    }
+
     // 페이지 로드 시 OAuth 콜백 토큰 처리
-    handleQueryToken();
+    if (handleQueryToken()) {
+      startSuccessFlow();
+    }
   </script>
 </body>
 </html>
