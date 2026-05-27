@@ -26,6 +26,8 @@ class UserResponse(UserBase):
     # 캐스팅 안 함 → ResponseValidationError 발생했음. datetime 으로 정정.
     # FastAPI JSON 응답에서는 자동으로 ISO 8601 문자열로 직렬화된다.
     subscription_expires_at: Optional[datetime] = None
+    trial_started_at: Optional[datetime] = None
+    trial_expires_at: Optional[datetime] = None
     social_provider: Optional[str] = None
     profile_image_url: Optional[str] = None
 

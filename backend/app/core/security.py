@@ -93,28 +93,24 @@ def require_tier(minimum_tier: str):
     """
     Dependency that checks if the current user meets the minimum tier.
 
+    체험(Trial) 활성 사용자는 Pro 권한으로 취급됨 (get_effective_tier 가 통합 판정).
+    유료 구독 만료 시 자동으로 Free 다운그레이드.
+
     Usage:
         @router.get("/premium-feature")
         def endpoint(user=Depends(require_tier("pro"))):
             ...
     """
-    from app.schemas.subscription import tier_at_least, TIER_DISPLAY_NAMES_KO
+    from app.schemas.subscription import (
+        tier_at_least,
+        TIER_DISPLAY_NAMES_KO,
+        get_effective_tier,
+    )
 
     def _check(current_user: models.User = Depends(get_current_user)):
-        user_tier = getattr(current_user, "tier", "free") or "free"
+        effective_tier = get_effective_tier(current_user)
 
-        # Check subscription expiration
-        # subscription_expires_at 컬럼이 DateTime (naive) 이라 SQLAlchemy 가 naive 객체를
-        # 반환. UTC 로 가정하고 aware 변환 후 비교 (둘 다 aware 여야 < 동작).
-        if user_tier != "free":
-            expires_at = getattr(current_user, "subscription_expires_at", None)
-            if expires_at:
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
-                if expires_at < datetime.now(timezone.utc):
-                    user_tier = "free"
-
-        if not tier_at_least(user_tier, minimum_tier):
+        if not tier_at_least(effective_tier, minimum_tier):
             tier_name = TIER_DISPLAY_NAMES_KO.get(minimum_tier, minimum_tier)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

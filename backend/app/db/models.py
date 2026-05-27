@@ -34,6 +34,11 @@ class User(Base):
     tier = Column(String(20), default="free")  # free | pro | pro_plus
     subscription_expires_at = Column(DateTime, nullable=True)
 
+    # 14일 Pro 체험 (신규 가입 시 자동 활성화, 만료 후 Free 다운그레이드)
+    # trial_started_at != None 이면 이미 체험을 시작한 적이 있는 사용자 (재체험 불가)
+    trial_started_at = Column(DateTime, nullable=True)
+    trial_expires_at = Column(DateTime, nullable=True)
+
     bids = relationship("UserBid", back_populates="user")
     point_transactions = relationship("PointTransaction", back_populates="user")
 

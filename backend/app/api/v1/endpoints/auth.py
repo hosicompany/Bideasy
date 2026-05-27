@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.db import models
 from app.schemas import user as user_schemas
 from app.schemas.point import SIGNUP_BONUS
+from app.schemas.subscription import activate_trial
 from app.core.security import (
     verify_password,
     get_password_hash,
@@ -65,6 +66,9 @@ def _find_or_create_social_user(
             description=f"신규 가입 보너스 {SIGNUP_BONUS:,}원",
         )
         db.add(tx)
+        # 신규 가입자에게 14일 Pro 체험 자동 부여
+        activate_trial(user)
+        logger.info(f"Trial activated: user_id={user.id}, expires={user.trial_expires_at}")
 
     db.commit()
     db.refresh(user)
@@ -104,6 +108,10 @@ def register(user_in: user_schemas.UserCreate, db: Session = Depends(get_db)):
         description=f"신규 가입 보너스 {SIGNUP_BONUS:,}원",
     )
     db.add(tx)
+    # 신규 가입자에게 14일 Pro 체험 자동 부여
+    activate_trial(user)
+    logger.info(f"Trial activated: user_id={user.id}, expires={user.trial_expires_at}")
+
     db.commit()
     db.refresh(user)
     return user

@@ -330,22 +330,33 @@ async def subscription_success(
 def get_subscription(
     current_user: models.User = Depends(get_current_user),
 ):
-    """현재 구독 상태 조회"""
-    tier = current_user.tier or TIER_FREE
+    """현재 구독 상태 조회 — 유료 구독·체험 통합 반영."""
+    from app.schemas.subscription import (
+        get_effective_tier,
+        is_trial_active,
+        trial_days_remaining,
+        has_used_trial,
+    )
+
+    raw_tier = current_user.tier or TIER_FREE
     expires_at = current_user.subscription_expires_at
-    is_active = tier != TIER_FREE and (
+    paid_active = raw_tier != TIER_FREE and (
         expires_at is None or expires_at > datetime.now(timezone.utc)
     )
 
-    # If expired, treat as free
-    if not is_active and tier != TIER_FREE:
-        tier = TIER_FREE
+    # 유효 tier 는 유료/체험/Free 통합 판정
+    effective_tier = get_effective_tier(current_user)
+    trial_active = is_trial_active(current_user)
 
     return SubscriptionInfo(
-        tier=tier,
-        tier_display=TIER_DISPLAY_NAMES.get(tier, "Free"),
-        expires_at=expires_at,
-        is_active=is_active,
+        tier=effective_tier,
+        tier_display=TIER_DISPLAY_NAMES.get(effective_tier, "Free"),
+        expires_at=expires_at if paid_active else None,
+        is_active=paid_active or trial_active,
+        is_trial=trial_active,
+        trial_expires_at=current_user.trial_expires_at if trial_active else None,
+        trial_days_remaining=trial_days_remaining(current_user),
+        has_used_trial=has_used_trial(current_user),
     )
 
 

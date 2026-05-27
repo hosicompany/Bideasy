@@ -2,10 +2,16 @@
 Subscription tier definitions and feature gating.
 
 Tier hierarchy: free < pro < pro_plus
+
+신규 가입 14일 Pro 체험:
+- 가입 시 trial_started_at = now, trial_expires_at = now + 14일 자동 설정
+- 체험 활성 동안 effective tier = "pro" (실제 user.tier 는 "free" 유지)
+- 만료 후 자동 Free 다운그레이드 (별도 작업 불필요 — get_effective_tier 가 자동 판단)
+- 재체험 불가 (trial_started_at 이 None 이 아니면 새 체험 시작 거부)
 """
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # ─── Tier Constants ───
 TIER_FREE = "free"
@@ -84,6 +90,82 @@ TIER_FEATURES = {
 FREE_AI_DAILY_LIMIT = 1  # Free tier: 1 AI analysis per day
 
 
+# ─── Trial Configuration ───
+TRIAL_DAYS = 14                 # 신규 가입 시 자동 부여 체험 기간
+TRIAL_TIER = TIER_PRO           # 체험 중 적용 tier (Pro 기능 전체 개방)
+
+
+def _aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """SQLAlchemy 가 naive datetime 을 반환할 수 있으니 UTC aware 로 통일."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def is_trial_active(user) -> bool:
+    """현재 시점에 체험이 활성 상태인지."""
+    trial_exp = _aware(getattr(user, "trial_expires_at", None))
+    if trial_exp is None:
+        return False
+    return trial_exp > datetime.now(timezone.utc)
+
+
+def has_used_trial(user) -> bool:
+    """이미 체험을 시작한 적이 있는지 (active 여부 무관, 재체험 방지용)."""
+    return getattr(user, "trial_started_at", None) is not None
+
+
+def trial_days_remaining(user) -> int:
+    """체험 잔여 일수. 만료/없음이면 0."""
+    trial_exp = _aware(getattr(user, "trial_expires_at", None))
+    if trial_exp is None:
+        return 0
+    delta = trial_exp - datetime.now(timezone.utc)
+    return max(0, delta.days + (1 if delta.seconds > 0 else 0))
+
+
+def get_effective_tier(user) -> str:
+    """
+    사용자의 현재 유효 tier 를 반환.
+
+    우선순위:
+      1) 유효한 유료 구독 (subscription_expires_at > now)  → user.tier
+      2) 활성 체험 (trial_expires_at > now)                 → TRIAL_TIER (= Pro)
+      3) 그 외                                              → "free"
+    """
+    now = datetime.now(timezone.utc)
+    user_tier = getattr(user, "tier", "free") or "free"
+
+    # 1) 유료 구독 — expires_at = None 은 무기한(admin 부여·레거시) 으로 활성 취급
+    if user_tier != "free":
+        expires_at = _aware(getattr(user, "subscription_expires_at", None))
+        if expires_at is None or expires_at > now:
+            return user_tier
+
+    # 2) 체험
+    if is_trial_active(user):
+        return TRIAL_TIER
+
+    # 3) Free
+    return "free"
+
+
+def activate_trial(user) -> None:
+    """
+    사용자에게 14일 Pro 체험을 활성화한다.
+
+    이미 체험을 사용한 이력이 있으면 (trial_started_at != None) 아무것도 안 함.
+    호출 측에서 db.commit() 책임. 캘러는 신규 가입 흐름에서만 호출.
+    """
+    if has_used_trial(user):
+        return  # 재체험 방지
+    now = datetime.now(timezone.utc)
+    user.trial_started_at = now
+    user.trial_expires_at = now + timedelta(days=TRIAL_DAYS)
+
+
 def has_feature(tier: str, feature: str) -> bool:
     """Check if a tier has access to a feature."""
     return TIER_FEATURES.get(tier, TIER_FEATURES[TIER_FREE]).get(feature, False)
@@ -117,8 +199,22 @@ class SubscriptionInfo(BaseModel):
     is_active: bool
     billing_cycle: Optional[str] = None  # monthly | annual
 
+    # Trial 정보 (frontend 가 잔여일 표시·결제 유도용)
+    is_trial: bool = False
+    trial_expires_at: Optional[datetime] = None
+    trial_days_remaining: int = 0
+    has_used_trial: bool = False
+
     class Config:
         from_attributes = True
+
+
+class TrialStatus(BaseModel):
+    """경량 체험 상태 조회용 (마이페이지·익스텐션 헤더 등)."""
+    is_active: bool
+    days_remaining: int
+    expires_at: Optional[datetime] = None
+    has_used: bool
 
 
 class SubscribeRequest(BaseModel):
