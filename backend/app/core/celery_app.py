@@ -9,6 +9,7 @@ celery_app = Celery(
     include=[
         "app.tasks.calibration_tasks",
         "app.tasks.verification_tasks",
+        "app.tasks.trial_tasks",
     ],
 )
 
@@ -24,10 +25,15 @@ celery_app.conf.update(
 )
 
 # 정기 스케줄 — Asia/Seoul 기준
-# 1) 매일 19:00 — 어제 개찰결과 크롤 → opening_results 적재
-# 2) 매일 20:00 — notices ↔ opening_results 비교 → predictions_log.jsonl 누적
-# 3) 매주 월요일 04:00 — 누적된 predictions_log 와 historical 데이터로 자가보정 1 사이클
+# 1) 매일 10:00 — 14일 Pro 체험 만료 알림 (D-3, D-1, 만료후 1일 win-back)
+# 2) 매일 19:00 — 어제 개찰결과 크롤 → opening_results 적재
+# 3) 매일 20:00 — notices ↔ opening_results 비교 → predictions_log.jsonl 누적
+# 4) 매주 월요일 04:00 — 누적된 predictions_log 와 historical 데이터로 자가보정 1 사이클
 celery_app.conf.beat_schedule = {
+    "daily-trial-expiry-reminders": {
+        "task": "trial.send_expiry_reminders",
+        "schedule": crontab(hour=10, minute=0),
+    },
     "daily-crawl-opening-results": {
         "task": "verification.daily_crawl_opening_results",
         "schedule": crontab(hour=19, minute=0),
