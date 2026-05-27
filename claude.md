@@ -290,7 +290,19 @@ TIER_PRO_PLUS = "pro_plus"
 
 SIGNUP_BONUS = 3000          # 가입 보너스 포인트
 FREE_AI_DAILY_LIMIT = 1      # Free 티어 AI 분석 일일 한도
+
+# 14일 Pro 체험 (신규 가입 자동 활성화)
+TRIAL_DAYS = 14
+TRIAL_TIER = TIER_PRO
 ```
+
+### 14일 Pro 체험 (Trial)
+- 회원가입 시 자동 활성화 (CC 등록 불요)
+- 14일간 Pro 모든 기능 무제한
+- 만료 후 자동 Free 다운그레이드 (별도 작업 없음 — get_effective_tier 가 통합 판정)
+- 재체험 불가 (trial_started_at 한 번 설정되면 영구)
+- 헬퍼: `activate_trial(user)`, `is_trial_active(user)`, `trial_days_remaining(user)`, `get_effective_tier(user)`
+- API: GET /users/me/trial (lightweight), GET /payments/subscription (통합)
 
 ### Unit Economics
 - OpenAI API 비용: ~2,000~3,000원/유저/월 (gpt-4o-mini)
@@ -305,3 +317,38 @@ FREE_AI_DAILY_LIMIT = 1      # Free 티어 AI 분석 일일 한도
 - **Feature Gating**: Deep Analysis, 경쟁 예측, 기관 프로파일링은 티어별 접근 제한
 - **Data Encryption**: 사업자번호 등 민감 정보 AES-256 암호화
 - **AI 캐싱**: `AI_Analysis_Logs` 테이블에 분석 결과 영구 캐싱 (LLM 비용 절감)
+
+---
+
+## 출시 로드맵 (Phase A/B/C)
+
+### Phase A — Web Store 출시 전후 필수 (2026-05 진행 중)
+
+| 항목 | 상태 |
+|---|---|
+| Chrome 익스텐션 v1.0.0 Web Store 제출 | ✅ 제출 완료, 심사 대기 |
+| 자가보정 알고리즘 Phase 1~5 | ✅ 1차 목표 5% 탈락률 달성 (`v20260527_152034`) |
+| 가격 정책 20% 연간 할인 + 결제 버그 픽스 | ✅ |
+| **14일 Pro Trial 백엔드** | ✅ DB 마이그레이션·로직·API·테스트 17건 |
+| 회원가입 페이지 (`/signup`) | ✅ |
+| 약관 페이지 (`/terms`) | ✅ |
+| Chrome 설치 CTA (랜딩 히어로) | ✅ |
+| 익스텐션 헤더에 Trial 표시 | ✅ |
+| ⏳ 결제 페이지 (`/pricing`) — Toss SDK | 남음 |
+| ⏳ 마이페이지 (`/account`) | 남음 |
+| ⏳ Trial 만료 알림 (D-3, D-1) | 남음 |
+| ⏳ 운영 배포 (Lightsail BidEasy-prod) | 남음 |
+
+### Phase B — 출시 후 2~4주
+
+- 크레딧 팩 (10/30/100 크레딧, 6개월 유효)
+- Win-back 캠페인 (만료 후 7일 내 결제 시 첫 달 50% 할인)
+- 사용 가이드 페이지 (`/guide`)
+- FAQ
+
+### Phase C — 점진 성장
+
+- 추천인 보상
+- 시즌 프로모션 (연말 발주 집중기)
+- 팀 플랜
+- 블로그/SEO 콘텐츠
