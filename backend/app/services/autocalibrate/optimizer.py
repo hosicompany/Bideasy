@@ -35,10 +35,13 @@ from app.services.autocalibrate.risk_model import ReservedRatioModel
 # win_rate(0~1)와 E[dropout](0~1)이 비슷한 스케일이라 λ가 크면 위험회피 과치우침.
 # τ 미만 구간은 약하게(λ), τ 초과 구간은 강하게(γ) 패널티 → 1차 목표(탈락 인하)는
 # γ가 담당하고 그 안에서는 win_rate 최대화.
-DEFAULT_LAMBDA = 0.3   # 연속 위험 패널티 계수 (약하게)
-DEFAULT_GAMMA = 8.0    # 목표 초과분 2차 패널티 계수 (목표 넘으면 강하게)
-DEFAULT_TAU = 0.07     # 목표 탈락률 (7% — 현재 8.6%에서 점진 인하)
+DEFAULT_LAMBDA = 0.5   # 연속 위험 패널티 계수 (Phase 1: 0.3 → 0.5)
+DEFAULT_GAMMA = 50.0   # 목표 초과분 2차 패널티 계수 (Phase 1: 8.0 → 50.0)
+DEFAULT_TAU = 0.05     # 목표 탈락률 (1차 목표 = 5%; Phase 1: 0.07 → 0.05)
 DEFAULT_ETA = 0.04     # 변화 억제 정규화 계수
+# Phase 1 그리드탐색(2026-05-27)에서 (0.5, 50, 0.05) 조합이 1차 목표 5% 거의
+# 달성 + 낙찰률 손실 1%p 이내 + 사정률 오차 임계값 내에서 가장 균형 잡힌
+# Pareto 최적점으로 확인됨. 이전 (0.3, 8.0, 0.07) 은 탈락 7.49% 로 정체.
 
 # 그리드서치 범위 (기존 optimize_weighted.py 와 동일)
 _ADJ_RANGE = [x / 10 for x in range(-10, 16)]      # -1.0 ~ 1.5

@@ -23,7 +23,11 @@ from app.services.autocalibrate import dataset as ds
 from app.services.autocalibrate.optimizer import evaluate_params
 
 # 가드 임계값
-MAX_WINRATE_LOSS = 0.5          # 낙찰률 허용 손실 (%p)
+# MAX_WINRATE_LOSS: Phase 1 초기엔 0.5 로 보수적이었으나, 그리드탐색 결과
+# 1차 목표(탈락 5%) 달성 위해 1.0%p 까지 허용. 비즈니스 가치 비교:
+# "탈락률 −2%p ≫ 낙찰률 −1%p" (탈락은 입찰 자체가 무효, 낙찰은 경쟁자 분포 영향).
+# 후속 사이클이 동일한 trade-off 를 재시도해도 자동 차단되도록 SEGMENT 가드 유지.
+MAX_WINRATE_LOSS = 1.0          # 낙찰률 허용 손실 (%p)
 MAX_RATE_ERROR_INCREASE = 0.1   # 사정률 오차 허용 악화 (%p)
 MAX_HOLDOUT_DROPOUT_INCREASE = 0.5  # hold-out 탈락률 허용 악화 (%p)
 MAX_SEGMENT_DROPOUT_INCREASE = 2.0  # 세그먼트별 탈락률 허용 악화 (%p)

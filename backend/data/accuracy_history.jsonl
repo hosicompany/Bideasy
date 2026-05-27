@@ -1,2 +1,3 @@
 {"timestamp": "2026-05-14 18:32:46", "total": 4848, "win_rate": 13.33, "pass_rate": 91.44, "rate_error": 0.6515, "mc_sample": 200, "mc_in_range_pct": 69.5, "mc_mean_error_pct": 0.6798}
 {"timestamp": "2026-05-14 23:35:12", "total": 4848, "win_rate": 13.1, "pass_rate": 92.76, "rate_error": 0.7065, "mc_sample": 200, "mc_in_range_pct": 69.5, "mc_mean_error_pct": 0.6808}
+{"timestamp": "2026-05-27 15:21:01", "total": 4848, "win_rate": 12.23, "pass_rate": 94.88, "rate_error": 0.7897, "mc_sample": 200, "mc_in_range_pct": 69.5, "mc_mean_error_pct": 0.6809}
