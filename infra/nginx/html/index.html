@@ -45,6 +45,55 @@
       font-weight: 600;
       margin-top: 24px;
     }
+    .hero-cta {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 28px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 24px;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: transform 0.1s, box-shadow 0.2s;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+    }
+    .btn-chrome {
+      background: #fff;
+      color: #3182F6;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+    .btn-chrome:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+    }
+    .btn-signup {
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+      border: 1.5px solid rgba(255,255,255,0.4);
+    }
+    .btn-signup:hover {
+      background: rgba(255,255,255,0.22);
+      transform: translateY(-1px);
+    }
+    .trial-pill {
+      display: inline-block;
+      background: #FEE500;
+      color: #191F28;
+      padding: 6px 14px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 700;
+      margin-top: 16px;
+    }
     .content {
       max-width: 640px;
       width: 100%;
@@ -110,7 +159,21 @@
   <div class="hero">
     <h1>BidEasy</h1>
     <p>공공 입찰, 지는 게임은 안 합니다.<br>데이터 기반 입찰 안전 비서</p>
-    <span class="badge">Google Play / App Store 출시 예정</span>
+    <div class="trial-pill">🎁 신규 가입 시 Pro 14일 무료 체험</div>
+    <div class="hero-cta">
+      <a class="btn btn-chrome" href="https://chrome.google.com/webstore/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener">
+        <svg width="20" height="20" viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="24" r="20" fill="#fff" stroke="#3182F6" stroke-width="2"/>
+          <path d="M24 14 L40 14 A20 20 0 0 1 31 32 Z" fill="#EA4335"/>
+          <path d="M24 14 A20 20 0 0 0 8 24 L17 34 A12 12 0 0 1 24 14 Z" fill="#FBBC04"/>
+          <path d="M17 34 A12 12 0 0 0 31 32 L24 24 L8 24 A20 20 0 0 0 17 34 Z" fill="#34A853"/>
+          <circle cx="24" cy="24" r="7" fill="#fff" stroke="#3182F6" stroke-width="2"/>
+        </svg>
+        Chrome에 설치
+      </a>
+      <a class="btn btn-signup" href="/signup">14일 체험 시작</a>
+    </div>
+    <span class="badge" style="margin-top:18px;">Google Play / App Store 출시 예정</span>
   </div>
 
   <div class="content">
@@ -182,7 +245,9 @@
     <p>&copy; 2025 BidEasy. All rights reserved.</p>
     <p>호시(HOSI) | 사업자등록번호 420-29-00113</p>
     <p style="margin-top:12px;">
+      <a href="/signup" style="color:#3182F6;text-decoration:none;font-weight:600;">회원가입</a> ·
       <a href="/login" style="color:#3182F6;text-decoration:none;">로그인</a> ·
+      <a href="/terms" style="color:#3182F6;text-decoration:none;">이용약관</a> ·
       <a href="/privacy" style="color:#3182F6;text-decoration:none;">개인정보처리방침</a>
     </p>
   </div>
