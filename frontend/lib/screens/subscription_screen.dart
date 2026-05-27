@@ -125,7 +125,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   _buildTierCard(
                     tier: 'pro',
                     name: 'Pro',
-                    price: _isAnnual ? 12400 : 14900,
+                    price: _isAnnual ? 11667 : 14900,
                     color: AppColors.primaryBlue,
                     features: [
                       '공고 피드 조회',
@@ -145,7 +145,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   _buildTierCard(
                     tier: 'pro_plus',
                     name: 'Pro+',
-                    price: _isAnnual ? 24900 : 29900,
+                    price: _isAnnual ? 23333 : 29900,
                     color: const Color(0xFFE65100),
                     features: [
                       '공고 피드 조회',
@@ -274,7 +274,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          '2개월 무료',
+                          '20% 할인',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,

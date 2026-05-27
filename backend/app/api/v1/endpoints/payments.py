@@ -18,7 +18,7 @@ from app.schemas.subscription import (
     TIER_PRO,
     TIER_PRO_PLUS,
     MONTHLY_PRICES,
-    ANNUAL_MONTHLY_PRICES,
+    ANNUAL_PRICES,
     TIER_DISPLAY_NAMES,
 )
 from app.core.security import get_current_user
@@ -203,10 +203,13 @@ def create_subscription_order(
     if request.billing_cycle not in ("monthly", "annual"):
         raise HTTPException(status_code=400, detail="유효하지 않은 결제 주기입니다")
 
-    prices = ANNUAL_MONTHLY_PRICES if request.billing_cycle == "annual" else MONTHLY_PRICES
-    amount = prices[request.tier]
+    # 월간: 월 단위 청구, 연간: 1회 청구 (365일 유효)
+    # 이전 버그: ANNUAL_MONTHLY_PRICES × 10 = 124,000원 (의도 149,000원)
+    # 수정: ANNUAL_PRICES 직접 사용 (20% 할인 반영 정상 가격)
     if request.billing_cycle == "annual":
-        amount = amount * 10  # 10 months (2 months free)
+        amount = ANNUAL_PRICES[request.tier]
+    else:
+        amount = MONTHLY_PRICES[request.tier]
 
     ts = int(datetime.now(timezone.utc).timestamp())
     rand = secrets.token_hex(4)

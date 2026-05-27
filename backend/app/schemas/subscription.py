@@ -18,17 +18,29 @@ VALID_TIERS = {TIER_FREE, TIER_PRO, TIER_PRO_PLUS}
 TIER_RANK = {TIER_FREE: 0, TIER_PRO: 1, TIER_PRO_PLUS: 2}
 
 # ─── Pricing ───
+# 월간: 표시 가격 그대로 청구
 MONTHLY_PRICES = {
     TIER_FREE: 0,
     TIER_PRO: 14_900,
     TIER_PRO_PLUS: 29_900,
 }
 
+# 연간: 1회 결제, 365일 유효. 20% 할인 + 만 단위 라운딩 (실제 21.7%)
+ANNUAL_PRICES = {
+    TIER_FREE: 0,
+    TIER_PRO: 140_000,       # 월환산 11,667원 (vs 월간 14,900원, 21.7% 할인)
+    TIER_PRO_PLUS: 280_000,  # 월환산 23,333원 (vs 월간 29,900원, 22.0% 할인)
+}
+
+# UI 표시용: 연간 플랜의 월환산 가격 (실제 청구는 ANNUAL_PRICES 사용)
 ANNUAL_MONTHLY_PRICES = {
     TIER_FREE: 0,
-    TIER_PRO: 12_400,      # 2 months free
-    TIER_PRO_PLUS: 24_900,  # 2 months free
+    TIER_PRO: 11_667,
+    TIER_PRO_PLUS: 23_333,
 }
+
+# 마케팅용 표기 할인율 (실제는 21.7~22.0%이나 "20% 할인"으로 표기)
+ANNUAL_DISCOUNT_DISPLAY_PCT = 20
 
 # ─── Feature Access Map ───
 # True = accessible at this tier, False = locked
