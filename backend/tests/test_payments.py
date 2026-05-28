@@ -204,3 +204,90 @@ class TestCancelSubscription:
         resp = pro_client.post("/api/v1/payments/subscribe/cancel")
         assert resp.status_code == 200
         assert resp.json()["success"] is True
+
+
+class TestPaymentHistory:
+    """GET /api/v1/payments/history — 마이페이지 결제 내역"""
+
+    def test_history_requires_auth(self, client):
+        resp = client.get("/api/v1/payments/history")
+        assert resp.status_code == 401
+
+    def test_history_empty_for_new_user(self, free_client):
+        """결제 이력 없는 신규 사용자는 빈 목록."""
+        resp = free_client.get("/api/v1/payments/history")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+
+    def test_history_returns_confirmed_orders(self, free_client, db_session):
+        """본인의 CONFIRMED 주문만 반환 (PENDING/FAILED 제외)."""
+        from datetime import datetime, timezone
+        from app.db import models
+
+        user = (
+            db_session.query(models.User)
+            .filter(models.User.email == "test-free@test.com")
+            .first()
+        )
+        # CONFIRMED 주문 2개 + PENDING 1개 + FAILED 1개
+        db_session.add_all([
+            models.PaymentOrder(
+                user_id=user.id, order_id="SUB_T1", amount=140000,
+                status="CONFIRMED", method="카드",
+                confirmed_at=datetime.now(timezone.utc),
+            ),
+            models.PaymentOrder(
+                user_id=user.id, order_id="BIDEASY_T2", amount=5000,
+                status="CONFIRMED", method="카드",
+                confirmed_at=datetime.now(timezone.utc),
+            ),
+            models.PaymentOrder(
+                user_id=user.id, order_id="SUB_T3_pending", amount=29900,
+                status="PENDING",
+            ),
+            models.PaymentOrder(
+                user_id=user.id, order_id="SUB_T4_failed", amount=29900,
+                status="FAILED", fail_reason="card declined",
+            ),
+        ])
+        db_session.commit()
+
+        resp = free_client.get("/api/v1/payments/history")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2
+        order_ids = {item["order_id"] for item in data["items"]}
+        assert order_ids == {"SUB_T1", "BIDEASY_T2"}
+
+        # order_kind 분류 확인 — SUB_ prefix → subscription, 그 외 → points
+        kinds = {item["order_id"]: item["order_kind"] for item in data["items"]}
+        assert kinds["SUB_T1"] == "subscription"
+        assert kinds["BIDEASY_T2"] == "points"
+
+    def test_history_only_own_orders(self, free_client, db_session):
+        """다른 사용자의 결제는 보이지 않음."""
+        from datetime import datetime, timezone
+        from app.db import models
+
+        # 다른 사용자 생성
+        other_user = models.User(email="other@test.com", hashed_password="x")
+        db_session.add(other_user)
+        db_session.commit()
+        db_session.refresh(other_user)
+
+        # 다른 사용자의 주문 1건
+        db_session.add(
+            models.PaymentOrder(
+                user_id=other_user.id, order_id="SUB_OTHER", amount=140000,
+                status="CONFIRMED", confirmed_at=datetime.now(timezone.utc),
+            )
+        )
+        db_session.commit()
+
+        resp = free_client.get("/api/v1/payments/history")
+        assert resp.status_code == 200
+        data = resp.json()
+        order_ids = {item["order_id"] for item in data["items"]}
+        assert "SUB_OTHER" not in order_ids

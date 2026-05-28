@@ -380,3 +380,44 @@ def cancel_subscription(
         "expires_at": current_user.subscription_expires_at.isoformat()
         if current_user.subscription_expires_at else None,
     }
+
+
+@router.get("/history")
+def get_payment_history(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """현재 사용자의 결제 내역 (CONFIRMED 만).
+
+    응답 항목:
+      - order_id, order_kind (subscription | points), amount, status,
+        method, confirmed_at, created_at
+      - 마이페이지(/account) 결제 내역 테이블용
+    """
+    orders = (
+        db.query(models.PaymentOrder)
+        .filter(
+            models.PaymentOrder.user_id == current_user.id,
+            models.PaymentOrder.status == "CONFIRMED",
+        )
+        .order_by(models.PaymentOrder.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "items": [
+            {
+                "order_id": o.order_id,
+                "order_kind": "subscription" if o.order_id.startswith("SUB_") else "points",
+                "amount": o.amount,
+                "status": o.status,
+                "method": o.method,
+                "confirmed_at": o.confirmed_at.isoformat() if o.confirmed_at else None,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
+            }
+            for o in orders
+        ],
+        "total": len(orders),
+    }
