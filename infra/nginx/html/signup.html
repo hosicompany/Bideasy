@@ -249,6 +249,7 @@
 
     <div class="footer-links">
       <a href="/">홈</a> ·
+      <a href="/pricing">요금제</a> ·
       <a href="/terms">이용약관</a> ·
       <a href="/privacy">개인정보처리방침</a>
     </div>
@@ -350,8 +351,11 @@
         const data = await loginResp.json();
         saveTokenAndNotify(data.access_token);
 
-        showAlert('🎉 가입 완료! Pro 14일 체험이 시작됐어요. 잠시 후 홈으로 이동합니다.', 'success');
-        setTimeout(() => { window.location.href = '/'; }, 2500);
+        // ?redirect= 파라미터 있으면 그쪽으로, 아니면 홈으로 (구독 결제 등 진입 흐름 유지)
+        const params = new URLSearchParams(window.location.search);
+        const redirectTo = params.get('redirect') || '/';
+        showAlert('🎉 가입 완료! Pro 14일 체험이 시작됐어요. 잠시 후 이동합니다.', 'success');
+        setTimeout(() => { window.location.href = redirectTo; }, 2500);
 
       } catch (err) {
         showAlert(err.message || '네트워크 오류가 발생했어요');
