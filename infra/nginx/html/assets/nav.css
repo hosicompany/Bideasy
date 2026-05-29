@@ -1,0 +1,213 @@
+/* BidEasy 공통 네비게이션 바
+ * - Sticky header (스크롤 시 상단 고정)
+ * - 데스크탑: 가로 메뉴
+ * - 모바일 (< 760px): 햄버거 → 드롭다운
+ * - 디자인 토큰: 기존 정적 페이지와 일관 (Pretendard, Toss palette)
+ *
+ * 사용:
+ *   <link rel="stylesheet" href="/assets/nav.css">
+ *   <script src="/assets/nav.js" defer></script>
+ *   (HTML 변경 불필요 — nav.js 가 body 시작 직후 자동 삽입)
+ */
+
+.bd-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid #E5E8EB;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+}
+
+.bd-nav-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bd-nav-logo {
+  font-size: 19px;
+  font-weight: 800;
+  color: #3182F6;
+  text-decoration: none;
+  letter-spacing: -0.3px;
+  flex-shrink: 0;
+}
+.bd-nav-logo:hover { color: #1B64DA; }
+
+/* 햄버거 버튼 (모바일 only) */
+.bd-nav-toggle {
+  display: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  width: 36px;
+  height: 36px;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: stretch;
+}
+.bd-nav-toggle span {
+  display: block;
+  height: 2px;
+  background: #191F28;
+  border-radius: 2px;
+  transition: all 0.2s;
+}
+.bd-nav-toggle.active span:nth-child(1) {
+  transform: rotate(45deg) translate(5px, 5px);
+}
+.bd-nav-toggle.active span:nth-child(2) {
+  opacity: 0;
+}
+.bd-nav-toggle.active span:nth-child(3) {
+  transform: rotate(-45deg) translate(5px, -5px);
+}
+
+/* 메뉴 컨테이너 */
+.bd-nav-menu {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+/* 좌측 내비 링크 */
+.bd-nav-links {
+  display: flex;
+  gap: 22px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bd-nav-link {
+  color: #4E5968;
+  text-decoration: none;
+  font-weight: 600;
+  padding: 6px 0;
+  position: relative;
+  transition: color 0.15s;
+  white-space: nowrap;
+}
+.bd-nav-link:hover { color: #3182F6; }
+.bd-nav-link.active { color: #3182F6; }
+.bd-nav-link.active::after {
+  content: '';
+  position: absolute;
+  bottom: -14px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #3182F6;
+  border-radius: 1px;
+}
+
+/* 우측 CTA */
+.bd-nav-cta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.bd-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: #3182F6;
+  color: #fff !important;
+  border-radius: 10px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 0.15s, transform 0.05s;
+  white-space: nowrap;
+}
+.bd-nav-btn:hover { background: #1B64DA; }
+.bd-nav-btn:active { transform: scale(0.97); }
+.bd-nav-btn::after { content: none !important; }
+
+/* admin 뱃지 (운영자만) */
+.bd-nav-admin-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #FFF6E5;
+  color: #C77700;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 6px;
+  margin-left: 4px;
+}
+
+/* 모바일 < 760px */
+@media (max-width: 760px) {
+  .bd-nav-container {
+    padding: 12px 16px;
+    position: relative;
+  }
+  .bd-nav-toggle {
+    display: flex;
+  }
+  .bd-nav-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border-bottom: 1px solid #E5E8EB;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px 16px 16px;
+    gap: 0;
+    display: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  }
+  .bd-nav-menu.active { display: flex; }
+  .bd-nav-links {
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+  }
+  .bd-nav-link {
+    display: block;
+    padding: 14px 0;
+    border-bottom: 1px solid #F2F4F6;
+    font-size: 15px;
+  }
+  .bd-nav-link.active::after {
+    display: none;
+  }
+  .bd-nav-link.active {
+    color: #3182F6;
+    font-weight: 700;
+  }
+  .bd-nav-cta {
+    flex-direction: column;
+    align-items: stretch;
+    margin-top: 12px;
+    gap: 8px;
+  }
+  .bd-nav-cta .bd-nav-link {
+    border-bottom: none;
+    padding: 10px 0;
+    text-align: center;
+  }
+  .bd-nav-btn {
+    text-align: center;
+    justify-content: center;
+    padding: 12px;
+    font-size: 15px;
+  }
+}
+
+/* 페이지 콘텐츠가 sticky nav 와 겹치지 않도록 — 페이지별 hero 가 페이지 색상을 잡으면
+   이 클래스는 무시되지만, 일반 페이지(요금제·약관 등)에서는 자연스러운 spacing 제공. */
+.bd-nav + * {
+  /* sticky 라 page push 됨 — 별도 margin 불필요 */
+}
