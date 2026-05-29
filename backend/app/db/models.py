@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.db.base import Base
@@ -38,6 +38,9 @@ class User(Base):
     # trial_started_at != None 이면 이미 체험을 시작한 적이 있는 사용자 (재체험 불가)
     trial_started_at = Column(DateTime, nullable=True)
     trial_expires_at = Column(DateTime, nullable=True)
+
+    # 관리자 권한 (require_admin 의존성에서 검사)
+    is_admin = Column(Boolean, nullable=False, default=False, server_default="false")
 
     bids = relationship("UserBid", back_populates="user")
     point_transactions = relationship("PointTransaction", back_populates="user")
@@ -184,16 +187,23 @@ class PaymentOrder(Base):
     __tablename__ = "payment_orders"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # user_id nullable=True — SET NULL 정책 (사용자 삭제 시 회계 기록 보존)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     order_id = Column(String(64), unique=True, index=True, nullable=False)
     amount = Column(Integer, nullable=False)
-    status = Column(String(20), default="PENDING")  # PENDING/CONFIRMED/FAILED
+    status = Column(String(20), default="PENDING", index=True)  # PENDING/CONFIRMED/FAILED
     payment_key = Column(String(200), unique=True, nullable=True)
     method = Column(String(50), nullable=True)
     point_transaction_id = Column(Integer, ForeignKey("point_transactions.id"), nullable=True)
     created_at = Column(DateTime, default=_utcnow)
-    confirmed_at = Column(DateTime, nullable=True)
+    confirmed_at = Column(DateTime, nullable=True, index=True)
     fail_reason = Column(String(500), nullable=True)
+
+    # 환불 추적 (관리자 환불 처리 시)
+    refund_amount = Column(Integer, nullable=True)  # 부분 환불 누적 합
+    refund_reason = Column(String(500), nullable=True)
+    refunded_at = Column(DateTime, nullable=True)  # idempotency 검사 키
+    refund_payment_key = Column(String(200), nullable=True)  # Toss 환불 응답
 
     user = relationship("User")
 

@@ -1,21 +1,20 @@
 """
-관리자 통계 엔드포인트
-======================
-자동 비교·자가보정 시스템의 성과를 운영자가 즉시 확인할 수 있는 통계 API.
+자가보정 정확도 통계 API
+==========================
+predictions_log.jsonl 기반 검증 결과 + DB 인프라 통계.
 
-접근 권한: tier=pro_plus 만 (`require_tier("pro_plus")`).
-운영자 본인 계정(`hosicompany@gmail.com`)이 pro_plus 로 설정되어 있어서
-별도 admin role 없이도 즉시 사용 가능.
+기존 단일 admin.py 에서 그대로 이전 (로직 불변).
+가드만 require_tier(TIER_PRO_PLUS) → require_admin 으로 교체.
 
 Endpoints:
 - GET /api/v1/admin/accuracy           — 전체·일별·정책별 정확도 통계
 - GET /api/v1/admin/accuracy/recent    — 최근 검증된 N건 상세
+- GET /api/v1/admin/opening-results/recent — 크롤러 작동 확인
 """
-
 from __future__ import annotations
 
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -23,14 +22,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.security import require_tier
+from app.core.security import require_admin
 from app.db import models
 from app.db.session import get_db
-from app.schemas.subscription import TIER_PRO_PLUS
 
 router = APIRouter()
 
-_LOG_PATH = Path(__file__).resolve().parents[4] / "data" / "predictions_log.jsonl"
+# backend/app/api/v1/endpoints/admin/accuracy.py → parents[5] = backend
+_LOG_PATH = Path(__file__).resolve().parents[5] / "data" / "predictions_log.jsonl"
 
 
 def _load_predictions_log() -> list[dict]:
@@ -74,7 +73,7 @@ def _tally_policies(verified: list[dict]) -> dict:
 def get_accuracy(
     days: int = Query(30, ge=1, le=365, description="최근 N일 (기본 30)"),
     db: Session = Depends(get_db),
-    _user=Depends(require_tier(TIER_PRO_PLUS)),
+    _admin=Depends(require_admin),
 ) -> dict[str, Any]:
     """전체·기간별·정책별 정확도 통계."""
     records = _load_predictions_log()
@@ -82,17 +81,14 @@ def get_accuracy(
     pending = [r for r in records if r.get("status") == "PENDING"]
     errors = [r for r in records if r.get("status") == "ERROR"]
 
-    # 최근 N일 (verified_at 기준)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     recent = [r for r in verified if r.get("verified_at", "") >= cutoff]
 
-    # bid_method 별
     by_method: dict[str, list[dict]] = defaultdict(list)
     for r in verified:
         method = (r.get("bid_method") or "(unknown)").strip()
         by_method[method].append(r)
 
-    # DB 인프라 통계
     db_stats = {
         "notices_total": db.query(models.Notice).count(),
         "opening_results_total": db.query(models.OpeningResult).count(),
@@ -129,12 +125,11 @@ def get_accuracy(
 @router.get("/accuracy/recent")
 def get_recent_verified(
     limit: int = Query(20, ge=1, le=200, description="최근 검증된 N건 (기본 20)"),
-    _user=Depends(require_tier(TIER_PRO_PLUS)),
+    _admin=Depends(require_admin),
 ) -> dict[str, Any]:
     """최근 검증된 입찰 N건의 상세 정보 (스토리텔링용)."""
     records = _load_predictions_log()
     verified = [r for r in records if r.get("status") == "VERIFIED"]
-    # 최신 순 정렬
     verified.sort(key=lambda r: r.get("verified_at", ""), reverse=True)
     return {
         "count": len(verified[:limit]),
@@ -146,7 +141,7 @@ def get_recent_verified(
 def get_recent_opening_results(
     limit: int = Query(20, ge=1, le=100, description="최근 적재된 N건 (기본 20)"),
     db: Session = Depends(get_db),
-    _user=Depends(require_tier(TIER_PRO_PLUS)),
+    _admin=Depends(require_admin),
 ) -> dict[str, Any]:
     """최근 적재된 opening_results 목록 — 크롤러 작동 확인용."""
     rows = (

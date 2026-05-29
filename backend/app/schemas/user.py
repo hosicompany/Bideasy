@@ -28,6 +28,7 @@ class UserResponse(UserBase):
     subscription_expires_at: Optional[datetime] = None
     trial_started_at: Optional[datetime] = None
     trial_expires_at: Optional[datetime] = None
+    is_admin: bool = False
     social_provider: Optional[str] = None
     profile_image_url: Optional[str] = None
 

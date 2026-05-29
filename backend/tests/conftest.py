@@ -191,6 +191,36 @@ def free_client(db_session):
 
 
 @pytest.fixture
+def admin_client(db_session):
+    """TestClient with an admin user (is_admin=True) already authenticated."""
+    from app.db import models
+    from app.core.security import create_access_token
+
+    user = db_session.query(models.User).filter(models.User.email == "test-admin@test.com").first()
+    if not user:
+        user = models.User(
+            email="test-admin@test.com",
+            hashed_password="x",
+            tier="free",
+            is_admin=True,
+        )
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+
+    token = create_access_token({"sub": str(user.id)})
+
+    def _override():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override
+    with TestClient(app) as c:
+        c.headers["Authorization"] = f"Bearer {token}"
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
 def sample_notice(db_session):
     """Insert a sample Notice into the test DB and return it."""
     from app.db import models

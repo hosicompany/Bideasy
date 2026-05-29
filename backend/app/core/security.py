@@ -89,6 +89,21 @@ def get_current_user_optional(
     return db.query(models.User).filter(models.User.id == user_id).first()
 
 
+def require_admin(current_user: models.User = Depends(get_current_user)) -> models.User:
+    """관리자 권한 검증 — users.is_admin == True 필수.
+
+    Trial·Pro·Pro+ 와 무관하게 is_admin 컬럼만 본다. /admin/* 모든 엔드포인트에
+    이 가드를 적용해야 함. 미적용 라우트는 `tests/test_admin_auth.py` 의
+    `test_all_admin_routes_have_guard` 가 자동 검출.
+    """
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 권한이 필요합니다.",
+        )
+    return current_user
+
+
 def require_tier(minimum_tier: str):
     """
     Dependency that checks if the current user meets the minimum tier.
