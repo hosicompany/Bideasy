@@ -172,6 +172,34 @@ async def refund_payment(
     return {"ok": True, **result}
 
 
+# ─── POST /admin/payments/{order_id}/cancel-pending ───────
+
+@router.post("/payments/{order_id}/cancel-pending")
+def cancel_pending_payment(
+    order_id: str,
+    reason: str = Query("운영자 수동 취소", description="취소 사유"),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """단건 PENDING 주문을 즉시 FAILED 로 전환.
+
+    24h+ cleanup 과 별개: 운영자가 PENDING 한 건만 골라서 정리할 때.
+    Toss API 호출 안 함 (결제 미완료 = 외부 영향 없음).
+    """
+    order = db.query(models.PaymentOrder).filter(
+        models.PaymentOrder.order_id == order_id
+    ).first()
+    if not order:
+        raise HTTPException(404, "주문 없음")
+    if order.status != "PENDING":
+        raise HTTPException(400, f"PENDING 만 취소 가능해요 (현재: {order.status})")
+    order.status = "FAILED"
+    order.fail_reason = reason
+    db.commit()
+    logger.info(f"[admin] 단건 PENDING 취소: order={order_id}, reason={reason}")
+    return {"ok": True, "order_id": order_id, "status": "FAILED"}
+
+
 # ─── POST /admin/payments/cleanup-pending ─────────────────
 
 class CleanupRequest(BaseModel):

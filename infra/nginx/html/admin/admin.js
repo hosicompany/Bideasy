@@ -713,6 +713,7 @@ pages.payments = async function(content) {
               <td style="padding:12px;">
                 <button class="btn btn-ghost" data-action="payment-detail" data-id="${p.order_id}" style="padding:6px 10px;font-size:12px;">상세</button>
                 ${p.status === 'CONFIRMED' && !p.refunded_at ? `<button class="btn btn-danger" data-action="refund" data-id="${p.order_id}" style="padding:6px 10px;font-size:12px;">환불</button>` : ''}
+                ${p.status === 'PENDING' ? `<button class="btn btn-outline" data-action="cancel-pending" data-id="${p.order_id}" style="padding:6px 10px;font-size:12px;">취소</button>` : ''}
               </td>
             </tr>
           `).join('')}
@@ -744,7 +745,21 @@ pages.payments = async function(content) {
   document.querySelectorAll('button[data-action="refund"]').forEach(btn => {
     btn.addEventListener('click', () => showRefundModal(btn.dataset.id));
   });
+  document.querySelectorAll('button[data-action="cancel-pending"]').forEach(btn => {
+    btn.addEventListener('click', () => cancelPending(btn.dataset.id));
+  });
 };
+
+async function cancelPending(orderId) {
+  if (!confirm(`주문 ${orderId} 을 취소(FAILED) 처리할까요?\n결제 미완료 상태라 외부 영향 없습니다.`)) return;
+  try {
+    await api(`/admin/payments/${encodeURIComponent(orderId)}/cancel-pending`, { method: 'POST' });
+    toast('PENDING 취소 완료', 'success');
+    renderRoute();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
 
 async function showPaymentDetail(orderId) {
   const p = await api(`/admin/payments/${encodeURIComponent(orderId)}`);

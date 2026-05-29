@@ -181,6 +181,35 @@ def test_refund_not_confirmed(admin_client, db_session):
     assert resp.status_code == 400
 
 
+# ── 단건 PENDING 취소 ──────────────────────────────────────
+
+def test_cancel_pending_single(admin_client, db_session):
+    user = db_session.query(models.User).filter_by(email="test-admin@test.com").first()
+    p = _make_payment(db_session, user.id, "SUB_CANCEL_SINGLE_1", 14900, status="PENDING")
+
+    resp = admin_client.post(f"/api/v1/admin/payments/{p.order_id}/cancel-pending")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "FAILED"
+
+    db_session.refresh(p)
+    assert p.status == "FAILED"
+    assert "취소" in p.fail_reason
+
+
+def test_cancel_pending_404(admin_client):
+    resp = admin_client.post("/api/v1/admin/payments/NONEXISTENT_X/cancel-pending")
+    assert resp.status_code == 404
+
+
+def test_cancel_pending_wrong_status(admin_client, db_session):
+    """이미 CONFIRMED 면 400."""
+    user = db_session.query(models.User).filter_by(email="test-admin@test.com").first()
+    p = _make_payment(db_session, user.id, "SUB_CANCEL_BAD_1", 14900, status="CONFIRMED")
+
+    resp = admin_client.post(f"/api/v1/admin/payments/{p.order_id}/cancel-pending")
+    assert resp.status_code == 400
+
+
 # ── PENDING 정리 ───────────────────────────────────────────
 
 def test_cleanup_pending(admin_client, db_session):
