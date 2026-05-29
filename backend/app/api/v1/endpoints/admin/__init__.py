@@ -17,15 +17,17 @@ from fastapi import APIRouter, Depends
 
 from app.core.security import require_admin
 
-from . import accuracy, dashboard
+from . import accuracy, dashboard, users, payments
 
 # 라우터 수준 의존성 — 모든 sub-router 가 자동으로 require_admin 거침.
 # 개별 엔드포인트의 _admin=Depends(require_admin) 는 명시성·테스트 가독성 위해 유지.
 router = APIRouter(dependencies=[Depends(require_admin)])
 router.include_router(accuracy.router)
 router.include_router(dashboard.router)
+router.include_router(users.router)
+router.include_router(payments.router)
 
-# Phase C 이후 sub-router 추가:
-# from . import users, payments, autocalibrate, system, simulation
-# router.include_router(users.router)
+# Phase D 이후 sub-router 추가:
+# from . import autocalibrate, system, simulation
+# router.include_router(autocalibrate.router)
 # ...

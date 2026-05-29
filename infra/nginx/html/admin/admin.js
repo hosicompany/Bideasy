@@ -389,10 +389,437 @@ pages.dashboard = async function(content) {
   });
 };
 
-// 미완성 페이지 placeholder (Phase C~E 에서 구현)
-['users', 'payments', 'autocalibrate', 'system', 'simulation'].forEach((name) => {
+// ─── 공통 모달 / 폼 헬퍼 ──────────────────────────────────
+
+function openModal(title, bodyHtml, onConfirm, confirmLabel = '확인', confirmClass = 'btn-primary') {
+  const existing = document.getElementById('modal-backdrop');
+  if (existing) existing.remove();
+  const wrap = document.createElement('div');
+  wrap.id = 'modal-backdrop';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:8000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  wrap.innerHTML = `
+    <div class="card" style="max-width:480px;width:100%;max-height:90vh;overflow:auto;">
+      <h3 style="margin-bottom:14px;">${title}</h3>
+      <div id="modal-body" style="margin-bottom:18px;font-size:14px;color:var(--color-text-sub);line-height:1.6;">${bodyHtml}</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button id="modal-cancel" class="btn btn-ghost">취소</button>
+        <button id="modal-ok" class="btn ${confirmClass}">${confirmLabel}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  document.getElementById('modal-cancel').addEventListener('click', () => wrap.remove());
+  document.getElementById('modal-ok').addEventListener('click', async () => {
+    const ok = await onConfirm(wrap);
+    if (ok !== false) wrap.remove();
+  });
+}
+
+// ─── 사용자 페이지 (Phase C) ──────────────────────────────
+
+pages.users = async function(content) {
+  // 쿼리 파라미터 파싱
+  const params = new URLSearchParams((location.hash.split('?')[1] || ''));
+  const page = parseInt(params.get('page') || '1', 10);
+  const search = params.get('search') || '';
+  const tier = params.get('tier') || '';
+  const trial = params.get('trial') || '';
+
+  const qs = new URLSearchParams({ page, size: 20 });
+  if (search) qs.set('search', search);
+  if (tier) qs.set('tier', tier);
+  if (trial) qs.set('trial', trial);
+
+  const data = await api('/admin/users?' + qs.toString());
+
+  content.innerHTML = `
+    <div class="card" style="margin-bottom:16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input id="user-search" type="text" value="${search}" placeholder="이메일·회사명·대표자명"
+               style="flex:1;min-width:200px;padding:10px 14px;border:1px solid var(--color-border);border-radius:10px;font-family:inherit;font-size:14px;">
+        <select id="user-tier" style="padding:10px 14px;border:1px solid var(--color-border);border-radius:10px;font-family:inherit;font-size:14px;">
+          <option value="">전체 tier</option>
+          <option value="free" ${tier==='free'?'selected':''}>Free</option>
+          <option value="pro" ${tier==='pro'?'selected':''}>Pro</option>
+          <option value="pro_plus" ${tier==='pro_plus'?'selected':''}>Pro+</option>
+        </select>
+        <select id="user-trial" style="padding:10px 14px;border:1px solid var(--color-border);border-radius:10px;font-family:inherit;font-size:14px;">
+          <option value="">Trial 전체</option>
+          <option value="active" ${trial==='active'?'selected':''}>활성</option>
+          <option value="expired" ${trial==='expired'?'selected':''}>만료</option>
+          <option value="none" ${trial==='none'?'selected':''}>없음</option>
+        </select>
+        <button id="user-search-btn" class="btn btn-primary">검색</button>
+      </div>
+    </div>
+
+    <div class="card" style="padding:0;overflow:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <thead>
+          <tr style="background:var(--color-bg);">
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">ID</th>
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">이메일</th>
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">회사</th>
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">Tier</th>
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">Trial</th>
+            <th style="text-align:right;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">포인트</th>
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">작업</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.items.map(u => `
+            <tr style="border-top:1px solid var(--color-border-light);">
+              <td style="padding:12px;font-family:monospace;font-size:12px;color:var(--color-text-muted);">${u.id}</td>
+              <td style="padding:12px;">${u.email || '—'}${u.is_admin ? ' <span style="background:#FFF6E5;color:#C77700;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:700;">ADMIN</span>' : ''}</td>
+              <td style="padding:12px;color:var(--color-text-sub);">${u.company_name || '—'}</td>
+              <td style="padding:12px;">
+                <span style="background:${u.effective_tier === 'free' ? 'var(--color-bg)' : u.effective_tier === 'pro' ? 'var(--color-primary-bg)' : 'var(--color-warning-bg)'};color:${u.effective_tier === 'free' ? 'var(--color-text-sub)' : u.effective_tier === 'pro' ? 'var(--color-primary)' : 'var(--color-warning)'};padding:3px 9px;border-radius:6px;font-size:12px;font-weight:600;">
+                  ${u.effective_tier.toUpperCase()}
+                </span>
+              </td>
+              <td style="padding:12px;">
+                ${u.is_trial_active ? `<span style="color:var(--color-primary);font-weight:600;">${u.trial_days_remaining}일 남음</span>` : '<span style="color:var(--color-text-muted);">—</span>'}
+              </td>
+              <td style="padding:12px;text-align:right;font-weight:600;">${fmtNumber(u.points)}</td>
+              <td style="padding:12px;">
+                <button class="btn btn-ghost" data-action="detail" data-id="${u.id}" style="padding:6px 10px;font-size:12px;">상세</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${data.items.length === 0 ? '<div style="padding:40px;text-align:center;color:var(--color-text-muted);">검색 결과 없음</div>' : ''}
+    </div>
+
+    ${renderPagination(data, '#/users')}
+  `;
+
+  // 이벤트 바인딩
+  document.getElementById('user-search-btn').addEventListener('click', () => {
+    const newQs = new URLSearchParams();
+    const s = document.getElementById('user-search').value.trim();
+    const t = document.getElementById('user-tier').value;
+    const tr = document.getElementById('user-trial').value;
+    if (s) newQs.set('search', s);
+    if (t) newQs.set('tier', t);
+    if (tr) newQs.set('trial', tr);
+    location.hash = '#/users' + (newQs.toString() ? '?' + newQs.toString() : '');
+  });
+  document.getElementById('user-search').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('user-search-btn').click();
+  });
+  document.querySelectorAll('button[data-action="detail"]').forEach(btn => {
+    btn.addEventListener('click', () => showUserDetail(parseInt(btn.dataset.id, 10)));
+  });
+};
+
+async function showUserDetail(userId) {
+  const user = await api(`/admin/users/${userId}`);
+  const bodyHtml = `
+    <div class="status-row"><span class="status-label">ID</span><span class="status-value">${user.id}</span></div>
+    <div class="status-row"><span class="status-label">이메일</span><span class="status-value">${user.email || '—'}</span></div>
+    <div class="status-row"><span class="status-label">회사</span><span class="status-value">${user.company_name || '—'}</span></div>
+    <div class="status-row"><span class="status-label">현재 Tier</span><span class="status-value">${user.effective_tier.toUpperCase()}${user.is_trial_active ? ' (Trial)' : ''}</span></div>
+    <div class="status-row"><span class="status-label">포인트</span><span class="status-value">${fmtNumber(user.points)}</span></div>
+    <div class="status-row"><span class="status-label">총 결제</span><span class="status-value">${fmtKRW(user.total_paid)}</span></div>
+    <div class="status-row"><span class="status-label">총 환불</span><span class="status-value">${fmtKRW(user.total_refunded)}</span></div>
+    <div class="status-row"><span class="status-label">입찰 횟수</span><span class="status-value">${user.bids_count}</span></div>
+    ${user.trial_expires_at ? `<div class="status-row"><span class="status-label">Trial 만료</span><span class="status-value">${fmtDateTime(user.trial_expires_at)}</span></div>` : ''}
+    ${user.subscription_expires_at ? `<div class="status-row"><span class="status-label">구독 만료</span><span class="status-value">${fmtDateTime(user.subscription_expires_at)}</span></div>` : ''}
+    <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:6px;">
+      <button class="btn btn-outline" id="act-tier" style="padding:6px 12px;font-size:12px;">Tier 변경</button>
+      <button class="btn btn-outline" id="act-extend" style="padding:6px 12px;font-size:12px;">Trial 연장</button>
+      <button class="btn btn-outline" id="act-expire" style="padding:6px 12px;font-size:12px;">Trial 만료</button>
+      <button class="btn btn-outline" id="act-points" style="padding:6px 12px;font-size:12px;">포인트 지급</button>
+      <button class="btn btn-danger" id="act-delete" style="padding:6px 12px;font-size:12px;">삭제</button>
+    </div>
+    ${user.recent_payments.length ? `
+      <h4 style="margin-top:18px;margin-bottom:8px;font-size:13px;color:var(--color-text-sub);">최근 결제 (${user.recent_payments.length})</h4>
+      ${user.recent_payments.map(p => `
+        <div style="font-size:12px;padding:6px 0;border-top:1px solid var(--color-border-light);">
+          <div style="font-family:monospace;color:var(--color-text-muted);">${p.order_id}</div>
+          <div style="display:flex;justify-content:space-between;">
+            <span>${fmtKRW(p.amount)} · ${p.status}</span>
+            <span style="color:var(--color-text-muted);">${fmtDateShort(p.confirmed_at || p.created_at)}</span>
+          </div>
+        </div>
+      `).join('')}
+    ` : ''}
+  `;
+  openModal(`사용자 ${user.id} 상세`, bodyHtml, () => true, '닫기', 'btn-ghost');
+
+  // 버튼 이벤트
+  setTimeout(() => {
+    const $ = id => document.getElementById(id);
+    $('act-tier')?.addEventListener('click', () => showTierChangeModal(user));
+    $('act-extend')?.addEventListener('click', () => showExtendTrialModal(user));
+    $('act-expire')?.addEventListener('click', () => showExpireTrialModal(user));
+    $('act-points')?.addEventListener('click', () => showGrantPointsModal(user));
+    $('act-delete')?.addEventListener('click', () => showDeleteUserModal(user));
+  }, 50);
+}
+
+function showTierChangeModal(user) {
+  openModal('Tier 변경', `
+    <div class="status-row"><span class="status-label">대상</span><span class="status-value">${user.email || user.id}</span></div>
+    <label style="display:block;margin-top:10px;font-size:13px;font-weight:600;">새 Tier</label>
+    <select id="new-tier" style="width:100%;padding:10px;margin-top:6px;border:1px solid var(--color-border);border-radius:8px;font-family:inherit;">
+      <option value="free" ${user.tier==='free'?'selected':''}>Free</option>
+      <option value="pro" ${user.tier==='pro'?'selected':''}>Pro</option>
+      <option value="pro_plus" ${user.tier==='pro_plus'?'selected':''}>Pro+</option>
+    </select>
+    <label style="display:block;margin-top:10px;font-size:13px;font-weight:600;">만료일 (비우면 무기한)</label>
+    <input id="new-expires" type="datetime-local" style="width:100%;padding:10px;margin-top:6px;border:1px solid var(--color-border);border-radius:8px;font-family:inherit;">
+    <label style="display:block;margin-top:10px;font-size:13px;font-weight:600;">사유</label>
+    <input id="tier-reason" type="text" placeholder="예: VIP 부여" style="width:100%;padding:10px;margin-top:6px;border:1px solid var(--color-border);border-radius:8px;font-family:inherit;">
+  `, async () => {
+    const tier = document.getElementById('new-tier').value;
+    const expRaw = document.getElementById('new-expires').value;
+    const reason = document.getElementById('tier-reason').value;
+    const body = { tier, reason };
+    if (expRaw) body.expires_at = new Date(expRaw).toISOString();
+    try {
+      await api(`/admin/users/${user.id}/tier`, { method: 'PATCH', body: JSON.stringify(body) });
+      toast('Tier 변경 완료', 'success');
+      renderRoute();
+    } catch (e) { toast(e.message, 'error'); return false; }
+  }, '저장');
+}
+
+function showExtendTrialModal(user) {
+  openModal('Trial 연장', `
+    <div class="status-row"><span class="status-label">대상</span><span class="status-value">${user.email || user.id}</span></div>
+    <label style="display:block;margin-top:10px;font-size:13px;font-weight:600;">연장 일수</label>
+    <input id="ext-days" type="number" value="14" min="1" max="365" style="width:100%;padding:10px;margin-top:6px;border:1px solid var(--color-border);border-radius:8px;font-family:inherit;">
+  `, async () => {
+    const days = parseInt(document.getElementById('ext-days').value, 10);
+    try {
+      await api(`/admin/users/${user.id}/extend-trial`, { method: 'POST', body: JSON.stringify({ days }) });
+      toast('Trial 연장 완료', 'success');
+      renderRoute();
+    } catch (e) { toast(e.message, 'error'); return false; }
+  }, '연장');
+}
+
+function showExpireTrialModal(user) {
+  openModal('Trial 즉시 만료', `
+    이 사용자의 Trial 을 지금 즉시 만료시킵니다. 진행할까요?
+    <div style="margin-top:8px;font-size:12px;color:var(--color-text-muted);">대상: ${user.email || user.id}</div>
+  `, async () => {
+    try {
+      await api(`/admin/users/${user.id}/expire-trial`, { method: 'POST' });
+      toast('Trial 만료 완료', 'success');
+      renderRoute();
+    } catch (e) { toast(e.message, 'error'); return false; }
+  }, '만료시키기', 'btn-danger');
+}
+
+function showGrantPointsModal(user) {
+  openModal('포인트 지급', `
+    <div class="status-row"><span class="status-label">대상</span><span class="status-value">${user.email || user.id}</span></div>
+    <label style="display:block;margin-top:10px;font-size:13px;font-weight:600;">지급 포인트</label>
+    <input id="pt-amount" type="number" value="1000" min="1" style="width:100%;padding:10px;margin-top:6px;border:1px solid var(--color-border);border-radius:8px;font-family:inherit;">
+    <label style="display:block;margin-top:10px;font-size:13px;font-weight:600;">사유</label>
+    <input id="pt-reason" type="text" placeholder="예: 사과 보상" style="width:100%;padding:10px;margin-top:6px;border:1px solid var(--color-border);border-radius:8px;font-family:inherit;">
+  `, async () => {
+    const amount = parseInt(document.getElementById('pt-amount').value, 10);
+    const reason = document.getElementById('pt-reason').value;
+    if (!reason) { toast('사유를 입력해주세요', 'error'); return false; }
+    try {
+      await api(`/admin/users/${user.id}/grant-points`, { method: 'POST', body: JSON.stringify({ amount, reason }) });
+      toast('지급 완료', 'success');
+      renderRoute();
+    } catch (e) { toast(e.message, 'error'); return false; }
+  }, '지급');
+}
+
+function showDeleteUserModal(user) {
+  openModal('사용자 삭제', `
+    <div style="color:var(--color-danger);font-weight:600;margin-bottom:8px;">⚠️ 이 작업은 되돌릴 수 없어요</div>
+    <div class="status-row"><span class="status-label">대상</span><span class="status-value">${user.email || user.id}</span></div>
+    <div style="margin-top:10px;font-size:13px;color:var(--color-text-sub);">
+      Notification·DeviceToken·UserBid·PointTransaction 은 함께 삭제됩니다.<br>
+      PaymentOrder 는 user_id=NULL 로 보존 (회계 기록).
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:14px;font-size:13px;">
+      <input id="force-delete" type="checkbox"> 활성 구독 있어도 강제 삭제
+    </label>
+  `, async () => {
+    const force = document.getElementById('force-delete').checked;
+    try {
+      const r = await api(`/admin/users/${user.id}${force ? '?force=true' : ''}`, { method: 'DELETE' });
+      toast(`삭제 완료 (포인트 거래 ${r.deleted.point_transactions}건 등)`, 'success');
+      location.hash = '#/users';
+    } catch (e) { toast(e.message, 'error'); return false; }
+  }, '삭제', 'btn-danger');
+}
+
+// ─── 결제 페이지 (Phase C) ────────────────────────────────
+
+pages.payments = async function(content) {
+  const params = new URLSearchParams((location.hash.split('?')[1] || ''));
+  const page = parseInt(params.get('page') || '1', 10);
+  const search = params.get('search') || '';
+  const status = params.get('status') || '';
+
+  const qs = new URLSearchParams({ page, size: 20 });
+  if (search) qs.set('search', search);
+  if (status) qs.set('status', status);
+
+  const data = await api('/admin/payments?' + qs.toString());
+
+  content.innerHTML = `
+    <div class="card" style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <input id="pay-search" type="text" value="${search}" placeholder="주문ID·결제키" style="flex:1;min-width:200px;padding:10px 14px;border:1px solid var(--color-border);border-radius:10px;font-family:inherit;font-size:14px;">
+      <select id="pay-status" style="padding:10px 14px;border:1px solid var(--color-border);border-radius:10px;font-family:inherit;font-size:14px;">
+        <option value="">전체 상태</option>
+        <option value="CONFIRMED" ${status==='CONFIRMED'?'selected':''}>완료</option>
+        <option value="PENDING" ${status==='PENDING'?'selected':''}>대기</option>
+        <option value="FAILED" ${status==='FAILED'?'selected':''}>실패</option>
+      </select>
+      <button id="pay-search-btn" class="btn btn-primary">검색</button>
+      <button id="cleanup-pending" class="btn btn-outline">24h+ PENDING 정리</button>
+    </div>
+
+    <div class="card" style="padding:0;overflow:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <thead>
+          <tr style="background:var(--color-bg);">
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">주문ID</th>
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">유형</th>
+            <th style="text-align:right;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">금액</th>
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">상태</th>
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">사용자</th>
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">결제일</th>
+            <th style="text-align:left;padding:12px;font-size:12px;color:var(--color-text-muted);text-transform:uppercase;">작업</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.items.map(p => `
+            <tr style="border-top:1px solid var(--color-border-light);">
+              <td style="padding:12px;font-family:monospace;font-size:12px;">${p.order_id}</td>
+              <td style="padding:12px;color:var(--color-text-sub);font-size:12px;">${p.order_kind === 'subscription' ? '구독' : '포인트'}</td>
+              <td style="padding:12px;text-align:right;font-weight:600;">
+                ${fmtKRW(p.amount)}
+                ${p.refund_amount ? `<div style="font-size:11px;color:var(--color-danger);">환불 -${fmtKRW(p.refund_amount)}</div>` : ''}
+              </td>
+              <td style="padding:12px;">
+                <span style="background:${p.status==='CONFIRMED' ? 'var(--color-success-bg)' : p.status==='PENDING' ? 'var(--color-warning-bg)' : 'var(--color-danger-bg)'};color:${p.status==='CONFIRMED' ? 'var(--color-success)' : p.status==='PENDING' ? 'var(--color-warning)' : 'var(--color-danger)'};padding:3px 9px;border-radius:6px;font-size:12px;font-weight:600;">
+                  ${p.status}
+                </span>
+              </td>
+              <td style="padding:12px;font-size:12px;color:var(--color-text-muted);">${p.user_id ?? '(삭제됨)'}</td>
+              <td style="padding:12px;font-size:12px;color:var(--color-text-muted);">${fmtDateShort(p.confirmed_at || p.created_at)}</td>
+              <td style="padding:12px;">
+                <button class="btn btn-ghost" data-action="payment-detail" data-id="${p.order_id}" style="padding:6px 10px;font-size:12px;">상세</button>
+                ${p.status === 'CONFIRMED' && !p.refunded_at ? `<button class="btn btn-danger" data-action="refund" data-id="${p.order_id}" style="padding:6px 10px;font-size:12px;">환불</button>` : ''}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${data.items.length === 0 ? '<div style="padding:40px;text-align:center;color:var(--color-text-muted);">검색 결과 없음</div>' : ''}
+    </div>
+
+    ${renderPagination(data, '#/payments')}
+  `;
+
+  document.getElementById('pay-search-btn').addEventListener('click', () => {
+    const newQs = new URLSearchParams();
+    const s = document.getElementById('pay-search').value.trim();
+    const st = document.getElementById('pay-status').value;
+    if (s) newQs.set('search', s);
+    if (st) newQs.set('status', st);
+    location.hash = '#/payments' + (newQs.toString() ? '?' + newQs.toString() : '');
+  });
+  document.getElementById('cleanup-pending').addEventListener('click', () => {
+    if (!confirm('24시간 이상 PENDING 상태인 결제를 모두 FAILED 처리합니다. 진행할까요?')) return;
+    api('/admin/payments/cleanup-pending', { method: 'POST', body: JSON.stringify({ hours: 24 }) })
+      .then(r => { toast(`${r.cleaned}건 정리 완료`, 'success'); renderRoute(); })
+      .catch(e => toast(e.message, 'error'));
+  });
+  document.querySelectorAll('button[data-action="payment-detail"]').forEach(btn => {
+    btn.addEventListener('click', () => showPaymentDetail(btn.dataset.id));
+  });
+  document.querySelectorAll('button[data-action="refund"]').forEach(btn => {
+    btn.addEventListener('click', () => showRefundModal(btn.dataset.id));
+  });
+};
+
+async function showPaymentDetail(orderId) {
+  const p = await api(`/admin/payments/${encodeURIComponent(orderId)}`);
+  const bodyHtml = `
+    <div class="status-row"><span class="status-label">주문ID</span><span class="status-value" style="font-family:monospace;">${p.order_id}</span></div>
+    <div class="status-row"><span class="status-label">유형</span><span class="status-value">${p.order_kind === 'subscription' ? '구독' : '포인트'}</span></div>
+    <div class="status-row"><span class="status-label">금액</span><span class="status-value">${fmtKRW(p.amount)}</span></div>
+    <div class="status-row"><span class="status-label">상태</span><span class="status-value">${p.status}</span></div>
+    <div class="status-row"><span class="status-label">결제 수단</span><span class="status-value">${p.method || '—'}</span></div>
+    <div class="status-row"><span class="status-label">사용자</span><span class="status-value">${p.user ? `${p.user.email} (#${p.user.id})` : '(삭제됨)'}</span></div>
+    <div class="status-row"><span class="status-label">결제일</span><span class="status-value">${fmtDateTime(p.confirmed_at)}</span></div>
+    ${p.refunded_at ? `
+      <div class="status-row"><span class="status-label">환불 금액</span><span class="status-value" style="color:var(--color-danger);">${fmtKRW(p.refund_amount)}</span></div>
+      <div class="status-row"><span class="status-label">환불 사유</span><span class="status-value">${p.refund_reason || '—'}</span></div>
+      <div class="status-row"><span class="status-label">환불일</span><span class="status-value">${fmtDateTime(p.refunded_at)}</span></div>
+    ` : ''}
+    ${p.fail_reason ? `<div class="status-row"><span class="status-label">실패 사유</span><span class="status-value" style="color:var(--color-danger);">${p.fail_reason}</span></div>` : ''}
+  `;
+  openModal(`주문 ${p.order_id}`, bodyHtml, () => true, '닫기', 'btn-ghost');
+}
+
+function showRefundModal(orderId) {
+  openModal('결제 환불', `
+    <div class="status-row"><span class="status-label">주문</span><span class="status-value" style="font-family:monospace;">${orderId}</span></div>
+    <label style="display:block;margin-top:10px;font-size:13px;font-weight:600;">환불 금액 (비우면 전액)</label>
+    <input id="refund-amount" type="number" min="1" placeholder="원" style="width:100%;padding:10px;margin-top:6px;border:1px solid var(--color-border);border-radius:8px;font-family:inherit;">
+    <label style="display:block;margin-top:10px;font-size:13px;font-weight:600;">환불 사유 (필수)</label>
+    <input id="refund-reason" type="text" placeholder="예: 고객 단순 변심" style="width:100%;padding:10px;margin-top:6px;border:1px solid var(--color-border);border-radius:8px;font-family:inherit;">
+    <label style="display:flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;">
+      <input id="revoke-tier" type="checkbox"> 사용자 tier=free 회수 (전액 환불 시)
+    </label>
+  `, async () => {
+    const amountRaw = document.getElementById('refund-amount').value;
+    const reason = document.getElementById('refund-reason').value.trim();
+    const revoke_tier = document.getElementById('revoke-tier').checked;
+    if (!reason) { toast('환불 사유 입력', 'error'); return false; }
+    const body = { reason, revoke_tier };
+    if (amountRaw) body.amount = parseInt(amountRaw, 10);
+    try {
+      const r = await api(`/admin/payments/${encodeURIComponent(orderId)}/refund`, { method: 'POST', body: JSON.stringify(body) });
+      toast(`환불 완료 (${fmtKRW(r.refund_amount)})`, 'success');
+      renderRoute();
+    } catch (e) { toast(e.message, 'error'); return false; }
+  }, '환불 실행', 'btn-danger');
+}
+
+// ─── 페이지네이션 공통 ────────────────────────────────────
+
+function renderPagination(data, baseHash) {
+  if (data.total_pages <= 1) return '';
+  const params = new URLSearchParams((location.hash.split('?')[1] || ''));
+  const cur = data.page;
+  const total = data.total_pages;
+  const links = [];
+  const makeLink = (p, label) => {
+    const newParams = new URLSearchParams(params);
+    newParams.set('page', String(p));
+    const active = p === cur ? 'style="background:var(--color-primary);color:#fff;border-color:var(--color-primary);"' : '';
+    return `<a href="${baseHash}?${newParams.toString()}" class="btn btn-outline" ${active} style="padding:6px 12px;font-size:12px;${p===cur?'background:var(--color-primary);color:#fff;border-color:var(--color-primary);':''}">${label}</a>`;
+  };
+  if (cur > 1) links.push(makeLink(cur - 1, '이전'));
+  const start = Math.max(1, cur - 3);
+  const end = Math.min(total, cur + 3);
+  for (let p = start; p <= end; p++) links.push(makeLink(p, String(p)));
+  if (cur < total) links.push(makeLink(cur + 1, '다음'));
+  return `<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:14px;">
+    ${links.join('')}
+    <span style="margin-left:8px;color:var(--color-text-muted);font-size:12px;line-height:32px;">총 ${fmtNumber(data.total)}건</span>
+  </div>`;
+}
+
+// 미완성 페이지 placeholder (Phase D~E 에서 구현)
+['autocalibrate', 'system', 'simulation'].forEach((name) => {
   pages[name] = function(content) {
-    const phase = { users: 'C', payments: 'C', autocalibrate: 'D', system: 'D', simulation: 'E' }[name];
+    const phase = { autocalibrate: 'D', system: 'D', simulation: 'E' }[name];
     content.innerHTML = `
       <div class="card" style="text-align:center;padding:60px 20px;">
         <h3 style="color:var(--color-text-muted);">${PAGE_TITLES[name]} 페이지</h3>
