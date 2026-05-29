@@ -205,6 +205,11 @@ class PaymentOrder(Base):
     refunded_at = Column(DateTime, nullable=True)  # idempotency 검사 키
     refund_payment_key = Column(String(200), nullable=True)  # Toss 환불 응답
 
+    # 캠페인 할인 (예: 첫 달 50% 자동 win-back)
+    # amount + discount_amount = 정가. discount_reason 으로 효과 분석.
+    discount_amount = Column(Integer, nullable=True)
+    discount_reason = Column(String(50), nullable=True)  # 예: TRIAL_WINBACK_50
+
     user = relationship("User")
 
 

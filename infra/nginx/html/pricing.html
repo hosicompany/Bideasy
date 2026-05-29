@@ -384,10 +384,12 @@
         <div class="card-desc">월 1~10건 입찰하는<br>중·소 시공사용</div>
         <div class="price-wrap">
           <div class="price-main">
+            <span id="price-pro-strike" style="display:none;text-decoration:line-through;color:#B0B8C1;font-size:18px;font-weight:600;margin-right:8px;">14,900</span>
             <span id="price-pro">14,900</span><span class="unit">원/월</span>
           </div>
           <div class="price-sub" id="price-pro-sub">월간 결제</div>
           <div class="save-pill" id="save-pro" style="display:none;">연 38,800원 절약</div>
+          <div id="winback-pro" style="display:none;background:#FEE500;color:#191F28;font-size:12px;font-weight:700;padding:4px 10px;border-radius:8px;margin-top:6px;display:none;">🎁 첫 달 50% 할인 적용중 — <span id="winback-pro-days"></span></div>
         </div>
         <ul class="features">
           <li>공고 피드 조회</li>
@@ -408,10 +410,12 @@
         <div class="card-desc">월 10건 이상 입찰하는<br>중·대형 시공사용</div>
         <div class="price-wrap">
           <div class="price-main">
+            <span id="price-proplus-strike" style="display:none;text-decoration:line-through;color:#B0B8C1;font-size:18px;font-weight:600;margin-right:8px;">29,900</span>
             <span id="price-proplus">29,900</span><span class="unit">원/월</span>
           </div>
           <div class="price-sub" id="price-proplus-sub">월간 결제</div>
           <div class="save-pill" id="save-proplus" style="display:none;">연 78,800원 절약</div>
+          <div id="winback-proplus" style="display:none;background:#FEE500;color:#191F28;font-size:12px;font-weight:700;padding:4px 10px;border-radius:8px;margin-top:6px;">🎁 첫 달 50% 할인 적용중 — <span id="winback-proplus-days"></span></div>
         </div>
         <ul class="features">
           <li>Pro의 모든 기능</li>
@@ -432,6 +436,11 @@
       <details class="faq-item">
         <summary>14일 무료 체험은 어떻게 시작하나요?</summary>
         <p>회원가입만 하시면 자동으로 14일 Pro 체험이 시작돼요. 신용카드 등록 불필요, 만료 시 자동으로 Free 요금제로 전환됩니다.</p>
+      </details>
+
+      <details class="faq-item">
+        <summary>첫 달 50% 할인은 어떻게 받나요?</summary>
+        <p>체험 만료 후 7일 이내(또는 체험 활성 중) 월간 Pro/Pro+ 구독 결제 시 자동으로 50% 할인 적용됩니다. 별도 쿠폰 코드 입력 불필요 — Pro 첫 달 7,450원, Pro+ 첫 달 14,950원. 첫 결제 한 번만 적용되며 다음 달부터는 정가로 자동 갱신됩니다. 연간 결제는 이미 20% 할인된 가격이라 추가 win-back 할인은 적용되지 않습니다.</p>
       </details>
 
       <details class="faq-item">
@@ -486,6 +495,8 @@
     };
 
     let currentCycle = 'monthly';
+    // 자격 사용자만 true — initSubscriptionState 에서 채움
+    let winbackState = { eligible: false, discount_pct: 0, expires_at: null };
 
     function setCycle(cycle) {
       currentCycle = cycle;
@@ -494,15 +505,37 @@
       document.getElementById('btn-monthly').classList.toggle('active', !isAnnual);
       document.getElementById('btn-annual').classList.toggle('active', isAnnual);
 
-      // Pro
-      document.getElementById('price-pro').textContent = PRICES[cycle].pro.display;
-      document.getElementById('price-pro-sub').textContent = PRICES[cycle].pro.label;
-      document.getElementById('save-pro').style.display = isAnnual ? 'inline-block' : 'none';
+      // 가격 갱신 — 월간 + win-back 자격 → 50% 할인
+      updatePriceDisplay('pro', cycle);
+      updatePriceDisplay('proplus', cycle);
 
-      // Pro+
-      document.getElementById('price-proplus').textContent = PRICES[cycle].pro_plus.display;
-      document.getElementById('price-proplus-sub').textContent = PRICES[cycle].pro_plus.label;
+      document.getElementById('save-pro').style.display = isAnnual ? 'inline-block' : 'none';
       document.getElementById('save-proplus').style.display = isAnnual ? 'inline-block' : 'none';
+    }
+
+    function updatePriceDisplay(tierKey, cycle) {
+      // tierKey: 'pro' | 'proplus', 백엔드 key: 'pro' | 'pro_plus'
+      const apiKey = tierKey === 'pro' ? 'pro' : 'pro_plus';
+      const cfg = PRICES[cycle][apiKey];
+      const priceEl = document.getElementById(`price-${tierKey}`);
+      const subEl = document.getElementById(`price-${tierKey}-sub`);
+      const strikeEl = document.getElementById(`price-${tierKey}-strike`);
+      const winbackEl = document.getElementById(`winback-${tierKey}`);
+
+      // 월간 + win-back 자격 → strikethrough + 50% 가격
+      if (cycle === 'monthly' && winbackState.eligible) {
+        const halfDisplay = Math.floor(cfg.amount * (1 - winbackState.discount_pct / 100));
+        priceEl.textContent = halfDisplay.toLocaleString('ko-KR');
+        subEl.textContent = `첫 달 ${winbackState.discount_pct}% 할인 적용`;
+        strikeEl.style.display = 'inline';
+        strikeEl.textContent = cfg.display;
+        winbackEl.style.display = 'block';
+      } else {
+        priceEl.textContent = cfg.display;
+        subEl.textContent = cfg.label;
+        strikeEl.style.display = 'none';
+        winbackEl.style.display = 'none';
+      }
     }
 
     document.getElementById('btn-monthly').addEventListener('click', () => setCycle('monthly'));
@@ -603,6 +636,35 @@
         if (sub.is_trial && sub.trial_days_remaining > 0) {
           const banner = document.getElementById('trial-banner-default');
           banner.innerHTML = `🎁 현재 Pro 체험 <strong>${sub.trial_days_remaining}일</strong> 남음 — 만료 전 결제 시 무중단 사용`;
+        }
+
+        // Win-back 자격 → 가격 표시 갱신 + 카운트다운
+        if (sub.winback_eligible && sub.winback_discount_pct > 0) {
+          winbackState = {
+            eligible: true,
+            discount_pct: sub.winback_discount_pct,
+            expires_at: sub.winback_expires_at,
+          };
+          // 자격 잔여일 계산
+          let daysText = '';
+          if (sub.winback_expires_at) {
+            const exp = new Date(sub.winback_expires_at);
+            const daysLeft = Math.max(0, Math.ceil((exp - new Date()) / 86400000));
+            daysText = `자격 ${daysLeft}일 남음`;
+          }
+          const proDays = document.getElementById('winback-pro-days');
+          const ppDays = document.getElementById('winback-proplus-days');
+          if (proDays) proDays.textContent = daysText;
+          if (ppDays) ppDays.textContent = daysText;
+          // 즉시 가격 표시 갱신 (currentCycle 기준)
+          setCycle(currentCycle);
+
+          // 메인 배너도 강조
+          const banner = document.getElementById('trial-banner-default');
+          if (!sub.is_trial) {
+            banner.style.background = 'linear-gradient(135deg, #FEE500 0%, #FDD835 100%)';
+            banner.innerHTML = `🎁 첫 달 ${sub.winback_discount_pct}% 할인 — 월간 결제 시 자동 적용 (${daysText})`;
+          }
         }
 
         // 이미 구독 중인 tier 는 버튼 비활성화

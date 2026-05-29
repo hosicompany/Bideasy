@@ -152,6 +152,66 @@ def get_effective_tier(user) -> str:
     return "free"
 
 
+# ─── Win-back 첫 달 50% 할인 ───────────────────────────────
+# Trial 사용자(활성 또는 만료 7일 이내)가 *첫* 결제 시 자동 적용.
+# Toss 결제 시점에 amount 가 이미 할인된 금액으로 결정 → 사용자가 별도 쿠폰
+# 코드 입력 안 함.
+WINBACK_DISCOUNT_PCT = 50
+WINBACK_REASON_CODE = "TRIAL_WINBACK_50"
+WINBACK_GRACE_DAYS = 7  # Trial 만료 후 N일 동안 자격 유지
+
+
+def is_winback_eligible(user, db) -> bool:
+    """
+    사용자가 첫 달 50% 자동 할인 대상인지.
+
+    조건 (모두 충족):
+      1) Trial 시작한 적 있음 (trial_started_at != None)
+      2) 첫 결제 (CONFIRMED PaymentOrder 없음)
+      3) Trial 활성 OR Trial 만료 후 WINBACK_GRACE_DAYS 일 이내
+
+    DB 조회를 1회만 하도록 호출자에서 db 세션 전달.
+    """
+    from app.db import models  # 순환 import 방지
+
+    # 1) Trial 시작 안 함 → 자격 없음
+    trial_exp = _aware(getattr(user, "trial_expires_at", None))
+    if not getattr(user, "trial_started_at", None) or trial_exp is None:
+        return False
+
+    # 3) Trial 만료 후 grace period 초과 → 자격 없음
+    cutoff = trial_exp + timedelta(days=WINBACK_GRACE_DAYS)
+    if datetime.now(timezone.utc) > cutoff:
+        return False
+
+    # 2) 이미 결제 이력 있음 → 자격 없음
+    has_payment = (
+        db.query(models.PaymentOrder.id)
+        .filter(
+            models.PaymentOrder.user_id == user.id,
+            models.PaymentOrder.status == "CONFIRMED",
+        )
+        .first()
+    )
+    if has_payment:
+        return False
+
+    return True
+
+
+def winback_expires_at(user) -> Optional[datetime]:
+    """자격이 만료되는 시각 (Trial 만료 + grace days)."""
+    trial_exp = _aware(getattr(user, "trial_expires_at", None))
+    if trial_exp is None:
+        return None
+    return trial_exp + timedelta(days=WINBACK_GRACE_DAYS)
+
+
+def calculate_winback_discount(amount: int) -> int:
+    """주어진 정가의 50% 할인액. 1원 단위 절사."""
+    return (amount * WINBACK_DISCOUNT_PCT) // 100
+
+
 def activate_trial(user) -> None:
     """
     사용자에게 14일 Pro 체험을 활성화한다.
@@ -204,6 +264,11 @@ class SubscriptionInfo(BaseModel):
     trial_expires_at: Optional[datetime] = None
     trial_days_remaining: int = 0
     has_used_trial: bool = False
+
+    # 첫 달 50% 할인 자격 (Trial 사용자가 첫 결제 시)
+    winback_eligible: bool = False
+    winback_expires_at: Optional[datetime] = None
+    winback_discount_pct: int = 0  # 0 = 자격 없음, 50 = WINBACK_DISCOUNT_PCT
 
     class Config:
         from_attributes = True

@@ -363,14 +363,27 @@
       actions.innerHTML = '';
       actions.style.display = 'flex';
 
+      // Win-back 자격 안내 (Trial 활성·Free 모두 적용 가능)
+      const winbackDays = sub.winback_eligible && sub.winback_expires_at
+        ? Math.max(0, Math.ceil((new Date(sub.winback_expires_at) - new Date()) / 86400000))
+        : 0;
+      const winbackBanner = sub.winback_eligible
+        ? `<div style="background:#FEE500;color:#191F28;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;margin-top:10px;">
+             🎁 첫 달 ${sub.winback_discount_pct}% 할인 자격 — ${winbackDays}일 안에 월간 결제 시 자동 적용
+           </div>` : '';
+
       if (sub.is_trial) {
         box.className = 'sub-status trial';
         box.innerHTML = `
           <div class="sub-row"><span class="label">현재 플랜</span><span class="value">🎁 Pro 14일 체험</span></div>
           <div class="sub-row"><span class="label">잔여 기간</span><span class="value">${sub.trial_days_remaining}일</span></div>
           <div class="sub-row"><span class="label">만료일</span><span class="value">${fmtDate(sub.trial_expires_at)}</span></div>
+          ${winbackBanner}
         `;
-        actions.innerHTML = `<a class="btn btn-primary" href="/pricing">지금 결제하고 무중단 사용 →</a>`;
+        const ctaText = sub.winback_eligible
+          ? `지금 결제 (월 ${(14900 * (1 - sub.winback_discount_pct/100)).toLocaleString('ko-KR')}원) →`
+          : '지금 결제하고 무중단 사용 →';
+        actions.innerHTML = `<a class="btn btn-primary" href="/pricing">${ctaText}</a>`;
       } else if (sub.is_active && tier !== 'free') {
         box.className = 'sub-status active';
         box.innerHTML = `
@@ -385,14 +398,20 @@
       } else {
         // Free (체험 없음 또는 만료)
         box.className = 'sub-status free';
-        const msg = sub.has_used_trial
-          ? '체험이 끝났어요. Pro 로 업그레이드하고 모든 기능을 계속 사용하세요.'
-          : '현재 Free 플랜을 사용 중이에요.';
+        const msg = sub.winback_eligible
+          ? `체험이 끝났어요. <strong>${winbackDays}일 안에 결제하면 첫 달 ${sub.winback_discount_pct}% 할인</strong>이 적용됩니다.`
+          : sub.has_used_trial
+            ? '체험이 끝났어요. Pro 로 업그레이드하고 모든 기능을 계속 사용하세요.'
+            : '현재 Free 플랜을 사용 중이에요.';
         box.innerHTML = `
           <div class="sub-row"><span class="label">현재 플랜</span><span class="value">Free</span></div>
           <div style="font-size:13px;color:#4E5968;margin-top:6px;">${msg}</div>
+          ${winbackBanner}
         `;
-        actions.innerHTML = `<a class="btn btn-primary" href="/pricing">Pro 구독하기</a>`;
+        const ctaText = sub.winback_eligible
+          ? `지금 결제 (월 ${(14900 * (1 - sub.winback_discount_pct/100)).toLocaleString('ko-KR')}원) →`
+          : 'Pro 구독하기';
+        actions.innerHTML = `<a class="btn btn-primary" href="/pricing">${ctaText}</a>`;
       }
     }
 

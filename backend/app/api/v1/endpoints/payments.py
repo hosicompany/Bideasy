@@ -207,9 +207,28 @@ def create_subscription_order(
     # 이전 버그: ANNUAL_MONTHLY_PRICES × 10 = 124,000원 (의도 149,000원)
     # 수정: ANNUAL_PRICES 직접 사용 (20% 할인 반영 정상 가격)
     if request.billing_cycle == "annual":
-        amount = ANNUAL_PRICES[request.tier]
+        original_amount = ANNUAL_PRICES[request.tier]
     else:
-        amount = MONTHLY_PRICES[request.tier]
+        original_amount = MONTHLY_PRICES[request.tier]
+
+    # 첫 달 50% 할인 자동 적용 — 월간 결제 + 자격 사용자만
+    # (연간은 이미 20% 할인된 가격이라 추가 win-back 적용 안 함)
+    from app.schemas.subscription import (
+        is_winback_eligible,
+        calculate_winback_discount,
+        WINBACK_REASON_CODE,
+    )
+    amount = original_amount
+    discount_amount = None
+    discount_reason = None
+    if request.billing_cycle == "monthly" and is_winback_eligible(current_user, db):
+        discount_amount = calculate_winback_discount(original_amount)
+        amount = original_amount - discount_amount
+        discount_reason = WINBACK_REASON_CODE
+        logger.info(
+            f"Win-back 50% applied: user={current_user.id}, "
+            f"original={original_amount}, discount={discount_amount}, final={amount}"
+        )
 
     ts = int(datetime.now(timezone.utc).timestamp())
     rand = secrets.token_hex(4)
@@ -220,19 +239,31 @@ def create_subscription_order(
         order_id=order_id,
         amount=amount,
         status="PENDING",
+        discount_amount=discount_amount,
+        discount_reason=discount_reason,
     )
     db.add(order)
     db.commit()
 
     tier_display = TIER_DISPLAY_NAMES.get(request.tier, request.tier)
     cycle_display = "연간" if request.billing_cycle == "annual" else "월간"
+    if discount_amount:
+        cycle_display += " · 첫 달 50% 할인"
     customer_name = current_user.company_name or current_user.email or "BidEasy User"
 
     logger.info(
         f"Subscription order created: order_id={order_id}, "
         f"tier={request.tier}, cycle={request.billing_cycle}, amount={amount}"
     )
-    log_event("subscription_order_created", user_id=current_user.id, tier=request.tier, cycle=request.billing_cycle, amount=amount)
+    log_event(
+        "subscription_order_created",
+        user_id=current_user.id,
+        tier=request.tier,
+        cycle=request.billing_cycle,
+        amount=amount,
+        discount_amount=discount_amount or 0,
+        discount_reason=discount_reason,
+    )
 
     return SubscribeOrderResponse(
         order_id=order_id,
@@ -328,14 +359,18 @@ async def subscription_success(
 
 @router.get("/subscription", response_model=SubscriptionInfo)
 def get_subscription(
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """현재 구독 상태 조회 — 유료 구독·체험 통합 반영."""
+    """현재 구독 상태 조회 — 유료 구독·체험·win-back 자격 통합 반영."""
     from app.schemas.subscription import (
         get_effective_tier,
         is_trial_active,
         trial_days_remaining,
         has_used_trial,
+        is_winback_eligible,
+        winback_expires_at,
+        WINBACK_DISCOUNT_PCT,
     )
 
     raw_tier = current_user.tier or TIER_FREE
@@ -348,6 +383,9 @@ def get_subscription(
     effective_tier = get_effective_tier(current_user)
     trial_active = is_trial_active(current_user)
 
+    # Win-back 자격 (Trial 사용자 첫 결제 시 자동 50%)
+    winback = is_winback_eligible(current_user, db)
+
     return SubscriptionInfo(
         tier=effective_tier,
         tier_display=TIER_DISPLAY_NAMES.get(effective_tier, "Free"),
@@ -357,6 +395,9 @@ def get_subscription(
         trial_expires_at=current_user.trial_expires_at if trial_active else None,
         trial_days_remaining=trial_days_remaining(current_user),
         has_used_trial=has_used_trial(current_user),
+        winback_eligible=winback,
+        winback_expires_at=winback_expires_at(current_user) if winback else None,
+        winback_discount_pct=WINBACK_DISCOUNT_PCT if winback else 0,
     )
 
 
