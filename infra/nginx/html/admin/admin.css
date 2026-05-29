@@ -1,0 +1,284 @@
+/* ─── 디자인 토큰 (기존 정적 페이지와 일관) ──────────────────── */
+:root {
+  --color-bg: #F2F4F6;
+  --color-card: #FFFFFF;
+  --color-text: #191F28;
+  --color-text-sub: #4E5968;
+  --color-text-muted: #8B95A1;
+  --color-border: #E5E8EB;
+  --color-border-light: #F2F4F6;
+  --color-primary: #3182F6;
+  --color-primary-dark: #1B64DA;
+  --color-primary-bg: #EBF5FF;
+  --color-success: #22A06B;
+  --color-success-bg: #E8F5E9;
+  --color-warning: #C77700;
+  --color-warning-bg: #FFF6E5;
+  --color-danger: #E53935;
+  --color-danger-bg: #FFF0F0;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-card: 0 2px 8px rgba(0,0,0,0.04);
+  --shadow-elev: 0 6px 20px rgba(0,0,0,0.08);
+  --font: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { font-family: var(--font); background: var(--color-bg); color: var(--color-text); height: 100%; }
+.hidden { display: none !important; }
+
+a { color: inherit; text-decoration: none; }
+
+/* ─── Gate (비로그인·권한없음) ────────────────────────────── */
+.gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.gate-card {
+  background: var(--color-card);
+  border-radius: var(--radius-lg);
+  padding: 40px 32px;
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+  box-shadow: var(--shadow-card);
+}
+.gate-card h1 { font-size: 24px; font-weight: 800; color: var(--color-primary); margin-bottom: 12px; }
+.gate-msg { font-size: 14px; color: var(--color-text-sub); margin-bottom: 20px; line-height: 1.6; }
+.gate-actions { display: flex; gap: 10px; justify-content: center; }
+
+/* ─── App 레이아웃 ─────────────────────────────────────────── */
+.app {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: var(--color-card);
+  border-right: 1px solid var(--color-border);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.sidebar-brand {
+  padding: 0 8px 12px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.brand-mark { font-size: 18px; font-weight: 800; color: var(--color-primary); display: block; }
+.brand-sub { font-size: 12px; color: var(--color-text-muted); }
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-sub);
+  transition: background 0.12s, color 0.12s;
+  cursor: pointer;
+}
+.nav-item:hover { background: var(--color-bg); color: var(--color-text); }
+.nav-item.active { background: var(--color-primary-bg); color: var(--color-primary); font-weight: 600; }
+.nav-icon { width: 18px; text-align: center; }
+.sidebar-foot { padding: 8px; font-size: 12px; }
+.link-muted { color: var(--color-text-muted); }
+
+/* ─── Main ─────────────────────────────────────────────────── */
+.main { display: flex; flex-direction: column; min-width: 0; }
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 28px;
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
+}
+.topbar-title { font-size: 18px; font-weight: 700; }
+.topbar-user { display: flex; align-items: center; gap: 14px; }
+.user-email { font-size: 13px; color: var(--color-text-sub); }
+
+.page-content {
+  padding: 24px 28px;
+  overflow-x: auto;
+}
+
+/* ─── Buttons ──────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.05s;
+  text-decoration: none;
+}
+.btn:active { transform: scale(0.98); }
+.btn-primary { background: var(--color-primary); color: #fff; }
+.btn-primary:hover { background: var(--color-primary-dark); }
+.btn-outline { background: #fff; color: var(--color-primary); border: 1px solid var(--color-primary); }
+.btn-outline:hover { background: var(--color-primary-bg); }
+.btn-ghost { background: transparent; color: var(--color-text-sub); }
+.btn-ghost:hover { background: var(--color-bg); }
+.btn-danger { background: #fff; color: var(--color-danger); border: 1px solid var(--color-danger-bg); }
+.btn-danger:hover { background: var(--color-danger-bg); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ─── Cards / KPI ──────────────────────────────────────────── */
+.card {
+  background: var(--color-card);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  box-shadow: var(--shadow-card);
+}
+.card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-sub);
+  margin-bottom: 14px;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.kpi-card {
+  background: var(--color-card);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+}
+.kpi-label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.kpi-value {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+}
+.kpi-sub {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+.kpi-up { color: var(--color-success); }
+.kpi-down { color: var(--color-danger); }
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.chart-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.chart-wrap { position: relative; height: 240px; }
+
+/* ─── 시스템 상태 패널 ─────────────────────────────────────── */
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border-light);
+  font-size: 14px;
+}
+.status-row:last-child { border-bottom: none; }
+.status-label { color: var(--color-text-sub); }
+.status-value { font-weight: 600; }
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.status-ok { background: var(--color-success); }
+.status-bad { background: var(--color-danger); }
+.status-warn { background: var(--color-warning); }
+
+/* ─── 자가보정 상태 ─────────────────────────────────────────── */
+.calib-active {
+  background: linear-gradient(135deg, var(--color-primary-bg) 0%, #DBEAFE 100%);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.calib-active-version {
+  font-family: 'Menlo', monospace;
+  font-size: 13px;
+  color: var(--color-primary-dark);
+  font-weight: 700;
+}
+
+/* ─── Toast ────────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: var(--color-card);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-elev);
+  font-size: 13px;
+  max-width: 320px;
+  z-index: 9999;
+  display: none;
+}
+.toast.show { display: block; }
+.toast.error { border-left: 4px solid var(--color-danger); color: var(--color-danger); }
+.toast.success { border-left: 4px solid var(--color-success); color: var(--color-success); }
+.toast.info { border-left: 4px solid var(--color-primary); color: var(--color-primary); }
+
+/* ─── 로딩 스켈레톤 ─────────────────────────────────────────── */
+.skel {
+  background: linear-gradient(90deg, var(--color-bg) 0%, var(--color-border) 50%, var(--color-bg) 100%);
+  background-size: 200% 100%;
+  animation: skel 1.2s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+  height: 16px;
+}
+@keyframes skel {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ─── 반응형 ────────────────────────────────────────────────── */
+@media (max-width: 980px) {
+  .app { grid-template-columns: 64px 1fr; }
+  .sidebar { padding: 14px 8px; }
+  .brand-sub, .nav-item span:not(.nav-icon) { display: none; }
+  .nav-item { justify-content: center; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .chart-grid, .chart-grid-2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .page-content { padding: 16px; }
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .kpi-value { font-size: 18px; }
+}

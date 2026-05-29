@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BidEasy Admin</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/admin/admin.css?v=20260528">
+</head>
+<body>
+  <!-- 비로그인 / 권한 없음 -->
+  <div id="gate" class="gate hidden">
+    <div class="gate-card">
+      <h1>BidEasy Admin</h1>
+      <p id="gate-msg" class="gate-msg">권한을 확인하는 중...</p>
+      <div id="gate-actions" class="gate-actions hidden">
+        <a href="/login?next=/admin" class="btn btn-primary">로그인</a>
+        <a href="/account" class="btn btn-outline">마이페이지</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 메인 레이아웃 -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-mark">BidEasy</span>
+        <span class="brand-sub">Admin</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#/dashboard" data-route="dashboard" class="nav-item">
+          <span class="nav-icon">📊</span><span>대시보드</span>
+        </a>
+        <a href="#/users" data-route="users" class="nav-item">
+          <span class="nav-icon">👤</span><span>사용자</span>
+        </a>
+        <a href="#/payments" data-route="payments" class="nav-item">
+          <span class="nav-icon">💳</span><span>결제</span>
+        </a>
+        <a href="#/autocalibrate" data-route="autocalibrate" class="nav-item">
+          <span class="nav-icon">🤖</span><span>자가보정</span>
+        </a>
+        <a href="#/system" data-route="system" class="nav-item">
+          <span class="nav-icon">⚙️</span><span>시스템</span>
+        </a>
+        <a href="#/simulation" data-route="simulation" class="nav-item">
+          <span class="nav-icon">🧪</span><span>시뮬레이션</span>
+        </a>
+      </nav>
+      <div class="sidebar-foot">
+        <a href="/" class="link-muted">← 사이트로</a>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-title" id="page-title">대시보드</div>
+        <div class="topbar-user">
+          <span class="user-email" id="user-email">—</span>
+          <button id="btn-logout" class="btn btn-ghost">로그아웃</button>
+        </div>
+      </header>
+
+      <section id="page-content" class="page-content">
+        <!-- 페이지별 동적 컨텐츠 -->
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/admin/admin.js?v=20260528"></script>
+</body>
+</html>
