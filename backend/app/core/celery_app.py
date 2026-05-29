@@ -10,6 +10,7 @@ celery_app = Celery(
         "app.tasks.calibration_tasks",
         "app.tasks.verification_tasks",
         "app.tasks.trial_tasks",
+        "app.tasks.admin_report_tasks",
     ],
 )
 
@@ -30,6 +31,10 @@ celery_app.conf.update(
 # 3) 매일 20:00 — notices ↔ opening_results 비교 → predictions_log.jsonl 누적
 # 4) 매주 월요일 04:00 — 누적된 predictions_log 와 historical 데이터로 자가보정 1 사이클
 celery_app.conf.beat_schedule = {
+    "daily-admin-report": {
+        "task": "admin_report.send_daily",
+        "schedule": crontab(hour=9, minute=0),
+    },
     "daily-trial-expiry-reminders": {
         "task": "trial.send_expiry_reminders",
         "schedule": crontab(hour=10, minute=0),

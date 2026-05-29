@@ -559,7 +559,18 @@
       setTimeout(() => box.classList.remove('show'), 4000);
     }
 
+    // 더블 클릭 + 다중 카드 동시 클릭 방지 — 한 번이라도 진행 중이면 false 로 신호 차단
+    let subscribeInProgress = false;
+
     async function subscribe(tier) {
+      // 이중 안전장치 1: 진행 중이면 무시
+      if (subscribeInProgress) return;
+      subscribeInProgress = true;
+
+      // 이중 안전장치 2: 모든 구독 버튼 disable (Pro/Pro+ 동시 비활성)
+      const allSubBtns = document.querySelectorAll('button[data-tier]');
+      allSubBtns.forEach(b => { b.disabled = true; });
+
       const token = getToken();
       if (!token) {
         // 비로그인 → signup 으로 유도 (이전 페이지로 돌아오기 위해 redirect 파라미터)
@@ -572,7 +583,6 @@
 
       const btn = document.getElementById(tier === 'pro' ? 'subscribe-pro' : 'subscribe-proplus');
       const original = btn.innerHTML;
-      btn.disabled = true;
       btn.innerHTML = '<span class="loading"></span>결제 페이지로 이동 중...';
 
       try {
@@ -615,8 +625,10 @@
         if (err.code !== 'USER_CANCEL') {
           showAlert(err.message || '결제 처리 중 오류가 발생했어요');
         }
-        btn.disabled = false;
+        // 모든 구독 버튼 다시 활성화
+        document.querySelectorAll('button[data-tier]').forEach(b => { b.disabled = false; });
         btn.innerHTML = original;
+        subscribeInProgress = false;
       }
     }
 

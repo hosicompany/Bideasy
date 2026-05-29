@@ -230,20 +230,46 @@ def create_subscription_order(
             f"original={original_amount}, discount={discount_amount}, final={amount}"
         )
 
-    ts = int(datetime.now(timezone.utc).timestamp())
-    rand = secrets.token_hex(4)
-    order_id = f"SUB_{current_user.id}_{request.tier}_{ts}_{rand}"
-
-    order = models.PaymentOrder(
-        user_id=current_user.id,
-        order_id=order_id,
-        amount=amount,
-        status="PENDING",
-        discount_amount=discount_amount,
-        discount_reason=discount_reason,
+    # Idempotency — 30초 이내 같은 사용자의 같은 (tier, billing_cycle, amount) PENDING
+    # 주문이 있으면 그것을 재사용. 더블 클릭·네트워크 재시도로 중복 PENDING 생성 방지.
+    now = datetime.now(timezone.utc)
+    # created_at 은 SQLAlchemy default 가 _utcnow() 인데 DB(PG/SQLite)는 timestamp
+    # without tz 로 저장 → naive 로 비교 (timezone 정보 제거)
+    recent_cutoff = (now - timedelta(seconds=30)).replace(tzinfo=None)
+    existing = (
+        db.query(models.PaymentOrder)
+        .filter(
+            models.PaymentOrder.user_id == current_user.id,
+            models.PaymentOrder.status == "PENDING",
+            models.PaymentOrder.amount == amount,
+            models.PaymentOrder.order_id.like(f"SUB_{current_user.id}_{request.tier}_%"),
+            models.PaymentOrder.created_at >= recent_cutoff,
+        )
+        .order_by(models.PaymentOrder.created_at.desc())
+        .first()
     )
-    db.add(order)
-    db.commit()
+    if existing:
+        logger.info(
+            f"Subscription idempotency hit: reusing order={existing.order_id} "
+            f"(created_at={existing.created_at})"
+        )
+        order_id = existing.order_id
+        order = existing
+    else:
+        ts = int(now.timestamp())
+        rand = secrets.token_hex(4)
+        order_id = f"SUB_{current_user.id}_{request.tier}_{ts}_{rand}"
+
+        order = models.PaymentOrder(
+            user_id=current_user.id,
+            order_id=order_id,
+            amount=amount,
+            status="PENDING",
+            discount_amount=discount_amount,
+            discount_reason=discount_reason,
+        )
+        db.add(order)
+        db.commit()
 
     tier_display = TIER_DISPLAY_NAMES.get(request.tier, request.tier)
     cycle_display = "연간" if request.billing_cycle == "annual" else "월간"

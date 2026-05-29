@@ -433,3 +433,29 @@ def get_autocalibrate_status(
         recent_history=history,
         next_scheduled=_next_monday_4am_kst(),
     )
+
+# ─── GET /admin/daily-report ──────────────────────────────────
+
+@router.get("/daily-report")
+def get_daily_report(
+    date: str | None = Query(None, description="YYYY-MM-DD 기본=어제"),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """일일 운영 리포트 — 매일 09:00 Celery 가 보내는 것과 동일 데이터.
+
+    /admin#/dashboard 상단의 "어제의 운영 리포트" 카드에서 호출.
+    """
+    from datetime import date as date_cls
+    from app.services.admin_daily_report import collect_daily_report
+
+    target = None
+    if date:
+        try:
+            target = date_cls.fromisoformat(date)
+        except ValueError:
+            from fastapi import HTTPException
+            raise HTTPException(400, "date 형식은 YYYY-MM-DD")
+
+    return collect_daily_report(db, target=target)
+

@@ -186,15 +186,39 @@ const pages = {};
 
 // 대시보드 (Phase B)
 pages.dashboard = async function(content) {
-  const [rev, users, ai, sys, calib] = await Promise.all([
+  const [rev, users, ai, sys, calib, daily] = await Promise.all([
     api('/admin/stats/revenue?days=30'),
     api('/admin/stats/users?days=30'),
     api('/admin/stats/ai-cost?days=30'),
     api('/admin/stats/system-health'),
     api('/admin/stats/autocalibrate-status'),
+    api('/admin/daily-report').catch(() => null),  // 일일 리포트 (실패해도 무시)
   ]);
 
+  // 일일 리포트 카드 (있을 때만)
+  const dailyReportCard = daily ? `
+    <div class="card" style="margin-bottom:24px;">
+      <h3 style="display:flex;align-items:center;gap:8px;">
+        📊 어제의 운영 리포트
+        <span style="font-size:12px;font-weight:500;color:#8B95A1;">(${daily.target_date})</span>
+        ${daily.anomalies.length > 0 ? `<span style="background:#FFF0F0;color:#E53935;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;">이상 ${daily.anomalies.length}건</span>` : ''}
+      </h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-top:14px;">
+        <div><div style="font-size:12px;color:#8B95A1;">어제 매출</div><div style="font-size:18px;font-weight:700;color:#191F28;margin-top:4px;">${fmtKRW(daily.revenue.yesterday_amount)}</div><div style="font-size:11px;color:#8B95A1;">${daily.revenue.yesterday_count}건</div></div>
+        <div><div style="font-size:12px;color:#8B95A1;">신규 가입</div><div style="font-size:18px;font-weight:700;color:#191F28;margin-top:4px;">${daily.users.new_signups}명</div><div style="font-size:11px;color:#8B95A1;">누적 ${daily.users.total}명</div></div>
+        <div><div style="font-size:12px;color:#8B95A1;">Trial 전환</div><div style="font-size:18px;font-weight:700;color:#191F28;margin-top:4px;">${daily.conversion.conversion_rate_pct}%</div><div style="font-size:11px;color:#8B95A1;">${daily.conversion.yday_converted}/${daily.conversion.yday_trial_expired}명</div></div>
+        <div><div style="font-size:12px;color:#8B95A1;">AI 사용</div><div style="font-size:18px;font-weight:700;color:#191F28;margin-top:4px;">${fmtNumber(daily.ai_usage.yday_count)}회</div><div style="font-size:11px;color:#8B95A1;">~${fmtKRW(daily.ai_usage.estimated_krw)}</div></div>
+      </div>
+      ${daily.anomalies.length > 0 ? `
+        <div style="margin-top:14px;padding:12px 14px;background:#FFF0F0;border-left:3px solid #E53935;border-radius:8px;">
+          ${daily.anomalies.map(a => `<div style="font-size:13px;color:#C62828;margin:2px 0;">${a}</div>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  ` : '';
+
   content.innerHTML = `
+    ${dailyReportCard}
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-label">오늘 매출</div>

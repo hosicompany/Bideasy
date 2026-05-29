@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     TOSS_SECRET_KEY: str = ""
     TOSS_WEBHOOK_SECRET: str = ""
 
+    # === Admin daily report ===
+    # 슬랙 incoming webhook URL (옵션). 없으면 in-app Notification 만 발송.
+    SLACK_WEBHOOK_URL: str = ""
+
     # === ML Models ===
     ML_MODELS_PATH: str = "./models"
     HISTORICAL_DB_PATH: str = "./data/historical/bid_results_5years.db"
