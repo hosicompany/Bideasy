@@ -83,6 +83,47 @@ class Notice(NoticeBase):
         from_attributes = True
 
 
+# --- Bid Context Schemas (DOM 의존도 축소 리팩터) ---
+# OpenAPI/DB 에서 가져오는 공고 본문 필드. A값은 OpenAPI 에 없으므로(판정 C)
+# 이 스키마에 a_value 필드를 두지 않는다 — A값은 익스텐션이 DOM 에서 추출.
+class BidContextResponse(BaseModel):
+    bid_ntce_no: str
+    found: bool                       # OpenAPI/DB 에서 찾았는지 (false → 익스텐션 DOM fallback)
+    source: str                       # "cache" | "api" | "none"
+    title: Optional[str] = None
+    estimated_price: Optional[float] = None   # presmptPrce (추정가격)
+    budget_amount: Optional[float] = None     # asignBdgtAmt (배정예산)
+    organization: Optional[str] = None        # 공고기관
+    demand_organization: Optional[str] = None # 수요기관
+    opening_date: Optional[str] = None        # 개찰일시 (= 사실상 마감)
+    contract_method: Optional[str] = None     # 계약방법
+    bid_method: Optional[str] = None          # 입찰방법
+    qualification: Optional[str] = None       # 입찰자격 관련 텍스트 (있으면)
+    region: Optional[str] = None              # prtcptLmtRgnNm (참가제한지역)
+    contract_type: Optional[str] = None       # CONSTRUCTION/SERVICE/GOODS
+
+
+class BatchContextRequest(BaseModel):
+    bid_ntce_nos: List[str]
+
+
+# 목록 자격뱃지용 최소 필드. 면허는 OpenAPI 에 전용 필드가 없으므로
+# title 정규식으로 복원 가능하도록 title 도 함께 반환.
+class BatchContextItem(BaseModel):
+    bid_ntce_no: str
+    found: bool
+    title: Optional[str] = None
+    region: Optional[str] = None          # 자격매칭 핵심 (prtcptLmtRgnNm)
+    contract_type: Optional[str] = None   # 카테고리 힌트
+    qualification: Optional[str] = None
+
+
+class BatchContextResponse(BaseModel):
+    items: List[BatchContextItem]
+    found_count: int
+    miss_count: int
+
+
 # --- User Bid Schemas ---
 class UserBidCreate(BaseModel):
     notice_id: str

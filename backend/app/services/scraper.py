@@ -8,8 +8,25 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+# ──────────────────────────────────────────────────────────────────────
+# ⚠️ A값 수집 경로 우선순위 (DOM 의존도 축소 리팩터, 판정 C)
+#
+# A값(사후정산 비목 = 국민연금·건강보험·노인장기요양·산재·고용보험 등)은
+# 조달청 OpenAPI 입찰공고/낙찰정보 서비스에 **구조화 필드로 존재하지 않음**.
+# (getDataSetOpnStdBidPblancInfo, getBidPblancListInfoCnstwk 모두 미제공)
+#
+#   1순위(주 경로): 익스텐션이 g2b 상세 DOM(data-title="A값")에서 추출해
+#                   투찰가 계산 API 에 직접 주입. (extractor.ts)
+#   2순위(LAST-RESORT fallback): 아래 ScraperService 가 서버에서 g2b 페이지를
+#                   재스크래핑 + 정규식. ⚠️ 차세대 나라장터 인증 강화 시
+#                   서버 재스크래핑이 로그인월에 막힐 수 있어 신뢰 불가.
+#                   따라서 이 경로는 익스텐션이 A값을 못 올린 경우의 보조용.
+#
+# → 이 모듈은 삭제하지 않고 fallback 으로 보존. 단 주 경로는 익스텐션 DOM.
+# ──────────────────────────────────────────────────────────────────────
+
 class ScraperService:
-    
+
     # Location keywords to extract from content
     LOCATION_PATTERNS = [
         r"공사지역\s*[:：]\s*([가-힣\s]+)",

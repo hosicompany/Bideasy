@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from app.db.session import get_db
 from app.schemas import bid as schemas
@@ -187,6 +187,168 @@ def trigger_crawl(db: Session = Depends(get_db)):
         return {"message": "Crawl Success", "fetched": len(notices), "saved": saved_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── DOM 의존도 축소 리팩터: 공고 컨텍스트 엔드포인트 ────────────────
+# 익스텐션이 공고번호만 DOM 에서 확보하면, 본문 필드(제목·가격·기관·마감 등)는
+# 여기서 OpenAPI/DB 로 가져온다. A값은 OpenAPI 에 없으므로(판정 C) 반환하지 않음.
+#
+# 라우트 순서 주의: 정적 경로(/batch-context)를 동적 경로(/{bid_no}/...)보다
+# 먼저 선언해야 FastAPI 가 batch-context 를 bid_no 로 오인하지 않는다.
+
+def _notice_to_context(notice: models.Notice, source: str) -> schemas.BidContextResponse:
+    """DB Notice → BidContextResponse (A값 제외)."""
+    return schemas.BidContextResponse(
+        bid_ntce_no=notice.bid_no,
+        found=True,
+        source=source,
+        title=notice.title,
+        estimated_price=notice.basic_price,        # crawler 가 presmptPrce → basic_price 로 매핑
+        budget_amount=notice.budget_amount,
+        organization=notice.organization,
+        demand_organization=getattr(notice, "demand_organization", None),
+        opening_date=getattr(notice, "opening_date", None)
+        or (notice.end_date.isoformat() if notice.end_date else None),
+        contract_method=getattr(notice, "contract_method", None),
+        bid_method=getattr(notice, "bid_method", None),
+        qualification=getattr(notice, "bid_qualification", None),
+        region=getattr(notice, "region", None),
+        contract_type=getattr(notice, "contract_type", None),
+    )
+
+
+def _normalize_bid_no(raw: str) -> str:
+    """공백 제거 + 표시형식(...-000) 통일. DB 는 'bidNtceNo-bidNtceOrd' 로 저장."""
+    return (raw or "").replace(" ", "").strip()
+
+
+def _lookup_notice(db: Session, bid_ntce_no: str) -> Optional[models.Notice]:
+    """DB Notice 캐시 조회 — 정확 일치 → prefix(공고번호) 일치 순."""
+    norm = _normalize_bid_no(bid_ntce_no)
+    # 1) 정확 일치 (bid_no = 'R25...-000')
+    notice = db.query(models.Notice).filter(models.Notice.bid_no == norm).first()
+    if notice:
+        return notice
+    # 2) 공고번호만 들어온 경우 prefix 매칭 ('R25...' → 'R25...-000')
+    base = norm.split("-")[0]
+    if base and base != norm:
+        return (
+            db.query(models.Notice)
+            .filter(models.Notice.bid_no.like(f"{base}-%"))
+            .first()
+        )
+    return (
+        db.query(models.Notice)
+        .filter(models.Notice.bid_no.like(f"{norm}%"))
+        .first()
+    )
+
+
+@router.post("/batch-context", response_model=schemas.BatchContextResponse)
+def get_batch_context(
+    request: schemas.BatchContextRequest,
+    db: Session = Depends(get_db),
+):
+    """목록 페이지 자격뱃지용 — 공고번호 배열 → 자격매칭 최소 필드 배치 반환.
+
+    DB Notice 캐시 우선 조회 (per-bid OpenAPI 호출은 느리고 500 이슈 있음).
+    캐시 미스 → found=false → 익스텐션이 해당 row 만 DOM fallback.
+
+    면허는 OpenAPI 에 전용 필드가 없으므로 title 을 함께 반환 →
+    익스텐션이 parseRequirementsFromText(title) 로 면허 복원.
+    """
+    items: list[schemas.BatchContextItem] = []
+    found = 0
+    for raw in request.bid_ntce_nos[:200]:  # 과도 요청 방지
+        notice = _lookup_notice(db, raw)
+        if notice:
+            found += 1
+            items.append(schemas.BatchContextItem(
+                bid_ntce_no=raw,
+                found=True,
+                title=notice.title,
+                region=getattr(notice, "region", None),
+                contract_type=getattr(notice, "contract_type", None),
+                qualification=getattr(notice, "bid_qualification", None),
+            ))
+        else:
+            items.append(schemas.BatchContextItem(bid_ntce_no=raw, found=False))
+    return schemas.BatchContextResponse(
+        items=items,
+        found_count=found,
+        miss_count=len(items) - found,
+    )
+
+
+@router.get("/{bid_no}/context", response_model=schemas.BidContextResponse)
+def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
+    """단건 공고 컨텍스트 — DB 캐시 우선 → OpenAPI → DB 적재.
+
+    A값은 반환하지 않음 (OpenAPI 부재, 익스텐션 DOM 추출 담당).
+    found=false 면 익스텐션이 DOM 추출로 fallback.
+    """
+    # 1) DB 캐시
+    notice = _lookup_notice(db, bid_no)
+    if notice:
+        return _notice_to_context(notice, source="cache")
+
+    # 2) OpenAPI (fetch_bid_detail_robust) → 정규화 → DB 적재
+    from app.services.bid_detail import BidDetailService
+
+    norm = _normalize_bid_no(bid_no)
+    base = norm.split("-")[0]
+    ord_part = norm.split("-")[1] if "-" in norm else "00"
+    try:
+        detail = BidDetailService.fetch_bid_detail_robust(base, ord_part)
+    except Exception as e:
+        logger.warning(f"context fetch_bid_detail_robust error for {bid_no}: {e}")
+        detail = None
+
+    if not detail:
+        # OpenAPI 도 실패 → 익스텐션 DOM fallback 신호
+        return schemas.BidContextResponse(
+            bid_ntce_no=bid_no, found=False, source="none",
+        )
+
+    raw = detail.get("raw_data", {}) or {}
+    # OpenAPI 응답을 Notice 로 적재 (다음 호출부터 캐시 히트)
+    try:
+        bid_no_full = detail.get("bid_no") or norm
+        if not db.query(models.Notice).filter(models.Notice.bid_no == bid_no_full).first():
+            db.add(models.Notice(
+                bid_no=bid_no_full,
+                title=detail.get("title", ""),
+                basic_price=float(raw.get("presmptPrce", 0) or 0),
+                budget_amount=float(raw.get("asignBdgtAmt", 0) or 0),
+                organization=detail.get("organization", ""),
+                demand_organization=detail.get("demand_organization", ""),
+                contract_method=detail.get("contract_method", ""),
+                bid_method=detail.get("bid_method", ""),
+                region=raw.get("prtcptLmtRgnNm", ""),
+                opening_date=detail.get("opening_date", ""),
+                contract_type="CONSTRUCTION",
+            ))
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"context DB 적재 실패 (non-fatal): {e}")
+
+    return schemas.BidContextResponse(
+        bid_ntce_no=bid_no,
+        found=True,
+        source="api",
+        title=detail.get("title"),
+        estimated_price=float(raw.get("presmptPrce", 0) or 0) or None,
+        budget_amount=float(raw.get("asignBdgtAmt", 0) or 0) or None,
+        organization=detail.get("organization"),
+        demand_organization=detail.get("demand_organization"),
+        opening_date=detail.get("opening_date"),
+        contract_method=detail.get("contract_method"),
+        bid_method=detail.get("bid_method"),
+        qualification=raw.get("bidQlfctRgstDt"),
+        region=raw.get("prtcptLmtRgnNm"),
+        contract_type="CONSTRUCTION",
+    )
 
 
 @router.post("/{bid_no}/favorite")

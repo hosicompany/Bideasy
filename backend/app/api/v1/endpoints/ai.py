@@ -289,11 +289,14 @@ async def analyze_bid(
     
     logger.info(f"Generated {len(analysis_result.get('tips', []))} tips")
     
-    # 4.6. Extract A-value and Net Cost if URL is available (Async Scrape)
+    # 4.6. [LAST-RESORT fallback] A값/순공사원가 서버 재스크래핑.
+    # 주 경로는 익스텐션 DOM(extractor.ts) → 투찰가 계산 API a_value 주입.
+    # OpenAPI 는 A값 미제공(판정 C)이라 여기서 g2b 페이지를 재스크래핑하지만,
+    # 차세대 인증 강화 시 로그인월에 막힐 수 있어 보조 수단으로만 사용.
     target_url = bid_data.get("notice_url") or notice_url
-    
+
     if target_url:
-        logger.info(f"Scraping for A-value from {target_url}...")
+        logger.info(f"[fallback] Scraping for A-value from {target_url}...")
         try:
             loop = asyncio.get_event_loop()
             # Run blocking scrape in thread pool
