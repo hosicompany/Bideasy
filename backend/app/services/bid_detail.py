@@ -13,21 +13,83 @@ logger = get_logger(__name__)
 
 class BidDetailService:
     """Service to fetch detailed bid information from Public Data Portal API."""
-    
+
     # API Endpoint for detailed bid info
     BASE_URL = "https://apis.data.go.kr/1230000/PubDataOpnStdService/getDataSetOpnStdBidPblancInfo"
-    
+
+    # BidPublicInfoService 목록 3종 (공사/용역/물품).
+    # bidNtceNo + inqryDiv=2(공고번호 검색) 로 단건 직접조회 가능 (prod 라이브 확정 2026-05-30).
+    _SEARCH_BASE = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService"
+    _SEARCH_ENDPOINTS = [
+        ("construction", "/getBidPblancListInfoCnstwk"),
+        ("service", "/getBidPblancListInfoServc"),
+        ("goods", "/getBidPblancListInfoThng"),
+    ]
+
+    @staticmethod
+    def _fetch_by_bidno_search(bid_ntce_no: str) -> Optional[Dict]:
+        """공고번호 직접검색 (inqryDiv=2) — 공사→용역→물품 순차 시도.
+
+        스파이크(prod 라이브) 확정: BidPublicInfoService 3종에
+        {bidNtceNo, inqryDiv:2} 주입 시 total=1 단건 정확 반환.
+        카테고리를 모르므로 3개 순차 시도, 먼저 매칭되는 것 채택.
+        500나는 표준데이터셋·100건 윈도우 스캔보다 신뢰도 높음 → 1순위.
+        """
+        base = bid_ntce_no.split("-")[0] if "-" in bid_ntce_no else bid_ntce_no
+        for cat, path in BidDetailService._SEARCH_ENDPOINTS:
+            params = {
+                "serviceKey": settings.PUBLIC_DATA_KEY,
+                "numOfRows": 10,
+                "pageNo": 1,
+                "type": "json",
+                "inqryDiv": 2,          # 2 = 공고번호 검색 모드 (핵심)
+                "bidNtceNo": base,
+            }
+            try:
+                resp = requests.get(
+                    BidDetailService._SEARCH_BASE + path, params=params, timeout=15
+                )
+                if resp.status_code != 200:
+                    logger.info(f"[bidno-search] {cat} HTTP {resp.status_code}")
+                    continue
+                items = resp.json().get("response", {}).get("body", {}).get("items", [])
+                if isinstance(items, dict):
+                    items = [items]
+                if not items:
+                    continue
+                # 정확 일치 우선, 없으면 첫 항목
+                for it in items:
+                    if it.get("bidNtceNo") == base:
+                        logger.info(f"[bidno-search] MATCH {cat}: {it.get('bidNtceNm','')[:30]}")
+                        return BidDetailService._format_bid_detail(it)
+                logger.info(f"[bidno-search] {cat}: items but no exact bidNtceNo match")
+                return BidDetailService._format_bid_detail(items[0])
+            except Exception as e:
+                logger.warning(f"[bidno-search] {cat} error: {e}")
+                continue
+        return None
+
     @staticmethod
     def fetch_bid_detail_robust(bid_ntce_no: str, bid_ntce_ord: str = "00") -> Optional[Dict]:
         """
-        Try to fetch details from primary API, then fallback to List API.
+        단건 공고 조회 — 우선순위:
+          1) 공고번호 직접검색 (inqryDiv=2, 공사/용역/물품) ← prod 라이브 확정, 신뢰도 1순위
+          2) 표준데이터셋 primary (getDataSetOpnStdBidPblancInfo) ← 종종 500
+          3) 공사 목록 100건 스캔 (구 fallback) ← 윈도우·카테고리 한계
         """
+        # 1순위: 공고번호 직접검색
+        result = BidDetailService._fetch_by_bidno_search(bid_ntce_no)
+        if result:
+            return result
+
+        # 2순위: 기존 primary (표준데이터셋) — 호환 유지
+        logger.info("bidno-search 실패 → primary(표준데이터셋) 시도")
         result = BidDetailService.fetch_bid_detail(bid_ntce_no, bid_ntce_ord)
         if result:
             return result
-            
-        logger.warning("Primary method returned None. Explicitly calling Fallback...")
-        # Handle bid_no containing dash just in case
+
+        # 3순위: 구 fallback (공사 목록 100건 스캔)
+        logger.warning("Primary 도 None → 구 list fallback 시도")
         clean_bid_no = bid_ntce_no.split("-")[0] if "-" in bid_ntce_no else bid_ntce_no
         return BidDetailService._fetch_from_list_api(clean_bid_no)
 
