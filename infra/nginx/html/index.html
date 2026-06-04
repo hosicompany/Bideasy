@@ -3,268 +3,623 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BidEasy - 입찰 안전 비서</title>
+  <title>BidEasy — 공공입찰, 지는 게임은 안 합니다</title>
+  <meta name="description" content="나라장터 공고 페이지에서 바로 사정률 계산·AI 분석·자격 매칭·마감 알림. 매주 자동 학습하는 자가보정 알고리즘으로 낙찰률 ↑. 신규 가입 Pro 14일 무료.">
+  <meta property="og:title" content="BidEasy — 데이터 기반 입찰 안전 비서">
+  <meta property="og:description" content="나라장터에서 바로 사정률 계산·AI 분석·자격 매칭. 신규 가입 Pro 14일 무료 체험.">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
   <link rel="stylesheet" href="/assets/nav.css">
   <script src="/assets/nav.js" defer></script>
   <style>
+    :root {
+      --blue: #3182F6;
+      --blue-dark: #1B64DA;
+      --blue-deep: #1957C2;
+      --ink: #191F28;
+      --ink-2: #333D4B;
+      --gray: #4E5968;
+      --gray-3: #8B95A1;
+      --line: #E5E8EB;
+      --bg: #F2F4F6;
+      --green: #22A06B;
+      --yellow: #FEE500;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
     body {
       font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #F2F4F6;
-      color: #191F28;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      background: #fff;
+      color: var(--ink);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    img { max-width: 100%; display: block; }
+    a { color: inherit; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+    .center { text-align: center; }
+
+    /* ── Hero ───────────────────────────── */
+    .hero {
+      position: relative;
+      background:
+        radial-gradient(1200px 600px at 80% -10%, rgba(49,130,246,0.18), transparent 60%),
+        radial-gradient(900px 500px at 0% 10%, rgba(254,229,0,0.10), transparent 55%),
+        linear-gradient(180deg, #F7FAFF 0%, #fff 75%);
+      padding: 72px 0 48px;
+      overflow: hidden;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      gap: 48px;
       align-items: center;
     }
-    .hero {
-      width: 100%;
-      background: linear-gradient(135deg, #3182F6 0%, #1B64DA 100%);
-      color: #fff;
-      padding: 80px 24px 60px;
-      text-align: center;
-    }
-    .hero h1 {
-      font-size: 36px;
-      font-weight: 800;
-      margin-bottom: 16px;
-    }
-    .hero p {
-      font-size: 18px;
-      opacity: 0.9;
-      max-width: 480px;
-      margin: 0 auto;
-      line-height: 1.6;
-    }
-    .badge {
-      display: inline-block;
-      background: rgba(255,255,255,0.2);
-      padding: 8px 20px;
-      border-radius: 20px;
-      font-size: 14px;
-      font-weight: 600;
-      margin-top: 24px;
-    }
-    .hero-cta {
-      display: flex;
-      gap: 12px;
-      justify-content: center;
-      flex-wrap: wrap;
-      margin-top: 28px;
-    }
-    .btn {
+    .hero-pill {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 14px 24px;
-      border-radius: 14px;
-      font-size: 15px;
-      font-weight: 700;
-      text-decoration: none;
-      transition: transform 0.1s, box-shadow 0.2s;
-      cursor: pointer;
-      border: none;
-      font-family: inherit;
-    }
-    .btn-chrome {
       background: #fff;
-      color: #3182F6;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-    }
-    .btn-chrome:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 6px 16px rgba(0,0,0,0.18);
-    }
-    .btn-signup {
-      background: rgba(255,255,255,0.15);
-      color: #fff;
-      border: 1.5px solid rgba(255,255,255,0.4);
-    }
-    .btn-signup:hover {
-      background: rgba(255,255,255,0.22);
-      transform: translateY(-1px);
-    }
-    .trial-pill {
-      display: inline-block;
-      background: #FEE500;
-      color: #191F28;
-      padding: 6px 14px;
-      border-radius: 14px;
+      border: 1px solid var(--line);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      color: var(--ink-2);
+      padding: 7px 14px;
+      border-radius: 999px;
       font-size: 13px;
-      font-weight: 700;
-      margin-top: 16px;
+      font-weight: 600;
+      margin-bottom: 22px;
     }
-    .content {
-      max-width: 640px;
-      width: 100%;
-      padding: 40px 24px;
+    .hero-pill .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 3px rgba(34,160,107,0.18);
     }
-    .card {
-      background: #fff;
-      border-radius: 20px;
-      padding: 28px 24px;
-      margin-bottom: 16px;
-      border: 1px solid #E5E8EB;
+    .hero h1 {
+      font-size: 46px;
+      font-weight: 800;
+      letter-spacing: -1.2px;
+      line-height: 1.18;
+      color: var(--ink);
+      margin-bottom: 18px;
     }
-    .card h3 {
+    .hero h1 .hl {
+      background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero-sub {
       font-size: 18px;
-      font-weight: 700;
-      color: #333D4B;
-      margin-bottom: 12px;
+      color: var(--gray);
+      line-height: 1.65;
+      margin-bottom: 28px;
+      max-width: 480px;
     }
-    .card p {
-      font-size: 15px;
-      color: #4E5968;
-      line-height: 1.7;
+    .hero-cta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 15px 26px;
+      border-radius: 14px;
+      font-size: 16px; font-weight: 700;
+      text-decoration: none; cursor: pointer; border: none;
+      font-family: inherit;
+      transition: transform .12s ease, box-shadow .2s ease, background .15s ease;
     }
-    .features {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-top: 16px;
+    .btn:active { transform: translateY(1px) scale(0.99); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%);
+      color: #fff;
+      box-shadow: 0 8px 20px rgba(49,130,246,0.32);
     }
-    .feature-item {
+    .btn-primary:hover { box-shadow: 0 12px 28px rgba(49,130,246,0.42); transform: translateY(-1px); }
+    .btn-ghost {
+      background: #fff; color: var(--ink-2);
+      border: 1px solid var(--line);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .btn-ghost:hover { border-color: #CBD2DA; transform: translateY(-1px); }
+    .hero-note { margin-top: 16px; font-size: 13px; color: var(--gray-3); }
+    .hero-note strong { color: var(--gray); font-weight: 600; }
+
+    /* Hero mockup */
+    .mockup {
+      position: relative;
+      filter: drop-shadow(0 30px 60px rgba(25,31,40,0.18));
+    }
+    .browser {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+    .browser-bar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 10px 14px;
       background: #F8F9FA;
-      border-radius: 12px;
-      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .browser-bar .b { width: 11px; height: 11px; border-radius: 50%; }
+    .browser-bar .b1 { background: #FF5F57; }
+    .browser-bar .b2 { background: #FEBC2E; }
+    .browser-bar .b3 { background: #28C840; }
+    .browser-bar .url {
+      margin-left: 10px; flex: 1;
+      background: #fff; border: 1px solid var(--line);
+      border-radius: 8px; padding: 5px 12px;
+      font-size: 12px; color: var(--gray-3);
+    }
+    .browser img { width: 100%; height: auto; display: block; }
+    .float-badge {
+      position: absolute;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 12px 30px rgba(25,31,40,0.14);
+      padding: 12px 16px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .float-badge .ico { font-size: 20px; }
+    .float-badge .t { font-size: 13px; }
+    .float-badge .t b { display: block; font-size: 15px; font-weight: 800; color: var(--ink); }
+    .float-badge .t span { color: var(--gray-3); }
+    .fb-1 { top: 18px; left: -28px; animation: floaty 5s ease-in-out infinite; }
+    .fb-2 { bottom: 26px; right: -24px; animation: floaty 5s ease-in-out infinite 1.2s; }
+    @keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+
+    /* ── Trust bar ──────────────────────── */
+    .trust {
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: var(--bg);
+      padding: 26px 0;
+    }
+    .trust-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
       text-align: center;
     }
-    .feature-item .icon { font-size: 28px; margin-bottom: 8px; }
-    .feature-item .label { font-size: 14px; color: #333D4B; font-weight: 600; }
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 12px 0;
-      border-bottom: 1px solid #F2F4F6;
-      font-size: 15px;
+    .trust .num { font-size: 28px; font-weight: 800; color: var(--blue); letter-spacing: -0.5px; }
+    .trust .lab { font-size: 13px; color: var(--gray); margin-top: 4px; }
+
+    /* ── Section base ───────────────────── */
+    section.block { padding: 84px 0; }
+    .eyebrow {
+      display: inline-block;
+      color: var(--blue); font-weight: 700; font-size: 14px;
+      letter-spacing: 0.2px; margin-bottom: 12px;
     }
-    .info-row:last-child { border-bottom: none; }
-    .info-label { color: #8B95A1; }
-    .info-value { color: #333D4B; font-weight: 600; }
-    .footer {
+    .h2 {
+      font-size: 34px; font-weight: 800; letter-spacing: -0.8px;
+      color: var(--ink); line-height: 1.25;
+    }
+    .lead { font-size: 17px; color: var(--gray); line-height: 1.7; margin-top: 14px; }
+
+    /* Problem → Solution */
+    .ps { background: var(--bg); }
+    .ps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; }
+    .ps-card {
+      background: #fff; border: 1px solid var(--line);
+      border-radius: 20px; padding: 28px;
+    }
+    .ps-card.bad { border-top: 3px solid #FF6B6B; }
+    .ps-card.good { border-top: 3px solid var(--green); }
+    .ps-card h3 { font-size: 18px; font-weight: 800; margin-bottom: 14px; }
+    .ps-card ul { list-style: none; }
+    .ps-card li {
+      font-size: 15px; color: var(--gray); padding: 8px 0;
+      display: flex; gap: 10px; line-height: 1.5;
+    }
+    .ps-card li::before { flex-shrink: 0; font-weight: 800; }
+    .ps-card.bad li::before { content: '✕'; color: #FF6B6B; }
+    .ps-card.good li::before { content: '✓'; color: var(--green); }
+
+    /* Feature rows */
+    .feat { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+    .feat + .feat { margin-top: 96px; }
+    .feat.rev .feat-text { order: 2; }
+    .feat-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 40px; height: 40px; border-radius: 12px;
+      background: #EBF3FE; color: var(--blue);
+      font-weight: 800; font-size: 16px; margin-bottom: 16px;
+    }
+    .feat-text h3 { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px; }
+    .feat-text p { font-size: 16px; color: var(--gray); line-height: 1.7; }
+    .feat-text ul { list-style: none; margin-top: 16px; }
+    .feat-text li {
+      font-size: 15px; color: var(--ink-2); padding: 6px 0;
+      display: flex; gap: 9px; align-items: flex-start;
+    }
+    .feat-text li::before { content: '✓'; color: var(--green); font-weight: 800; flex-shrink: 0; }
+    .feat-shot {
+      border-radius: 18px; overflow: hidden;
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 50px rgba(25,31,40,0.14);
+      background: #fff;
+    }
+    .feat-shot img { width: 100%; height: auto; }
+
+    /* Autocalibrate highlight */
+    .auto {
+      background: linear-gradient(135deg, var(--blue) 0%, var(--blue-deep) 100%);
+      color: #fff;
+    }
+    .auto .eyebrow { color: #BBD6FF; }
+    .auto .h2 { color: #fff; }
+    .auto .lead { color: rgba(255,255,255,0.86); }
+    .auto-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 40px; }
+    .auto-stat {
+      background: rgba(255,255,255,0.10);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 18px; padding: 24px; text-align: center;
+      backdrop-filter: blur(4px);
+    }
+    .auto-stat .n { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; }
+    .auto-stat .l { font-size: 13px; color: rgba(255,255,255,0.78); margin-top: 6px; }
+    .auto-badge {
+      display: inline-block; margin-top: 22px;
+      background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.28);
+      padding: 7px 16px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    }
+
+    /* Pricing */
+    .price-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 40px; }
+    .price-card {
+      background: #fff; border: 1.5px solid var(--line);
+      border-radius: 20px; padding: 28px 24px;
+      display: flex; flex-direction: column;
+      position: relative;
+    }
+    .price-card.pop { border-color: var(--blue); box-shadow: 0 16px 40px rgba(49,130,246,0.14); }
+    .price-card.pop::before {
+      content: '인기'; position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
+      background: var(--blue); color: #fff; font-size: 12px; font-weight: 700;
+      padding: 4px 14px; border-radius: 999px;
+    }
+    .price-card .pname { font-size: 20px; font-weight: 800; }
+    .price-card .pprice { font-size: 30px; font-weight: 800; margin: 12px 0 2px; letter-spacing: -0.5px; }
+    .price-card .pprice small { font-size: 15px; font-weight: 600; color: var(--gray); }
+    .price-card .pann { font-size: 13px; color: var(--green); font-weight: 600; min-height: 18px; }
+    .price-card ul { list-style: none; margin: 18px 0 22px; flex: 1; }
+    .price-card li { font-size: 14px; color: var(--gray); padding: 6px 0; display: flex; gap: 8px; }
+    .price-card li::before { content: '✓'; color: var(--green); font-weight: 800; flex-shrink: 0; }
+    .price-card .pbtn {
+      text-align: center; padding: 13px; border-radius: 12px;
+      font-weight: 700; font-size: 15px; text-decoration: none;
+    }
+    .pbtn-primary { background: var(--blue); color: #fff; }
+    .pbtn-primary:hover { background: var(--blue-dark); }
+    .pbtn-ghost { background: var(--bg); color: var(--ink-2); }
+
+    /* Final CTA */
+    .cta {
+      background: var(--bg);
       text-align: center;
-      padding: 32px 24px;
-      color: #8B95A1;
-      font-size: 13px;
-      line-height: 1.8;
+    }
+    .cta .box {
+      background: linear-gradient(135deg, var(--blue) 0%, var(--blue-deep) 100%);
+      border-radius: 28px; padding: 56px 32px; color: #fff;
+      box-shadow: 0 24px 60px rgba(49,130,246,0.28);
+    }
+    .cta h2 { font-size: 32px; font-weight: 800; letter-spacing: -0.6px; }
+    .cta p { font-size: 17px; opacity: 0.92; margin: 12px 0 26px; }
+    .cta .btn-white { background: #fff; color: var(--blue); box-shadow: 0 8px 22px rgba(0,0,0,0.18); }
+    .cta .btn-white:hover { transform: translateY(-1px); }
+    .cta .btn-outline { background: transparent; color: #fff; border: 1.5px solid rgba(255,255,255,0.55); }
+
+    /* Footer */
+    footer {
+      background: var(--ink);
+      color: #C2CAD3;
+      padding: 48px 0 32px;
+      font-size: 14px;
+    }
+    .foot-top { display: flex; justify-content: space-between; gap: 32px; flex-wrap: wrap; }
+    .foot-brand b { color: #fff; font-size: 20px; font-weight: 800; }
+    .foot-brand p { margin-top: 8px; color: #8B95A1; max-width: 280px; line-height: 1.6; }
+    .foot-links { display: flex; gap: 40px; flex-wrap: wrap; }
+    .foot-col h4 { color: #fff; font-size: 13px; margin-bottom: 12px; font-weight: 700; }
+    .foot-col a { display: block; color: #97A1AD; text-decoration: none; padding: 4px 0; }
+    .foot-col a:hover { color: #fff; }
+    .foot-biz {
+      border-top: 1px solid #2A323C; margin-top: 32px; padding-top: 20px;
+      color: #6E7884; font-size: 12.5px; line-height: 1.9;
+    }
+
+    /* Responsive */
+    @media (max-width: 880px) {
+      .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+      .mockup { max-width: 460px; margin: 0 auto; }
+      .float-badge { display: none; }
+      .trust-grid { grid-template-columns: repeat(2, 1fr); gap: 24px; }
+      .ps-grid { grid-template-columns: 1fr; }
+      .feat { grid-template-columns: 1fr; gap: 28px; }
+      .feat.rev .feat-text { order: 0; }
+      .auto-stats { grid-template-columns: 1fr; }
+      .price-grid { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 36px; }
+      .h2 { font-size: 28px; }
     }
     @media (max-width: 480px) {
-      .hero h1 { font-size: 28px; }
-      .hero p { font-size: 16px; }
-      .features { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 30px; }
+      .hero-sub { font-size: 16px; }
+      section.block { padding: 60px 0; }
+      .cta .box { padding: 40px 22px; }
     }
   </style>
 </head>
 <body>
-  <div class="hero">
-    <h1>BidEasy</h1>
-    <p>공공 입찰, 지는 게임은 안 합니다.<br>데이터 기반 입찰 안전 비서</p>
-    <div class="trial-pill">🎁 신규 가입 시 Pro 14일 무료 체험</div>
-    <div style="margin-top:14px;">
-      <a href="/guide" style="color:rgba(255,255,255,0.85);text-decoration:underline;font-size:14px;font-weight:500;">▶ 30초 사용법 보기</a>
-    </div>
-    <div class="hero-cta">
-      <a class="btn btn-chrome" href="https://chrome.google.com/webstore/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener">
-        <svg width="20" height="20" viewBox="0 0 48 48" fill="none">
-          <circle cx="24" cy="24" r="20" fill="#fff" stroke="#3182F6" stroke-width="2"/>
-          <path d="M24 14 L40 14 A20 20 0 0 1 31 32 Z" fill="#EA4335"/>
-          <path d="M24 14 A20 20 0 0 0 8 24 L17 34 A12 12 0 0 1 24 14 Z" fill="#FBBC04"/>
-          <path d="M17 34 A12 12 0 0 0 31 32 L24 24 L8 24 A20 20 0 0 0 17 34 Z" fill="#34A853"/>
-          <circle cx="24" cy="24" r="7" fill="#fff" stroke="#3182F6" stroke-width="2"/>
-        </svg>
-        Chrome에 설치
-      </a>
-      <a class="btn btn-signup" href="/signup">14일 체험 시작</a>
-    </div>
-    <span class="badge" style="margin-top:18px;">Google Play / App Store 출시 예정</span>
-  </div>
 
-  <div class="content">
-    <div class="card">
-      <h3>주요 기능</h3>
-      <div class="features">
-        <div class="feature-item">
-          <div class="icon">&#x1F4CB;</div>
-          <div class="label">맞춤 공고 피드</div>
+  <!-- ── Hero ─────────────────────────── -->
+  <header class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-text">
+        <span class="hero-pill"><span class="dot"></span>나라장터 입찰, 더 안전하게</span>
+        <h1>공공입찰,<br><span class="hl">지는 게임은</span> 안 합니다</h1>
+        <p class="hero-sub">
+          나라장터 공고 페이지에서 바로 사정률 계산·AI 분석·자격 매칭·마감 알림.
+          매주 스스로 학습하는 자가보정 알고리즘이 낙찰률을 끌어올립니다.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="https://chrome.google.com/webstore/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener">
+            <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+              <circle cx="24" cy="24" r="21" fill="#fff"/>
+              <path d="M24 13 L42 13 A21 21 0 0 1 32 32 Z" fill="#EA4335"/>
+              <path d="M24 13 A21 21 0 0 0 7 24 L16.5 34 A12 12 0 0 1 24 13 Z" fill="#FBBC04"/>
+              <path d="M16.5 34 A12 12 0 0 0 32 32 L24 24 L7 24 A21 21 0 0 0 16.5 34 Z" fill="#34A853"/>
+              <circle cx="24" cy="24" r="7.5" fill="#fff"/><circle cx="24" cy="24" r="6" fill="#4285F4"/>
+            </svg>
+            Chrome에 무료 설치
+          </a>
+          <a class="btn btn-ghost" href="/signup">14일 무료로 시작</a>
         </div>
-        <div class="feature-item">
-          <div class="icon">&#x1F4CA;</div>
-          <div class="label">투찰가 계산기</div>
+        <p class="hero-note">🎁 신규 가입 시 <strong>Pro 모든 기능 14일 무료</strong> · 신용카드 불필요</p>
+      </div>
+
+      <div class="mockup">
+        <div class="browser">
+          <div class="browser-bar">
+            <span class="b b1"></span><span class="b b2"></span><span class="b b3"></span>
+            <span class="url">www.g2b.go.kr · BidEasy 분석 중</span>
+          </div>
+          <img src="/guide-assets/01-main-g2b-with-sidepanel.png" alt="나라장터 공고 페이지와 BidEasy 사이드패널" loading="eager">
         </div>
-        <div class="feature-item">
-          <div class="icon">&#x1F916;</div>
-          <div class="label">AI 공고 분석</div>
+        <div class="float-badge fb-1">
+          <span class="ico">📊</span>
+          <span class="t"><b>1원 단위 계산</b><span>사정률 즉시 반영</span></span>
         </div>
-        <div class="feature-item">
-          <div class="icon">&#x1F6E1;</div>
-          <div class="label">독소조항 탐지</div>
+        <div class="float-badge fb-2">
+          <span class="ico">🛡️</span>
+          <span class="t"><b>하한선 안전</b><span>적자 수주 차단</span></span>
         </div>
       </div>
     </div>
+  </header>
 
-    <div class="card">
-      <h3>서비스 안내</h3>
-      <p>BidEasy는 공공 입찰 시장에서 중소 건설업체를 위한 데이터 기반 입찰 분석 서비스입니다. 공고 요약, 위험요소 분석, 투찰가 안전성 검증 등을 제공합니다.</p>
-    </div>
-
-    <div class="card">
-      <h3>요금제</h3>
-      <div class="info-row">
-        <span class="info-label">Free</span>
-        <span class="info-value">무료 (AI 분석 일 1회)</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Pro</span>
-        <span class="info-value">월 14,900원 · 연 140,000원 <span style="color:#22A06B;font-size:13px;font-weight:500;">(20%↓)</span></span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Pro+</span>
-        <span class="info-value">월 29,900원 · 연 280,000원 <span style="color:#22A06B;font-size:13px;font-weight:500;">(20%↓)</span></span>
-      </div>
-      <div style="text-align:center;margin-top:16px;">
-        <a href="/pricing" style="display:inline-block;padding:10px 24px;background:#3182F6;color:#fff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:600;">요금제 자세히 보기 →</a>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>사업자 정보</h3>
-      <div class="info-row">
-        <span class="info-label">상호</span>
-        <span class="info-value">호시(HOSI)</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">대표</span>
-        <span class="info-value">호시</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">사업자등록번호</span>
-        <span class="info-value">420-29-00113</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">문의</span>
-        <span class="info-value">support@bideasy.kr</span>
-      </div>
+  <!-- ── Trust bar ────────────────────── -->
+  <div class="trust">
+    <div class="wrap trust-grid">
+      <div><div class="num">4,848건</div><div class="lab">5년치 개찰 데이터 학습</div></div>
+      <div><div class="num">매주</div><div class="lab">자동 재학습 (자가보정)</div></div>
+      <div><div class="num">30초</div><div class="lab">공고 분석 소요 시간</div></div>
+      <div><div class="num">특허</div><div class="lab">자가보정 알고리즘 출원 예정</div></div>
     </div>
   </div>
 
-  <div class="footer">
-    <p>&copy; 2025 BidEasy. All rights reserved.</p>
-    <p>호시(HOSI) | 사업자등록번호 420-29-00113</p>
-    <p style="margin-top:12px;">
-      <a href="/signup" style="color:#3182F6;text-decoration:none;font-weight:600;">회원가입</a> ·
-      <a href="/login" style="color:#3182F6;text-decoration:none;">로그인</a> ·
-      <a href="/pricing" style="color:#3182F6;text-decoration:none;">요금제</a> ·
-      <a href="/guide" style="color:#3182F6;text-decoration:none;">사용 가이드</a> ·
-      <a href="/account" style="color:#3182F6;text-decoration:none;">마이페이지</a> ·
-      <a href="/terms" style="color:#3182F6;text-decoration:none;">이용약관</a> ·
-      <a href="/privacy" style="color:#3182F6;text-decoration:none;">개인정보처리방침</a>
-    </p>
-  </div>
+  <!-- ── Problem → Solution ───────────── -->
+  <section class="block ps">
+    <div class="wrap center">
+      <span class="eyebrow">왜 BidEasy인가</span>
+      <h2 class="h2">손으로 계산하다 적자 수주,<br>이제 그만하세요</h2>
+    </div>
+    <div class="wrap ps-grid">
+      <div class="ps-card bad">
+        <h3>😣 지금까지는</h3>
+        <ul>
+          <li>공고마다 엑셀로 사정률·투찰가 직접 계산</li>
+          <li>하한선 실수로 적자 수주 또는 무효 입찰</li>
+          <li>공고문 수십 장 읽으며 독소조항 놓침</li>
+          <li>자격 요건 일일이 대조, 헛심 입찰</li>
+        </ul>
+      </div>
+      <div class="ps-card good">
+        <h3>🚀 BidEasy로는</h3>
+        <ul>
+          <li>슬라이더 한 번에 1원 단위 투찰가 산출</li>
+          <li>하한선 미달 시 자동 빨간 경고</li>
+          <li>AI가 3줄 요약 + 독소조항 자동 탐지</li>
+          <li>면허·지역 자동 매칭으로 참여 가능 여부 즉시</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Features ─────────────────────── -->
+  <section class="block">
+    <div class="wrap center" style="margin-bottom:64px;">
+      <span class="eyebrow">핵심 기능</span>
+      <h2 class="h2">입찰 담당자가 매일 하던 일을,<br>사이드패널 하나로</h2>
+    </div>
+
+    <div class="wrap">
+      <!-- F1 -->
+      <div class="feat">
+        <div class="feat-text">
+          <div class="feat-num">1</div>
+          <h3>즉시 투찰가 계산</h3>
+          <p>나라장터 공고를 열면 기초금액이 자동으로 잡힙니다. 슬라이더로 사정률만 조정하면 1원 단위까지 정확한 투찰가가 실시간으로.</p>
+          <ul>
+            <li>사정률 -2% ~ +2% 슬라이더 즉시 반영</li>
+            <li>A값(국민연금 등 사후정산) 자동 분리 계산</li>
+            <li>낙찰 하한선 미달 시 빨간 경고</li>
+          </ul>
+        </div>
+        <div class="feat-shot"><img src="/guide-assets/02-calculator.png" alt="투찰가 계산기" loading="lazy"></div>
+      </div>
+
+      <!-- F2 -->
+      <div class="feat rev">
+        <div class="feat-text">
+          <div class="feat-num">2</div>
+          <h3>AI 공고 분석</h3>
+          <p>GPT 기반 AI가 공고문 전체를 읽고 핵심만 추출. 30초면 이 공고가 할 만한지 판단할 수 있습니다.</p>
+          <ul>
+            <li>공고 핵심 3줄 요약</li>
+            <li>이행보증·지체상금 등 독소조항 자동 탐지</li>
+            <li>마감일·예정가·자격요건 자동 정리</li>
+          </ul>
+        </div>
+        <div class="feat-shot"><img src="/guide-assets/03-ai-analysis.png" alt="AI 공고 분석" loading="lazy"></div>
+      </div>
+
+      <!-- F3 -->
+      <div class="feat">
+        <div class="feat-text">
+          <div class="feat-num">3</div>
+          <h3>즐겨찾기 · 마감 알림</h3>
+          <p>관심 공고를 담아두면 마감 1시간·15분 전 자동 푸시 알림. 놓쳐서 못 넣는 입찰이 없도록.</p>
+          <ul>
+            <li>마감 임박 Chrome 푸시 알림</li>
+            <li>알림 클릭 시 해당 공고로 즉시 이동</li>
+            <li>새 공고 자동 감지</li>
+          </ul>
+        </div>
+        <div class="feat-shot"><img src="/guide-assets/04-tracking-favorites.png" alt="즐겨찾기와 마감 추적" loading="lazy"></div>
+      </div>
+
+      <!-- F4 -->
+      <div class="feat rev">
+        <div class="feat-text">
+          <div class="feat-num">4</div>
+          <h3>자격 자동 매칭</h3>
+          <p>회사 정보를 한 번 등록하면, 모든 공고에서 참여 가능 여부를 자동으로 표시. 헛심 입찰을 줄입니다.</p>
+          <ul>
+            <li>면허·지역·시공능력 자동 대조</li>
+            <li>공고 목록에서 ✓적합 / ✗부적합 뱃지</li>
+            <li>참여 가능 공고만 빠르게 선별</li>
+          </ul>
+        </div>
+        <div class="feat-shot"><img src="/guide-assets/05-profile.png" alt="프로필 자격 매칭" loading="lazy"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Autocalibrate ────────────────── -->
+  <section class="block auto">
+    <div class="wrap center">
+      <span class="eyebrow">BidEasy만의 차별점</span>
+      <h2 class="h2">쓸수록 똑똑해지는<br>자가보정 알고리즘</h2>
+      <p class="lead" style="max-width:560px;margin-left:auto;margin-right:auto;">
+        매주 새로 쌓이는 개찰 결과를 스스로 학습해 사정률 추천값을 자동으로 재최적화합니다.
+        회귀 가드가 성능 퇴행을 차단하니, 사용자는 손대지 않아도 시간이 갈수록 정확해집니다.
+      </p>
+      <div class="auto-stats">
+        <div class="auto-stat"><div class="n">94.9%</div><div class="l">하한선 통과율</div></div>
+        <div class="auto-stat"><div class="n">5.1%</div><div class="l">하한선 탈락률 (지속 감소 중)</div></div>
+        <div class="auto-stat"><div class="n">4,848건</div><div class="l">학습 데이터 (5년치)</div></div>
+      </div>
+      <div class="auto-badge">🔬 특허 출원 예정 · 사용자가 손대지 않아도 자동 개선</div>
+    </div>
+  </section>
+
+  <!-- ── Pricing ──────────────────────── -->
+  <section class="block">
+    <div class="wrap center">
+      <span class="eyebrow">요금제</span>
+      <h2 class="h2">14일 무료로 먼저 써보세요</h2>
+      <p class="lead">신용카드 등록 없이 Pro 모든 기능을 14일간. 마음에 들면 그때 결제하셔도 늦지 않아요.</p>
+    </div>
+    <div class="wrap price-grid">
+      <div class="price-card">
+        <div class="pname">Free</div>
+        <div class="pprice">0<small>원</small></div>
+        <div class="pann">영구 무료</div>
+        <ul>
+          <li>투찰가 계산기 무제한</li>
+          <li>공고 피드 · 즐겨찾기</li>
+          <li>AI 분석 일 1회</li>
+        </ul>
+        <a class="pbtn pbtn-ghost" href="/signup">무료로 시작</a>
+      </div>
+      <div class="price-card pop">
+        <div class="pname">Pro</div>
+        <div class="pprice">14,900<small>원/월</small></div>
+        <div class="pann">연 140,000원 · 20% 할인</div>
+        <ul>
+          <li>AI 분석 일 50회</li>
+          <li>Deep Analysis (첨부 HWP·PDF)</li>
+          <li>경쟁 강도 예측 · 투찰가 검증</li>
+          <li>🎁 14일 무료 체험</li>
+        </ul>
+        <a class="pbtn pbtn-primary" href="/signup">14일 무료 체험</a>
+      </div>
+      <div class="price-card">
+        <div class="pname">Pro+</div>
+        <div class="pprice">29,900<small>원/월</small></div>
+        <div class="pann">연 280,000원 · 20% 할인</div>
+        <ul>
+          <li>Pro의 모든 기능</li>
+          <li>AI 분석 무제한</li>
+          <li>기관 프로파일링 · 사정률 예측 ML</li>
+          <li>스마트 투찰 추천</li>
+        </ul>
+        <a class="pbtn pbtn-ghost" href="/pricing">자세히 보기</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Final CTA ────────────────────── -->
+  <section class="block cta">
+    <div class="wrap">
+      <div class="box">
+        <h2>지금 바로 시작하세요</h2>
+        <p>설치 1초, 가입 30초. 오늘 보는 공고부터 BidEasy와 함께.</p>
+        <div class="hero-cta" style="justify-content:center;">
+          <a class="btn btn-white" href="https://chrome.google.com/webstore/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener">Chrome에 무료 설치</a>
+          <a class="btn btn-outline" href="/signup">14일 무료 체험</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ───────────────────────── -->
+  <footer>
+    <div class="wrap">
+      <div class="foot-top">
+        <div class="foot-brand">
+          <b>BidEasy</b>
+          <p>공공 입찰 시장의 중소 시공사를 위한 데이터 기반 입찰 안전 비서.</p>
+        </div>
+        <div class="foot-links">
+          <div class="foot-col">
+            <h4>제품</h4>
+            <a href="/guide">사용 가이드</a>
+            <a href="/pricing">요금제</a>
+            <a href="https://chrome.google.com/webstore/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener">Chrome 설치</a>
+          </div>
+          <div class="foot-col">
+            <h4>계정</h4>
+            <a href="/signup">회원가입</a>
+            <a href="/login">로그인</a>
+            <a href="/account">마이페이지</a>
+          </div>
+          <div class="foot-col">
+            <h4>약관</h4>
+            <a href="/terms">이용약관</a>
+            <a href="/privacy">개인정보처리방침</a>
+            <a href="mailto:support@bideasy.kr">문의</a>
+          </div>
+        </div>
+      </div>
+      <div class="foot-biz">
+        호시(HOSI) · 대표 호시 · 사업자등록번호 420-29-00113<br>
+        문의 support@bideasy.kr · &copy; 2026 BidEasy. All rights reserved.
+      </div>
+    </div>
+  </footer>
 
   <script>
-    // OAuth 콜백에서 ?token= 으로 돌아오는 경우 처리
+    // OAuth 콜백에서 ?token= 으로 돌아오는 경우 처리 (기존 로직 보존)
     (function () {
       const params = new URLSearchParams(window.location.search);
       const token = params.get('token');
@@ -273,7 +628,6 @@
       try { localStorage.setItem('jwt', token); } catch {}
       try { window.postMessage({ type: 'BIDEASY_TOKEN', token }, window.location.origin); } catch {}
       history.replaceState(null, '', window.location.pathname);
-      // 사용자에게 알림
       const note = document.createElement('div');
       note.style.cssText = 'position:fixed;top:16px;right:16px;background:#3182F6;color:#fff;padding:14px 18px;border-radius:12px;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,0.15);z-index:9999;';
       note.textContent = '✓ 로그인 성공! 익스텐션이 토큰을 받아갑니다.';
