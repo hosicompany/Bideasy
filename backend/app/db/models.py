@@ -42,6 +42,18 @@ class User(Base):
     # 관리자 권한 (require_admin 의존성에서 검사)
     is_admin = Column(Boolean, nullable=False, default=False, server_default="false")
 
+    # === 자동결제(빌링) ===
+    # 토스 빌링키 — 카드 등록(requestBillingAuth) 후 발급, 영구 보관하며 매 주기 자동청구에 사용.
+    billing_key = Column(String(200), nullable=True)
+    # 빌링키 발급 시 사용한 customerKey — 청구 시 동일 값 필요 (사용자당 1개 재사용)
+    billing_customer_key = Column(String(100), nullable=True)
+    # 표시용 마스킹 카드정보 (예: "신한 ****1234") — 보안상 원본 카드번호 미보관
+    billing_card = Column(String(80), nullable=True)
+    # 자동 갱신 주기 (monthly | annual)
+    billing_cycle = Column(String(20), nullable=True)
+    # 자동 갱신 on/off — 해지 시 false (구독은 만료일까지 유지)
+    auto_renew = Column(Boolean, nullable=False, default=False, server_default="false")
+
     bids = relationship("UserBid", back_populates="user")
     point_transactions = relationship("PointTransaction", back_populates="user")
 

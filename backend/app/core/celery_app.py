@@ -11,6 +11,7 @@ celery_app = Celery(
         "app.tasks.verification_tasks",
         "app.tasks.trial_tasks",
         "app.tasks.admin_report_tasks",
+        "app.tasks.billing_tasks",
     ],
 )
 
@@ -52,5 +53,10 @@ celery_app.conf.beat_schedule = {
     "weekly-strategy-recalibration": {
         "task": "autocalibrate.recalibrate_strategy",
         "schedule": crontab(hour=4, minute=0, day_of_week=1),
+    },
+    # 5) 매일 03:00 — 만료 임박 자동결제 구독 갱신 청구
+    "daily-billing-renewal": {
+        "task": "billing.charge_due_subscriptions",
+        "schedule": crontab(hour=3, minute=0),
     },
 }

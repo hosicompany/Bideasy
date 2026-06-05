@@ -81,6 +81,20 @@ class Settings(BaseSettings):
     TOSS_SECRET_KEY: str = ""
     TOSS_WEBHOOK_SECRET: str = ""
 
+    # 자동결제(빌링) 전용 키 — 빌링 MID(bill_bideaid9e) 승인 후 발급되는 키.
+    # 비어 있으면 일반 결제 키로 fallback (토스 테스트키는 단건·빌링 모두 지원하므로
+    # 테스트 환경에서는 TOSS_CLIENT_KEY/SECRET_KEY 만으로 빌링 E2E 가능).
+    TOSS_BILLING_CLIENT_KEY: str = ""
+    TOSS_BILLING_SECRET_KEY: str = ""
+
+    @property
+    def toss_billing_client_key(self) -> str:
+        return self.TOSS_BILLING_CLIENT_KEY or self.TOSS_CLIENT_KEY
+
+    @property
+    def toss_billing_secret_key(self) -> str:
+        return self.TOSS_BILLING_SECRET_KEY or self.TOSS_SECRET_KEY
+
     # === Admin daily report ===
     # 슬랙 incoming webhook URL (옵션). 없으면 in-app Notification 만 발송.
     SLACK_WEBHOOK_URL: str = ""

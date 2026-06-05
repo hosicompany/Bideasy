@@ -6,6 +6,13 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
+
+from app.services.billing import (
+    issue_billing_key,
+    charge_billing_key,
+    BillingError,
+)
 
 from app.db.session import get_db
 from app.db import models
@@ -432,18 +439,25 @@ def cancel_subscription(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """구독 해지 (만료일까지 사용 가능, 갱신 안 함)"""
-    if (current_user.tier or TIER_FREE) == TIER_FREE:
+    """구독 해지 — 자동 갱신 중단. 남은 구독 기간은 만료일까지 유지."""
+    was_auto = bool(current_user.auto_renew)
+    if (current_user.tier or TIER_FREE) == TIER_FREE and not was_auto:
         raise HTTPException(status_code=400, detail="현재 구독 중이 아닙니다")
 
+    # 자동 갱신만 끈다 (빌링키는 보관 — 재구독 시 재사용 가능).
+    current_user.auto_renew = False
+    db.commit()
+
     logger.info(
-        f"Subscription cancelled: user_id={current_user.id}, "
-        f"tier={current_user.tier}, expires_at={current_user.subscription_expires_at}"
+        f"Subscription cancelled (auto_renew off): user_id={current_user.id}, "
+        f"tier={current_user.tier}, expires_at={current_user.subscription_expires_at}, "
+        f"was_auto_renew={was_auto}"
     )
+    log_event("subscription_cancelled", user_id=current_user.id, tier=current_user.tier)
 
     return {
         "success": True,
-        "message": "구독이 해지되었어요. 만료일까지 계속 이용 가능합니다.",
+        "message": "자동 갱신을 해지했어요. 만료일까지 계속 이용 가능합니다.",
         "expires_at": current_user.subscription_expires_at.isoformat()
         if current_user.subscription_expires_at else None,
     }
@@ -477,7 +491,9 @@ def get_payment_history(
         "items": [
             {
                 "order_id": o.order_id,
-                "order_kind": "subscription" if o.order_id.startswith("SUB_") else "points",
+                "order_kind": "subscription"
+                if o.order_id.startswith(("SUB_", "BILL_", "BILLR_"))
+                else "points",
                 "amount": o.amount,
                 "status": o.status,
                 "method": o.method,
@@ -487,4 +503,280 @@ def get_payment_history(
             for o in orders
         ],
         "total": len(orders),
+    }
+
+
+# ─── 자동결제(빌링) Endpoints ───
+#
+# 단건결제(/subscribe)와 달리, 빌링은 카드를 1회 등록(빌링키 발급)해두고 매 주기
+# 자동청구한다. 흐름:
+#   1) POST /payments/billing/prepare  — 주문 생성 + customerKey 발급
+#   2) [프론트] tossPayments.requestBillingAuth → successUrl 콜백
+#   3) GET  /payments/billing/success  — 빌링키 발급·저장 + 첫 청구 + 티어 적용
+#   4) Celery 가 매일 만료 임박분을 자동청구 (billing_tasks.charge_due_subscriptions)
+
+# 티어 ↔ 짧은 코드 (order_id 인코딩용 — pro_plus 의 '_' 파싱 모호성 회피)
+_TIER_CODE = {TIER_PRO: "P", TIER_PRO_PLUS: "PP"}
+_CODE_TIER = {"P": TIER_PRO, "PP": TIER_PRO_PLUS}
+
+
+def _billing_customer_key(user: models.User) -> str:
+    """사용자당 안정적인 customerKey 반환 (없으면 생성). 토스 규격: [A-Za-z0-9-_=.@] 2~50자."""
+    if user.billing_customer_key:
+        return user.billing_customer_key
+    return f"BIDEASYU{user.id}{secrets.token_hex(6)}"
+
+
+def _apply_subscription_after_charge(
+    user: models.User, tier: str, is_annual: bool, extend_from_existing: bool = False
+) -> int:
+    """청구 성공 후 티어 업그레이드 + 만료일 설정. 갱신 일수 반환.
+
+    extend_from_existing=True (자동 갱신): 남은 기간이 있으면 이어붙임 (조기청구 손해 방지).
+    """
+    now = datetime.now(timezone.utc)
+    days = 365 if is_annual else 30
+    if extend_from_existing and user.subscription_expires_at:
+        cur = user.subscription_expires_at
+        if cur.tzinfo is None:
+            cur = cur.replace(tzinfo=timezone.utc)
+        start = cur if cur > now else now
+    else:
+        start = now
+    user.tier = tier
+    user.subscription_expires_at = start + timedelta(days=days)
+    return days
+
+
+@router.post("/billing/prepare")
+def billing_prepare(
+    request: SubscribeRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """자동결제 등록 준비 — 주문 생성 + customerKey 발급.
+
+    프론트는 응답의 customer_key 로 tossPayments.requestBillingAuth 를 호출하고,
+    successUrl 에 order_id 를 실어 보낸다. (첫 청구 금액 = 응답 amount)
+    """
+    if request.tier not in (TIER_PRO, TIER_PRO_PLUS):
+        raise HTTPException(status_code=400, detail="유효하지 않은 구독 티어입니다")
+    if request.billing_cycle not in ("monthly", "annual"):
+        raise HTTPException(status_code=400, detail="유효하지 않은 결제 주기입니다")
+
+    is_annual = request.billing_cycle == "annual"
+    original_amount = (ANNUAL_PRICES if is_annual else MONTHLY_PRICES)[request.tier]
+
+    # 첫 달 50% win-back (월간 + 자격자) — 단건결제와 동일 정책
+    from app.schemas.subscription import (
+        is_winback_eligible,
+        calculate_winback_discount,
+        WINBACK_REASON_CODE,
+    )
+
+    amount = original_amount
+    discount_amount = None
+    discount_reason = None
+    if not is_annual and is_winback_eligible(current_user, db):
+        discount_amount = calculate_winback_discount(original_amount)
+        amount = original_amount - discount_amount
+        discount_reason = WINBACK_REASON_CODE
+
+    # customerKey 확정·저장 (재사용)
+    customer_key = _billing_customer_key(current_user)
+    if not current_user.billing_customer_key:
+        current_user.billing_customer_key = customer_key
+
+    now = datetime.now(timezone.utc)
+    ts = int(now.timestamp())
+    rand = secrets.token_hex(4)
+    cyc = "a" if is_annual else "m"
+    order_id = f"BILL_{current_user.id}_{_TIER_CODE[request.tier]}_{cyc}_{ts}_{rand}"
+
+    order = models.PaymentOrder(
+        user_id=current_user.id,
+        order_id=order_id,
+        amount=amount,
+        status="PENDING",
+        discount_amount=discount_amount,
+        discount_reason=discount_reason,
+    )
+    db.add(order)
+    db.commit()
+
+    tier_display = TIER_DISPLAY_NAMES.get(request.tier, request.tier)
+    cycle_display = "연간" if is_annual else "월간"
+    order_name = f"BidEasy {tier_display} 자동결제 ({cycle_display})"
+
+    logger.info(
+        f"Billing prepare: order={order_id}, user={current_user.id}, "
+        f"tier={request.tier}, cycle={request.billing_cycle}, amount={amount}"
+    )
+    log_event(
+        "billing_prepare",
+        user_id=current_user.id,
+        tier=request.tier,
+        cycle=request.billing_cycle,
+        amount=amount,
+        discount_amount=discount_amount or 0,
+    )
+
+    return {
+        "order_id": order_id,
+        "customer_key": customer_key,
+        "amount": amount,
+        "order_name": order_name,
+        "customer_email": current_user.email,
+        "customer_name": current_user.company_name or current_user.email or "BidEasy User",
+        "toss_client_key": settings.toss_billing_client_key,
+        "tier": request.tier,
+        "billing_cycle": request.billing_cycle,
+    }
+
+
+@router.get("/billing/success")
+async def billing_success(
+    customerKey: str = Query(...),
+    authKey: str = Query(...),
+    orderId: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """빌링 인증 성공 콜백 → 빌링키 발급·저장 → 첫 청구 → 티어 적용 → 프론트 리다이렉트."""
+    order = (
+        db.query(models.PaymentOrder)
+        .filter(models.PaymentOrder.order_id == orderId)
+        .first()
+    )
+    if not order:
+        logger.warning(f"Billing success: order not found: {orderId}")
+        return RedirectResponse(
+            f"{settings.FRONTEND_URL}/?payment=fail&message=주문을 찾을 수 없습니다"
+        )
+
+    if order.status == "CONFIRMED":
+        params = urlencode({"payment": "success", "amount": str(order.amount), "type": "billing"})
+        return RedirectResponse(f"{settings.FRONTEND_URL}/account?{params}")
+
+    user = db.query(models.User).filter(models.User.id == order.user_id).first()
+    if not user:
+        logger.warning(f"Billing success: user not found for order {orderId}")
+        return RedirectResponse(
+            f"{settings.FRONTEND_URL}/?payment=fail&message=사용자를 찾을 수 없습니다"
+        )
+
+    # order_id: BILL_{uid}_{code}_{cyc}_{ts}_{rand}
+    parts = orderId.split("_")
+    tier = _CODE_TIER.get(parts[2], TIER_PRO) if len(parts) >= 6 else TIER_PRO
+    is_annual = (parts[3] == "a") if len(parts) >= 6 else (order.amount >= 100_000)
+
+    tier_display = TIER_DISPLAY_NAMES.get(tier, tier)
+    order_name = f"BidEasy {tier_display} 자동결제 ({'연간' if is_annual else '월간'})"
+
+    # 1) 빌링키 발급 (sync httpx → threadpool)
+    try:
+        issued = await run_in_threadpool(issue_billing_key, authKey, customerKey)
+    except BillingError as e:
+        logger.warning(f"Billing key issue failed: order={orderId} {e.code} {e.message}")
+        order.status = "FAILED"
+        order.fail_reason = f"빌링키 발급 실패: {e.message}"[:500]
+        db.commit()
+        return RedirectResponse(
+            f"{settings.FRONTEND_URL}/account?payment=fail&message={e.message}"
+        )
+
+    # 빌링키·카드정보 저장 (청구 실패해도 카드 등록은 유효 — 재시도 가능)
+    user.billing_key = issued["billingKey"]
+    user.billing_customer_key = customerKey
+    user.billing_card = issued["card_display"]
+    user.billing_cycle = "annual" if is_annual else "monthly"
+    db.commit()
+
+    # 2) 첫 청구
+    try:
+        charged = await run_in_threadpool(
+            lambda: charge_billing_key(
+                billing_key=user.billing_key,
+                customer_key=customerKey,
+                amount=order.amount,
+                order_id=orderId,
+                order_name=order_name,
+                customer_email=user.email,
+                customer_name=user.company_name or user.email,
+                idempotency_key=orderId,
+            )
+        )
+    except BillingError as e:
+        logger.warning(f"Billing first charge failed: order={orderId} {e.code} {e.message}")
+        order.status = "FAILED"
+        order.fail_reason = f"첫 결제 실패: {e.message}"[:500]
+        user.auto_renew = False
+        db.commit()
+        return RedirectResponse(
+            f"{settings.FRONTEND_URL}/account?payment=fail&message={e.message}"
+        )
+
+    # 3) 티어 적용 + 자동갱신 ON
+    days = _apply_subscription_after_charge(user, tier, is_annual, extend_from_existing=False)
+    user.auto_renew = True
+    order.status = "CONFIRMED"
+    order.payment_key = charged["paymentKey"]
+    order.method = charged["method"]
+    order.confirmed_at = datetime.now(timezone.utc)
+    db.commit()
+
+    logger.info(
+        f"Billing first charge confirmed: order={orderId}, user={user.id}, "
+        f"tier={tier}, days={days}, card={user.billing_card}"
+    )
+    log_event(
+        "billing_first_charge",
+        user_id=user.id,
+        tier=tier,
+        cycle=user.billing_cycle,
+        amount=order.amount,
+    )
+    params = urlencode({"payment": "success", "amount": str(order.amount), "type": "billing"})
+    return RedirectResponse(f"{settings.FRONTEND_URL}/account?{params}")
+
+
+@router.get("/billing/fail")
+async def billing_fail(
+    code: str = Query(default=""),
+    message: str = Query(default="자동결제 등록이 취소되었습니다"),
+    orderId: str = Query(default=""),
+    db: Session = Depends(get_db),
+):
+    """빌링 인증 실패/취소 콜백."""
+    if orderId:
+        order = (
+            db.query(models.PaymentOrder)
+            .filter(models.PaymentOrder.order_id == orderId)
+            .first()
+        )
+        if order and order.status == "PENDING":
+            order.status = "FAILED"
+            order.fail_reason = f"{code}: {message}"[:500]
+            db.commit()
+    logger.info(f"Billing auth failed/cancelled: order={orderId} code={code} msg={message}")
+    return RedirectResponse(
+        f"{settings.FRONTEND_URL}/account?payment=fail&message={message}"
+    )
+
+
+@router.get("/billing")
+def get_billing_info(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """현재 사용자의 자동결제(빌링) 상태."""
+    has_key = bool(current_user.billing_key)
+    return {
+        "registered": has_key,
+        "auto_renew": bool(current_user.auto_renew),
+        "card": current_user.billing_card or "",
+        "billing_cycle": current_user.billing_cycle,
+        "tier": current_user.tier or TIER_FREE,
+        "next_charge_at": current_user.subscription_expires_at.isoformat()
+        if (current_user.auto_renew and current_user.subscription_expires_at)
+        else None,
     }

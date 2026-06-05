@@ -431,6 +431,13 @@
       </div>
     </div>
 
+    <!-- 정기결제(자동 갱신) 고지 -->
+    <p style="text-align:center;color:#8B95A1;font-size:13px;line-height:1.7;margin-top:18px;max-width:680px;margin-left:auto;margin-right:auto;">
+      구독은 <strong>정기결제(자동 갱신)</strong>입니다. 카드를 한 번 등록하면 월간은 30일마다,
+      연간은 365일마다 등록된 카드로 자동 결제됩니다. <a href="/account" style="color:#3182F6;text-decoration:none;">마이페이지</a>에서
+      언제든 해지할 수 있으며, 해지해도 남은 구독 기간은 만료일까지 그대로 이용 가능합니다.
+    </p>
+
     <!-- FAQ -->
     <div class="faq">
       <h3>자주 묻는 질문</h3>
@@ -443,6 +450,11 @@
       <details class="faq-item">
         <summary>첫 달 50% 할인은 어떻게 받나요?</summary>
         <p>체험 만료 후 7일 이내(또는 체험 활성 중) 월간 Pro/Pro+ 구독 결제 시 자동으로 50% 할인 적용됩니다. 별도 쿠폰 코드 입력 불필요 — Pro 첫 달 7,450원, Pro+ 첫 달 14,950원. 첫 결제 한 번만 적용되며 다음 달부터는 정가로 자동 갱신됩니다. 연간 결제는 이미 20% 할인된 가격이라 추가 win-back 할인은 적용되지 않습니다.</p>
+      </details>
+
+      <details class="faq-item">
+        <summary>구독은 자동으로 갱신되나요? 해지는 어떻게 하나요?</summary>
+        <p>네, 구독은 정기결제로 카드 등록 후 자동 갱신됩니다(월간 30일·연간 365일 주기). 해지는 마이페이지(/account)에서 버튼 한 번으로 가능하며, 해지하면 다음 결제부터 청구되지 않습니다. 해지 후에도 이미 결제한 구독 기간은 만료일까지 그대로 이용할 수 있어요. 등록한 카드 정보는 토스페이먼츠가 안전하게 보관하며, BidEasy 서버에는 저장되지 않습니다.</p>
       </details>
 
       <details class="faq-item">
@@ -587,11 +599,11 @@
 
       const btn = document.getElementById(tier === 'pro' ? 'subscribe-pro' : 'subscribe-proplus');
       const original = btn.innerHTML;
-      btn.innerHTML = '<span class="loading"></span>결제 페이지로 이동 중...';
+      btn.innerHTML = '<span class="loading"></span>카드 등록 페이지로 이동 중...';
 
       try {
-        // 1. 백엔드에 구독 주문 생성 요청
-        const orderResp = await fetch(API_BASE + '/payments/subscribe', {
+        // 1. 백엔드에 자동결제(빌링) 등록 준비 요청 — 주문 + customerKey 발급
+        const orderResp = await fetch(API_BASE + '/payments/billing/prepare', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -609,21 +621,21 @@
 
         const order = await orderResp.json();
 
-        // 2. Toss SDK 로 결제 요청
+        // 2. Toss SDK 로 빌링(카드 등록) 인증 요청
+        //    카드 등록 성공 → successUrl 로 customerKey·authKey 가 붙어 리다이렉트
+        //    → 백엔드가 빌링키 발급 + 첫 청구 + 다음 주기 자동결제 등록
         if (typeof TossPayments === 'undefined') {
           throw new Error('Toss SDK 로드 실패. 새로고침 후 다시 시도해주세요.');
         }
         const toss = TossPayments(order.toss_client_key);
 
-        await toss.requestPayment('카드', {
-          amount: order.amount,
-          orderId: order.order_id,
-          orderName: order.order_name,
-          customerName: order.customer_name,
-          successUrl: API_BASE + '/payments/subscribe/success',
-          failUrl: API_BASE + '/payments/fail',
+        const oid = encodeURIComponent(order.order_id);
+        await toss.requestBillingAuth('카드', {
+          customerKey: order.customer_key,
+          successUrl: API_BASE + '/payments/billing/success?orderId=' + oid,
+          failUrl: API_BASE + '/payments/billing/fail?orderId=' + oid,
         });
-        // requestPayment 가 토스 결제창으로 이동시키므로 이후 코드는 실행 안 됨
+        // requestBillingAuth 가 토스 카드등록창으로 이동시키므로 이후 코드는 실행 안 됨
       } catch (err) {
         // 사용자가 결제창을 닫은 경우 등은 err.code === 'USER_CANCEL'
         if (err.code !== 'USER_CANCEL') {
