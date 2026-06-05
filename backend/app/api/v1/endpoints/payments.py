@@ -408,8 +408,14 @@ def get_subscription(
 
     raw_tier = current_user.tier or TIER_FREE
     expires_at = current_user.subscription_expires_at
+    # PostgreSQL 의 DateTime 컬럼은 naive 로 저장·반환됨 → aware now 와 직접 비교 시
+    # "can't compare offset-naive and offset-aware datetimes" TypeError 발생.
+    # naive 면 UTC 로 간주해 aware 화한 뒤 비교.
+    exp_aware = expires_at
+    if exp_aware is not None and exp_aware.tzinfo is None:
+        exp_aware = exp_aware.replace(tzinfo=timezone.utc)
     paid_active = raw_tier != TIER_FREE and (
-        expires_at is None or expires_at > datetime.now(timezone.utc)
+        exp_aware is None or exp_aware > datetime.now(timezone.utc)
     )
 
     # 유효 tier 는 유료/체험/Free 통합 판정

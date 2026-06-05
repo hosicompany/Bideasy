@@ -196,6 +196,23 @@ def test_billing_success_charge_failure_no_autorenew(billing_client, db_session)
     assert order.status == "FAILED"
 
 
+# ─── 회귀: naive 만료일 + 유료 tier 에서 /subscription 500 방지 ───
+# prod(PostgreSQL)는 DateTime 을 naive 로 반환 → aware now 와 비교 시 TypeError.
+# SQLite 는 보통 aware 로 round-trip 되므로, 여기선 명시적 naive 값을 넣어 재현한다.
+
+def test_subscription_handles_naive_expires_at(billing_client, db_session):
+    user = _get_billing_user(db_session)
+    user.tier = "pro"
+    user.subscription_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=10)
+    db_session.commit()
+
+    resp = billing_client.get("/api/v1/payments/subscription")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["tier"] == "pro"
+    assert data["is_active"] is True
+
+
 # ─── billing 조회 + 해지 ─────────────────────────────────
 
 def test_get_billing_and_cancel(billing_client, db_session):
