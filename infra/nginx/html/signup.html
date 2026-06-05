@@ -16,15 +16,15 @@
       color: #191F28;
       min-height: 100vh;
       display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 16px;
+      flex-direction: column;
     }
+    /* nav(첫 자식)는 상단 full-width, 카드는 남은 공간 중앙 */
     .card {
       background: #fff;
       border-radius: 20px;
       padding: 36px 32px;
-      width: 100%;
+      margin: auto;
+      width: calc(100% - 32px);
       max-width: 440px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.04);
     }
