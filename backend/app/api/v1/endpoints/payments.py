@@ -371,6 +371,8 @@ async def subscription_success(
     user.tier = tier
     days = 365 if is_annual else 30
     user.subscription_expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+    # 결제 완료 → 진행 중이던 체험 종료 (유료 전환, is_trial=False)
+    user.trial_expires_at = datetime.now(timezone.utc)
 
     order.status = "CONFIRMED"
     order.payment_key = paymentKey
@@ -421,6 +423,10 @@ def get_subscription(
     # 유효 tier 는 유료/체험/Free 통합 판정
     effective_tier = get_effective_tier(current_user)
     trial_active = is_trial_active(current_user)
+    # 유료 구독이 활성이면 체험으로 표시하지 않음 (유료 우선).
+    # 결제 시 trial 을 종료하지만, 그 전에 결제된 계정(체험 종료 누락)도
+    # 여기서 방어적으로 유료로 표시되도록 보정.
+    show_trial = trial_active and not paid_active
 
     # Win-back 자격 (Trial 사용자 첫 결제 시 자동 50%)
     winback = is_winback_eligible(current_user, db)
@@ -430,8 +436,8 @@ def get_subscription(
         tier_display=TIER_DISPLAY_NAMES.get(effective_tier, "Free"),
         expires_at=expires_at if paid_active else None,
         is_active=paid_active or trial_active,
-        is_trial=trial_active,
-        trial_expires_at=current_user.trial_expires_at if trial_active else None,
+        is_trial=show_trial,
+        trial_expires_at=current_user.trial_expires_at if show_trial else None,
         trial_days_remaining=trial_days_remaining(current_user),
         has_used_trial=has_used_trial(current_user),
         winback_eligible=winback,
@@ -724,6 +730,9 @@ async def billing_success(
     # 3) 티어 적용 + 자동갱신 ON
     days = _apply_subscription_after_charge(user, tier, is_annual, extend_from_existing=False)
     user.auto_renew = True
+    # 결제 완료 → 진행 중이던 체험 종료 (유료 전환). trial_started_at 은 유지해
+    # 재체험 불가는 그대로 두고, trial_expires_at 만 만료시켜 is_trial=False 로.
+    user.trial_expires_at = datetime.now(timezone.utc)
     order.status = "CONFIRMED"
     order.payment_key = charged["paymentKey"]
     order.method = charged["method"]

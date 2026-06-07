@@ -165,6 +165,33 @@ def test_billing_success_issues_charges_and_upgrades(billing_client, db_session)
     assert order.payment_key
 
 
+def test_billing_success_ends_active_trial(billing_client, db_session):
+    """체험 중 결제 → 체험 종료(is_trial=False) + 유료 Pro 전환."""
+    user = _get_billing_user(db_session)
+    now = datetime.now(timezone.utc)
+    user.trial_started_at = now - timedelta(days=1)
+    user.trial_expires_at = now + timedelta(days=13)  # 체험 활성
+    db_session.commit()
+
+    prep = billing_client.post(
+        "/api/v1/payments/billing/prepare",
+        json={"tier": "pro", "billing_cycle": "monthly"},
+    ).json()
+    with patch("app.api.v1.endpoints.payments.issue_billing_key", _fake_issue), \
+         patch("app.api.v1.endpoints.payments.charge_billing_key", _fake_charge):
+        billing_client.get(
+            "/api/v1/payments/billing/success",
+            params={"customerKey": prep["customer_key"], "authKey": "ak", "orderId": prep["order_id"]},
+            follow_redirects=False,
+        )
+
+    # /subscription 이 체험이 아닌 유료 활성으로 보고해야 함
+    sub = billing_client.get("/api/v1/payments/subscription").json()
+    assert sub["is_trial"] is False, "결제 후에도 체험으로 표시되면 안 됨"
+    assert sub["tier"] == "pro"
+    assert sub["is_active"] is True
+
+
 def test_billing_success_charge_failure_no_autorenew(billing_client, db_session):
     prep = billing_client.post(
         "/api/v1/payments/billing/prepare",
