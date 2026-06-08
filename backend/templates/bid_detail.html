@@ -117,10 +117,14 @@
       <div class="result" id="calc-result"></div>
     </div>
 
-    <div class="cta">
-      <strong>이 공고, 입찰 가능한지 AI로 분석해보세요</strong>
-      <div class="muted" style="margin-top:6px;">자격 검토 · 독소조항 · 경쟁 강도 — 14일 무료 체험</div>
-      <a href="/login?next=/bid/{{ bid_no }}">로그인하고 AI 분석</a>
+    <div class="card" id="ai-card">
+      <h2>🤖 AI 분석</h2>
+      <div id="ai-cta">
+        <div class="muted">자격 검토 · 핵심 팁 · 위험 요소를 AI가 분석합니다.</div>
+        <a id="ai-login" href="/login?next=/bid/{{ bid_no }}" style="display:none;margin-top:10px;background:#3182F6;color:#fff;text-decoration:none;padding:11px 18px;border-radius:12px;font-weight:700;font-size:14px;">로그인하고 AI 분석</a>
+        <button id="ai-run" style="display:none;margin-top:10px;background:#3182F6;color:#fff;border:none;padding:11px 18px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;">AI 분석 실행</button>
+      </div>
+      <div id="ai-result" style="margin-top:14px;"></div>
     </div>
 
     {% if detail_url %}<p class="muted" style="margin-top:14px;text-align:center;"><a href="{{ detail_url }}" target="_blank" rel="noopener" style="color:#8B95A1;">나라장터 원문 보기 ↗</a></p>{% endif %}
@@ -177,6 +181,46 @@
           if (q.status === 'PASS') qualBadge.innerHTML = '<span style="font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;background:#ECFDF3;color:#15803D;">✓ 입찰 가능 (자격 충족)</span>';
           else if (q.status === 'FAIL') qualBadge.innerHTML = '<span style="font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;background:#FEF2F2;color:#DC2626;" title="' + (q.details||[]).join(', ') + '">✗ 자격 미달 — ' + ((q.details||[])[0]||'요건 확인') + '</span>';
         }).catch(()=>{});
+    })();
+
+    // AI 분석 패널 (온디맨드 — 레이트리밋 절약)
+    (function aiPanel(){
+      const aiLogin = document.getElementById('ai-login');
+      const aiRun = document.getElementById('ai-run');
+      const aiResult = document.getElementById('ai-result');
+      if (!aiRun) return;
+      const token = getToken();
+      if (!token) { if (aiLogin) aiLogin.style.display = 'inline-block'; return; }
+      aiRun.style.display = 'inline-block';
+      aiRun.addEventListener('click', async () => {
+        aiRun.disabled = true; aiRun.textContent = 'AI 분석 중...';
+        try {
+          const r = await fetch(API_BASE + '/ai/' + encodeURIComponent(BID_NO) + '/analysis', { headers: { Authorization: 'Bearer ' + token } });
+          if (r.status === 429) {
+            const d = await r.json().catch(()=>({}));
+            aiResult.innerHTML = '<div style="padding:14px;border-radius:12px;background:#FFFBEB;color:#B45309;font-size:14px;">' + (d.detail || '오늘 AI 분석 횟수를 모두 사용했어요.') + ' <a href="/pricing" style="color:#3182F6;font-weight:700;text-decoration:none;">업그레이드 →</a></div>';
+            aiRun.style.display = 'none'; return;
+          }
+          if (!r.ok) throw new Error('분석 실패 (' + r.status + ')');
+          const d = await r.json();
+          let html = '';
+          if (d.summary) html += '<div style="font-size:14px;line-height:1.6;white-space:pre-line;margin-bottom:12px;">' + String(d.summary).replace(/</g,'&lt;') + '</div>';
+          const tips = d.tips || [];
+          if (tips.length) {
+            html += tips.map(t => {
+              const imp = (t.importance||'').toUpperCase();
+              const c = imp==='HIGH' ? '#DC2626' : (imp==='MEDIUM' ? '#B45309' : '#4E5968');
+              return '<div style="padding:11px 0;border-bottom:1px solid #F2F4F6;"><div style="font-weight:700;font-size:14px;color:'+c+';">' + (t.icon||'') + ' ' + (t.title||'').replace(/</g,'&lt;') + '</div><div style="font-size:13px;color:#4E5968;margin-top:3px;white-space:pre-line;">' + (t.content||'').replace(/</g,'&lt;') + '</div></div>';
+            }).join('');
+          }
+          if (!html) html = '<div class="muted">분석 결과가 없습니다.</div>';
+          aiResult.innerHTML = html;
+          aiRun.style.display = 'none';
+        } catch (e) {
+          aiResult.innerHTML = '<div class="muted">' + e.message + '</div>';
+          aiRun.disabled = false; aiRun.textContent = 'AI 분석 실행';
+        }
+      });
     })();
 
     const btn = document.getElementById('calc-btn');

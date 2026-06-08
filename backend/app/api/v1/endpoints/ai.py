@@ -71,6 +71,43 @@ def check_ai_rate_limit(user: models.User) -> int:
     return len(log)
 
 
+def _strip_qualification(result: dict) -> dict:
+    """캐시용: 사용자별 자격 데이터(qualification + eligibility 팁) 제거.
+
+    AIAnalysisLog 는 bid_no 로만 캐시되므로, 자격 블록을 캐시하면 타인에게
+    노출됨 → 캐시 전 반드시 제거하고 매 요청마다 _apply_qualification 재계산.
+    """
+    if not isinstance(result, dict):
+        return result
+    out = dict(result)
+    out.pop("qualification", None)
+    if isinstance(out.get("tips"), list):
+        out["tips"] = [t for t in out["tips"] if t.get("category") != "eligibility"]
+    return out
+
+
+def _apply_qualification(result: dict, title: str, region: str, bid_no: str, user) -> dict:
+    """현재 사용자 기준 자격 판정을 result 에 주입 (캐시 안 함)."""
+    if not user or not isinstance(result, dict):
+        return result
+    from app.services.qualification_checker import QualificationChecker
+    out = _strip_qualification(result)  # 혹시 남아있을 잔재 제거
+    qual = QualificationChecker.check_qualification(
+        {"bidNtceNm": title or "", "LmtRegion": region or "", "bidNtceNo": bid_no}, user
+    )
+    out["qualification"] = qual
+    tips = list(out.get("tips", []))
+    if qual.get("status") == "FAIL":
+        tips.insert(0, {"category": "eligibility", "icon": "⛔", "title": "입찰 불가: 자격 요건 미달",
+                        "content": qual["details"][0] if qual.get("details") else "자격 요건을 확인해주세요.",
+                        "source": "자격분석엔진", "importance": "HIGH"})
+    elif qual.get("status") == "PASS":
+        tips.insert(0, {"category": "eligibility", "icon": "✅", "title": "입찰 가능: 자격 요건 충족",
+                        "content": "지역 및 면허 요건을 만족합니다.", "source": "자격분석엔진", "importance": "LOW"})
+    out["tips"] = tips
+    return out
+
+
 @router.get("/{bid_no}/analysis")
 async def analyze_bid(
     request: Request,
@@ -127,7 +164,13 @@ async def analyze_bid(
         logger.info(f"Cache hit for {bid_no}")
         # 캐시된 결과가 새 형식인지 확인
         if isinstance(cached_log.summary_json, dict) and "tips" in cached_log.summary_json:
-            return cached_log.summary_json
+            # 자격은 사용자별이라 캐시에 두지 않음 → 현재 사용자 기준 재계산 후 주입.
+            cnotice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
+            c_title = (title or (cnotice.title if cnotice else "")) or ""
+            c_region = (region or (getattr(cnotice, "region", "") if cnotice else "")) or ""
+            return _apply_qualification(
+                _strip_qualification(cached_log.summary_json), c_title, c_region, bid_no, current_user
+            )
     
     # 2. Collect bid data from query params or DB
     bid_data = {}
@@ -323,30 +366,32 @@ async def analyze_bid(
         except Exception as e:
             logger.error(f"Scraping A-value failed: {e}")
     
-    # 5. Cache the result
+    # 5. Cache the result — 자격(사용자별) 제거 후 저장 (타인 노출 방지)
+    cacheable = _strip_qualification(analysis_result)
     try:
         if cached_log:
             # Update existing
-            cached_log.summary_json = analysis_result
+            cached_log.summary_json = cacheable
             cached_log.created_at = datetime.utcnow()
         else:
             # Create new
             new_log = models.AIAnalysisLog(
                 bid_no=bid_no,
-                summary_json=analysis_result,
+                summary_json=cacheable,
                 risk_factors=[],
                 llm_model="rule-based-v1",  # No LLM used
                 token_usage=0,
                 created_at=datetime.utcnow()
             )
             db.add(new_log)
-        
+
         db.commit()
         logger.info(f"Cached analysis for {bid_no}")
     except Exception as e:
         logger.warning(f"Cache save error (non-fatal): {e}")
         db.rollback()
-    
+
+    # 응답엔 현재 사용자 자격 포함 (analysis_result 는 이미 inline 블록에서 주입됨)
     return analysis_result
 
 
