@@ -455,6 +455,43 @@ def report_a_value(
     return {"updated": True, "bid_no": notice.bid_no, "a_value": notice.a_value}
 
 
+@router.get("/{bid_no}/scrape-avalue")
+def scrape_a_value(bid_no: str, db: Session = Depends(get_db)):
+    """A값 자동 추정 (Tier 2) — 캐시 우선, 없으면 첨부문서 파싱.
+
+    공개(A값은 공개 공고정보). 캐시 hit 시 즉시 반환(재파싱 없음).
+    best-effort — 첨부 양식 편차로 못 찾을 수 있음. 계산기 '자동 추정' 버튼용.
+    """
+    notice = _lookup_notice(db, bid_no)
+    if not notice:
+        try:
+            get_bid_context(bid_no, db)
+        except Exception:
+            pass
+        notice = _lookup_notice(db, bid_no)
+    if not notice:
+        return {"found": False, "reason": "notice_not_found"}
+
+    if notice.a_value and notice.a_value > 0:
+        return {"found": True, "total": notice.a_value, "source": "cache"}
+
+    if not getattr(notice, "attachment_url", None):
+        return {"found": False, "reason": "no_attachment"}
+
+    from app.services.attachment_avalue import AttachmentAValueExtractor
+    result = AttachmentAValueExtractor.extract(notice.attachment_url, notice.attachment_name)
+    if result.get("found") and result.get("total"):
+        notice.a_value = int(result["total"])
+        db.commit()
+        return {
+            "found": True,
+            "total": notice.a_value,
+            "breakdown": result.get("breakdown"),
+            "source": "attachment",
+        }
+    return {"found": False, "reason": "not_in_attachment"}
+
+
 @router.get("/{bid_no}/qualification")
 def get_qualification(
     bid_no: str,

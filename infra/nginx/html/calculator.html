@@ -57,6 +57,7 @@
       <div id="avalue-wrap">
         <label>A값 (사후정산 비목 합계, 원) <span class="muted">— 공고문/첨부에서 확인</span></label>
         <input type="number" id="avalue" value="0">
+        <button id="avalue-auto" style="display:none;margin-top:6px;background:#fff;border:1px solid #C6DCFF;color:#3182F6;border-radius:8px;font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;">📄 첨부에서 자동 추정</button>
         <div class="hint" id="avalue-hint">국민연금·건강보험·노인장기요양·산재·고용보험 합계. 모르면 0 (공사 정밀도에만 영향).</div>
       </div>
 
@@ -111,10 +112,14 @@
       }
     });
 
-    // ?bid_no= prefill — 공고 컨텍스트에서 기초금액·종류·A값(캐시) 채움
+    // ?bid_no= prefill — 공고 컨텍스트에서 기초금액·종류 채움 + A값 자동추정 버튼
+    let PREFILL_BID = null;
     (async function prefill() {
       const bidNo = new URLSearchParams(location.search).get('bid_no');
       if (!bidNo) return;
+      PREFILL_BID = bidNo;
+      const autoBtn = $('avalue-auto');
+      if (autoBtn) autoBtn.style.display = 'inline-block';
       try {
         const resp = await fetch(API_BASE + '/bids/' + encodeURIComponent(bidNo) + '/context');
         if (!resp.ok) return;
@@ -126,6 +131,23 @@
         }
       } catch {}
     })();
+
+    // A값 자동 추정 (첨부 파싱 / 캐시)
+    document.getElementById('avalue-auto')?.addEventListener('click', async () => {
+      if (!PREFILL_BID) return;
+      const b = $('avalue-auto'); b.disabled = true; b.textContent = '추정 중... (수 초)';
+      try {
+        const r = await fetch(API_BASE + '/bids/' + encodeURIComponent(PREFILL_BID) + '/scrape-avalue');
+        const d = await r.json();
+        if (d.found && d.total) {
+          $('avalue').value = d.total;
+          $('avalue-hint').innerHTML = '✓ ' + (d.source === 'cache' ? '저장된' : '첨부에서 추출한') + ' A값 (' + Number(d.total).toLocaleString('ko-KR') + '원) — 공고문 확인 권장.';
+        } else {
+          $('avalue-hint').textContent = '첨부에서 A값을 찾지 못했어요. 공고문에서 직접 입력해주세요.';
+        }
+      } catch { $('avalue-hint').textContent = '자동 추정 실패. 직접 입력해주세요.'; }
+      finally { b.disabled = false; b.textContent = '📄 첨부에서 자동 추정'; }
+    });
   </script>
 </body>
 </html>

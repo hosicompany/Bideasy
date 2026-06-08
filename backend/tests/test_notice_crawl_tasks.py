@@ -38,6 +38,24 @@ def test_crawl_daily_saves_all_categories(db_session):
     assert set(r["by_cat"].keys()) == {"construction", "service", "goods"}
 
 
+def test_backfill_avalue(db_session):
+    from app.tasks.notice_crawl_tasks import backfill_a_values
+    now = datetime.now()
+    db_session.add(models.Notice(bid_no="BF-1", title="첨부공고", basic_price=1, a_value=0,
+                                 attachment_url="http://x/a.hwp", attachment_name="공고규격서.hwp",
+                                 end_date=now + timedelta(days=5)))
+    db_session.add(models.Notice(bid_no="BF-NOATT", title="첨부없음", basic_price=1, a_value=0,
+                                 attachment_url=None, end_date=now + timedelta(days=5)))
+    db_session.commit()
+    with _patch_session(db_session), \
+         patch("app.services.attachment_avalue.AttachmentAValueExtractor.extract",
+               lambda url, name=None, **k: {"found": True, "total": 7000000}):
+        r = backfill_a_values(limit=10)
+    assert r["found"] >= 1
+    db_session.expire_all()
+    assert db_session.query(models.Notice).filter_by(bid_no="BF-1").first().a_value == 7000000
+
+
 def test_purge_keeps_referenced_and_recent(db_session):
     from app.tasks.notice_crawl_tasks import purge_old_notices
 

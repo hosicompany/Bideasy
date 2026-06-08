@@ -206,6 +206,33 @@ class TestQualificationAndAValue:
         assert resp.status_code == 200
         assert resp.json()["status"] in ("PASS", "FAIL", "UNKNOWN")
 
+    def test_scrape_avalue_cache_hit(self, client, db_session):
+        from app.db import models
+        db_session.add(models.Notice(bid_no="AV-CACHE", title="x", basic_price=1, a_value=12345678))
+        db_session.commit()
+        r = client.get("/api/v1/bids/AV-CACHE/scrape-avalue")
+        assert r.status_code == 200
+        assert r.json() == {"found": True, "total": 12345678, "source": "cache"}
+
+    def test_scrape_avalue_from_attachment(self, client, db_session, monkeypatch):
+        from app.db import models
+        db_session.add(models.Notice(bid_no="AV-ATT", title="x", basic_price=1, a_value=0,
+                                     attachment_url="http://x/spec.hwp", attachment_name="공고규격서.hwp"))
+        db_session.commit()
+        monkeypatch.setattr("app.services.attachment_avalue.AttachmentAValueExtractor.extract",
+                            lambda url, name=None, **k: {"found": True, "total": 9000000, "breakdown": {"국민연금": 9000000}})
+        r = client.get("/api/v1/bids/AV-ATT/scrape-avalue")
+        d = r.json()
+        assert d["found"] and d["total"] == 9000000 and d["source"] == "attachment"
+        db_session.expire_all()
+        assert db_session.query(models.Notice).filter_by(bid_no="AV-ATT").first().a_value == 9000000
+
+    def test_scrape_avalue_no_attachment(self, client, db_session):
+        from app.db import models
+        db_session.add(models.Notice(bid_no="AV-NONE", title="x", basic_price=1, a_value=0))
+        db_session.commit()
+        assert client.get("/api/v1/bids/AV-NONE/scrape-avalue").json()["found"] is False
+
 
 class TestTracking:
     """POST/DELETE/GET /{bid_no}/track, GET /tracked"""

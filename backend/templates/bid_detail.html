@@ -111,7 +111,7 @@
       {% if contract_type != 'GOODS' %}
       <label>A값 (사후정산 비목 합계, 원) <span class="muted">— 공고문/첨부에서 확인</span></label>
       <input type="number" id="calc-avalue" value="{{ a_value }}">
-      {% if a_value > 0 %}<div class="src-note">✓ A값 자동 표시됨 (BidEasy 캐시)</div>{% else %}<div class="hint">A값을 모르면 0으로 두세요 (공사 정밀도에만 영향).</div>{% endif %}
+      {% if a_value > 0 %}<div class="src-note">✓ A값 자동 표시됨 (BidEasy 캐시)</div>{% else %}<button id="av-auto" style="margin-top:6px;background:#fff;border:1px solid #C6DCFF;color:#3182F6;border-radius:8px;font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;">📄 첨부에서 자동 추정</button><div class="hint" id="av-hint">A값을 모르면 0으로 두세요 (공사 정밀도에만 영향).</div>{% endif %}
       {% endif %}
       <button class="btn btn-primary" id="calc-btn">투찰가 계산 →</button>
       <div class="result" id="calc-result"></div>
@@ -222,6 +222,27 @@
         }
       });
     })();
+
+    // A값 자동 추정 (첨부 파싱)
+    document.getElementById('av-auto')?.addEventListener('click', async (ev) => {
+      const b = ev.target; b.disabled = true; b.textContent = '추정 중... (수 초)';
+      try {
+        const r = await fetch(API_BASE + '/bids/' + encodeURIComponent(BID_NO) + '/scrape-avalue');
+        const d = await r.json();
+        const hint = document.getElementById('av-hint');
+        const avEl = document.getElementById('calc-avalue');
+        if (d.found && d.total) {
+          if (avEl) avEl.value = d.total;
+          if (hint) hint.innerHTML = '✓ 첨부에서 추출한 A값 (' + Number(d.total).toLocaleString('ko-KR') + '원) — 공고문 확인 권장.';
+          b.style.display = 'none';
+        } else {
+          if (hint) hint.textContent = '첨부에서 A값을 찾지 못했어요. 공고문에서 직접 입력해주세요.';
+          b.disabled = false; b.textContent = '📄 첨부에서 자동 추정';
+        }
+      } catch {
+        b.disabled = false; b.textContent = '📄 첨부에서 자동 추정';
+      }
+    });
 
     const btn = document.getElementById('calc-btn');
     if (btn) {

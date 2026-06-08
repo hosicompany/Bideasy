@@ -82,4 +82,9 @@ celery_app.conf.beat_schedule = {
         "task": "deadline.send_reminders",
         "schedule": crontab(hour=10, minute=30),
     },
+    # 10) 매일 06:30 — A값 Tier 2 백필 (첨부 파싱)
+    "daily-avalue-backfill": {
+        "task": "notices.backfill_avalue",
+        "schedule": crontab(hour=6, minute=30),
+    },
 }

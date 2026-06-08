@@ -54,6 +54,45 @@ def crawl_daily_notices(pages: int = 5) -> dict:
         db.close()
 
 
+@celery_app.task(name="notices.backfill_avalue")
+def backfill_a_values(limit: int = 50) -> dict:
+    """A값 Tier 2 백필 — 첨부 있고 a_value 없는 진행중 공고의 A값을 파싱.
+
+    매일 소량(limit)씩 처리. 다운로드+파싱이라 건당 수 초 → 배치 제한.
+    """
+    db = SessionLocal()
+    from app.services.attachment_avalue import AttachmentAValueExtractor
+    result = {"checked": 0, "found": 0}
+    try:
+        now = datetime.now()
+        notices = (
+            db.query(models.Notice)
+            .filter(
+                (models.Notice.a_value == 0) | (models.Notice.a_value.is_(None)),
+                models.Notice.attachment_url.isnot(None),
+                models.Notice.attachment_url != "",
+                models.Notice.end_date > now,
+            )
+            .limit(limit)
+            .all()
+        )
+        for n in notices:
+            result["checked"] += 1
+            r = AttachmentAValueExtractor.extract(n.attachment_url, n.attachment_name)
+            if r.get("found") and r.get("total"):
+                n.a_value = int(r["total"])
+                result["found"] += 1
+                db.commit()
+        logger.info(f"[notices.backfill_avalue] {result}")
+        return result
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[notices.backfill_avalue] error: {e}", exc_info=True)
+        return {"error": str(e), **result}
+    finally:
+        db.close()
+
+
 @celery_app.task(name="notices.purge_old")
 def purge_old_notices(days: int = PURGE_AFTER_DAYS) -> dict:
     """마감(end_date) 지난 지 days 일 넘은 공고 삭제 — 테이블 경량화.
