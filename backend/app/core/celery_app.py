@@ -12,6 +12,7 @@ celery_app = Celery(
         "app.tasks.trial_tasks",
         "app.tasks.admin_report_tasks",
         "app.tasks.billing_tasks",
+        "app.tasks.notice_crawl_tasks",
     ],
 )
 
@@ -58,5 +59,15 @@ celery_app.conf.beat_schedule = {
     "daily-billing-renewal": {
         "task": "billing.charge_due_subscriptions",
         "schedule": crontab(hour=3, minute=0),
+    },
+    # 6) 매일 06:00 — 공사/용역/물품 신규 공고 크롤 → 누적 DB 적재 (검색 재현율)
+    "daily-notice-crawl": {
+        "task": "notices.crawl_daily",
+        "schedule": crontab(hour=6, minute=0),
+    },
+    # 7) 매월 1일 05:00 — 마감 90일 경과 공고 정리 (참조분 보존)
+    "monthly-notice-purge": {
+        "task": "notices.purge_old",
+        "schedule": crontab(hour=5, minute=0, day_of_month=1),
     },
 }
