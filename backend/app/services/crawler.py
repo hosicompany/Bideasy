@@ -156,9 +156,14 @@ class CrawlerService:
             logger.info(f"fetch_notices total {len(merged)} (cats={cats})")
             return merged
 
-        # 실데이터 없음 → mock 은 필터 없는 기본 조회에서만 (검색결과 오염 방지)
-        if not keyword and not region and not category:
-            logger.warning("No real notices — returning mock data (default fetch only)")
+        # 실데이터 없음.
+        # 운영(production)에서는 mock 절대 반환 안 함 (가짜 [Mock] 공고가 DB 오염).
+        # 개발에서만, 필터 없는 기본 조회에 한해 mock 제공.
+        if (
+            settings.APP_ENV != "production"
+            and not keyword and not region and not category
+        ):
+            logger.warning("No real notices — returning mock data (dev only)")
             return CrawlerService.get_mock_data()
         return []
 

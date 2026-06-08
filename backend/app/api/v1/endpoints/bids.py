@@ -145,7 +145,16 @@ def get_feed(
         except Exception as e:
             logger.warning(f"DB save error (non-fatal): {e}")
 
-        return _post_filter(api_results)[:limit]
+        results = _post_filter(api_results)
+        # 키워드 관련성 재필터 — 조달청 OpenAPI 의 bidNtceNm/ntceInsttNm 필터가
+        # 불안정해 무관한 공고가 섞이므로, 제목·기관·지역에 검색어 포함 여부로 재선별.
+        term = (keyword or region or "").strip()
+        if term:
+            results = [
+                x for x in results
+                if term in ((x.get("title") or "") + (x.get("organization") or "") + (x.get("region") or ""))
+            ]
+        return results[:limit]
 
     # ── 기본 피드: DB (활성 우선) ──
     from sqlalchemy import case
@@ -155,7 +164,8 @@ def get_feed(
         (models.Notice.end_date > now, 0),
         else_=1,
     )
-    query = db.query(models.Notice)
+    # [Mock] 가짜 공고 제외 (개발 잔여 데이터 방어)
+    query = db.query(models.Notice).filter(~models.Notice.title.like("[Mock]%"))
     if exclude_closed:
         query = query.filter(models.Notice.end_date > now).order_by(models.Notice.end_date.asc())
     else:

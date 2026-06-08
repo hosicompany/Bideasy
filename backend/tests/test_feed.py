@@ -62,6 +62,11 @@ def _api_item(no, price, openg):
             "presmptPrce": price, "opengDt": openg}
 
 
+def _api_item_named(no, name, org, price, openg):
+    return {"bidNtceNo": no, "bidNtceOrd": "00", "bidNtceNm": name,
+            "ntceInsttNm": org, "presmptPrce": price, "opengDt": openg}
+
+
 class TestCrawlerMultiCategory:
     """crawler.fetch_notices 공사/용역/물품 fan-out"""
 
@@ -130,6 +135,22 @@ class TestFeedFilters:
         assert resp.status_code == 200
         prices = [n["basic_price"] for n in resp.json()]
         assert prices == [500, 100]  # 50 필터아웃, 내림차순 정렬
+
+    def test_keyword_relevance_filter(self, client, monkeypatch):
+        """OpenAPI 가 무관한 공고를 반환해도 키워드(제목·기관·지역)로 재선별."""
+        from app.services.crawler import CrawlerService
+        items = [
+            CrawlerService._map_item(_api_item_named("A", "강남구 도로포장 공사", "서울 강남구", 100, "2026-12-10 10:00:00"), "CONSTRUCTION"),
+            CrawlerService._map_item(_api_item_named("B", "봉화군 풀베기 사업", "경북 봉화군산림조합", 200, "2026-12-05 10:00:00"), "SERVICE"),
+        ]
+        monkeypatch.setattr("app.services.crawler.CrawlerService.fetch_notices", lambda **k: list(items))
+        monkeypatch.setattr("app.services.crawler.CrawlerService.save_notices", lambda db, n: 0)
+        monkeypatch.setattr("app.services.crawler.CrawlerService.is_region_keyword", lambda kw: False)
+        resp = client.get("/api/v1/bids/feed?keyword=강남구")
+        assert resp.status_code == 200
+        titles = [n["title"] for n in resp.json()]
+        assert any("강남구" in t for t in titles)
+        assert not any("봉화군" in t for t in titles)  # 무관 공고 제거됨
 
 
 class TestFavorites:
