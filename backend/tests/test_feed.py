@@ -205,3 +205,21 @@ class TestQualificationAndAValue:
         resp = free_client.get("/api/v1/bids/TEST-001/qualification")
         assert resp.status_code == 200
         assert resp.json()["status"] in ("PASS", "FAIL", "UNKNOWN")
+
+
+class TestTracking:
+    """POST/DELETE/GET /{bid_no}/track, GET /tracked"""
+
+    def test_track_requires_auth(self, client, sample_notice):
+        assert client.post("/api/v1/bids/TEST-001/track").status_code == 401
+
+    def test_track_toggle_and_list(self, free_client, sample_notice):
+        # 초기화
+        free_client.delete("/api/v1/bids/TEST-001/track")
+        assert free_client.post("/api/v1/bids/TEST-001/track").json()["tracked"] is True
+        assert free_client.get("/api/v1/bids/TEST-001/track").json()["tracked"] is True
+        lst = free_client.get("/api/v1/bids/tracked").json()
+        assert any(n["bid_no"] == "TEST-001" for n in lst)
+        # 해제
+        assert free_client.delete("/api/v1/bids/TEST-001/track").json()["tracked"] is False
+        assert free_client.get("/api/v1/bids/TEST-001/track").json()["tracked"] is False

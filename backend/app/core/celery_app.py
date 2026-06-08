@@ -13,6 +13,8 @@ celery_app = Celery(
         "app.tasks.admin_report_tasks",
         "app.tasks.billing_tasks",
         "app.tasks.notice_crawl_tasks",
+        "app.tasks.deadline_tasks",
+        "app.tasks.recommendation_tasks",
     ],
 )
 
@@ -69,5 +71,15 @@ celery_app.conf.beat_schedule = {
     "monthly-notice-purge": {
         "task": "notices.purge_old",
         "schedule": crontab(hour=5, minute=0, day_of_month=1),
+    },
+    # 8) 매일 07:00 — 자격 맞춤 추천 (신규 공고 ↔ 프로필 매칭)
+    "daily-recommendations": {
+        "task": "recommend.send_matches",
+        "schedule": crontab(hour=7, minute=0),
+    },
+    # 9) 매일 10:30 — 추적 공고 마감 리마인더 (D-3/D-1/당일)
+    "daily-deadline-reminders": {
+        "task": "deadline.send_reminders",
+        "schedule": crontab(hour=10, minute=30),
     },
 }

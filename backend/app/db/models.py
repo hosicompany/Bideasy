@@ -239,6 +239,20 @@ class Favorite(Base):
     user = relationship("User")
 
 
+class BidTrack(Base):
+    """마감 추적 — 사용자가 추적하는 공고. remind=True 면 마감 리마인더 발송."""
+    __tablename__ = "bid_tracks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    bid_no = Column(String(100), ForeignKey("notices.bid_no"), nullable=False)
+    remind = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = relationship("User")
+    notice = relationship("Notice")
+
+
 class DeviceToken(Base):
     __tablename__ = "device_tokens"
 

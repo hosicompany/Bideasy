@@ -485,6 +485,77 @@ def get_qualification(
     return QualificationChecker.check_qualification(check_data, current_user)
 
 
+# ─── 마감 추적 (BidTrack) ────────────────────────────────
+
+@router.get("/tracked", response_model=List[schemas.Notice])
+def get_tracked(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """현재 사용자가 추적 중인 공고 (마감 임박순)."""
+    return (
+        db.query(models.Notice)
+        .join(models.BidTrack, models.BidTrack.bid_no == models.Notice.bid_no)
+        .filter(models.BidTrack.user_id == current_user.id)
+        .order_by(models.Notice.end_date.asc())
+        .all()
+    )
+
+
+@router.post("/{bid_no}/track")
+def track_bid(
+    bid_no: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """공고 마감 추적 시작 (멱등). 추적 시 마감 D-3/D-1/당일 알림."""
+    existing = (
+        db.query(models.BidTrack)
+        .filter(models.BidTrack.bid_no == bid_no, models.BidTrack.user_id == current_user.id)
+        .first()
+    )
+    if not existing:
+        # 공고가 캐시에 없으면 적재 시도 (FK·리마인더용)
+        if not _lookup_notice(db, bid_no):
+            try:
+                get_bid_context(bid_no, db)
+            except Exception:
+                pass
+        db.add(models.BidTrack(bid_no=bid_no, user_id=current_user.id, remind=True))
+        db.commit()
+    return {"tracked": True, "bid_no": bid_no}
+
+
+@router.delete("/{bid_no}/track")
+def untrack_bid(
+    bid_no: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """공고 추적 해제."""
+    db.query(models.BidTrack).filter(
+        models.BidTrack.bid_no == bid_no,
+        models.BidTrack.user_id == current_user.id,
+    ).delete(synchronize_session=False)
+    db.commit()
+    return {"tracked": False, "bid_no": bid_no}
+
+
+@router.get("/{bid_no}/track")
+def is_tracked(
+    bid_no: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """해당 공고를 추적 중인지."""
+    t = (
+        db.query(models.BidTrack.id)
+        .filter(models.BidTrack.bid_no == bid_no, models.BidTrack.user_id == current_user.id)
+        .first()
+    )
+    return {"tracked": t is not None}
+
+
 @router.get("/{bid_no}/results", response_model=List[schemas.OpeningResult])
 def get_opening_results(bid_no: str, db: Session = Depends(get_db)):
     """
