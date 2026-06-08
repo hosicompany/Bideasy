@@ -95,92 +95,81 @@ def get_feed(
     limit: int = 20,
     db: Session = Depends(get_db),
 ):
-    """공고 피드/검색 (공사/용역/물품 통합).
+    """공고 피드/검색 (공사/용역/물품 통합) — 누적 DB 검색.
 
-    필터: keyword(제목)·region(기관)·category·기간·금액·정렬·마감제외.
-    검색 조건이 있으면 OpenAPI fan-out, 없으면 DB 기본 피드.
+    필터: keyword(제목·기관·지역)·region·category·기간·금액·정렬·마감제외.
+    동작: (검색이거나 DB 비었으면) OpenAPI fan-out 으로 캐시 갱신 → 그 결과를
+    포함한 **누적 notices 테이블 전체**를 필터 검색. 과거에 캐시된 공고도 함께
+    검색돼 재현율↑ (조달청 OpenAPI 가 최근 ~5일만 주는 한계 보완).
     """
     from datetime import datetime
+    from sqlalchemy import or_, case
     from app.services.crawler import CrawlerService
 
     now = datetime.now()
     norm_cat = category if category in ("construction", "service", "goods") else None
-
-    def _post_filter(items: list) -> list:
-        """공통 post-filter: 금액·마감제외·정렬. items 는 dict 또는 ORM Notice."""
-        def g(it, attr):
-            return it.get(attr) if isinstance(it, dict) else getattr(it, attr, None)
-
-        out = items
-        if price_min is not None:
-            out = [x for x in out if (g(x, "basic_price") or 0) >= price_min]
-        if price_max is not None:
-            out = [x for x in out if (g(x, "basic_price") or 0) <= price_max]
-        if exclude_closed:
-            out = [x for x in out if (g(x, "end_date") and g(x, "end_date") > now)]
-        if sort == "price":
-            out = sorted(out, key=lambda x: (g(x, "basic_price") or 0), reverse=True)
-        elif sort == "deadline":
-            out = sorted(out, key=lambda x: (g(x, "end_date") or datetime.max))
-        elif sort == "newest":
-            out = sorted(out, key=lambda x: (g(x, "start_date") or datetime.min), reverse=True)
-        return out
-
+    CT_MAP = {"construction": "CONSTRUCTION", "service": "SERVICE", "goods": "GOODS"}
     use_api = bool(keyword or region or norm_cat or date_from or date_to)
 
-    if use_api:
-        # region 명시 없고 keyword 가 지역명이면 기관 검색으로 전환 (스마트 감지 유지)
-        eff_region = region
-        eff_keyword = keyword
+    # 1) 캐시 갱신: 신규 검색(page 1) 또는 DB 가 비었을 때만 OpenAPI 호출.
+    #    (불필요한 3종 fan-out 반복 방지 — page 2+ 는 누적 DB 만 읽음)
+    if page == 1 and (
+        use_api
+        or db.query(models.Notice.bid_no)
+        .filter(~models.Notice.title.like("[Mock]%"))
+        .first() is None
+    ):
+        eff_region, eff_keyword = region, keyword
         if not region and keyword and CrawlerService.is_region_keyword(keyword):
             eff_region, eff_keyword = keyword, None
-
-        api_results = CrawlerService.fetch_notices(
-            page=page, size=limit, keyword=eff_keyword, region=eff_region,
-            category=norm_cat, date_from=date_from, date_to=date_to,
-        )
         try:
+            api_results = CrawlerService.fetch_notices(
+                page=1, size=100, keyword=eff_keyword, region=eff_region,
+                category=norm_cat, date_from=date_from, date_to=date_to,
+            )
             if api_results:
                 CrawlerService.save_notices(db, api_results)
         except Exception as e:
-            logger.warning(f"DB save error (non-fatal): {e}")
+            logger.warning(f"feed API refresh error (non-fatal): {e}")
 
-        results = _post_filter(api_results)
-        # 키워드 관련성 재필터 — 조달청 OpenAPI 의 bidNtceNm/ntceInsttNm 필터가
-        # 불안정해 무관한 공고가 섞이므로, 제목·기관·지역에 검색어 포함 여부로 재선별.
-        term = (keyword or region or "").strip()
-        if term:
-            results = [
-                x for x in results
-                if term in ((x.get("title") or "") + (x.get("organization") or "") + (x.get("region") or ""))
-            ]
-        return results[:limit]
-
-    # ── 기본 피드: DB (활성 우선) ──
-    from sqlalchemy import case
-
-    is_active = case(
-        (models.Notice.end_date.is_(None), 1),
-        (models.Notice.end_date > now, 0),
-        else_=1,
-    )
-    # [Mock] 가짜 공고 제외 (개발 잔여 데이터 방어)
-    query = db.query(models.Notice).filter(~models.Notice.title.like("[Mock]%"))
+    # 2) 누적 notices 테이블에서 필터 검색 (API 신선분 + 과거 캐시 통합)
+    q = db.query(models.Notice).filter(~models.Notice.title.like("[Mock]%"))
+    if keyword:
+        kw = f"%{keyword}%"
+        q = q.filter(or_(
+            models.Notice.title.ilike(kw),
+            models.Notice.organization.ilike(kw),
+            models.Notice.region.ilike(kw),
+        ))
+    if region:
+        rg = f"%{region}%"
+        q = q.filter(or_(models.Notice.organization.ilike(rg), models.Notice.region.ilike(rg)))
+    if norm_cat:
+        q = q.filter(models.Notice.contract_type == CT_MAP[norm_cat])
+    if price_min is not None:
+        q = q.filter(models.Notice.basic_price >= price_min)
+    if price_max is not None:
+        q = q.filter(models.Notice.basic_price <= price_max)
     if exclude_closed:
-        query = query.filter(models.Notice.end_date > now).order_by(models.Notice.end_date.asc())
-    else:
-        query = query.order_by(is_active, models.Notice.end_date.desc())
+        q = q.filter(models.Notice.end_date > now)
+
+    if sort == "price":
+        q = q.order_by(models.Notice.basic_price.desc())
+    elif sort == "newest":
+        q = q.order_by(models.Notice.start_date.desc())
+    else:  # deadline (기본): 활성 우선 → 마감 임박순
+        if exclude_closed:
+            q = q.order_by(models.Notice.end_date.asc())
+        else:
+            is_active = case(
+                (models.Notice.end_date.is_(None), 1),
+                (models.Notice.end_date > now, 0),
+                else_=1,
+            )
+            q = q.order_by(is_active, models.Notice.end_date.asc())
 
     offset = (page - 1) * limit
-    notices = query.offset(offset).limit(limit).all()
-
-    if not notices and page == 1:
-        logger.info("DB empty, fetching initial batch from API (all categories)...")
-        api_data = CrawlerService.fetch_notices(page=1, size=50)
-        CrawlerService.save_notices(db, api_data)
-        notices = query.offset(offset).limit(limit).all()
-
-    return notices
+    return q.offset(offset).limit(limit).all()
 
 @router.post("/crawl")
 def trigger_crawl(db: Session = Depends(get_db)):

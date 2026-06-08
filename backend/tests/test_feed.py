@@ -121,36 +121,48 @@ class TestFeedFilters:
         assert resp.status_code == 200
         assert captured.get("category") == "service"
 
-    def test_price_filter_and_sort(self, client, monkeypatch):
-        from app.services.crawler import CrawlerService
-        items = [
-            CrawlerService._map_item(_api_item("A", 100, "2026-12-10 10:00:00"), "CONSTRUCTION"),
-            CrawlerService._map_item(_api_item("B", 500, "2026-12-05 10:00:00"), "SERVICE"),
-            CrawlerService._map_item(_api_item("C", 50, "2026-12-20 10:00:00"), "GOODS"),
-        ]
-        monkeypatch.setattr("app.services.crawler.CrawlerService.fetch_notices", lambda **k: list(items))
-        monkeypatch.setattr("app.services.crawler.CrawlerService.save_notices", lambda db, n: 0)
+    def _seed(self, db_session, rows):
+        """rows: list of dict(bid_no,title,org,price,days,ctype). 누적 DB 시딩."""
+        from app.db import models
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        for r in rows:
+            if not db_session.query(models.Notice).filter_by(bid_no=r["bid_no"]).first():
+                db_session.add(models.Notice(
+                    bid_no=r["bid_no"], title=r["title"], organization=r.get("org"),
+                    region=r.get("region"), basic_price=r["price"],
+                    contract_type=r.get("ctype", "CONSTRUCTION"),
+                    start_date=now, end_date=now + timedelta(days=r["days"]),
+                ))
+        db_session.commit()
+
+    def test_price_filter_and_sort(self, client, db_session, monkeypatch):
+        # 누적 DB 검색 — API 미호출(빈 응답 mock), 시딩된 DB 를 필터 검색
+        monkeypatch.setattr("app.services.crawler.CrawlerService.fetch_notices", lambda **k: [])
         monkeypatch.setattr("app.services.crawler.CrawlerService.is_region_keyword", lambda kw: False)
-        resp = client.get("/api/v1/bids/feed?keyword=테스트&price_min=80&sort=price")
+        self._seed(db_session, [
+            {"bid_no": "PF-A", "title": "PF필터 공고 A", "price": 100, "days": 5},
+            {"bid_no": "PF-B", "title": "PF필터 공고 B", "price": 500, "days": 3},
+            {"bid_no": "PF-C", "title": "PF필터 공고 C", "price": 50, "days": 10},
+        ])
+        resp = client.get("/api/v1/bids/feed?keyword=PF필터&price_min=80&sort=price")
         assert resp.status_code == 200
-        prices = [n["basic_price"] for n in resp.json()]
+        prices = [n["basic_price"] for n in resp.json() if n["bid_no"].startswith("PF-")]
         assert prices == [500, 100]  # 50 필터아웃, 내림차순 정렬
 
-    def test_keyword_relevance_filter(self, client, monkeypatch):
-        """OpenAPI 가 무관한 공고를 반환해도 키워드(제목·기관·지역)로 재선별."""
-        from app.services.crawler import CrawlerService
-        items = [
-            CrawlerService._map_item(_api_item_named("A", "강남구 도로포장 공사", "서울 강남구", 100, "2026-12-10 10:00:00"), "CONSTRUCTION"),
-            CrawlerService._map_item(_api_item_named("B", "봉화군 풀베기 사업", "경북 봉화군산림조합", 200, "2026-12-05 10:00:00"), "SERVICE"),
-        ]
-        monkeypatch.setattr("app.services.crawler.CrawlerService.fetch_notices", lambda **k: list(items))
-        monkeypatch.setattr("app.services.crawler.CrawlerService.save_notices", lambda db, n: 0)
+    def test_keyword_relevance_filter(self, client, db_session, monkeypatch):
+        """누적 DB 를 키워드(제목·기관·지역)로 검색 — 무관 공고 제외."""
+        monkeypatch.setattr("app.services.crawler.CrawlerService.fetch_notices", lambda **k: [])
         monkeypatch.setattr("app.services.crawler.CrawlerService.is_region_keyword", lambda kw: False)
+        self._seed(db_session, [
+            {"bid_no": "KR-A", "title": "강남구 도로포장 공사", "org": "서울 강남구", "price": 100, "days": 5},
+            {"bid_no": "KR-B", "title": "봉화군 풀베기 사업", "org": "경북 봉화군산림조합", "price": 200, "days": 3, "ctype": "SERVICE"},
+        ])
         resp = client.get("/api/v1/bids/feed?keyword=강남구")
         assert resp.status_code == 200
         titles = [n["title"] for n in resp.json()]
         assert any("강남구" in t for t in titles)
-        assert not any("봉화군" in t for t in titles)  # 무관 공고 제거됨
+        assert not any("봉화군" in t for t in titles)  # 무관 공고 제외
 
 
 class TestFavorites:
