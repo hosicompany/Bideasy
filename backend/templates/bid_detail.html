@@ -66,6 +66,12 @@
     <div class="head">
       <span class="badge {% if contract_type=='SERVICE' %}servc{% elif contract_type=='GOODS' %}thng{% endif %}">{{ contract_type_label }}</span>
       <h1>{{ title }}</h1>
+      {% if found %}
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button id="fav-btn" style="display:none;background:#fff;border:1px solid #E5E8EB;color:#4E5968;border-radius:10px;font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;">☆ 관심</button>
+        <span id="qual-badge"></span>
+      </div>
+      {% endif %}
     </div>
 
     {% if not found %}
@@ -123,6 +129,38 @@
   <script>
     const API_BASE = "{{ api_base }}";
     const CONTRACT_TYPE = "{{ contract_type }}";
+    const BID_NO = "{{ bid_no }}";
+    function getToken(){ try { return localStorage.getItem('access_token') || localStorage.getItem('jwt') || null; } catch { return null; } }
+
+    // 관심공고 + 자격 (로그인 시)
+    (function loggedInFeatures(){
+      const token = getToken();
+      const favBtn = document.getElementById('fav-btn');
+      const qualBadge = document.getElementById('qual-badge');
+      if (!token || !favBtn) return;
+      const auth = { Authorization: 'Bearer ' + token };
+
+      function setFav(on){ favBtn.textContent = on ? '★ 관심됨' : '☆ 관심'; favBtn.style.color = on ? '#3182F6' : '#4E5968'; favBtn.style.borderColor = on ? '#C6DCFF' : '#E5E8EB'; favBtn.dataset.on = on ? '1' : ''; }
+      favBtn.style.display = 'inline-block';
+      fetch(API_BASE + '/bids/' + encodeURIComponent(BID_NO) + '/favorite', { headers: auth })
+        .then(r => r.ok ? r.json() : { favorited:false }).then(d => setFav(!!d.favorited)).catch(()=>{});
+      favBtn.addEventListener('click', async () => {
+        favBtn.disabled = true;
+        try {
+          const r = await fetch(API_BASE + '/bids/' + encodeURIComponent(BID_NO) + '/favorite', { method:'POST', headers: auth });
+          const d = await r.json(); setFav(d.status === 'added');
+        } catch {} finally { favBtn.disabled = false; }
+      });
+
+      // 자격 판정
+      fetch(API_BASE + '/bids/' + encodeURIComponent(BID_NO) + '/qualification', { headers: auth })
+        .then(r => r.ok ? r.json() : null).then(q => {
+          if (!q || !qualBadge) return;
+          if (q.status === 'PASS') qualBadge.innerHTML = '<span style="font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;background:#ECFDF3;color:#15803D;">✓ 입찰 가능 (자격 충족)</span>';
+          else if (q.status === 'FAIL') qualBadge.innerHTML = '<span style="font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;background:#FEF2F2;color:#DC2626;" title="' + (q.details||[]).join(', ') + '">✗ 자격 미달 — ' + ((q.details||[])[0]||'요건 확인') + '</span>';
+        }).catch(()=>{});
+    })();
+
     const btn = document.getElementById('calc-btn');
     if (btn) {
       btn.addEventListener('click', async () => {

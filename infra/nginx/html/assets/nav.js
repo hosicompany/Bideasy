@@ -19,6 +19,7 @@
         <div class="bd-nav-menu" id="bd-nav-menu">
           <ul class="bd-nav-links">
             <li><a href="/search" class="bd-nav-link" data-path="/search">공고 검색</a></li>
+            <li><a href="/calculator" class="bd-nav-link" data-path="/calculator">계산기</a></li>
             <li><a href="/guide" class="bd-nav-link" data-path="/guide">사용 가이드</a></li>
             <li><a href="/pricing" class="bd-nav-link" data-path="/pricing">요금제</a></li>
           </ul>
@@ -78,6 +79,7 @@
         : '';
       cta.innerHTML = `
         ${adminLink}
+        <a href="/favorites" class="bd-nav-link" data-path="/favorites">관심공고</a>
         <a href="/account" class="bd-nav-link" data-path="/account">마이페이지</a>
         <a href="#" class="bd-nav-link" id="bd-nav-logout">로그아웃</a>
       `;

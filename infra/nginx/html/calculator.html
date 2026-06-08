@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>투찰가 계산기 - BidEasy</title>
+  <meta name="description" content="기초금액·사정률·A값으로 안전 투찰가를 계산하세요. 낙찰하한선·안전도 자동 판정. 공사·용역·물품 지원.">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/nav.css">
+  <script src="/assets/nav.js" defer></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background: #F2F4F6; color: #191F28; min-height: 100vh; }
+    .wrap { max-width: 560px; margin: 0 auto; padding: 24px 16px 64px; }
+    .page-title { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+    .page-sub { font-size: 14px; color: #8B95A1; margin-bottom: 20px; }
+    .card { background:#fff; border-radius:16px; padding:22px; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+    label { display:block; font-size:13px; font-weight:600; color:#4E5968; margin:16px 0 6px; }
+    label:first-of-type { margin-top:0; }
+    input[type=number] { width:100%; padding:13px 15px; border:1px solid #E5E8EB; border-radius:10px; font-size:16px; font-family:inherit; }
+    input:focus { outline:none; border-color:#3182F6; }
+    .seg { display:flex; gap:6px; }
+    .seg button { flex:1; padding:11px; border:1px solid #E5E8EB; border-radius:10px; background:#fff; font-size:14px; font-weight:600; color:#4E5968; cursor:pointer; }
+    .seg button.active { background:#3182F6; color:#fff; border-color:#3182F6; }
+    .hint { font-size:12px; color:#8B95A1; margin-top:5px; }
+    .btn-primary { width:100%; margin-top:20px; padding:14px; border:none; border-radius:12px; background:#3182F6; color:#fff; font-size:16px; font-weight:700; cursor:pointer; }
+    .btn-primary:hover { background:#1B64DA; } .btn-primary:disabled { background:#B0B8C1; }
+    .result { margin-top:20px; padding:18px; border-radius:14px; background:#F2F4F6; display:none; }
+    .result.show { display:block; }
+    .price { font-size:28px; font-weight:800; }
+    .row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #E5E8EB; font-size:14px; }
+    .row:last-child { border-bottom:none; } .row .k { color:#8B95A1; } .row .v { font-weight:600; }
+    .chip { font-size:12px; font-weight:700; padding:3px 10px; border-radius:6px; }
+    .safe { background:#ECFDF3; color:#15803D; } .warn { background:#FFFBEB; color:#B45309; } .danger { background:#FEF2F2; color:#DC2626; }
+    .muted { color:#8B95A1; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="page-title">투찰가 계산기</h1>
+    <p class="page-sub">기초금액·사정률·A값으로 안전 투찰가와 낙찰하한선을 계산합니다.</p>
+    <div class="card">
+      <label>계약 종류</label>
+      <div class="seg" id="seg-ct">
+        <button data-ct="CONSTRUCTION" class="active">공사</button>
+        <button data-ct="SERVICE">용역</button>
+        <button data-ct="GOODS">물품</button>
+      </div>
+
+      <label>기초금액 (원)</label>
+      <input type="number" id="basic" placeholder="예: 500000000">
+
+      <label>사정률 (%) — 보통 -3 ~ +3</label>
+      <input type="number" id="rate" value="-2" step="0.01">
+
+      <div id="avalue-wrap">
+        <label>A값 (사후정산 비목 합계, 원) <span class="muted">— 공고문/첨부에서 확인</span></label>
+        <input type="number" id="avalue" value="0">
+        <div class="hint" id="avalue-hint">국민연금·건강보험·노인장기요양·산재·고용보험 합계. 모르면 0 (공사 정밀도에만 영향).</div>
+      </div>
+
+      <button class="btn-primary" id="calc">투찰가 계산 →</button>
+      <div class="result" id="result"></div>
+    </div>
+    <p class="muted" style="text-align:center;margin-top:14px;">특정 공고로 계산하려면 <a href="/search" style="color:#3182F6;text-decoration:none;">공고 검색</a>에서 공고를 열어보세요.</p>
+  </div>
+
+  <script>
+    const API_BASE = 'https://api.bideasy.kr/api/v1';
+    const $ = (id) => document.getElementById(id);
+    let CT = 'CONSTRUCTION';
+
+    $('seg-ct').addEventListener('click', (e) => {
+      if (e.target.tagName !== 'BUTTON') return;
+      document.querySelectorAll('#seg-ct button').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      CT = e.target.dataset.ct;
+      $('avalue-wrap').style.display = (CT === 'GOODS') ? 'none' : 'block';
+    });
+
+    $('calc').addEventListener('click', async () => {
+      const basic = Number($('basic').value) || 0;
+      const rate = Number($('rate').value) || 0;
+      const aValue = (CT === 'GOODS') ? 0 : (Number($('avalue').value) || 0);
+      if (basic <= 0) { alert('기초금액을 입력하세요.'); return; }
+      const btn = $('calc'); btn.disabled = true; btn.textContent = '계산 중...';
+      try {
+        const resp = await fetch(API_BASE + '/bids/calculate/detailed', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ basic_price: basic, rate, contract_type: CT, a_value: aValue }),
+        });
+        if (!resp.ok) throw new Error('계산 실패');
+        const r = await resp.json();
+        const lvl = r.safety_level;
+        const cls = lvl === 'SAFE' ? 'safe' : (lvl === 'DANGER' ? 'danger' : 'warn');
+        const lvlTxt = lvl === 'SAFE' ? '✓ 안전선 통과' : (lvl === 'DANGER' ? '⚠ 안전선 위반' : '⚠ 주의');
+        $('result').innerHTML =
+          '<div style="display:flex;justify-content:space-between;align-items:center;"><span class="muted">예상 투찰가</span><span class="chip ' + cls + '">' + lvlTxt + '</span></div>' +
+          '<div class="price">' + r.result_price_formatted + '</div>' +
+          '<div class="row"><span class="k">낙찰하한선 (' + r.lower_limit_rate + '%)</span><span class="v">' + r.lower_limit_formatted + '</span></div>' +
+          '<div class="row"><span class="k">하한 대비 여유</span><span class="v">' + (r.distance_from_limit != null ? r.distance_from_limit.toFixed(2) + '%p' : '-') + '</span></div>' +
+          (r.a_value_formatted ? '<div class="row"><span class="k">A값 (사정률 미적용)</span><span class="v">' + r.a_value_formatted + '</span></div>' : '') +
+          (r.warning_message ? '<div class="muted" style="margin-top:8px;color:#DC2626;">' + r.warning_message + '</div>' : '');
+        $('result').classList.add('show');
+      } catch (e) {
+        $('result').innerHTML = '<span class="muted">계산 오류: ' + e.message + '</span>';
+        $('result').classList.add('show');
+      } finally {
+        btn.disabled = false; btn.textContent = '투찰가 계산 →';
+      }
+    });
+
+    // ?bid_no= prefill — 공고 컨텍스트에서 기초금액·종류·A값(캐시) 채움
+    (async function prefill() {
+      const bidNo = new URLSearchParams(location.search).get('bid_no');
+      if (!bidNo) return;
+      try {
+        const resp = await fetch(API_BASE + '/bids/' + encodeURIComponent(bidNo) + '/context');
+        if (!resp.ok) return;
+        const c = await resp.json();
+        if (c.estimated_price) $('basic').value = Math.round(c.estimated_price);
+        if (c.contract_type) {
+          const btn = document.querySelector('#seg-ct button[data-ct="' + c.contract_type + '"]');
+          if (btn) btn.click();
+        }
+      } catch {}
+    })();
+  </script>
+</body>
+</html>
