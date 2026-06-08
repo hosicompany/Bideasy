@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} - BidEasy 입찰공고</title>
+  <meta name="description" content="{{ contract_type_label }} 입찰공고 · {{ organization or '공고기관' }}{% if region %} · {{ region }}{% endif %} · 기초금액 {{ "{:,}".format(basic_price) }}원. 투찰가 계산·AI 분석은 BidEasy.">
+  <link rel="canonical" href="{{ site_url }}/bid/{{ bid_no }}">
+  {% if not found %}<meta name="robots" content="noindex">{% endif %}
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ title }} - BidEasy">
+  <meta property="og:description" content="{{ contract_type_label }} · {{ organization or '' }} · 기초금액 {{ "{:,}".format(basic_price) }}원">
+  <meta property="og:url" content="{{ site_url }}/bid/{{ bid_no }}">
+  <meta property="og:site_name" content="BidEasy">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "GovernmentService",
+    "name": {{ title | tojson }},
+    "serviceType": "{{ contract_type_label }} 입찰공고",
+    "provider": { "@type": "GovernmentOrganization", "name": {{ (organization or "") | tojson }} },
+    {% if deadline_iso %}"availabilityEnds": "{{ deadline_iso }}",{% endif %}
+    "areaServed": {{ (region or "대한민국") | tojson }},
+    "url": "{{ site_url }}/bid/{{ bid_no }}"
+  }
+  </script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/nav.css">
+  <script src="/assets/nav.js" defer></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background: #F2F4F6; color: #191F28; min-height: 100vh; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 22px 16px 64px; }
+    a.back { color: #3182F6; text-decoration: none; font-size: 14px; }
+    .head { margin: 12px 0 16px; }
+    .badge { display:inline-block; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px; background:#EBF2FF; color:#2563EB; }
+    .badge.servc { background:#ECFDF3; color:#15803D; } .badge.thng { background:#FFF7ED; color:#C2410C; }
+    h1 { font-size: 22px; font-weight: 800; line-height: 1.4; margin-top: 10px; }
+    .card { background:#fff; border-radius:16px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,.04); margin-bottom:14px; }
+    .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
+    .row { display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid #F2F4F6; font-size:14px; }
+    .row:last-child { border-bottom:none; }
+    .row .k { color:#8B95A1; flex-shrink:0; } .row .v { color:#191F28; font-weight:600; text-align:right; }
+    .price { font-size: 26px; font-weight: 800; color:#191F28; }
+    .muted { color:#8B95A1; font-size:13px; }
+    label { display:block; font-size:13px; font-weight:600; color:#4E5968; margin:14px 0 6px; }
+    input[type=number], input[type=text] { width:100%; padding:12px 14px; border:1px solid #E5E8EB; border-radius:10px; font-size:15px; font-family:inherit; }
+    input:focus { outline:none; border-color:#3182F6; }
+    .btn { border:none; border-radius:12px; font-size:15px; font-weight:700; font-family:inherit; cursor:pointer; padding:13px 20px; transition:background .15s; }
+    .btn-primary { background:#3182F6; color:#fff; width:100%; margin-top:16px; } .btn-primary:hover{ background:#1B64DA; }
+    .result { margin-top:16px; padding:16px; border-radius:12px; background:#F2F4F6; display:none; }
+    .result.show { display:block; }
+    .chip { font-size:12px; font-weight:700; padding:3px 10px; border-radius:6px; }
+    .safe { background:#ECFDF3; color:#15803D; } .warn { background:#FFFBEB; color:#B45309; } .danger { background:#FEF2F2; color:#DC2626; }
+    .cta { background:linear-gradient(135deg,#EBF2FF,#DBEAFE); border:1px solid #C6DCFF; border-radius:16px; padding:20px; text-align:center; }
+    .cta a { display:inline-block; margin-top:10px; background:#3182F6; color:#fff; text-decoration:none; padding:11px 22px; border-radius:12px; font-weight:700; font-size:14px; }
+    .src-note { font-size:12px; color:#8B95A1; margin-top:4px; }
+    .hint { font-size:12px; color:#8B95A1; margin-top:4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/search">← 공고 검색</a>
+    <div class="head">
+      <span class="badge {% if contract_type=='SERVICE' %}servc{% elif contract_type=='GOODS' %}thng{% endif %}">{{ contract_type_label }}</span>
+      <h1>{{ title }}</h1>
+    </div>
+
+    {% if not found %}
+    <div class="card">
+      <p class="muted">이 공고의 상세 정보를 아직 불러오지 못했어요. 공고번호: <strong>{{ bid_no }}</strong></p>
+      <p class="muted" style="margin-top:8px;">나라장터에서 공고가 마감되었거나 번호가 정확하지 않을 수 있습니다.</p>
+    </div>
+    {% else %}
+
+    <div class="card">
+      <h2>기본 정보</h2>
+      <div class="row"><span class="k">공고번호</span><span class="v">{{ bid_no }}</span></div>
+      <div class="row"><span class="k">발주기관</span><span class="v">{{ organization or '-' }}</span></div>
+      {% if demand_organization %}<div class="row"><span class="k">수요기관</span><span class="v">{{ demand_organization }}</span></div>{% endif %}
+      {% if region %}<div class="row"><span class="k">참가지역</span><span class="v">{{ region }}</span></div>{% endif %}
+      {% if contract_method %}<div class="row"><span class="k">계약방법</span><span class="v">{{ contract_method }}</span></div>{% endif %}
+      {% if bid_method %}<div class="row"><span class="k">입찰방법</span><span class="v">{{ bid_method }}</span></div>{% endif %}
+      {% if opening_date %}<div class="row"><span class="k">개찰일시</span><span class="v">{{ opening_date }}</span></div>{% endif %}
+    </div>
+
+    <div class="card">
+      <h2>가격 정보</h2>
+      <div class="muted">기초금액</div>
+      <div class="price">{{ "{:,}".format(basic_price) }}원</div>
+      {% if budget_amount %}<div class="row" style="margin-top:8px;"><span class="k">배정예산</span><span class="v">{{ "{:,}".format(budget_amount) }}원</span></div>{% endif %}
+      <div class="row"><span class="k">낙찰하한율</span><span class="v">{{ lower_limit_pct }}%</span></div>
+    </div>
+
+    <!-- 임베드 투찰가 계산기 -->
+    <div class="card">
+      <h2>투찰가 계산기</h2>
+      <label>기초금액 (원)</label>
+      <input type="number" id="calc-basic" value="{{ basic_price }}">
+      <label>사정률 (%) — 보통 -3 ~ +3</label>
+      <input type="number" id="calc-rate" value="-2" step="0.01">
+      {% if contract_type != 'GOODS' %}
+      <label>A값 (사후정산 비목 합계, 원) <span class="muted">— 공고문/첨부에서 확인</span></label>
+      <input type="number" id="calc-avalue" value="{{ a_value }}">
+      {% if a_value > 0 %}<div class="src-note">✓ A값 자동 표시됨 (BidEasy 캐시)</div>{% else %}<div class="hint">A값을 모르면 0으로 두세요 (공사 정밀도에만 영향).</div>{% endif %}
+      {% endif %}
+      <button class="btn btn-primary" id="calc-btn">투찰가 계산 →</button>
+      <div class="result" id="calc-result"></div>
+    </div>
+
+    <div class="cta">
+      <strong>이 공고, 입찰 가능한지 AI로 분석해보세요</strong>
+      <div class="muted" style="margin-top:6px;">자격 검토 · 독소조항 · 경쟁 강도 — 14일 무료 체험</div>
+      <a href="/login?next=/bid/{{ bid_no }}">로그인하고 AI 분석</a>
+    </div>
+
+    {% if detail_url %}<p class="muted" style="margin-top:14px;text-align:center;"><a href="{{ detail_url }}" target="_blank" rel="noopener" style="color:#8B95A1;">나라장터 원문 보기 ↗</a></p>{% endif %}
+    {% endif %}
+  </div>
+
+  <script>
+    const API_BASE = "{{ api_base }}";
+    const CONTRACT_TYPE = "{{ contract_type }}";
+    const btn = document.getElementById('calc-btn');
+    if (btn) {
+      btn.addEventListener('click', async () => {
+        const basic = Number(document.getElementById('calc-basic').value) || 0;
+        const rate = Number(document.getElementById('calc-rate').value) || 0;
+        const avEl = document.getElementById('calc-avalue');
+        const aValue = avEl ? (Number(avEl.value) || 0) : 0;
+        const box = document.getElementById('calc-result');
+        btn.disabled = true; btn.textContent = '계산 중...';
+        try {
+          const resp = await fetch(API_BASE + '/bids/calculate/detailed', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ basic_price: basic, rate: rate, contract_type: CONTRACT_TYPE, a_value: aValue }),
+          });
+          if (!resp.ok) throw new Error('계산 실패');
+          const r = await resp.json();
+          const lvl = r.safety_level;
+          const cls = lvl === 'SAFE' ? 'safe' : (lvl === 'DANGER' ? 'danger' : 'warn');
+          const lvlTxt = lvl === 'SAFE' ? '✓ 안전선 통과' : (lvl === 'DANGER' ? '⚠ 안전선 위반' : '⚠ 주의');
+          box.innerHTML =
+            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+            '<span class="muted">예상 투찰가</span><span class="chip ' + cls + '">' + lvlTxt + '</span></div>' +
+            '<div class="price" style="margin-top:6px;">' + r.result_price_formatted + '</div>' +
+            '<div class="row" style="margin-top:8px;"><span class="k">낙찰하한선</span><span class="v">' + r.lower_limit_formatted + '</span></div>' +
+            '<div class="row"><span class="k">하한 대비 여유</span><span class="v">' + (r.distance_from_limit != null ? r.distance_from_limit.toFixed(2) + '%p' : '-') + '</span></div>' +
+            (r.warning_message ? '<div class="muted" style="margin-top:8px;color:#DC2626;">' + r.warning_message + '</div>' : '');
+          box.classList.add('show');
+        } catch (e) {
+          box.innerHTML = '<span class="muted">계산 오류: ' + e.message + '</span>';
+          box.classList.add('show');
+        } finally {
+          btn.disabled = false; btn.textContent = '투찰가 계산 →';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

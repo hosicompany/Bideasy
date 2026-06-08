@@ -82,87 +82,95 @@ def calculate_bid_detailed(request: schemas.BidCalculationRequest):
 
 @router.get("/feed", response_model=List[schemas.Notice])
 def get_feed(
-    keyword: str = None, 
-    exclude_closed: bool = False, 
-    page: int = 1, 
-    limit: int = 20, 
-    db: Session = Depends(get_db)
+    keyword: str = None,
+    region: str = None,
+    category: str = None,        # construction | service | goods | all
+    date_from: str = None,       # YYYY-MM-DD
+    date_to: str = None,
+    price_min: int = None,
+    price_max: int = None,
+    sort: str = None,            # deadline | newest | price
+    exclude_closed: bool = False,
+    page: int = 1,
+    limit: int = 20,
+    db: Session = Depends(get_db),
 ):
-    """
-    Get customized notice feed with pagination.
-    - Page starts at 1
+    """공고 피드/검색 (공사/용역/물품 통합).
+
+    필터: keyword(제목)·region(기관)·category·기간·금액·정렬·마감제외.
+    검색 조건이 있으면 OpenAPI fan-out, 없으면 DB 기본 피드.
     """
     from datetime import datetime
+    from app.services.crawler import CrawlerService
 
-    if keyword:
-        from app.services.crawler import CrawlerService
-        
-        # 1. Smart Detection: Is this a region search?
-        is_region = CrawlerService.is_region_keyword(keyword)
-        
-        # 2. Fetch from API with pagination
-        # Note: API filtering is weak, so we fetch slightly more to filter client-side, 
-        # but for infinite scroll with specific page, we trust API's pagination more.
-        # To avoid complexity, we just pass page/size to API.
-        api_results = CrawlerService.fetch_notices(page=page, size=limit, keyword=keyword if not is_region else None, region=keyword if is_region else None)
-        
-        # If API returns data, we process and return it.
-        # Client-side filtering in this paginated context is tricky because we might filter out all 20 items.
-        # For now, we trust the API or accept that some irrelevant items might appear (if API keyword search is fuzzy).
-        # Actually crawler.py handles 'region' vs 'keyword' param mapping.
-        
-        if not api_results:
-             # Try DB search if API fails or yields nothing (fallback)
-             # But usually API should return data.
-             pass
+    now = datetime.now()
+    norm_cat = category if category in ("construction", "service", "goods") else None
 
-        # 4. Save to DB for caching (only filtered results)
+    def _post_filter(items: list) -> list:
+        """공통 post-filter: 금액·마감제외·정렬. items 는 dict 또는 ORM Notice."""
+        def g(it, attr):
+            return it.get(attr) if isinstance(it, dict) else getattr(it, attr, None)
+
+        out = items
+        if price_min is not None:
+            out = [x for x in out if (g(x, "basic_price") or 0) >= price_min]
+        if price_max is not None:
+            out = [x for x in out if (g(x, "basic_price") or 0) <= price_max]
+        if exclude_closed:
+            out = [x for x in out if (g(x, "end_date") and g(x, "end_date") > now)]
+        if sort == "price":
+            out = sorted(out, key=lambda x: (g(x, "basic_price") or 0), reverse=True)
+        elif sort == "deadline":
+            out = sorted(out, key=lambda x: (g(x, "end_date") or datetime.max))
+        elif sort == "newest":
+            out = sorted(out, key=lambda x: (g(x, "start_date") or datetime.min), reverse=True)
+        return out
+
+    use_api = bool(keyword or region or norm_cat or date_from or date_to)
+
+    if use_api:
+        # region 명시 없고 keyword 가 지역명이면 기관 검색으로 전환 (스마트 감지 유지)
+        eff_region = region
+        eff_keyword = keyword
+        if not region and keyword and CrawlerService.is_region_keyword(keyword):
+            eff_region, eff_keyword = keyword, None
+
+        api_results = CrawlerService.fetch_notices(
+            page=page, size=limit, keyword=eff_keyword, region=eff_region,
+            category=norm_cat, date_from=date_from, date_to=date_to,
+        )
         try:
-             if api_results:
+            if api_results:
                 CrawlerService.save_notices(db, api_results)
         except Exception as e:
             logger.warning(f"DB save error (non-fatal): {e}")
-        
-        return api_results
-        
+
+        return _post_filter(api_results)[:limit]
+
+    # ── 기본 피드: DB (활성 우선) ──
+    from sqlalchemy import case
+
+    is_active = case(
+        (models.Notice.end_date.is_(None), 1),
+        (models.Notice.end_date > now, 0),
+        else_=1,
+    )
+    query = db.query(models.Notice)
+    if exclude_closed:
+        query = query.filter(models.Notice.end_date > now).order_by(models.Notice.end_date.asc())
     else:
-        # Default Feed: DB with active notices (bid still open) shown first
-        from sqlalchemy import case
+        query = query.order_by(is_active, models.Notice.end_date.desc())
 
-        now = datetime.now()
+    offset = (page - 1) * limit
+    notices = query.offset(offset).limit(limit).all()
 
-        # Use end_date (DateTime column) for reliable comparison
-        # Active = bid closing date hasn't passed yet
-        is_active = case(
-            (models.Notice.end_date.is_(None), 1),    # No end_date → treat as closed
-            (models.Notice.end_date > now, 0),      # Still accepting bids → active
-            else_=1                                  # Bid closed
-        )
-
-        query = db.query(models.Notice).order_by(
-            is_active,                              # Active notices first
-            models.Notice.end_date.desc()           # Then by deadline (newest first)
-        )
-
-        if exclude_closed:
-            query = db.query(models.Notice).filter(
-                models.Notice.end_date > now
-            ).order_by(models.Notice.end_date.asc())  # Soonest deadline first
-
-        # Pagination
-        offset = (page - 1) * limit
+    if not notices and page == 1:
+        logger.info("DB empty, fetching initial batch from API (all categories)...")
+        api_data = CrawlerService.fetch_notices(page=1, size=50)
+        CrawlerService.save_notices(db, api_data)
         notices = query.offset(offset).limit(limit).all()
 
-        if not notices and page == 1:
-            # First load and no data? Fetch from API
-            from app.services.crawler import CrawlerService
-            logger.info("DB empty, fetching initial batch from API...")
-            api_data = CrawlerService.fetch_notices(page=1, size=50)
-            CrawlerService.save_notices(db, api_data)
-            # Re-query
-            notices = query.offset(offset).limit(limit).all()
-
-        return notices
+    return notices
 
 @router.post("/crawl")
 def trigger_crawl(db: Session = Depends(get_db)):

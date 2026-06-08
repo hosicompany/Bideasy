@@ -69,6 +69,10 @@ else:
 app.include_router(health_router, tags=["health"])
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+# 공개 SEO 페이지 (SSR) — /bid/{no}, /sitemap.xml, /robots.txt (root, no /api prefix)
+from app.api.v1.endpoints.pages import router as pages_router  # noqa: E402
+app.include_router(pages_router, tags=["pages"])
+
 @app.get("/")
 async def root():
     return {"message": f"Welcome to {settings.PROJECT_NAME} API"}

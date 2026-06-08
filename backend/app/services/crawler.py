@@ -9,10 +9,19 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 class CrawlerService:
-    # BidPublicInfoService04 / getBidPblancListInfoCnstwk01 (Gongsa - Construction)
-    # Updated Endpoint based on user feedback (ad/BidPublicInfoService)
-    BASE_URL = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk"
-    
+    # BidPublicInfoService 목록 3종 (공사/용역/물품) — bid_detail.py 와 동일 패턴.
+    # 기존엔 공사(Cnstwk) 단일만 호출해 용역·물품이 누락됐고 contract_type 을
+    # 제목으로 추론(손실)했음. → 카테고리별 엔드포인트를 fan-out 하고
+    # 반환 엔드포인트로 contract_type 을 정확히 태깅.
+    _SEARCH_BASE = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService"
+    _CATEGORY_ENDPOINTS = {
+        "construction": ("/getBidPblancListInfoCnstwk", "CONSTRUCTION"),
+        "service": ("/getBidPblancListInfoServc", "SERVICE"),
+        "goods": ("/getBidPblancListInfoThng", "GOODS"),
+    }
+    # 하위호환: 기존 공사 단일 URL 참조 코드용
+    BASE_URL = _SEARCH_BASE + "/getBidPblancListInfoCnstwk"
+
     # Korean region names for smart detection
     REGION_KEYWORDS = [
         "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종",
@@ -29,132 +38,129 @@ class CrawlerService:
         return any(region in keyword for region in CrawlerService.REGION_KEYWORDS)
     
     @staticmethod
-    def fetch_notices(page: int = 1, size: int = 50, keyword: str = None, region: str = None) -> List[dict]:
-        """
-        Fetch notices from Public Data Portal API (Real Data).
-        - keyword: Search by title (bidNtceNm)
-        - region: Search by organization name (ntceInsttNm) for region filtering
-        """
-        # Date range: Recent 5 days → returns mostly active (not-yet-opened) notices
-        # API returns oldest-first, so 14+ days yields all-closed notices
-        end_date_str = datetime.now().strftime("%Y%m%d") + "2359"
-        start_date_str = (datetime.now() - timedelta(days=5)).strftime("%Y%m%d") + "0000"
+    def _map_item(item: dict, contract_type: str) -> dict:
+        """OpenAPI item → Notice dict. contract_type 은 호출 엔드포인트에서 확정 전달."""
+        bid_no = f"{item.get('bidNtceNo')}-{item.get('bidNtceOrd')}"
 
-        params = {
-            "serviceKey": settings.PUBLIC_DATA_KEY,
-            "numOfRows": size,
-            "pageNo": page,
-            "inqryDiv": 1, # 1: Notice List
-            "inqryBgnDt": start_date_str, 
-            "inqryEndDt": end_date_str,
-            "type": "json" 
-        }
-        
-        # Smart Parameter Selection
-        if region:
-            # Region-based search: Use organization name filter
-            params["ntceInsttNm"] = region
-            logger.info(f"Region Search: ntceInsttNm={region}")
-        elif keyword:
-            # Keyword-based search: Use title filter
-            params["bidNtceNm"] = keyword
-            logger.info(f"Keyword Search: bidNtceNm={keyword}")
-
+        # opengDt(개찰일시)를 effective end_date 로 사용 (입찰은 개찰 전 마감)
+        opening_str = item.get("opengDt", "")
         try:
-            logger.info(f"Fetching from: {CrawlerService.BASE_URL}")
-            response = requests.get(CrawlerService.BASE_URL, params=params)
-            
-            # Check Status
-            # Check Status
-            if response.status_code != 200:
-                logger.error(f"HTTP Error: {response.status_code}, {response.text}")
+            end_dt = datetime.strptime(opening_str, "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            end_dt = datetime.now() + timedelta(days=7)
+
+        title = item.get("bidNtceNm", "No Title")
+        return {
+            "bid_no": bid_no,
+            "title": title,
+            "content": item.get("bidNtceDtlUrl", ""),
+            "basic_price": float(item.get("presmptPrce", 0) or 0),
+            "contract_type": contract_type,  # 제목추론 아님 — 엔드포인트로 확정
+            "start_date": datetime.now(),
+            "end_date": end_dt,
+            "organization": item.get("ntceInsttNm", ""),
+            "demand_organization": item.get("dmndInsttNm", ""),
+            "bid_method": item.get("bidMthdNm", ""),
+            "contract_method": item.get("cntrctMthdNm", ""),
+            "bid_type": item.get("bidClsfcNm", ""),
+            "status": item.get("bidNtceSttusNm", ""),
+            "region": item.get("prtcptLmtRgnNm", ""),
+            "budget_amount": float(item.get("asignBdgtAmt", 0) or 0),
+            "opening_date": item.get("opengDt", ""),
+            "international_bid": item.get("intrntnlBidYn", "N"),
+            "joint_contract": item.get("jntcontrctPsbltyYn", "N"),
+            "big_company_ok": item.get("lrgcntrctPsbltyYn", "N"),
+            "sme_only": item.get("dminsttRcptcpYn", "N"),
+            "bid_qualification": item.get("bidQlfctRgstDt", ""),
+            "emergency_bid": item.get("urgntNtceYn", "N"),
+            "rebid_yn": item.get("rbidYn", "N"),
+            "attachment_url": item.get("ntceSpecDocUrl1", ""),
+            "attachment_name": item.get("ntceSpecFileNm1", ""),
+        }
+
+    @staticmethod
+    def _request_items(url: str, params: dict) -> List[dict]:
+        """단일 OpenAPI 호출 → items 리스트(없으면 []). mock fallback 없음."""
+        try:
+            resp = requests.get(url, params=params, timeout=15)
+            if resp.status_code != 200:
+                logger.error(f"HTTP {resp.status_code} from {url}: {resp.text[:200]}")
                 return []
-            
-            # Parse JSON
             try:
-                data = response.json()
+                data = resp.json()
             except json.JSONDecodeError:
-                logger.error(f"JSON Decode Error. Response might be XML or Invalid: {response.text[:200]}")
-                logger.warning("Falling back to Mock Data due to API Error")
-                return CrawlerService.get_mock_data()
-                
-            response_body = data.get("response", {}).get("body", {})
-            if not response_body:
-                logger.warning(f"No body in response: {data}")
-                return CrawlerService.get_mock_data()
-                
-            items = response_body.get("items", [])
+                logger.error(f"JSON decode error from {url}: {resp.text[:200]}")
+                return []
+            items = data.get("response", {}).get("body", {}).get("items", [])
             if not items:
-                logger.warning(f"No items found for page {page}. Returning Mock Data.")
-                return CrawlerService.get_mock_data()
-                
-            # Handle single item vs list
-            if isinstance(items, dict):
-                items = [items]
-            
-            result_list = []
-            for item in items:
-                # Map API fields to our model
-                bid_no = f"{item.get('bidNtceNo')}-{item.get('bidNtceOrd')}"
-                
-                # Date Parsing: API provides opengDt (개찰일시) but NOT bidBegnDtm/bidClseDtm
-                # Use opengDt as the effective end_date (bidding closes before opening)
-                opening_str = item.get("opengDt", "")
-                try:
-                    end_dt = datetime.strptime(opening_str, "%Y-%m-%d %H:%M:%S")
-                except (ValueError, TypeError):
-                    end_dt = datetime.now() + timedelta(days=7)
-                start_dt = datetime.now()
-
-                # Infer Contract Type
-                title = item.get("bidNtceNm", "No Title")
-                ctype = "CONSTRUCTION" # Default
-                if any(k in title for k in ["용역", "관리", "청소"]):
-                    ctype = "SERVICE"
-                elif any(k in title for k in ["구매", "구입", "제작"]):
-                    ctype = "GOODS"
-
-                if item.get("ntceSpecDocUrl1"):
-                    logger.info(f"Found attachment: {item.get('ntceSpecFileNm1')} for {bid_no}")
-                
-                notice_dict = {
-                    # Core fields
-                    "bid_no": bid_no,
-                    "title": title,
-                    "content": item.get("bidNtceDtlUrl", ""),  # Detail URL
-                    "basic_price": float(item.get("presmptPrce", 0)),
-                    "contract_type": ctype,
-                    "start_date": start_dt,
-                    "end_date": end_dt,
-                    "organization": item.get("ntceInsttNm", ""),
-                    
-                    # Extended fields for AI analysis
-                    "demand_organization": item.get("dmndInsttNm", ""),  # 수요기관
-                    "bid_method": item.get("bidMthdNm", ""),  # 입찰방법 (전자입찰 등)
-                    "contract_method": item.get("cntrctMthdNm", ""),  # 계약방법 (일반경쟁 등)
-                    "bid_type": item.get("bidClsfcNm", ""),  # 입찰분류
-                    "status": item.get("bidNtceSttusNm", ""),  # 공고상태 (일반/긴급/정정)
-                    "region": item.get("prtcptLmtRgnNm", ""),  # 참가제한지역
-                    "budget_amount": float(item.get("asignBdgtAmt", 0)),  # 배정예산
-                    "opening_date": item.get("opengDt", ""),  # 개찰일시
-                    "international_bid": item.get("intrntnlBidYn", "N"),  # 국제입찰여부
-                    "joint_contract": item.get("jntcontrctPsbltyYn", "N"),  # 공동계약가능
-                    "big_company_ok": item.get("lrgcntrctPsbltyYn", "N"),  # 대기업참여가능
-                    "sme_only": item.get("dminsttRcptcpYn", "N"),  # 중소기업제한
-                    "bid_qualification": item.get("bidQlfctRgstDt", ""),  # 입찰자격등록마감
-                    "emergency_bid": item.get("urgntNtceYn", "N"),  # 긴급공고여부
-                    "rebid_yn": item.get("rbidYn", "N"),  # 재입찰여부
-                    "attachment_url": item.get("ntceSpecDocUrl1", ""),  # 공고규격서 URL
-                    "attachment_name": item.get("ntceSpecFileNm1", ""),  # 첨부파일명
-                }
-                result_list.append(notice_dict)
-                
-            logger.info(f"Successfully fetched {len(result_list)} items.")
-            return result_list
-
+                return []
+            return [items] if isinstance(items, dict) else items
         except Exception as e:
-            logger.error(f"Critical Error: {str(e)}")
+            logger.error(f"Request error {url}: {e}")
             return []
+
+    @staticmethod
+    def fetch_notices(
+        page: int = 1,
+        size: int = 50,
+        keyword: str = None,
+        region: str = None,
+        category: str = None,
+        date_from: str = None,
+        date_to: str = None,
+    ) -> List[dict]:
+        """공고 목록 조회 (공사/용역/물품 fan-out).
+
+        - category: construction|service|goods 지정 시 해당 1종만, None/'all' 이면 3종 fan-out
+        - keyword: 제목 검색(bidNtceNm) / region: 기관명 검색(ntceInsttNm)
+        - date_from/date_to: 'YYYY-MM-DD' (없으면 최근 5일)
+        contract_type 은 호출 엔드포인트로 확정 태깅(제목추론 제거).
+        """
+        # 조회 카테고리 결정
+        if category and category in CrawlerService._CATEGORY_ENDPOINTS:
+            cats = [category]
+        else:
+            cats = list(CrawlerService._CATEGORY_ENDPOINTS.keys())  # 3종 전부
+
+        # 날짜 범위
+        end_date_str = (date_to.replace("-", "") if date_to else datetime.now().strftime("%Y%m%d")) + "2359"
+        start_date_str = (
+            date_from.replace("-", "") if date_from
+            else (datetime.now() - timedelta(days=5)).strftime("%Y%m%d")
+        ) + "0000"
+
+        merged: List[dict] = []
+        for cat in cats:
+            path, ctype = CrawlerService._CATEGORY_ENDPOINTS[cat]
+            url = CrawlerService._SEARCH_BASE + path
+            params = {
+                "serviceKey": settings.PUBLIC_DATA_KEY,
+                "numOfRows": size,
+                "pageNo": page,
+                "inqryDiv": 1,  # 1: 목록
+                "inqryBgnDt": start_date_str,
+                "inqryEndDt": end_date_str,
+                "type": "json",
+            }
+            if region:
+                params["ntceInsttNm"] = region
+            elif keyword:
+                params["bidNtceNm"] = keyword
+
+            items = CrawlerService._request_items(url, params)
+            for item in items:
+                merged.append(CrawlerService._map_item(item, ctype))
+            logger.info(f"[{cat}] {len(items)} items")
+
+        if merged:
+            logger.info(f"fetch_notices total {len(merged)} (cats={cats})")
+            return merged
+
+        # 실데이터 없음 → mock 은 필터 없는 기본 조회에서만 (검색결과 오염 방지)
+        if not keyword and not region and not category:
+            logger.warning("No real notices — returning mock data (default fetch only)")
+            return CrawlerService.get_mock_data()
+        return []
 
     @staticmethod
     def get_mock_data() -> List[dict]:
