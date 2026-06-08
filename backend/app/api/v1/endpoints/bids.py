@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -7,6 +8,7 @@ from app.schemas import bid as schemas
 from app.services.calculator import CalculatorService
 from app.db import models
 from app.core.logging import get_logger
+from app.core.security import get_current_user
 
 logger = get_logger(__name__)
 
@@ -359,29 +361,128 @@ def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{bid_no}/favorite")
-def toggle_favorite(bid_no: str, db: Session = Depends(get_db)):
-    """
-    Toggle Favorite status for a bid.
-    """
-    existing = db.query(models.Favorite).filter(models.Favorite.bid_no == bid_no).first()
+def toggle_favorite(
+    bid_no: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """관심공고 토글 (사용자별)."""
+    existing = (
+        db.query(models.Favorite)
+        .filter(
+            models.Favorite.bid_no == bid_no,
+            models.Favorite.user_id == current_user.id,
+        )
+        .first()
+    )
     if existing:
         db.delete(existing)
         db.commit()
         return {"status": "removed", "bid_no": bid_no}
-    else:
-        new_fav = models.Favorite(bid_no=bid_no)
-        db.add(new_fav)
-        db.commit()
-        return {"status": "added", "bid_no": bid_no}
+    new_fav = models.Favorite(bid_no=bid_no, user_id=current_user.id)
+    db.add(new_fav)
+    db.commit()
+    return {"status": "added", "bid_no": bid_no}
+
 
 @router.get("/favorites/list", response_model=List[schemas.Notice])
-def get_favorites(db: Session = Depends(get_db)):
+def get_favorites(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """현재 사용자의 관심공고 목록."""
+    return (
+        db.query(models.Notice)
+        .join(models.Favorite, models.Favorite.bid_no == models.Notice.bid_no)
+        .filter(models.Favorite.user_id == current_user.id)
+        .order_by(models.Favorite.created_at.desc())
+        .all()
+    )
+
+
+@router.get("/{bid_no}/favorite")
+def is_favorite(
+    bid_no: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """해당 공고가 현재 사용자의 관심공고인지."""
+    fav = (
+        db.query(models.Favorite.id)
+        .filter(
+            models.Favorite.bid_no == bid_no,
+            models.Favorite.user_id == current_user.id,
+        )
+        .first()
+    )
+    return {"favorited": fav is not None}
+
+
+class AValueReport(BaseModel):
+    a_value: int
+
+
+@router.put("/{bid_no}/a_value")
+def report_a_value(
+    bid_no: str,
+    payload: AValueReport,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """A값 크라우드소스 캐시 (Tier 1).
+
+    익스텐션이 나라장터 DOM 에서 읽은 A값을 보고 → Notice.a_value 에 저장.
+    이후 웹 상세/계산기가 이 값을 자동 표시 (OpenAPI 엔 A값 없음).
+    A값은 공개 공고정보라 캐시·공유 무방.
     """
-    Get all favorite notices.
+    if payload.a_value < 0 or payload.a_value > 100_000_000_000:
+        raise HTTPException(status_code=400, detail="유효하지 않은 A값")
+
+    notice = _lookup_notice(db, bid_no)
+    if not notice:
+        # 캐시에 없으면 OpenAPI 로 적재 시도 후 재조회
+        try:
+            get_bid_context(bid_no, db)
+        except Exception:
+            pass
+        notice = _lookup_notice(db, bid_no)
+    if not notice:
+        return {"updated": False, "reason": "notice_not_found", "bid_no": bid_no}
+
+    notice.a_value = int(payload.a_value)
+    db.commit()
+    logger.info(f"A값 보고: {notice.bid_no} = {payload.a_value} (user={current_user.id})")
+    return {"updated": True, "bid_no": notice.bid_no, "a_value": notice.a_value}
+
+
+@router.get("/{bid_no}/qualification")
+def get_qualification(
+    bid_no: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """현재 사용자 프로필(면허·지역)로 해당 공고 입찰 자격 판정.
+
+    QualificationChecker 재사용 (AI 분석과 동일 엔진). {status, message, details}.
     """
-    # Join with Notice to get full notice details
-    favorites = db.query(models.Notice).join(models.Favorite).order_by(models.Favorite.created_at.desc()).all()
-    return favorites
+    from app.services.qualification_checker import QualificationChecker
+
+    notice = _lookup_notice(db, bid_no)
+    if not notice:
+        try:
+            get_bid_context(bid_no, db)
+        except Exception:
+            pass
+        notice = _lookup_notice(db, bid_no)
+    if not notice:
+        return {"status": "UNKNOWN", "message": "공고 정보를 찾을 수 없습니다.", "details": []}
+
+    check_data = {
+        "bidNtceNm": notice.title or "",
+        "LmtRegion": getattr(notice, "region", "") or "",
+        "bidNtceNo": notice.bid_no,
+    }
+    return QualificationChecker.check_qualification(check_data, current_user)
 
 
 @router.get("/{bid_no}/results", response_model=List[schemas.OpeningResult])

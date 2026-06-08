@@ -166,30 +166,42 @@ class TestFeedFilters:
 
 
 class TestFavorites:
-    """POST /{bid_no}/favorite and GET /favorites/list"""
+    """POST/GET /{bid_no}/favorite, GET /favorites/list — 유저스코프."""
 
-    def test_toggle_favorite_add(self, client, sample_notice):
-        """Toggle creates a favorite."""
-        resp = client.post("/api/v1/bids/TEST-001/favorite")
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "added"
+    def test_favorite_requires_auth(self, client, sample_notice):
+        assert client.post("/api/v1/bids/TEST-001/favorite").status_code == 401
+        assert client.get("/api/v1/bids/favorites/list").status_code == 401
 
-    def test_toggle_favorite_remove(self, client, sample_notice):
-        """Toggle twice results in removal."""
-        # Ensure it's added first (may already exist from prior test)
-        r1 = client.post("/api/v1/bids/TEST-001/favorite")
-        if r1.json()["status"] == "removed":
-            # Was already added, add again
-            client.post("/api/v1/bids/TEST-001/favorite")
-        # Now remove
-        resp = client.post("/api/v1/bids/TEST-001/favorite")
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "removed"
+    def test_toggle_status_and_list(self, free_client, sample_notice):
+        # 상태 초기화 (이전 테스트 잔여 제거)
+        if free_client.get("/api/v1/bids/TEST-001/favorite").json()["favorited"]:
+            free_client.post("/api/v1/bids/TEST-001/favorite")
+        # add
+        assert free_client.post("/api/v1/bids/TEST-001/favorite").json()["status"] == "added"
+        assert free_client.get("/api/v1/bids/TEST-001/favorite").json()["favorited"] is True
+        lst = free_client.get("/api/v1/bids/favorites/list").json()
+        assert any(n["bid_no"] == "TEST-001" for n in lst)
+        # remove
+        assert free_client.post("/api/v1/bids/TEST-001/favorite").json()["status"] == "removed"
+        assert free_client.get("/api/v1/bids/TEST-001/favorite").json()["favorited"] is False
 
-    def test_favorites_list(self, client, sample_notice):
-        """Get favorites list returns favorited notices."""
-        client.post("/api/v1/bids/TEST-001/favorite")
-        resp = client.get("/api/v1/bids/favorites/list")
+
+class TestQualificationAndAValue:
+    """GET /{bid_no}/qualification, PUT /{bid_no}/a_value"""
+
+    def test_a_value_report(self, free_client, sample_notice, db_session):
+        from app.db import models
+        resp = free_client.put("/api/v1/bids/TEST-001/a_value", json={"a_value": 15000000})
         assert resp.status_code == 200
-        data = resp.json()
-        assert isinstance(data, list)
+        assert resp.json()["updated"] is True
+        db_session.expire_all()
+        n = db_session.query(models.Notice).filter_by(bid_no="TEST-001").first()
+        assert n.a_value == 15000000
+
+    def test_a_value_requires_auth(self, client, sample_notice):
+        assert client.put("/api/v1/bids/TEST-001/a_value", json={"a_value": 1}).status_code == 401
+
+    def test_qualification_returns_status(self, free_client, sample_notice):
+        resp = free_client.get("/api/v1/bids/TEST-001/qualification")
+        assert resp.status_code == 200
+        assert resp.json()["status"] in ("PASS", "FAIL", "UNKNOWN")

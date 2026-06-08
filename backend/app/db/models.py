@@ -229,10 +229,14 @@ class Favorite(Base):
     __tablename__ = "favorites"
 
     id = Column(Integer, primary_key=True, index=True)
+    # user_id: 멀티유저 관심목록 분리. 기존 행(공유 버그 시절)은 NULL → 어떤 사용자
+    # 조회에도 안 잡힘. nullable=True 로 무중단 마이그레이션.
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     bid_no = Column(String(100), ForeignKey("notices.bid_no"), nullable=False)
     created_at = Column(DateTime, default=_utcnow)
 
     notice = relationship("Notice", back_populates="favorites")
+    user = relationship("User")
 
 
 class DeviceToken(Base):
