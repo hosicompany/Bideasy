@@ -69,6 +69,7 @@
       {% if found %}
       <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button id="fav-btn" style="display:none;background:#fff;border:1px solid #E5E8EB;color:#4E5968;border-radius:10px;font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;">☆ 관심</button>
+        <button id="trk-btn" style="display:none;background:#fff;border:1px solid #E5E8EB;color:#4E5968;border-radius:10px;font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;">⏰ 마감 추적</button>
         <span id="qual-badge"></span>
       </div>
       {% endif %}
@@ -151,6 +152,23 @@
           const d = await r.json(); setFav(d.status === 'added');
         } catch {} finally { favBtn.disabled = false; }
       });
+
+      // 마감 추적
+      const trkBtn = document.getElementById('trk-btn');
+      if (trkBtn) {
+        function setTrk(on){ trkBtn.textContent = on ? '🔔 추적중' : '⏰ 마감 추적'; trkBtn.style.color = on ? '#3182F6' : '#4E5968'; trkBtn.style.borderColor = on ? '#C6DCFF' : '#E5E8EB'; trkBtn.dataset.on = on ? '1' : ''; }
+        trkBtn.style.display = 'inline-block';
+        fetch(API_BASE + '/bids/' + encodeURIComponent(BID_NO) + '/track', { headers: auth })
+          .then(r => r.ok ? r.json() : { tracked:false }).then(d => setTrk(!!d.tracked)).catch(()=>{});
+        trkBtn.addEventListener('click', async () => {
+          trkBtn.disabled = true;
+          const on = trkBtn.dataset.on === '1';
+          try {
+            await fetch(API_BASE + '/bids/' + encodeURIComponent(BID_NO) + '/track', { method: on ? 'DELETE' : 'POST', headers: auth });
+            setTrk(!on);
+          } catch {} finally { trkBtn.disabled = false; }
+        });
+      }
 
       // 자격 판정
       fetch(API_BASE + '/bids/' + encodeURIComponent(BID_NO) + '/qualification', { headers: auth })

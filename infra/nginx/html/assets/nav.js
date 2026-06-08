@@ -79,6 +79,7 @@
         : '';
       cta.innerHTML = `
         ${adminLink}
+        <a href="/dashboard" class="bd-nav-link" data-path="/dashboard">대시보드</a>
         <a href="/favorites" class="bd-nav-link" data-path="/favorites">관심공고</a>
         <a href="/account" class="bd-nav-link" data-path="/account">마이페이지</a>
         <a href="#" class="bd-nav-link" id="bd-nav-logout">로그아웃</a>

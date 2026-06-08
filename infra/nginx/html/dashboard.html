@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>대시보드 - BidEasy</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/nav.css">
+  <script src="/assets/nav.js" defer></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background: #F2F4F6; color: #191F28; min-height: 100vh; }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
+    .page-title { font-size: 24px; font-weight: 800; margin-bottom: 16px; }
+    .quick { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; }
+    .quick a { flex: 1; min-width: 140px; background: #fff; border-radius: 14px; padding: 16px; text-decoration: none; color: #191F28; box-shadow: 0 1px 4px rgba(0,0,0,.04); text-align: center; font-weight: 700; font-size: 14px; transition: box-shadow .12s; }
+    .quick a:hover { box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+    .quick a .emoji { display: block; font-size: 22px; margin-bottom: 6px; }
+    h2 { font-size: 17px; font-weight: 800; margin: 8px 2px 12px; }
+    .card { background:#fff; border-radius:14px; padding:16px 18px; margin-bottom:10px; box-shadow:0 1px 4px rgba(0,0,0,.04); position:relative; }
+    .noti { border-left: 3px solid transparent; }
+    .noti.unread { border-left-color: #3182F6; background: #FBFDFF; }
+    .noti-title { font-weight: 700; font-size: 14.5px; margin-bottom: 3px; }
+    .noti-body { font-size: 13px; color: #4E5968; line-height: 1.5; }
+    .noti-time { font-size: 11px; color: #B0B8C1; margin-top: 5px; }
+    .noti-link { display:inline-block; margin-top:7px; font-size:12px; color:#3182F6; text-decoration:none; font-weight:600; }
+    .card-top { display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap; }
+    .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; }
+    .badge-cnstwk { background:#EBF2FF; color:#2563EB; } .badge-servc { background:#ECFDF3; color:#15803D; } .badge-thng { background:#FFF7ED; color:#C2410C; }
+    .dday { font-size:12px; font-weight:700; padding:3px 9px; border-radius:6px; }
+    .dday-soon { background:#FEF2F2; color:#DC2626; } .dday-ok { background:#F2F4F6; color:#4E5968; } .dday-closed { background:#F2F4F6; color:#B0B8C1; }
+    .card-title a { font-size:15px; font-weight:700; color:inherit; text-decoration:none; } .card-title a:hover { color:#3182F6; }
+    .card-meta { font-size:13px; color:#8B95A1; margin-top:4px; }
+    .btn-x { position:absolute; top:14px; right:16px; background:none; border:1px solid #E5E8EB; color:#8B95A1; border-radius:8px; font-size:12px; padding:5px 10px; cursor:pointer; }
+    .btn-x:hover { border-color:#FFCDD2; color:#DC2626; }
+    .empty { color:#8B95A1; font-size:14px; padding:16px 2px; }
+    .empty a { color:#3182F6; text-decoration:none; font-weight:600; }
+    .state { text-align:center; padding:40px; color:#8B95A1; }
+    .loader { display:inline-block; width:18px; height:18px; border:2.5px solid #E5E8EB; border-top-color:#3182F6; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    section { margin-bottom: 26px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="page-title">대시보드</h1>
+    <div id="gate" class="state"><span class="loader"></span> 불러오는 중...</div>
+    <div id="content" style="display:none;">
+      <div class="quick">
+        <a href="/search"><span class="emoji">🔍</span>공고 검색</a>
+        <a href="/favorites"><span class="emoji">⭐</span>관심공고</a>
+        <a href="/calculator"><span class="emoji">🧮</span>투찰가 계산기</a>
+      </div>
+
+      <section>
+        <h2>🔔 알림</h2>
+        <div id="notis"></div>
+      </section>
+
+      <section>
+        <h2>⏰ 추적 중인 공고</h2>
+        <div id="tracked"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'https://api.bideasy.kr/api/v1';
+    const $ = (id) => document.getElementById(id);
+    function getToken(){ try { return localStorage.getItem('access_token') || localStorage.getItem('jwt') || null; } catch { return null; } }
+    function auth(){ return { Authorization: 'Bearer ' + getToken() }; }
+
+    function fmtKRW(n){ n=Number(n)||0; if(n>=1e8) return (n/1e8).toFixed(n%1e8===0?0:1)+'억'; if(n>=1e4) return Math.round(n/1e4).toLocaleString('ko-KR')+'만'; return n.toLocaleString('ko-KR'); }
+    function ddayInfo(e){ if(!e) return {txt:'-',cls:'dday-ok'}; const d=Math.ceil((new Date(e)-new Date())/86400000); if(d<0) return {txt:'마감',cls:'dday-closed'}; if(d===0) return {txt:'D-day',cls:'dday-soon'}; return {txt:'D-'+d,cls:d<=3?'dday-soon':'dday-ok'}; }
+    function fmtDate(s){ if(!s) return ''; const d=new Date(s); return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+    const CAT = { CONSTRUCTION:{label:'공사',cls:'badge-cnstwk'}, SERVICE:{label:'용역',cls:'badge-servc'}, GOODS:{label:'물품',cls:'badge-thng'} };
+
+    async function loadNotis(){
+      try {
+        const r = await fetch(API_BASE+'/notifications/list?limit=15', { headers: auth() });
+        if(!r.ok) throw 0;
+        const items = await r.json();
+        if(!items.length){ $('notis').innerHTML='<div class="empty">새 알림이 없어요. 공고를 추적하거나 회사 프로필을 등록하면 맞춤 알림을 받아요.</div>'; return; }
+        $('notis').innerHTML = items.map(n => {
+          const bids = (n.data_json && n.data_json.bid_nos) || [];
+          const link = bids.length ? '<a class="noti-link" href="/bid/'+encodeURIComponent(bids[0])+'">공고 보러가기 →</a>' : '';
+          return '<div class="card noti '+(n.is_read?'':'unread')+'"><div class="noti-title">'+(n.title||'').replace(/</g,'&lt;')+'</div><div class="noti-body">'+(n.body||'').replace(/</g,'&lt;')+'</div>'+link+'<div class="noti-time">'+fmtDate(n.created_at)+'</div></div>';
+        }).join('');
+      } catch { $('notis').innerHTML='<div class="empty">알림을 불러오지 못했어요.</div>'; }
+    }
+
+    async function loadTracked(){
+      try {
+        const r = await fetch(API_BASE+'/bids/tracked', { headers: auth() });
+        if(!r.ok) throw 0;
+        const items = await r.json();
+        if(!items.length){ $('tracked').innerHTML='<div class="empty">추적 중인 공고가 없어요. <a href="/search">공고를 찾아</a> 마감 추적을 켜보세요.</div>'; return; }
+        $('tracked').innerHTML = items.map(n => {
+          const cat=CAT[n.contract_type]||{label:'기타',cls:'badge-cnstwk'}; const d=ddayInfo(n.end_date); const bidNo=encodeURIComponent(n.bid_no);
+          return '<div class="card" data-bid="'+n.bid_no+'"><button class="btn-x" data-bid="'+n.bid_no+'">해제</button><div class="card-top"><span class="badge '+cat.cls+'">'+cat.label+'</span><span class="dday '+d.cls+'">'+d.txt+'</span></div><div class="card-title"><a href="/bid/'+bidNo+'">'+(n.title||'제목없음').replace(/</g,'&lt;')+'</a></div><div class="card-meta">'+(n.organization||'-')+' · 기초금액 '+fmtKRW(n.basic_price)+'원</div></div>';
+        }).join('');
+      } catch { $('tracked').innerHTML='<div class="empty">추적 공고를 불러오지 못했어요.</div>'; }
+    }
+
+    document.getElementById('tracked').addEventListener('click', async (e) => {
+      if(!e.target.classList.contains('btn-x')) return;
+      const bid=e.target.dataset.bid; e.target.disabled=true; e.target.textContent='...';
+      try { await fetch(API_BASE+'/bids/'+encodeURIComponent(bid)+'/track', { method:'DELETE', headers: auth() });
+        const c=document.querySelector('.card[data-bid="'+CSS.escape(bid)+'"]'); if(c) c.remove();
+        if(!document.querySelector('#tracked .card')) $('tracked').innerHTML='<div class="empty">추적 중인 공고가 없어요. <a href="/search">공고를 찾아</a> 마감 추적을 켜보세요.</div>';
+      } catch { e.target.disabled=false; e.target.textContent='해제'; }
+    });
+
+    (async function init(){
+      if(!getToken()){ window.location.href='/login?next=/dashboard'; return; }
+      // 토큰 유효성 간이 확인
+      try { const me = await fetch(API_BASE+'/users/me', { headers: auth() }); if(me.status===401){ window.location.href='/login?next=/dashboard'; return; } } catch {}
+      $('gate').style.display='none'; $('content').style.display='block';
+      loadNotis(); loadTracked();
+    })();
+  </script>
+</body>
+</html>
