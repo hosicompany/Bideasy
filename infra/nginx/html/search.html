@@ -57,9 +57,15 @@
     .card {
       background: #fff; border-radius: 14px; padding: 16px 18px; margin-bottom: 10px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.04); cursor: pointer; transition: box-shadow .12s, transform .12s;
-      display: block; text-decoration: none; color: inherit;
+      display: block; text-decoration: none; color: inherit; position: relative;
     }
     .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-1px); }
+    .cmp { position:absolute; top:12px; right:14px; font-size:12px; font-weight:600; color:#8B95A1; border:1px solid #E5E8EB; border-radius:8px; padding:4px 9px; background:#fff; z-index:2; }
+    .cmp.on { color:#3182F6; border-color:#3182F6; background:#EBF2FF; }
+    .cmp-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:20px; background:#191F28; color:#fff; border-radius:14px; padding:12px 18px; display:none; align-items:center; gap:14px; box-shadow:0 6px 24px rgba(0,0,0,.2); z-index:50; }
+    .cmp-bar.show { display:flex; }
+    .cmp-bar button { background:#3182F6; color:#fff; border:none; border-radius:10px; padding:9px 16px; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; }
+    .cmp-bar .clear { background:none; color:#B0B8C1; font-weight:600; }
     .card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; flex-wrap: wrap; }
     .badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 6px; }
     .badge-cnstwk { background: #EBF2FF; color: #2563EB; }
@@ -122,6 +128,12 @@
     </div>
   </div>
 
+  <div class="cmp-bar" id="cmp-bar">
+    <span><strong id="cmp-count">0</strong>건 선택</span>
+    <button id="cmp-go">비교하기 →</button>
+    <button class="clear" id="cmp-clear">초기화</button>
+  </div>
+
   <script>
     const API_BASE = 'https://api.bideasy.kr/api/v1';
     const LIMIT = 20;
@@ -129,6 +141,22 @@
 
     const $ = (id) => document.getElementById(id);
     const resultsEl = $('results'), stateEl = $('state'), moreWrap = $('more-wrap'), metaEl = $('meta');
+
+    // 다건 비교 선택 집합 (최대 4건)
+    const CMP = new Set();
+    function updateCmpBar() {
+      const bar = $('cmp-bar');
+      if (CMP.size >= 2) { bar.classList.add('show'); $('cmp-count').textContent = CMP.size; }
+      else bar.classList.remove('show');
+    }
+    function toggleCmp(bidNo, el) {
+      if (CMP.has(bidNo)) { CMP.delete(bidNo); el.classList.remove('on'); el.textContent = '+ 비교'; }
+      else {
+        if (CMP.size >= 4) { alert('최대 4건까지 비교할 수 있어요.'); return; }
+        CMP.add(bidNo); el.classList.add('on'); el.textContent = '✓ 비교';
+      }
+      updateCmpBar();
+    }
 
     function fmtKRW(n) {
       n = Number(n) || 0;
@@ -169,8 +197,10 @@
       const d = ddayInfo(n.end_date);
       const openg = n.opening_date ? String(n.opening_date).slice(0, 16).replace('T', ' ') : '-';
       const bidNo = encodeURIComponent(n.bid_no);
+      const sel = CMP.has(n.bid_no) ? ' on' : '';
       return `
         <a class="card" href="/bid/${bidNo}">
+          <span class="cmp${sel}" data-bid="${n.bid_no}">${sel ? '✓ 비교' : '+ 비교'}</span>
           <div class="card-top">
             <span class="badge ${cat.cls}">${cat.label}</span>
             <span class="dday ${d.cls}">${d.txt}</span>
@@ -225,6 +255,23 @@
       load(true);
     });
     $('btn-more').addEventListener('click', () => { page += 1; load(false); });
+
+    // 비교 선택 (카드 내 '+ 비교' 클릭 — 카드 링크 이동 막음)
+    resultsEl.addEventListener('click', (e) => {
+      const el = e.target.closest('.cmp');
+      if (!el) return;
+      e.preventDefault(); e.stopPropagation();
+      toggleCmp(el.dataset.bid, el);
+    });
+    $('cmp-go').addEventListener('click', () => {
+      if (CMP.size < 2) return;
+      location.href = '/compare?bids=' + encodeURIComponent([...CMP].join(','));
+    });
+    $('cmp-clear').addEventListener('click', () => {
+      CMP.clear();
+      document.querySelectorAll('.cmp.on').forEach(c => { c.classList.remove('on'); c.textContent = '+ 비교'; });
+      updateCmpBar();
+    });
 
     // 초기 로드 — URL ?keyword= 지원
     const initKw = new URLSearchParams(location.search).get('keyword');
