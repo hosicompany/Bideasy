@@ -3,168 +3,68 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>이용약관 - BidEasy</title>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <title>이용약관 — BidEasy</title>
+  <meta name="description" content="BidEasy 서비스 이용약관.">
+  <link rel="icon" href="/brand/favicon.svg">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/nav.css">
-  <script src="/assets/nav.js" defer></script>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #F2F4F6;
-      color: #191F28;
-      min-height: 100vh;
-    }
-    /* nav(첫 자식)는 상단 full-width, 문서는 그 아래 중앙 컬럼 */
-    .container {
-      width: 100%;
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 24px 16px;
-    }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    .header h1 {
-      font-size: 22px;
-      font-weight: 800;
-      color: #191F28;
-    }
-    .header a {
-      color: #3182F6;
-      text-decoration: none;
-      font-size: 14px;
-    }
-    .card {
-      background: #fff;
-      border-radius: 20px;
-      padding: 32px 28px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.04);
-    }
-    .meta {
-      font-size: 13px;
-      color: #8B95A1;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid #F2F4F6;
-    }
-    h2 {
-      font-size: 16px;
-      font-weight: 700;
-      color: #191F28;
-      margin-top: 24px;
-      margin-bottom: 10px;
-    }
-    h2:first-of-type { margin-top: 0; }
-    p {
-      font-size: 14px;
-      line-height: 1.7;
-      color: #4E5968;
-      white-space: pre-line;
-      margin-bottom: 0;
-    }
-    .footer {
-      text-align: center;
-      margin-top: 28px;
-      font-size: 13px;
-      color: #8B95A1;
-    }
-    .footer a {
-      color: #3182F6;
-      text-decoration: none;
-      margin: 0 6px;
-    }
+    html,body{margin:0;}
+    .doc h2{font-size:18px;font-weight:800;letter-spacing:-0.4px;margin:36px 0 12px;scroll-margin-top:80px;}
+    .doc p,.doc li{font-size:14.5px;color:var(--ink-2);line-height:1.8;}
+    .doc ul{margin:8px 0;padding-left:20px;}
+    .doc li{margin:4px 0;}
+    .toc a{display:block;font-size:13.5px;color:var(--muted);text-decoration:none;padding:5px 0;}
+    .toc a:hover{color:var(--accent);}
   </style>
+  <script src="/assets/app.js"></script>
 </head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>이용약관</h1>
-      <a href="/">← 홈으로</a>
+<body class="bd" data-theme="light">
+  <div id="nav"></div>
+
+  <div style="max-width:760px;margin:0 auto;padding:40px 28px 72px;">
+    <span class="eyebrow">Legal</span>
+    <h1 style="font-size:30px;font-weight:800;letter-spacing:-0.8px;margin:10px 0 0;">이용약관</h1>
+    <p style="font-size:13.5px;color:var(--faint);margin-top:8px;">최종 개정일 2026-06-09 · 시행일 2026-06-09</p>
+
+    <div class="panel" style="padding:14px 16px;margin-top:18px;display:flex;gap:10px;align-items:flex-start;">
+      <span style="color:var(--warn);flex-shrink:0;display:flex;margin-top:1px;" id="note-ic"></span>
+      <p style="font-size:13px;color:var(--muted);line-height:1.6;margin:0;">본 약관은 디자인 적용을 위한 <b style="color:var(--ink-2);">예시 템플릿</b>입니다. 실제 시행 전 법무 검토를 받아 확정하세요.</p>
     </div>
 
-    <div class="card">
-      <div class="meta">시행일: 2026년 5월 27일</div>
-
-      <h2>제1조 (목적)</h2>
-      <p>이 약관은 BidEasy(이하 "서비스")가 제공하는 공공 입찰 정보 조회, 투찰가 계산, AI 분석 등의 서비스 이용에 관한 조건과 절차를 규정함을 목적으로 합니다.</p>
-
-      <h2>제2조 (정의)</h2>
-      <p>① "서비스"란 BidEasy가 제공하는 공공 입찰 관련 정보 조회, 투찰가 계산기, AI 기반 공고 분석, 포인트 시스템 등의 기능을 말합니다.
-② "회원"이란 서비스에 가입하여 이용 계약을 체결한 자를 말합니다.
-③ "포인트"란 서비스 내 유료 기능을 이용하기 위해 충전하는 가상 화폐를 말합니다.</p>
-
-      <h2>제3조 (약관의 효력 및 변경)</h2>
-      <p>① 이 약관은 서비스를 이용하고자 하는 모든 회원에 대하여 그 효력을 발생합니다.
-② 서비스는 합리적인 사유가 발생할 경우 관련 법령에 위배되지 않는 범위에서 이 약관을 변경할 수 있으며, 변경된 약관은 서비스 내 공지사항을 통해 안내합니다.
-③ 회원이 변경된 약관에 동의하지 않을 경우 서비스 이용을 중단하고 탈퇴할 수 있습니다.</p>
-
-      <h2>제4조 (서비스 이용)</h2>
-      <p>① 서비스는 회원에게 다음의 기능을 제공합니다:
-  - 공공 입찰 공고 조회 및 검색
-  - 투찰가 계산기 (사정률 기반 안전 투찰가 산출)
-  - AI 기반 공고 분석 (위험요소 탐지, 자격 검증)
-  - 투찰가 복사 (일일 1회 무료, 추가 이용 시 포인트 차감)
-② 서비스가 제공하는 정보는 참고용이며, 실제 입찰 의사결정에 대한 책임은 회원에게 있습니다.
-③ 서비스는 낙찰가를 예측하거나 보장하지 않습니다.</p>
-
-      <h2>제5조 (구독 및 결제)</h2>
-      <p>① 서비스는 다음의 구독 요금제를 제공합니다:
-  - Free: 무료 (기본 기능 제공, AI 분석 일 1회)
-  - Pro: 월 14,900원 또는 연 140,000원 (월 11,667원, 20% 할인)
-  - Pro+: 월 29,900원 또는 연 280,000원 (월 23,333원, 20% 할인)
-② 신규 회원 가입 시 14일간 Pro 모든 기능을 무료로 체험할 수 있으며, 체험 종료 후 별도 결제가 없으면 자동으로 Free 요금제로 전환됩니다. 체험 재이용은 불가합니다.
-③ 구독 결제는 토스페이먼츠를 통한 카드 결제로 이루어집니다.
-④ 월간 구독은 결제일로부터 30일간, 연간 구독은 365일간 유효합니다.
-⑤ 구독 해지 시 남은 구독 기간 동안은 서비스를 계속 이용할 수 있으며, 구독 기간 만료 후 Free 요금제로 전환됩니다.
-⑥ 구독 결제 후 7일 이내에 유료 기능을 이용하지 않은 경우 전액 환불이 가능합니다. 그 외의 경우 남은 기간에 대한 부분 환불은 제공되지 않습니다.
-⑦ 연간 구독의 경우 결제 후 14일 이내 환불 요청 시, 이용 일수에 해당하는 월간 요금을 차감한 잔액을 환불합니다.</p>
-
-      <h2>제6조 (포인트)</h2>
-      <p>① 포인트는 서비스 내 개별 유료 기능 이용을 위해 충전할 수 있습니다.
-② 포인트 충전은 토스페이먼츠를 통한 카드 결제로 이루어지며, 허용된 금액(5,000원 / 10,000원 / 30,000원 / 50,000원) 단위로 충전 가능합니다.
-③ 충전된 포인트는 환불이 불가합니다. 단, 관련 법령에 따른 예외는 적용됩니다.
-④ 서비스 장애로 인한 포인트 차감 오류 시 서비스는 이를 정정합니다.</p>
-
-      <h2>제7조 (서비스 중단)</h2>
-      <p>① 서비스는 시스템 점검, 장비 교체, 천재지변 등 불가피한 사유로 일시적으로 서비스 제공을 중단할 수 있습니다.
-② 서비스 중단 시 사전에 공지하며, 불가피한 경우 사후에 공지할 수 있습니다.</p>
-
-      <h2>제8조 (면책)</h2>
-      <p>① 서비스는 공공데이터포털 API를 통해 제공되는 정보의 정확성을 보증하지 않습니다.
-② AI 분석 결과는 참고용이며, 이에 따른 입찰 결과에 대해 서비스는 책임지지 않습니다.
-③ 회원의 귀책사유로 인한 서비스 이용 장애에 대해 서비스는 책임지지 않습니다.</p>
-
-      <h2>제9조 (분쟁해결)</h2>
-      <p>① 서비스와 회원 간에 발생한 분쟁에 관한 소송은 민사소송법상의 관할법원에 제기합니다.
-② 서비스와 회원 간에 제기된 소송에는 대한민국 법을 적용합니다.</p>
-
-      <h2>부칙</h2>
-      <p>이 약관은 2026년 5월 27일부터 시행합니다.
-이전 버전(2026년 2월 22일 시행) 약관은 본 약관 시행 전까지 적용된 약관에 따라 처리합니다.</p>
-
-      <h2>사업자 정보</h2>
-      <p>상호: 호시(HOSI)
-대표자: 호시
-사업자등록번호: 420-29-00113
-통신판매업신고: 2022-서울마포-0517호
-주소: 서울시 마포구 마포대로 92, A동 3층(도화동, 효성해링턴 스퀘어)
-고객문의: support@bideasy.kr
-결제대행: 토스페이먼츠(주)</p>
+    <div class="card toc" style="padding:16px 22px;margin-top:20px;">
+      <div class="micro" style="margin-bottom:6px;">목차</div>
     </div>
 
-    <div class="footer">
-      <a href="/">홈</a> ·
-      <a href="/pricing">요금제</a> ·
-      <a href="/guide">사용 가이드</a> ·
-      <a href="/privacy">개인정보처리방침</a> ·
-      <a href="/login">로그인</a> ·
-      <a href="/signup">회원가입</a>
-    </div>
+    <div class="doc" id="doc"></div>
   </div>
+
+  <script>
+  (function () {
+    var BD = window.BD; BD.mountNav();
+    document.getElementById('note-ic').innerHTML = BD.icon('alert', 15, 2);
+
+    var SECTIONS = [
+      ['제1조 (목적)', '<p>본 약관은 호시(HOSI, 이하 "회사")가 제공하는 BidEasy 및 관련 제반 서비스(이하 "서비스")의 이용과 관련하여 회사와 회원 간의 권리·의무 및 책임사항, 이용 조건 및 절차를 규정함을 목적으로 합니다.</p>'],
+      ['제2조 (정의)', '<ul><li>"서비스"란 공공입찰(나라장터/G2B) 공고의 검색·분석, 투찰가 계산, AI 요약, 자격 매칭, 마감 알림 등 회사가 크롬 익스텐션 및 웹(bideasy.kr)을 통해 제공하는 일체의 기능을 말합니다.</li><li>"회원"이란 본 약관에 동의하고 서비스 이용계약을 체결한 자를 말합니다.</li><li>"유료서비스"란 Pro·Pro+ 등 회원이 요금을 결제하고 이용하는 서비스를 말합니다.</li></ul>'],
+      ['제3조 (약관의 효력 및 변경)', '<p>본 약관은 서비스 화면에 게시하거나 기타의 방법으로 회원에게 공지함으로써 효력이 발생합니다. 회사는 관련 법령을 위배하지 않는 범위에서 약관을 개정할 수 있으며, 개정 시 적용일자 및 사유를 명시하여 최소 7일 전(회원에게 불리한 변경은 30일 전)에 공지합니다.</p>'],
+      ['제4조 (서비스의 제공)', '<p>회사는 다음의 서비스를 제공합니다.</p><ul><li>공고 검색·큐레이션 및 상세 정보 제공</li><li>투찰가·낙찰하한선·A값 계산</li><li>AI 기반 공고 요약 및 위험 조항 탐지</li><li>자격 자동 매칭 및 마감 알림</li></ul><p>회사는 <b>낙찰가 예측을 제공하지 않으며</b>, 서비스는 회원의 판단을 보조하는 참고 자료로 제공됩니다.</p>'],
+      ['제5조 (이용계약의 성립)', '<p>이용계약은 회원이 되고자 하는 자가 약관에 동의하고 가입 신청을 한 후 회사가 이를 승낙함으로써 성립합니다. 신규 가입 회원에게는 카드 등록 없이 Pro 14일 무료 체험이 자동 제공될 수 있습니다.</p>'],
+      ['제6조 (유료서비스 및 결제)', '<ul><li>유료서비스의 요금·결제 주기·기능은 요금제 페이지에 따릅니다.</li><li>정기결제는 회원이 등록한 결제수단으로 결제 주기마다 자동 청구됩니다.</li><li>회원은 다음 결제일 전까지 언제든 해지할 수 있으며, 해지 시 잔여 기간 종료 후 Free로 전환됩니다.</li></ul>'],
+      ['제7조 (청약철회 및 환불)', '<p>회원은 관련 법령(전자상거래법 등)에 따라 청약철회를 할 수 있습니다. 디지털 콘텐츠의 특성상 이미 제공이 개시된 부분에 대해서는 환불이 제한될 수 있으며, 구체적 환불 기준은 별도 정책에 따릅니다.</p>'],
+      ['제8조 (회원의 의무)', '<ul><li>회원은 타인의 정보를 도용하거나 허위 정보를 등록해서는 안 됩니다.</li><li>회원은 서비스를 통해 얻은 정보를 회사의 사전 동의 없이 복제·배포·상업적으로 이용해서는 안 됩니다.</li></ul>'],
+      ['제9조 (면책 및 책임의 한계)', '<p>회사가 제공하는 계산 결과·요약·분석은 참고용이며, 실제 입찰 의사결정 및 그 결과에 대한 책임은 회원에게 있습니다. 회사는 공공데이터·외부 API의 오류, 천재지변, 회원의 귀책으로 인한 손해에 대해 책임을 지지 않습니다.</p>'],
+      ['제10조 (분쟁의 해결)', '<p>본 약관은 대한민국 법령에 따라 해석되며, 서비스 이용과 관련한 분쟁에 대해서는 회사의 본사 소재지를 관할하는 법원을 합의관할로 합니다.</p>'],
+    ];
+
+    document.querySelector('.toc').insertAdjacentHTML('beforeend', SECTIONS.map(function (s, i) {
+      return '<a href="#s' + i + '">' + s[0] + '</a>';
+    }).join(''));
+    document.getElementById('doc').innerHTML = SECTIONS.map(function (s, i) {
+      return '<h2 id="s' + i + '">' + s[0] + '</h2>' + s[1];
+    }).join('');
+  })();
+  </script>
 </body>
 </html>

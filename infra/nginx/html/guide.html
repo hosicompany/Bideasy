@@ -3,496 +3,82 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>사용 가이드 - BidEasy</title>
-  <meta name="description" content="BidEasy 사용법: 회원가입부터 사정률 계산·AI 분석·즐겨찾기까지 30초 안에 익히기.">
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <title>사용 가이드 — BidEasy</title>
+  <meta name="description" content="BidEasy 사용법 — 설치부터 투찰가 계산·AI 분석·마감 알림·자격 매칭까지 5단계.">
+  <link rel="icon" href="/brand/favicon.svg">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/nav.css">
-  <script src="/assets/nav.js" defer></script>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #F2F4F6;
-      color: #191F28;
-      min-height: 100vh;
-    }
-    .container { max-width: 880px; margin: 0 auto; padding: 24px 16px 60px; }
-
-    .page-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-    .page-header h1 {
-      font-size: 22px;
-      font-weight: 800;
-    }
-    .page-header a { color: #3182F6; text-decoration: none; font-size: 14px; }
-
-    /* 히어로 */
-    .hero {
-      text-align: center;
-      padding: 28px 20px 36px;
-      background: linear-gradient(135deg, #EBF5FF 0%, #DBEAFE 100%);
-      border-radius: 20px;
-      margin-bottom: 28px;
-    }
-    .hero h2 {
-      font-size: 28px;
-      font-weight: 800;
-      margin-bottom: 10px;
-      letter-spacing: -0.5px;
-    }
-    .hero p {
-      font-size: 15px;
-      color: #4E5968;
-      line-height: 1.6;
-    }
-    .hero .pill {
-      display: inline-block;
-      background: #3182F6;
-      color: #fff;
-      padding: 6px 14px;
-      border-radius: 16px;
-      font-size: 13px;
-      font-weight: 700;
-      margin-top: 12px;
-    }
-
-    /* 목차 */
-    .toc {
-      background: #fff;
-      border-radius: 14px;
-      padding: 18px 20px;
-      margin-bottom: 28px;
-      border: 1px solid #E5E8EB;
-    }
-    .toc h3 { font-size: 14px; color: #8B95A1; font-weight: 600; margin-bottom: 10px; }
-    .toc ol { list-style: none; counter-reset: toc; }
-    .toc li {
-      counter-increment: toc;
-      padding: 6px 0;
-      font-size: 14px;
-    }
-    .toc li::before {
-      content: counter(toc) '. ';
-      color: #3182F6;
-      font-weight: 700;
-      margin-right: 4px;
-    }
-    .toc a {
-      color: #4E5968;
-      text-decoration: none;
-    }
-    .toc a:hover { color: #3182F6; }
-
-    /* Step */
-    .step {
-      background: #fff;
-      border-radius: 18px;
-      padding: 28px 24px;
-      margin-bottom: 18px;
-      border: 1px solid #E5E8EB;
-    }
-    .step-num {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      background: #3182F6;
-      color: #fff;
-      border-radius: 50%;
-      font-weight: 700;
-      font-size: 15px;
-      margin-bottom: 12px;
-    }
-    .step h3 {
-      font-size: 20px;
-      font-weight: 800;
-      margin-bottom: 8px;
-    }
-    .step p {
-      font-size: 15px;
-      line-height: 1.7;
-      color: #4E5968;
-      margin-bottom: 14px;
-    }
-    .step p strong { color: #191F28; }
-
-    .step img {
-      width: 100%;
-      height: auto;
-      border-radius: 12px;
-      border: 1px solid #E5E8EB;
-      margin: 14px 0;
-      display: block;
-    }
-
-    .step ul {
-      padding-left: 22px;
-      font-size: 14px;
-      color: #4E5968;
-      line-height: 1.8;
-    }
-    .step ul li { margin-bottom: 4px; }
-
-    .tip {
-      background: #F0F7FF;
-      border-left: 3px solid #3182F6;
-      border-radius: 6px;
-      padding: 12px 14px;
-      margin: 12px 0;
-      font-size: 13px;
-      color: #1B64DA;
-      line-height: 1.6;
-    }
-    .tip strong { font-weight: 700; }
-
-    .warn {
-      background: #FFF6E5;
-      border-left: 3px solid #FF9500;
-      border-radius: 6px;
-      padding: 12px 14px;
-      margin: 12px 0;
-      font-size: 13px;
-      color: #C77700;
-      line-height: 1.6;
-    }
-
-    /* CTA */
-    .cta-section {
-      background: linear-gradient(135deg, #3182F6 0%, #1B64DA 100%);
-      color: #fff;
-      border-radius: 20px;
-      padding: 32px 24px;
-      text-align: center;
-      margin: 32px 0 20px;
-    }
-    .cta-section h3 {
-      font-size: 22px;
-      font-weight: 800;
-      margin-bottom: 8px;
-    }
-    .cta-section p {
-      font-size: 15px;
-      margin-bottom: 18px;
-      opacity: 0.95;
-    }
-    .cta-buttons {
-      display: flex;
-      gap: 10px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-    .btn-cta {
-      display: inline-block;
-      padding: 12px 22px;
-      border-radius: 12px;
-      font-weight: 700;
-      font-size: 14px;
-      text-decoration: none;
-      transition: transform 0.1s;
-    }
-    .btn-cta:active { transform: scale(0.97); }
-    .btn-primary-light { background: #fff; color: #3182F6; }
-    .btn-outline-light {
-      background: transparent;
-      color: #fff;
-      border: 1.5px solid rgba(255,255,255,0.5);
-    }
-
-    /* FAQ */
-    .faq {
-      background: #fff;
-      border-radius: 18px;
-      padding: 24px 22px;
-      margin-bottom: 18px;
-    }
-    .faq h3 {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 14px;
-    }
-    .faq-item {
-      padding: 12px 0;
-      border-bottom: 1px solid #F2F4F6;
-    }
-    .faq-item:last-child { border-bottom: none; }
-    .faq-item summary {
-      font-size: 15px;
-      font-weight: 600;
-      color: #333D4B;
-      cursor: pointer;
-      list-style: none;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .faq-item summary::after {
-      content: '+';
-      font-size: 20px;
-      color: #8B95A1;
-    }
-    .faq-item[open] summary::after { content: '−'; }
-    .faq-item p {
-      margin-top: 10px;
-      font-size: 14px;
-      color: #4E5968;
-      line-height: 1.7;
-    }
-
-    /* Troubleshooting */
-    .trouble {
-      background: #fff;
-      border-radius: 18px;
-      padding: 24px 22px;
-      margin-bottom: 18px;
-    }
-    .trouble h3 {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 14px;
-    }
-    .trouble dl { font-size: 14px; line-height: 1.7; }
-    .trouble dt {
-      color: #E53935;
-      font-weight: 700;
-      margin-top: 10px;
-    }
-    .trouble dd { color: #4E5968; padding-left: 14px; }
-
-    .footer {
-      text-align: center;
-      padding: 24px 0;
-      color: #8B95A1;
-      font-size: 13px;
-    }
-    .footer a {
-      color: #3182F6;
-      text-decoration: none;
-      margin: 0 6px;
-    }
-
-    /* 반응형 */
-    @media (max-width: 600px) {
-      .hero h2 { font-size: 22px; }
-      .step h3 { font-size: 17px; }
-      .cta-section h3 { font-size: 18px; }
-    }
+    html,body{margin:0;}
+    details.faq{border:1px solid var(--line);border-radius:12px;padding:0 18px;background:var(--surface);}
+    details.faq+details.faq{margin-top:10px;}
+    details.faq summary{list-style:none;cursor:pointer;padding:16px 0;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:space-between;}
+    details.faq summary::-webkit-details-marker{display:none;}
+    details.faq summary .mk{transition:transform .18s;color:var(--faint);display:flex;}
+    details.faq[open] summary .mk{transform:rotate(180deg);}
+    details.faq p{margin:0 0 16px;font-size:14px;color:var(--muted);line-height:1.7;}
   </style>
+  <script src="/assets/app.js"></script>
 </head>
-<body>
-  <div class="container">
-    <div class="page-header">
-      <h1>사용 가이드</h1>
-      <a href="/">← 홈으로</a>
+<body class="bd" data-theme="light">
+  <div id="nav"></div>
+
+  <div style="max-width:780px;margin:0 auto;padding:48px 28px 72px;">
+    <div style="text-align:center;">
+      <span class="eyebrow">Guide</span>
+      <h1 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin:10px 0 0;">5단계면 충분해요</h1>
+      <p style="font-size:16px;color:var(--muted);margin-top:10px;line-height:1.6;">설치부터 안전 투찰까지. 사장님이 매일 하던 일을 사이드패널 하나로.</p>
     </div>
 
-    <!-- 히어로 -->
-    <div class="hero">
-      <h2>BidEasy 30초 사용법</h2>
-      <p>회원가입부터 사정률 계산, AI 공고 분석까지<br>3분 안에 모든 기능 익히기</p>
-      <div class="pill">🎁 신규 가입 Pro 14일 무료 체험</div>
+    <div id="steps" style="margin-top:48px;display:flex;flex-direction:column;gap:16px;"></div>
+
+    <div style="margin-top:56px;">
+      <h2 style="font-size:20px;font-weight:800;letter-spacing:-0.5px;text-align:center;margin-bottom:22px;">자주 묻는 질문</h2>
+      <div id="faq"></div>
     </div>
 
-    <!-- 목차 -->
-    <div class="toc">
-      <h3>이 가이드에서 다루는 내용</h3>
-      <ol>
-        <li><a href="#step-1">Chrome 익스텐션 설치</a></li>
-        <li><a href="#step-2">회원가입 + Pro 14일 무료 체험</a></li>
-        <li><a href="#step-3">나라장터 공고 페이지 진입</a></li>
-        <li><a href="#step-4">사이드패널에서 사정률·투찰가 계산</a></li>
-        <li><a href="#step-5">AI 공고 분석 (독소조항·위험요소)</a></li>
-        <li><a href="#step-6">즐겨찾기·마감 알림 설정</a></li>
-        <li><a href="#step-7">프로필 등록 (자격 자동 매칭)</a></li>
-      </ol>
-    </div>
-
-    <!-- Step 1 -->
-    <div class="step" id="step-1">
-      <div class="step-num">1</div>
-      <h3>Chrome 익스텐션 설치</h3>
-      <p>BidEasy 는 Chrome 익스텐션으로 동작합니다. <strong>Chrome 웹 스토어</strong>에서 1초 만에 설치할 수 있어요.</p>
-      <ul>
-        <li>아래 "Chrome 에 설치" 버튼 클릭</li>
-        <li>"Chrome 에 추가" → "확장 프로그램 추가" 클릭</li>
-        <li>브라우저 우상단에 BidEasy 아이콘 표시되면 완료</li>
-      </ul>
-      <div class="tip"><strong>💡 팁:</strong> 아이콘이 안 보이면 우상단 퍼즐 모양(🧩) 클릭 → "BidEasy" 옆 압정 모양(📌) 클릭하여 고정.</div>
-    </div>
-
-    <!-- Step 2 -->
-    <div class="step" id="step-2">
-      <div class="step-num">2</div>
-      <h3>회원가입 + Pro 14일 무료 체험</h3>
-      <p><strong>신용카드 등록 없이</strong> 가입만 하면 Pro 모든 기능을 14일간 무료로 사용할 수 있습니다.</p>
-      <ul>
-        <li><a href="/signup">회원가입 페이지</a>에서 이메일·비밀번호로 가입</li>
-        <li>또는 카카오·네이버 OAuth 로 1초 가입 (준비 중)</li>
-        <li>가입 즉시 Pro 14일 자동 활성화 (AI 분석 일 50회, Deep Analysis 등)</li>
-        <li>만료 후 자동으로 Free 요금제 전환 — 자동 청구 X</li>
-      </ul>
-      <div class="tip"><strong>🎁 첫 달 50% 할인:</strong> 체험 만료 7일 이내 결제 시 첫 달 7,450원 자동 적용 (Pro 기준).</div>
-    </div>
-
-    <!-- Step 3 -->
-    <div class="step" id="step-3">
-      <div class="step-num">3</div>
-      <h3>나라장터 공고 페이지 진입</h3>
-      <p>BidEasy 는 <strong>나라장터(g2b.go.kr)</strong>의 공고 상세 페이지에서 자동으로 정보를 추출합니다.</p>
-      <ul>
-        <li>나라장터(<a href="https://www.g2b.go.kr/" target="_blank" rel="noopener">www.g2b.go.kr</a>) 접속</li>
-        <li>"입찰공고" 메뉴에서 관심 공고 클릭</li>
-        <li>BidEasy 가 공고번호·기초금액·마감일 자동 인식</li>
-      </ul>
-      <img src="/guide-assets/01-main-g2b-with-sidepanel.png" alt="나라장터 공고 페이지 + BidEasy 사이드패널">
-      <div class="warn"><strong>⚠️ 주의:</strong> 나라장터 외 다른 사이트(예: 전자조달시스템 단일창구)에서는 자동 인식이 안 됩니다. 향후 확장 예정.</div>
-    </div>
-
-    <!-- Step 4 -->
-    <div class="step" id="step-4">
-      <div class="step-num">4</div>
-      <h3>사이드패널에서 사정률·투찰가 계산</h3>
-      <p>브라우저 우상단 BidEasy 아이콘 클릭 → 사이드패널이 열리고 <strong>즉시 투찰가 계산기</strong>가 표시됩니다.</p>
-      <img src="/guide-assets/02-calculator.png" alt="투찰가 계산기">
-      <ul>
-        <li><strong>사정률 슬라이더</strong>: -2% ~ +2% 조정 → 투찰가 실시간 변경</li>
-        <li><strong>1원 단위 정확</strong>: A값(국민연금·건강보험 등) 자동 반영</li>
-        <li><strong>안전도 표시</strong>: 하한선 근접 시 ⚠️ 경고, 하한 미달 시 🔴 위험</li>
-        <li><strong>예정가격 범위</strong>: 기초금액 ±3% 자동 표시</li>
-      </ul>
-      <div class="tip"><strong>💡 자가보정:</strong> BidEasy 는 매주 4,800+ 실 개찰 결과를 학습해 사정률 추천값을 자동 최적화합니다. 사용자는 슬라이더 손댈 필요 없음.</div>
-    </div>
-
-    <!-- Step 5 -->
-    <div class="step" id="step-5">
-      <div class="step-num">5</div>
-      <h3>AI 공고 분석 (독소조항·위험요소)</h3>
-      <p>"AI 분석" 탭을 누르면 GPT-4o-mini 가 공고문 전체를 읽고 핵심 정보를 자동 추출합니다.</p>
-      <img src="/guide-assets/03-ai-analysis.png" alt="AI 분석 화면">
-      <ul>
-        <li><strong>3줄 요약</strong>: 공고 핵심을 30초에 파악</li>
-        <li><strong>독소조항 탐지</strong>: 이행보증·하자보수·지체상금 등 위험 조건 자동 표시</li>
-        <li><strong>자격 요건 추출</strong>: 면허·지역·시공능력 한눈에</li>
-        <li><strong>마감·개찰 시각</strong>: 자동 정리</li>
-      </ul>
-      <div class="tip"><strong>💡 비용:</strong> Free 일 1회 / Pro 일 50회 / Pro+ 무제한. Deep Analysis(첨부 HWP·PDF)는 Pro+ 전용.</div>
-    </div>
-
-    <!-- Step 6 -->
-    <div class="step" id="step-6">
-      <div class="step-num">6</div>
-      <h3>즐겨찾기·마감 알림 설정</h3>
-      <p>관심 공고를 즐겨찾기에 담아두면 <strong>마감 1시간 / 15분 전</strong> Chrome 푸시 알림이 자동 발송됩니다.</p>
-      <img src="/guide-assets/04-tracking-favorites.png" alt="즐겨찾기 추적">
-      <ul>
-        <li>"추적" 탭에서 별표(⭐) 아이콘 클릭 → 즐겨찾기 등록</li>
-        <li>마감 임박 시 자동 Chrome 알림</li>
-        <li>알림 클릭 → 해당 공고 페이지로 즉시 이동</li>
-      </ul>
-      <div class="warn"><strong>⚠️ 권한:</strong> 처음 알림 발송 시 Chrome 이 권한 요청. "허용" 클릭 필요.</div>
-    </div>
-
-    <!-- Step 7 -->
-    <div class="step" id="step-7">
-      <div class="step-num">7</div>
-      <h3>프로필 등록 (자격 자동 매칭)</h3>
-      <p>회사 정보(면허·지역·시공능력 등)를 한 번 등록하면, 모든 공고 페이지에서 <strong>참가 가능 여부가 자동 표시</strong>됩니다.</p>
-      <img src="/guide-assets/05-profile.png" alt="프로필 등록 화면">
-      <ul>
-        <li>"프로필" 탭에서 회사 정보 입력</li>
-        <li>면허 (예: 전기공사업, 토목건축공사업)</li>
-        <li>지역 (영업 지역 — 전국 또는 특정 시·도)</li>
-        <li>시공능력평가액 (참여 가능 공사 규모 자동 필터)</li>
-      </ul>
-      <div class="tip"><strong>💡 자동 매칭:</strong> 입력 후 공고 페이지 진입 시 사이드패널 상단에 "✓ 참여 가능" 또는 "✗ 자격 부족" 표시.</div>
-    </div>
-
-    <!-- CTA -->
-    <div class="cta-section">
-      <h3>지금 바로 시작하세요</h3>
-      <p>14일 동안 Pro 모든 기능 무료. 신용카드 등록 불필요.</p>
-      <div class="cta-buttons">
-        <a class="btn-cta btn-primary-light" href="https://chrome.google.com/webstore/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener">Chrome 에 설치</a>
-        <a class="btn-cta btn-outline-light" href="/signup">14일 체험 시작</a>
+    <div style="margin-top:48px;border-radius:20px;padding:36px 28px;text-align:center;background:var(--accent);color:var(--on-accent);position:relative;overflow:hidden;">
+      <div class="grid-bg" style="position:absolute;inset:0;opacity:.4;--grid-line:rgba(255,255,255,0.12);"></div>
+      <div style="position:relative;">
+        <h2 style="font-size:24px;font-weight:800;letter-spacing:-0.5px;">지금 바로 시작하세요</h2>
+        <p style="font-size:15px;opacity:.9;margin:10px 0 22px;">신규 가입 시 Pro 14일 무료 · 카드 불필요</p>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+          <a class="btn btn-lg" style="background:var(--surface);color:var(--accent);" href="https://chrome.google.com/webstore" target="_blank" rel="noopener">Chrome에 설치</a>
+          <a class="btn btn-lg" style="background:transparent;color:var(--on-accent);border:1.5px solid rgba(255,255,255,.5);" href="/signup">14일 무료 체험</a>
+        </div>
       </div>
     </div>
-
-    <!-- FAQ -->
-    <div class="faq">
-      <h3>자주 묻는 질문</h3>
-
-      <details class="faq-item">
-        <summary>무료로도 충분히 쓸 수 있나요?</summary>
-        <p>네. Free 요금제에서도 투찰가 계산기·공고 피드·즐겨찾기는 무제한 사용 가능합니다. AI 분석만 일 1회로 제한되며, 그 외 Deep Analysis·경쟁 강도 예측·기관 프로파일링 등은 Pro/Pro+ 전용입니다.</p>
-      </details>
-
-      <details class="faq-item">
-        <summary>BidEasy 가 내 결제 정보를 저장하나요?</summary>
-        <p>저장하지 않습니다. 모든 결제는 토스페이먼츠가 처리하며, BidEasy 는 토스로부터 결제 식별자(orderId, paymentKey)만 받습니다. 카드번호·CVC 는 일절 보관하지 않습니다.</p>
-      </details>
-
-      <details class="faq-item">
-        <summary>AI 분석 결과는 얼마나 정확한가요?</summary>
-        <p>GPT-4o-mini 기반 분석으로 공고문 핵심·독소조항·자격 요건 추출에 90% 이상 정확도를 보입니다. 다만 <strong>참고용</strong>으로 활용해주세요 — 최종 입찰 의사결정은 본인 확인 후 진행 권장.</p>
-      </details>
-
-      <details class="faq-item">
-        <summary>나라장터 외 다른 사이트는 지원하나요?</summary>
-        <p>현재는 나라장터(g2b.go.kr)만 지원합니다. 전자조달시스템 단일창구·국방전자조달 등 추가 사이트는 출시 후 점진 확장 예정입니다.</p>
-      </details>
-
-      <details class="faq-item">
-        <summary>사정률 추천값은 어떻게 산출되나요?</summary>
-        <p>BidEasy 의 자가보정 알고리즘이 매주 누적된 4,800+ 실 개찰 결과를 학습해 입찰방법·금액대별 최적 사정률을 자동 산출합니다. 사용자가 손대지 않아도 시간이 갈수록 정확도가 향상됩니다. (현재 운영 성과: 낙찰률 12.23%, 하한선 통과율 94.88%)</p>
-      </details>
-
-      <details class="faq-item">
-        <summary>회사 정보를 입력하지 않아도 사용 가능한가요?</summary>
-        <p>네. 모든 기능은 회사 정보 없이도 사용 가능합니다. 다만 "자격 자동 매칭"은 면허·지역·시공능력 정보가 있어야 정확합니다.</p>
-      </details>
-
-      <details class="faq-item">
-        <summary>모바일에서도 쓸 수 있나요?</summary>
-        <p>현재는 Chrome 브라우저(데스크톱) 전용입니다. 나라장터 입찰 자체가 모바일 미지원이라 데스크톱 우선 개발. 모바일 앱은 향후 검토 중.</p>
-      </details>
-    </div>
-
-    <!-- Troubleshooting -->
-    <div class="trouble">
-      <h3>문제 해결</h3>
-      <dl>
-        <dt>사이드패널이 안 열려요</dt>
-        <dd>Chrome 우상단 BidEasy 아이콘 클릭. 안 보이면 퍼즐 아이콘(🧩) 클릭 → BidEasy 옆 압정(📌) 모양 클릭하여 고정.</dd>
-
-        <dt>공고 정보가 자동 인식 안 돼요</dt>
-        <dd>나라장터 공고 <strong>상세 페이지</strong>에서만 동작합니다. 목록 페이지에서는 인식 안 됨. 또한 페이지 로드 완료 후 1~2초 기다려주세요.</dd>
-
-        <dt>AI 분석이 "오류" 라고 나와요</dt>
-        <dd>일일 한도 초과(Free 1회/Pro 50회) 일 수 있습니다. 마이페이지에서 잔여 횟수 확인. 또는 OpenAI API 일시 장애 — 잠시 후 재시도.</dd>
-
-        <dt>로그인이 자꾸 풀려요</dt>
-        <dd>JWT 토큰 만료(60일) 일 수 있습니다. 다시 <a href="/login">로그인</a>해주세요. 만약 5분 만에 풀리면 브라우저 시크릿 모드 사용 중일 가능성 — 정상 모드 권장.</dd>
-
-        <dt>"권한이 필요해요" 라는 메시지가 떠요</dt>
-        <dd>Free 한도(AI 분석 일 1회) 초과이거나 Pro 전용 기능(Deep Analysis 등) 호출 중. <a href="/pricing">요금제</a>에서 Pro 14일 체험 시작 가능.</dd>
-
-        <dt>익스텐션이 사라졌어요</dt>
-        <dd>Chrome 설정(chrome://extensions) 에서 BidEasy 확인. 비활성화 상태면 토글 ON. 삭제했으면 <a href="https://chrome.google.com/webstore/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener">Chrome 웹 스토어</a>에서 재설치.</dd>
-      </dl>
-    </div>
-
-    <div class="footer">
-      <a href="/">홈</a> ·
-      <a href="/pricing">요금제</a> ·
-      <a href="/terms">이용약관</a> ·
-      <a href="/privacy">개인정보처리방침</a> ·
-      <a href="mailto:support@bideasy.kr">문의</a>
-    </div>
   </div>
+
+  <script>
+  (function () {
+    var BD = window.BD; BD.mountNav();
+    var STEPS = [
+      ['shield', 'Chrome 익스텐션 설치', '웹스토어에서 BidEasy를 설치하면 나라장터 공고 페이지 위에 분석 사이드패널이 자동으로 떠요.', '설치 후 한 번 로그인하면 익스텐션·웹앱이 계정을 공유합니다.'],
+      ['bolt', '투찰가 계산', '공고를 열면 기초금액이 자동으로 잡혀요. 슬라이더로 투찰률만 옮기면 1원 단위 투찰가가 실시간으로. 낙찰하한선 미달 시 빨간 경고.', 'A값(사후정산)은 공고문/첨부에서 자동 추정하거나 직접 입력할 수 있어요.'],
+      ['doc', 'AI 공고 분석', 'GPT 분석가가 공고문 전체를 읽고 핵심 3줄 요약과 독소조항(이행보증·지체상금 등)을 뽑아줘요. 30초면 할 만한 공고인지 판단.', '낙찰가는 찍지 않아요 — 판단을 돕는 비서 역할에 집중합니다.'],
+      ['bell', '마감 알림 · 즐겨찾기', '관심 공고를 ★로 담아두면 마감 1시간·15분 전 자동 푸시. 놓쳐서 못 넣는 입찰이 없도록.', '대시보드의 마감 추적에서 한눈에 관리할 수 있어요.'],
+      ['user', '자격 자동 매칭', '회사 정보(면허·지역·시공능력·실적)를 한 번 등록하면, 모든 공고에서 참여 가능 여부를 적합/조건부/부적합으로 자동 표시.', '헛심 입찰을 줄이고 참여 가능한 공고만 빠르게 선별하세요.'],
+    ];
+    document.getElementById('steps').innerHTML = STEPS.map(function (s, i) {
+      return '<div class="card" style="padding:24px;display:flex;gap:18px;align-items:flex-start;">' +
+        '<span class="num" style="flex-shrink:0;width:40px;height:40px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:15px;">0' + (i + 1) + '</span>' +
+        '<div style="flex:1;"><div style="display:flex;align-items:center;gap:8px;"><span style="color:var(--accent);display:flex;">' + BD.icon(s[0], 17) + '</span><h3 style="font-size:18px;font-weight:800;margin:0;">' + s[1] + '</h3></div>' +
+        '<p style="font-size:14.5px;color:var(--muted);line-height:1.7;margin:10px 0 0;">' + s[2] + '</p>' +
+        '<div style="margin-top:12px;display:flex;gap:8px;padding:10px 13px;border-radius:10px;background:var(--sunken);font-size:13px;color:var(--ink-2);line-height:1.55;"><span style="color:var(--accent);flex-shrink:0;display:flex;margin-top:1px;">' + BD.icon('check', 13, 2) + '</span>' + s[3] + '</div></div></div>';
+    }).join('');
+
+    var FAQ = [
+      ['낙찰가를 예측해 주나요?', '아니요. BidEasy는 무책임한 낙찰가 예측을 하지 않습니다. 대신 사정률·낙찰하한선·A값을 정확히 계산해 적자 수주를 막고, 공고 요약·독소조항·자격을 분석해 사장님의 판단을 돕습니다.'],
+      ['무료로 어디까지 쓸 수 있나요?', 'Free 요금제로 투찰가 계산기·공고 피드·즐겨찾기·자격 매칭을 무제한 사용할 수 있고, AI 분석은 하루 1회 제공됩니다. Pro는 14일 무료 체험 후 결정하세요.'],
+      ['A값이 무엇이고 왜 중요한가요?', 'A값은 국민연금·건강보험·노인장기요양·산재·고용보험 등 사후정산 비목의 합계예요. 투찰률이 적용되지 않아 별도로 분리해 계산해야 정확한 투찰가가 나옵니다. (공사에만 영향, 물품은 해당 없음)'],
+      ['자가보정 알고리즘은 뭔가요?', '매주 새로 쌓이는 개찰 결과를 스스로 학습해 사정률 추천값을 재최적화하는 BidEasy만의 기술입니다. 회귀 가드가 성능 퇴행을 막아, 손대지 않아도 시간이 갈수록 정확해집니다.'],
+    ];
+    document.getElementById('faq').innerHTML = FAQ.map(function (f) {
+      return '<details class="faq"><summary>' + f[0] + '<span class="mk">' + BD.icon('chevD', 14) + '</span></summary><p>' + f[1] + '</p></details>';
+    }).join('');
+  })();
+  </script>
 </body>
 </html>

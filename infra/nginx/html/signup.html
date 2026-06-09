@@ -3,369 +3,130 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>회원가입 - BidEasy</title>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <title>회원가입 — BidEasy</title>
+  <link rel="icon" href="/brand/favicon.svg">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/nav.css">
-  <script src="/assets/nav.js" defer></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #F2F4F6;
-      color: #191F28;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    /* nav(첫 자식)는 상단 full-width, 카드는 남은 공간 중앙 */
-    .card {
-      background: #fff;
-      border-radius: 20px;
-      padding: 36px 32px;
-      margin: auto;
-      width: calc(100% - 32px);
-      max-width: 440px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.04);
-    }
-    .logo {
-      text-align: center;
-      margin-bottom: 8px;
-    }
-    .logo h1 {
-      font-size: 28px;
-      font-weight: 800;
-      color: #3182F6;
-      letter-spacing: -0.5px;
-    }
-    .logo p {
-      font-size: 14px;
-      color: #8B95A1;
-      margin-top: 6px;
-    }
-    .trial-banner {
-      background: linear-gradient(135deg, #EBF5FF 0%, #DBEAFE 100%);
-      border: 1px solid #C6E0FF;
-      border-radius: 12px;
-      padding: 14px 16px;
-      margin: 18px 0;
-      font-size: 14px;
-      color: #1B64DA;
-      line-height: 1.5;
-    }
-    .trial-banner strong { font-weight: 700; }
-    .trial-banner .pill {
-      display: inline-block;
-      background: #3182F6;
-      color: #fff;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 12px;
-      font-weight: 600;
-      margin-right: 6px;
-    }
-    .form-group {
-      margin-bottom: 12px;
-    }
-    .form-group label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: #4E5968;
-      margin-bottom: 6px;
-    }
-    .form-group label .optional {
-      color: #B0B8C1;
-      font-weight: 400;
-      font-size: 12px;
-      margin-left: 4px;
-    }
-    .form-group input {
-      width: 100%;
-      padding: 13px 14px;
-      border: 1px solid #E5E8EB;
-      border-radius: 12px;
-      font-size: 15px;
-      font-family: inherit;
-      color: #191F28;
-      transition: border-color 0.15s;
-    }
-    .form-group input:focus {
-      outline: none;
-      border-color: #3182F6;
-    }
-    .password-hint {
-      font-size: 12px;
-      color: #8B95A1;
-      margin-top: 4px;
-    }
-    .checkbox-group {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      margin: 16px 0 8px;
-      font-size: 13px;
-      color: #4E5968;
-      line-height: 1.5;
-    }
-    .checkbox-group input[type="checkbox"] {
-      margin-top: 2px;
-      width: 16px;
-      height: 16px;
-      accent-color: #3182F6;
-      cursor: pointer;
-    }
-    .checkbox-group a {
-      color: #3182F6;
-      text-decoration: underline;
-    }
-    .btn {
-      display: block;
-      width: 100%;
-      padding: 14px;
-      border: none;
-      border-radius: 12px;
-      font-size: 15px;
-      font-weight: 600;
-      font-family: inherit;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .btn-primary {
-      background: #3182F6;
-      color: #fff;
-      margin-top: 16px;
-    }
-    .btn-primary:hover { background: #1B64DA; }
-    .btn-primary:disabled { background: #B0B8C1; cursor: not-allowed; }
-    .alert {
-      padding: 12px 14px;
-      border-radius: 10px;
-      font-size: 14px;
-      margin-bottom: 16px;
-      display: none;
-    }
-    .alert-error {
-      background: #FFF0F0;
-      color: #E53935;
-      border: 1px solid #FFCDD2;
-    }
-    .alert-success {
-      background: #E8F5E9;
-      color: #2E7D32;
-      border: 1px solid #C8E6C9;
-    }
-    .alert.show { display: block; }
-    .footer-links {
-      text-align: center;
-      margin-top: 18px;
-      font-size: 13px;
-      color: #8B95A1;
-    }
-    .footer-links a {
-      color: #3182F6;
-      text-decoration: none;
-      margin: 0 6px;
-    }
-    .footer-links a:hover { text-decoration: underline; }
-    .divider {
-      display: flex;
-      align-items: center;
-      margin: 18px 0;
-      color: #B0B8C1;
-      font-size: 12px;
-    }
-    .divider::before, .divider::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: #E5E8EB;
-    }
-    .divider span { padding: 0 12px; }
-    .login-link {
-      text-align: center;
-      font-size: 14px;
-      color: #4E5968;
-    }
-    .login-link a {
-      color: #3182F6;
-      font-weight: 600;
-      text-decoration: none;
-    }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>html,body{margin:0;} .input-t{font-family:var(--font-sans)!important;font-variant-numeric:normal!important;}</style>
+  <script src="/assets/app.js"></script>
 </head>
-<body>
-  <div class="card">
-    <div class="logo">
-      <h1>BidEasy</h1>
-      <p>나라장터 입찰 도우미 · 회원가입</p>
-    </div>
-
-    <div class="trial-banner">
-      <span class="pill">14일 무료</span>
-      가입 즉시 <strong>Pro 모든 기능</strong>이 14일간 무료로 열려요. <br>
-      신용카드 등록 불필요, 만료되면 자동 Free 전환.
-    </div>
-
-    <div id="alert" class="alert"></div>
-
-    <form id="signup-form" autocomplete="on">
-      <div class="form-group">
-        <label for="email">이메일</label>
-        <input type="email" id="email" name="email" required autocomplete="email" placeholder="email@example.com">
+<body class="bd" data-theme="light">
+  <div class="bd-scroll" style="height:100vh;overflow-y:auto;overflow-x:hidden;">
+    <div class="auth-grid" style="min-height:100%;">
+      <div data-theme="dark" class="grid-bg auth-aside" style="background:var(--canvas);color:var(--ink);padding:48px 44px;display:flex;flex-direction:column;">
+        <a href="/" style="display:flex;align-items:center;gap:9px;font-weight:800;font-size:18px;color:var(--ink);text-decoration:none;"><img src="/brand/bideasy-mark-on-dark.svg" width="22" height="22" alt="">BidEasy</a>
+        <div style="margin-top:auto;">
+          <h2 style="font-size:30px;font-weight:800;letter-spacing:-1px;line-height:1.2;">1원 단위까지,<br>정확하게 <span style="color:var(--accent);">안전하게</span>.</h2>
+          <p style="font-size:15px;color:var(--muted);line-height:1.65;margin-top:14px;max-width:320px;">나라장터 입찰을 지켜주는 정밀 계기. 사정률·하한선·AI 분석을 한 화면에서.</p>
+        </div>
       </div>
-      <div class="form-group">
-        <label for="password">비밀번호</label>
-        <input type="password" id="password" name="password" required autocomplete="new-password" placeholder="8자 이상">
-        <div class="password-hint">영문·숫자 포함 8자 이상</div>
+      <div style="position:relative;padding:40px 28px;display:flex;flex-direction:column;justify-content:center;min-height:100vh;">
+        <button id="themebtn2" class="btn btn-quiet btn-sm" style="position:absolute;top:20px;right:24px;padding:8px;" title="테마"></button>
+        <div style="width:min(380px,100%);margin:0 auto;">
+          <div style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;background:var(--accent-soft);margin-bottom:14px;"><span style="color:var(--accent);display:flex;" id="bolt"></span><span style="font-size:12px;font-weight:700;color:var(--accent);">신규 가입 시 Pro 14일 무료 · 카드 불필요</span></div>
+          <h1 style="font-size:28px;font-weight:800;letter-spacing:-0.6px;margin:0;">회원가입</h1>
+          <p style="font-size:14px;color:var(--muted);margin-top:6px;">30초면 끝나요. 오늘 보는 공고부터 함께.</p>
+          <div style="margin-top:20px;">
+            <div id="signup-err" style="display:none;background:var(--danger-soft);color:var(--danger);font-size:13.5px;font-weight:600;padding:11px 14px;border-radius:10px;margin-bottom:14px;"></div>
+            <div><label class="field-label">이메일</label><input id="email" class="input input-t" type="email" autocomplete="email" placeholder="name@company.kr"></div>
+            <div style="margin-top:16px;"><label class="field-label">비밀번호</label><input id="password" class="input input-t" type="password" autocomplete="new-password" placeholder="8자 이상"></div>
+            <div style="margin-top:16px;"><label class="field-label">상호 (회사명)</label><input id="company" class="input input-t" autocomplete="organization" placeholder="예: 호시건설(주)"></div>
+            <label id="agree" style="display:flex;align-items:flex-start;gap:9px;margin-top:16px;cursor:pointer;"><span id="cb" style="width:20px;height:20px;border-radius:6px;flex-shrink:0;margin-top:1px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line-2);"></span><span style="font-size:12.5px;color:var(--muted);line-height:1.5;"><b style="color:var(--ink-2);">이용약관</b> 및 <b style="color:var(--ink-2);">개인정보처리방침</b>에 동의합니다.</span></label>
+            <button id="go" class="btn btn-primary btn-block" style="margin-top:18px;">14일 무료 체험 시작</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin:22px 0;"><span style="flex:1;height:1px;background:var(--line);"></span><span style="font-size:12px;color:var(--faint);">또는</span><span style="flex:1;height:1px;background:var(--line);"></span></div>
+          <div style="display:flex;flex-direction:column;gap:9px;">
+            <button id="kakao" class="btn btn-block" style="background:#FEE500;color:#191600;border:none;"><span style="font-weight:800;font-size:14px;">kakao</span> 카카오로 계속하기</button>
+            <button id="naver" class="btn btn-block" style="background:#03C75A;color:#fff;border:none;"><span style="font-weight:800;font-size:14px;">N</span> 네이버로 계속하기</button>
+          </div>
+          <p style="text-align:center;font-size:13.5px;color:var(--muted);margin-top:22px;">이미 계정이 있으신가요? <a href="/login" style="color:var(--accent);font-weight:700;">로그인</a></p>
+        </div>
       </div>
-      <div class="form-group">
-        <label for="password-confirm">비밀번호 확인</label>
-        <input type="password" id="password-confirm" name="password-confirm" required autocomplete="new-password" placeholder="다시 입력">
-      </div>
-      <div class="form-group">
-        <label for="company-name">회사명 <span class="optional">(선택)</span></label>
-        <input type="text" id="company-name" name="company-name" autocomplete="organization" placeholder="(주)호시컴퍼니">
-      </div>
-      <div class="form-group">
-        <label for="ceo-name">대표자명 <span class="optional">(선택)</span></label>
-        <input type="text" id="ceo-name" name="ceo-name" autocomplete="name" placeholder="홍길동">
-      </div>
-
-      <div class="checkbox-group">
-        <input type="checkbox" id="agree-terms" required>
-        <label for="agree-terms" style="margin-bottom:0;">
-          (필수) <a href="/terms" target="_blank">이용약관</a> 및
-          <a href="/privacy" target="_blank">개인정보처리방침</a>에 동의합니다
-        </label>
-      </div>
-
-      <button type="submit" id="submit-btn" class="btn btn-primary">가입하고 14일 체험 시작하기</button>
-    </form>
-
-    <div class="divider"><span>또는</span></div>
-
-    <div class="login-link">
-      이미 계정이 있나요? <a href="/login">로그인</a>
-    </div>
-
-    <div class="footer-links">
-      <a href="/">홈</a> ·
-      <a href="/pricing">요금제</a> ·
-      <a href="/guide">사용 가이드</a> ·
-      <a href="/terms">이용약관</a> ·
-      <a href="/privacy">개인정보처리방침</a>
     </div>
   </div>
-
   <script>
-    const API_BASE = 'https://api.bideasy.kr/api/v1';
-    const form = document.getElementById('signup-form');
-    const submitBtn = document.getElementById('submit-btn');
-    const alertBox = document.getElementById('alert');
+  (function () {
+    var API_BASE = 'https://api.bideasy.kr/api/v1';
+    var b = document.getElementById('themebtn2');
+    function sync() { b.innerHTML = BD.icon(BD.getTheme() === 'dark' ? 'sun' : 'moon'); }
+    sync(); b.addEventListener('click', function () { BD.setTheme(BD.getTheme() === 'dark' ? 'light' : 'dark'); sync(); });
+    document.getElementById('bolt').innerHTML = BD.icon('bolt', 13);
 
-    function showAlert(message, type = 'error') {
-      alertBox.textContent = message;
-      alertBox.className = 'alert alert-' + type + ' show';
+    var agreed = false; var cb = document.getElementById('cb');
+    document.getElementById('agree').addEventListener('click', function () {
+      agreed = !agreed;
+      cb.style.background = agreed ? 'var(--accent)' : 'var(--surface)';
+      cb.style.borderColor = agreed ? 'var(--accent)' : 'var(--line-2)';
+      cb.innerHTML = agreed ? '<span style="color:var(--on-accent);display:flex;">' + BD.icon('check', 12, 2.4) + '</span>' : '';
+    });
+
+    // 토큰 저장 + 익스텐션 핸드오프(postMessage) — 보존 필수
+    function saveToken(t) {
+      try { localStorage.setItem('access_token', t); } catch (e) {}
+      try { localStorage.setItem('jwt', t); } catch (e) {}
+      try { window.postMessage({ type: 'BIDEASY_TOKEN', token: t }, window.location.origin); } catch (e) {}
+    }
+    function redirectTarget() {
+      var p = new URLSearchParams(location.search);
+      return p.get('redirect') || p.get('next') || 'dashboard.html';
     }
 
-    function hideAlert() {
-      alertBox.className = 'alert';
-    }
+    var emailEl = document.getElementById('email'), pwEl = document.getElementById('password'), coEl = document.getElementById('company');
+    var go = document.getElementById('go'), errEl = document.getElementById('signup-err');
+    function showErr(m) { errEl.textContent = m; errEl.style.display = 'block'; }
+    function hideErr() { errEl.style.display = 'none'; }
 
-    function saveTokenAndNotify(token) {
-      // 익스텐션 content script 가 다음 셋 중 하나로 토큰 수집
-      try { localStorage.setItem('access_token', token); } catch {}
-      try { localStorage.setItem('jwt', token); } catch {}
-      try {
-        window.postMessage({ type: 'BIDEASY_TOKEN', token }, window.location.origin);
-      } catch {}
-    }
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      hideAlert();
-
-      const email = document.getElementById('email').value.trim();
-      const password = document.getElementById('password').value;
-      const passwordConfirm = document.getElementById('password-confirm').value;
-      const companyName = document.getElementById('company-name').value.trim();
-      const ceoName = document.getElementById('ceo-name').value.trim();
-      const agreed = document.getElementById('agree-terms').checked;
-
-      // 클라이언트 검증
-      if (password.length < 8) {
-        showAlert('비밀번호는 8자 이상이어야 해요.');
-        return;
-      }
-      if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
-        showAlert('비밀번호는 영문·숫자를 모두 포함해야 해요.');
-        return;
-      }
-      if (password !== passwordConfirm) {
-        showAlert('비밀번호가 일치하지 않아요.');
-        return;
-      }
-      if (!agreed) {
-        showAlert('이용약관·개인정보처리방침에 동의해주세요.');
-        return;
-      }
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = '가입 처리 중...';
-
+    async function doSignup() {
+      hideErr();
+      var email = (emailEl.value || '').trim(), pw = pwEl.value || '', company = (coEl.value || '').trim();
+      if (!email) { showErr('이메일을 입력해주세요'); return; }
+      if (pw.length < 8) { showErr('비밀번호는 8자 이상이어야 해요'); return; }
+      if (!agreed) { BD.toast('약관에 동의해 주세요', 'danger'); return; }
+      go.disabled = true; var orig = go.textContent; go.textContent = '가입 처리 중...';
       try {
         // 1) 회원가입
-        const registerResp = await fetch(API_BASE + '/auth/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email,
-            password,
-            company_name: companyName || null,
-            ceo_name: ceoName || null,
-          }),
+        var reg = await fetch(API_BASE + '/auth/register', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email, password: pw, company_name: company || null, ceo_name: null }),
         });
-
-        if (!registerResp.ok) {
-          const errText = await registerResp.text();
-          let msg = '회원가입에 실패했어요';
-          try {
-            const j = JSON.parse(errText);
-            if (j.detail) msg = j.detail;
-          } catch {}
+        if (!reg.ok) {
+          var t = await reg.text(); var msg = '회원가입에 실패했어요';
+          try { var j = JSON.parse(t); if (j.detail) msg = j.detail; } catch (e) {}
           throw new Error(msg);
         }
-
-        // 2) 자동 로그인 → 토큰 발급
-        const body = new URLSearchParams({ username: email, password });
-        const loginResp = await fetch(API_BASE + '/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: body.toString(),
-        });
-        if (!loginResp.ok) {
-          // 가입은 성공했지만 자동 로그인 실패 — 사용자가 직접 로그인하도록 유도
-          showAlert('가입 성공! 잠시 후 로그인 페이지로 이동합니다.', 'success');
-          setTimeout(() => { window.location.href = '/login'; }, 2000);
-          return;
-        }
-
-        const data = await loginResp.json();
-        saveTokenAndNotify(data.access_token);
-
-        // ?redirect= 파라미터 있으면 그쪽으로, 아니면 홈으로 (구독 결제 등 진입 흐름 유지)
-        const params = new URLSearchParams(window.location.search);
-        const redirectTo = params.get('redirect') || '/';
-        showAlert('🎉 가입 완료! Pro 14일 체험이 시작됐어요. 잠시 후 이동합니다.', 'success');
-        setTimeout(() => { window.location.href = redirectTo; }, 2500);
-
-      } catch (err) {
-        showAlert(err.message || '네트워크 오류가 발생했어요');
-        submitBtn.disabled = false;
-        submitBtn.textContent = '가입하고 14일 체험 시작하기';
+        // 2) 자동 로그인 → 토큰
+        var body = new URLSearchParams({ username: email, password: pw });
+        var lg = await fetch(API_BASE + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+        if (!lg.ok) { BD.toast('가입 완료 · 로그인 페이지로 이동', 'accent'); setTimeout(function () { location.href = '/login'; }, 1200); return; }
+        var data = await lg.json(); saveToken(data.access_token);
+        BD.toast('가입 완료 · Pro 14일 무료 시작', 'accent');
+        setTimeout(function () { location.href = redirectTarget(); }, 700);
+      } catch (e) {
+        showErr(e.message || '네트워크 오류'); go.disabled = false; go.textContent = orig;
       }
-    });
+    }
+    go.addEventListener('click', doSignup);
+
+    async function social(provider) {
+      try {
+        var resp = await fetch(API_BASE + '/auth/social-urls');
+        var data = await resp.json();
+        var url = data[provider];
+        if (!url) throw new Error('소셜 로그인 URL 없음');
+        location.href = url;
+      } catch (e) { showErr('소셜 로그인 시작 실패: ' + e.message); }
+    }
+    document.getElementById('kakao').addEventListener('click', function () { social('kakao'); });
+    document.getElementById('naver').addEventListener('click', function () { social('naver'); });
+
+    // OAuth 콜백 ?token= 처리 (소셜 가입 후 리다이렉트)
+    (function () {
+      var p = new URLSearchParams(location.search);
+      var token = p.get('token');
+      if (token) { saveToken(token); BD.toast('소셜 가입 성공'); history.replaceState(null, '', location.pathname); setTimeout(function () { location.href = redirectTarget(); }, 600); }
+    })();
+  })();
   </script>
 </body>
 </html>

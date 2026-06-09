@@ -39,18 +39,25 @@
   try { document.documentElement.setAttribute('data-theme', getTheme()); } catch (e) {}
   document.addEventListener('DOMContentLoaded', function () { document.body.setAttribute('data-theme', getTheme()); });
 
+  function getToken() { try { return localStorage.getItem('access_token') || localStorage.getItem('jwt') || null; } catch (e) { return null; } }
+
   function mountNav(active) {
     var links = [['search.html', '공고 검색', 'search'], ['dashboard.html', '대시보드', 'dashboard'], ['calculator.html', '계산기', 'calculator'], ['pricing.html', '요금제', 'pricing']];
+    var authed = !!getToken();
+    var right = authed
+      ? '<a class="navlink" href="account.html">마이</a><a class="navlink" id="navlogout" href="#">로그아웃</a>'
+      : '<a class="navlink" href="login.html">로그인</a><a class="btn btn-primary btn-sm" href="signup.html">14일 체험</a>';
     var html = '<nav class="topnav"><div class="topnav-in">' +
       '<a class="brand" href="index.html"><img src="brand/bideasy-mark.svg" width="22" height="22" alt="">BidEasy</a>' +
       '<ul class="navlinks">' + links.map(function (l) { return '<li><a class="navlink' + (active === l[2] ? ' active' : '') + '"' + (active === l[2] ? ' aria-current="page"' : '') + ' href="' + l[0] + '">' + l[1] + '</a></li>'; }).join('') + '</ul>' +
       '<div style="margin-left:auto;display:flex;align-items:center;gap:10px;">' +
         '<button id="themebtn" class="btn btn-quiet btn-sm" style="padding:8px;border-radius:9px;" aria-label="라이트/다크 테마 전환" title="테마">' + icon(getTheme() === 'dark' ? 'sun' : 'moon') + '</button>' +
-        '<a class="navlink" href="account.html">마이</a>' +
-        '<a class="btn btn-primary btn-sm" href="search.html">공고 보기</a>' +
+        right +
       '</div></div></nav>';
     var el = document.getElementById('nav'); if (el) el.outerHTML = html;
     var tb = document.getElementById('themebtn'); if (tb) tb.addEventListener('click', function () { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); });
+    var lo = document.getElementById('navlogout');
+    if (lo) lo.addEventListener('click', function (e) { e.preventDefault(); if (confirm('로그아웃하시겠어요?')) { try { localStorage.removeItem('access_token'); localStorage.removeItem('jwt'); } catch (x) {} location.href = '/'; } });
     // skip-to-content link + focusable main heading (a11y)
     var h1 = document.querySelector('h1');
     if (h1) { if (!h1.id) h1.id = 'main-content'; h1.setAttribute('tabindex', '-1'); }
@@ -70,5 +77,5 @@
   function saveFavs(s) { try { localStorage.setItem('bideasy_favs', JSON.stringify(Array.from(s))); } catch (e) {} }
   function toggleFav(id) { var s = getFavs(); var had = s.has(id); had ? s.delete(id) : s.add(id); saveFavs(s); return !had; }
 
-  window.BD = { icon: icon, won: won, fmt: fmt, mountNav: mountNav, toast: toast, getFavs: getFavs, toggleFav: toggleFav, getTheme: getTheme, setTheme: setTheme };
+  window.BD = { icon: icon, won: won, fmt: fmt, mountNav: mountNav, toast: toast, getFavs: getFavs, toggleFav: toggleFav, getTheme: getTheme, setTheme: setTheme, getToken: getToken, API_BASE: 'https://api.bideasy.kr/api/v1' };
 })();
