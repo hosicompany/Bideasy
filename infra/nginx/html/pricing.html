@@ -601,51 +601,122 @@
       const original = btn.innerHTML;
       btn.innerHTML = '<span class="loading"></span>카드 등록 페이지로 이동 중...';
 
-      try {
-        // 1. 백엔드에 자동결제(빌링) 등록 준비 요청 — 주문 + customerKey 발급
-        const orderResp = await fetch(API_BASE + '/payments/billing/prepare', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + token,
-          },
-          body: JSON.stringify({ tier, billing_cycle: currentCycle }),
-        });
-
-        if (!orderResp.ok) {
-          const txt = await orderResp.text();
-          let msg = '주문 생성 실패';
-          try { const j = JSON.parse(txt); if (j.detail) msg = j.detail; } catch {}
-          throw new Error(msg);
-        }
-
-        const order = await orderResp.json();
-
-        // 2. Toss SDK 로 빌링(카드 등록) 인증 요청
-        //    카드 등록 성공 → successUrl 로 customerKey·authKey 가 붙어 리다이렉트
-        //    → 백엔드가 빌링키 발급 + 첫 청구 + 다음 주기 자동결제 등록
-        if (typeof TossPayments === 'undefined') {
-          throw new Error('Toss SDK 로드 실패. 새로고침 후 다시 시도해주세요.');
-        }
-        const toss = TossPayments(order.toss_client_key);
-
-        const oid = encodeURIComponent(order.order_id);
-        await toss.requestBillingAuth('카드', {
-          customerKey: order.customer_key,
-          successUrl: API_BASE + '/payments/billing/success?orderId=' + oid,
-          failUrl: API_BASE + '/payments/billing/fail?orderId=' + oid,
-        });
-        // requestBillingAuth 가 토스 카드등록창으로 이동시키므로 이후 코드는 실행 안 됨
-      } catch (err) {
-        // 사용자가 결제창을 닫은 경우 등은 err.code === 'USER_CANCEL'
-        if (err.code !== 'USER_CANCEL') {
-          showAlert(err.message || '결제 처리 중 오류가 발생했어요');
-        }
-        // 모든 구독 버튼 다시 활성화
+      const restoreButtons = () => {
         document.querySelectorAll('button[data-tier]').forEach(b => { b.disabled = false; });
         btn.innerHTML = original;
         subscribeInProgress = false;
+      };
+
+      try {
+        // 0. 활성 정기결제 PG 확인 (toss | payple). 네트워크 실패 시 toss 기본값.
+        let provider = 'toss';
+        try {
+          const pResp = await fetch(API_BASE + '/payments/provider');
+          if (pResp.ok) provider = (await pResp.json()).provider || 'toss';
+        } catch { /* 기본값 toss 유지 */ }
+
+        if (provider === 'payple') {
+          await subscribeViaPayple(tier, token, restoreButtons);
+        } else {
+          await subscribeViaToss(tier, token);
+        }
+        // 두 흐름 모두 카드등록창(토스=리다이렉트, 페이플=오버레이)으로 진입 → 성공 시 이후 코드 미실행
+      } catch (err) {
+        // 사용자가 결제창을 닫은 경우 등은 err.code === 'USER_CANCEL'
+        if (err && err.code !== 'USER_CANCEL') {
+          showAlert(err.message || '결제 처리 중 오류가 발생했어요');
+        }
+        restoreButtons();
       }
+    }
+
+    // ─── 토스 빌링 흐름 (requestBillingAuth → 카드등록창 리다이렉트) ───
+    async function subscribeViaToss(tier, token) {
+      // 1. 백엔드에 자동결제(빌링) 등록 준비 요청 — 주문 + customerKey 발급
+      const orderResp = await fetch(API_BASE + '/payments/billing/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ tier, billing_cycle: currentCycle }),
+      });
+      if (!orderResp.ok) {
+        const txt = await orderResp.text();
+        let msg = '주문 생성 실패';
+        try { const j = JSON.parse(txt); if (j.detail) msg = j.detail; } catch {}
+        throw new Error(msg);
+      }
+      const order = await orderResp.json();
+
+      // 2. Toss SDK 로 빌링(카드 등록) 인증 요청 → successUrl 리다이렉트 → 백엔드가 빌링키 발급+첫청구
+      if (typeof TossPayments === 'undefined') {
+        throw new Error('Toss SDK 로드 실패. 새로고침 후 다시 시도해주세요.');
+      }
+      const toss = TossPayments(order.toss_client_key);
+      const oid = encodeURIComponent(order.order_id);
+      await toss.requestBillingAuth('카드', {
+        customerKey: order.customer_key,
+        successUrl: API_BASE + '/payments/billing/success?orderId=' + oid,
+        failUrl: API_BASE + '/payments/billing/fail?orderId=' + oid,
+      });
+      // requestBillingAuth 가 토스 카드등록창으로 이동시키므로 이후 코드는 실행 안 됨
+    }
+
+    // ─── 페이플 빌링 흐름 (PaypleCpayAuthCheck → 오버레이 → PCD_RST_URL POST) ───
+    let _paypleSdkLoaded = false;
+    function _loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('스크립트 로드 실패'));
+        document.head.appendChild(s);
+      });
+    }
+    async function _ensurePaypleSdk(host) {
+      if (_paypleSdkLoaded && typeof PaypleCpayAuthCheck !== 'undefined') return;
+      // 페이플 payment.js 는 jQuery 의존
+      if (typeof jQuery === 'undefined') {
+        await _loadScript('https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js');
+      }
+      await _loadScript(host.replace(/\/$/, '') + '/js/v1/payment.js');
+      _paypleSdkLoaded = true;
+    }
+    async function subscribeViaPayple(tier, token, restoreButtons) {
+      // 1. 백엔드에 주문 생성 + SDK 파라미터 수신
+      const prepResp = await fetch(API_BASE + '/payments/payple/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ tier, billing_cycle: currentCycle }),
+      });
+      if (!prepResp.ok) {
+        const txt = await prepResp.text();
+        let msg = '주문 생성 실패';
+        try { const j = JSON.parse(txt); if (j.detail) msg = j.detail; } catch {}
+        throw new Error(msg);
+      }
+      const prep = await prepResp.json();
+
+      // 2. 페이플 SDK 로드 후 결제창 호출
+      await _ensurePaypleSdk(prep.host);
+      if (typeof PaypleCpayAuthCheck === 'undefined') {
+        throw new Error('페이플 SDK 로드 실패. 새로고침 후 다시 시도해주세요.');
+      }
+      const obj = {
+        clientKey: prep.client_key,
+        PCD_PAY_TYPE: 'card',
+        PCD_PAY_WORK: 'CERT',      // 카드등록 + 첫 청구 동시 진행
+        PCD_CARD_VER: '01',        // 01 = 정기결제(빌링키 발급)
+        PCD_PAY_GOODS: prep.goods,
+        PCD_PAY_TOTAL: prep.amount,
+        PCD_PAY_OID: prep.order_id,
+        PCD_PAYER_NO: prep.payer_no,
+        PCD_PAYER_NAME: prep.payer_name,
+        PCD_PAYER_EMAIL: prep.payer_email,
+        PCD_RST_URL: prep.rst_url,  // 결과 콜백(백엔드) → 빌링키 저장 + 티어 적용 + /account 리다이렉트
+      };
+      PaypleCpayAuthCheck(obj);
+      // 오버레이 결제창이 뜸. 완료 시 PCD_RST_URL 로 POST(=백엔드)되어 /account 로 이동.
+      // 사용자가 창을 닫으면 콜백이 없으므로, 잠시 후 버튼을 복구해 재시도 가능하게 함.
+      setTimeout(() => { if (restoreButtons) restoreButtons(); }, 2500);
     }
 
     document.getElementById('subscribe-pro').addEventListener('click', () => subscribe('pro'));

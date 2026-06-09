@@ -23,6 +23,7 @@ from app.core.analytics import log_event
 from app.db import models
 from app.db.session import SessionLocal
 from app.services.billing import charge_billing_key, BillingError
+from app.services.payple import charge_billing as payple_charge, PaypleError
 from app.schemas.subscription import (
     TIER_FREE,
     TIER_PRO,
@@ -106,10 +107,12 @@ def charge_due_subscriptions(now_iso: str = "") -> dict:
             amount = _renew_amount(tier, is_annual)
             expires = _aware(u.subscription_expires_at)
 
+            provider = u.billing_provider or "toss"
             ts = int(now.timestamp())
             rand = secrets.token_hex(4)
             cyc = "a" if is_annual else "m"
-            order_id = f"BILLR_{u.id}_{_TIER_CODE[tier]}_{cyc}_{ts}_{rand}"
+            prefix = "PYPR" if provider == "payple" else "BILLR"
+            order_id = f"{prefix}_{u.id}_{_TIER_CODE[tier]}_{cyc}_{ts}_{rand}"
             tier_display = TIER_DISPLAY_NAMES.get(tier, tier)
             order_name = f"BidEasy {tier_display} 자동결제 ({'연간' if is_annual else '월간'})"
 
@@ -120,18 +123,28 @@ def charge_due_subscriptions(now_iso: str = "") -> dict:
             db.commit()
 
             try:
-                charged = charge_billing_key(
-                    billing_key=u.billing_key,
-                    customer_key=u.billing_customer_key,
-                    amount=amount,
-                    order_id=order_id,
-                    order_name=order_name,
-                    customer_email=u.email,
-                    customer_name=u.company_name or u.email,
-                    # 같은 갱신 주기(만료일자) 중복청구 방지
-                    idempotency_key=f"renew-{u.id}-{expires.date().isoformat()}",
-                )
-            except BillingError as e:
+                if provider == "payple":
+                    res = payple_charge(
+                        payer_id=u.billing_key, amount=amount, oid=order_id,
+                        goods=order_name, payer_name=u.company_name or u.email, payer_email=u.email,
+                    )
+                    pay_key = res.get("PCD_PAY_OID") or order_id
+                    pay_method = "card"
+                else:
+                    charged = charge_billing_key(
+                        billing_key=u.billing_key,
+                        customer_key=u.billing_customer_key,
+                        amount=amount,
+                        order_id=order_id,
+                        order_name=order_name,
+                        customer_email=u.email,
+                        customer_name=u.company_name or u.email,
+                        # 같은 갱신 주기(만료일자) 중복청구 방지
+                        idempotency_key=f"renew-{u.id}-{expires.date().isoformat()}",
+                    )
+                    pay_key = charged["paymentKey"]
+                    pay_method = charged["method"]
+            except (BillingError, PaypleError) as e:
                 order.status = "FAILED"
                 order.fail_reason = f"자동갱신 실패: {e.message}"[:500]
                 # 만료 후 grace 경과까지 계속 실패 → 해지 + 강등
@@ -154,8 +167,8 @@ def charge_due_subscriptions(now_iso: str = "") -> dict:
             u.subscription_expires_at = start + timedelta(days=days)
             u.tier = tier
             order.status = "CONFIRMED"
-            order.payment_key = charged["paymentKey"]
-            order.method = charged["method"]
+            order.payment_key = pay_key
+            order.method = pay_method
             order.confirmed_at = now
             _notify(
                 db, u.id, "BILLING_RENEWED",

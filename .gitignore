@@ -73,3 +73,11 @@ reproduction_scripts/
 # Build outputs
 build/
 dist/
+
+# Patent draft — NEVER commit (internal IP, keep local only)
+PATENT.md
+**/PATENT.md
+
+# Ad-hoc internal session reports (keep local only)
+MORNING_CHECKLIST.md
+OVERNIGHT_REPORT.md

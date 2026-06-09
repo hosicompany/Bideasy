@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -13,6 +13,7 @@ from app.services.billing import (
     charge_billing_key,
     BillingError,
 )
+from app.services import payple as payple_svc
 
 from app.db.session import get_db
 from app.db import models
@@ -504,7 +505,7 @@ def get_payment_history(
             {
                 "order_id": o.order_id,
                 "order_kind": "subscription"
-                if o.order_id.startswith(("SUB_", "BILL_", "BILLR_"))
+                if o.order_id.startswith(("SUB_", "BILL_", "BILLR_", "PYP_", "PYPR_"))
                 else "points",
                 "amount": o.amount,
                 "status": o.status,
@@ -794,4 +795,133 @@ def get_billing_info(
         "next_charge_at": current_user.subscription_expires_at.isoformat()
         if (current_user.auto_renew and current_user.subscription_expires_at)
         else None,
+        "provider": current_user.billing_provider,
     }
+
+
+@router.get("/provider")
+def get_payment_provider():
+    """현재 정기결제 PG (프론트가 결제 흐름 분기용). 공개."""
+    return {
+        "provider": settings.PAYMENT_PROVIDER,
+        "payple_host": settings.payple_host,
+        "payple_client_key": settings.PAYPLE_CLIENT_KEY,
+        "payple_is_test": settings.PAYPLE_IS_TEST,
+    }
+
+
+# ─── 페이플(Payple) 정기결제 Endpoints ───
+#
+# 토스 빌링 심사(1~2개월) 대기 중 페이플(심사 7일~2주)로 먼저 출시 가능.
+# 흐름: prepare(주문생성) → [프론트 PaypleCpayAuthCheck 카드등록+첫청구]
+#       → callback(빌링키 저장+티어적용). 자동갱신은 Celery 가 PG 구분해 청구.
+
+@router.post("/payple/prepare")
+def payple_prepare(
+    request: SubscribeRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """페이플 정기결제 등록 준비 — 주문 생성 + 프론트 SDK 파라미터 반환."""
+    if request.tier not in (TIER_PRO, TIER_PRO_PLUS):
+        raise HTTPException(status_code=400, detail="유효하지 않은 구독 티어입니다")
+    if request.billing_cycle not in ("monthly", "annual"):
+        raise HTTPException(status_code=400, detail="유효하지 않은 결제 주기입니다")
+
+    is_annual = request.billing_cycle == "annual"
+    original_amount = (ANNUAL_PRICES if is_annual else MONTHLY_PRICES)[request.tier]
+
+    from app.schemas.subscription import (
+        is_winback_eligible,
+        calculate_winback_discount,
+        WINBACK_REASON_CODE,
+    )
+    amount = original_amount
+    discount_amount = None
+    discount_reason = None
+    if not is_annual and is_winback_eligible(current_user, db):
+        discount_amount = calculate_winback_discount(original_amount)
+        amount = original_amount - discount_amount
+        discount_reason = WINBACK_REASON_CODE
+
+    now = datetime.now(timezone.utc)
+    ts = int(now.timestamp())
+    rand = secrets.token_hex(4)
+    cyc = "a" if is_annual else "m"
+    order_id = f"PYP_{current_user.id}_{_TIER_CODE[request.tier]}_{cyc}_{ts}_{rand}"
+
+    order = models.PaymentOrder(
+        user_id=current_user.id, order_id=order_id, amount=amount, status="PENDING",
+        discount_amount=discount_amount, discount_reason=discount_reason,
+    )
+    db.add(order)
+    db.commit()
+
+    tier_display = TIER_DISPLAY_NAMES.get(request.tier, request.tier)
+    goods = f"BidEasy {tier_display} 자동결제 ({'연간' if is_annual else '월간'})"
+    logger.info(f"Payple prepare: order={order_id} user={current_user.id} amount={amount}")
+
+    return {
+        "client_key": settings.PAYPLE_CLIENT_KEY,
+        "host": settings.payple_host,
+        "is_test": settings.PAYPLE_IS_TEST,
+        "order_id": order_id,
+        "goods": goods,
+        "amount": amount,
+        "payer_no": str(current_user.id),
+        "payer_name": current_user.company_name or current_user.email or "BidEasy User",
+        "payer_email": current_user.email or "",
+        "rst_url": f"{settings.BACKEND_URL}/api/v1/payments/payple/callback",
+        "tier": request.tier,
+        "billing_cycle": request.billing_cycle,
+    }
+
+
+@router.post("/payple/callback")
+async def payple_callback(request: Request, db: Session = Depends(get_db)):
+    """페이플 카드등록+첫청구 결과 콜백 → 빌링키 저장 + 티어 적용 + 리다이렉트."""
+    form = dict(await request.form())
+    rst = str(form.get("PCD_PAY_RST", "")).lower()
+    oid = form.get("PCD_PAY_OID", "")
+    payer_id = form.get("PCD_PAYER_ID", "")
+
+    order = db.query(models.PaymentOrder).filter(models.PaymentOrder.order_id == oid).first()
+    if not order:
+        logger.warning(f"Payple callback: order not found: {oid}")
+        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message=주문을 찾을 수 없습니다")
+
+    if rst != "success" or not payer_id:
+        order.status = "FAILED"
+        order.fail_reason = (form.get("PCD_PAY_MSG") or "카드 등록 실패")[:500]
+        db.commit()
+        msg = form.get("PCD_PAY_MSG") or "결제에 실패했습니다"
+        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message={msg}")
+
+    user = db.query(models.User).filter(models.User.id == order.user_id).first()
+    if not user:
+        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message=사용자를 찾을 수 없습니다")
+
+    # order_id: PYP_{uid}_{code}_{cyc}_{ts}_{rand}
+    parts = oid.split("_")
+    tier = _CODE_TIER.get(parts[2], TIER_PRO) if len(parts) >= 6 else TIER_PRO
+    is_annual = (parts[3] == "a") if len(parts) >= 6 else (order.amount >= 100_000)
+
+    user.billing_key = payer_id
+    user.billing_provider = "payple"
+    user.billing_card = payple_svc.card_display(form)
+    user.billing_cycle = "annual" if is_annual else "monthly"
+    days = _apply_subscription_after_charge(user, tier, is_annual, extend_from_existing=False)
+    user.auto_renew = True
+    user.trial_expires_at = datetime.now(timezone.utc)  # 결제 → 체험 종료
+    order.status = "CONFIRMED"
+    # payment_key 는 UNIQUE — 빌링키(payer_id)는 재등록 시 재사용되어 충돌 가능하므로
+    # 주문 고유 OID 를 거래 참조로 저장 (빌링키는 user.billing_key 에 보관). 갱신 태스크와 동일.
+    order.payment_key = oid
+    order.method = "card"
+    order.confirmed_at = datetime.now(timezone.utc)
+    db.commit()
+
+    logger.info(f"Payple first charge confirmed: order={oid} user={user.id} tier={tier} days={days}")
+    log_event("payple_first_charge", user_id=user.id, tier=tier, cycle=user.billing_cycle, amount=order.amount)
+    params = urlencode({"payment": "success", "amount": str(order.amount), "type": "billing"})
+    return RedirectResponse(f"{settings.FRONTEND_URL}/account?{params}")

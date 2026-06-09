@@ -95,6 +95,24 @@ class Settings(BaseSettings):
     def toss_billing_secret_key(self) -> str:
         return self.TOSS_BILLING_SECRET_KEY or self.TOSS_SECRET_KEY
 
+    # === 결제 PG 선택 ===
+    # toss | payple — 정기결제(빌링)에 사용할 PG. 토스 빌링 심사 대기 동안
+    # 페이플(심사 7일~2주)로 먼저 출시 가능. 기본 toss(기존 동작 유지).
+    PAYMENT_PROVIDER: str = "toss"
+
+    # === Payple (페이플) 정기결제 ===
+    # 기본값은 공개 테스트 샌드박스. 가맹 승인 후 라이브 값으로 교체.
+    PAYPLE_IS_TEST: bool = True
+    PAYPLE_CST_ID: str = "test"
+    PAYPLE_CUST_KEY: str = "abcd1234567890"
+    PAYPLE_CLIENT_KEY: str = "test_DF55F29DA654A8CBC0F0A9DD4B556486"
+    # Referer 화이트리스트 — 페이플에 등록된 도메인과 일치해야 함(불일치 시 AUTH0004)
+    PAYPLE_REFERER: str = "https://bideasy.kr"
+
+    @property
+    def payple_host(self) -> str:
+        return "https://democpay.payple.kr" if self.PAYPLE_IS_TEST else "https://cpay.payple.kr"
+
     # === Admin daily report ===
     # 슬랙 incoming webhook URL (옵션). 없으면 in-app Notification 만 발송.
     SLACK_WEBHOOK_URL: str = ""

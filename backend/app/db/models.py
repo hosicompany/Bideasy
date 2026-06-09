@@ -53,6 +53,8 @@ class User(Base):
     billing_cycle = Column(String(20), nullable=True)
     # 자동 갱신 on/off — 해지 시 false (구독은 만료일까지 유지)
     auto_renew = Column(Boolean, nullable=False, default=False, server_default="false")
+    # 빌링키 발급 PG (toss | payple) — 자동청구 시 어느 PG API 를 쓸지 구분
+    billing_provider = Column(String(20), nullable=True)
 
     bids = relationship("UserBid", back_populates="user")
     point_transactions = relationship("PointTransaction", back_populates="user")
