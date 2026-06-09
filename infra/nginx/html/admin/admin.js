@@ -855,18 +855,141 @@ function renderPagination(data, baseHash) {
   </div>`;
 }
 
-// 미완성 페이지 placeholder (Phase D~E 에서 구현)
-['autocalibrate', 'system', 'simulation'].forEach((name) => {
-  pages[name] = function(content) {
-    const phase = { autocalibrate: 'D', system: 'D', simulation: 'E' }[name];
-    content.innerHTML = `
-      <div class="card" style="text-align:center;padding:60px 20px;">
-        <h3 style="color:var(--color-text-muted);">${PAGE_TITLES[name]} 페이지</h3>
-        <p style="color:var(--color-text-muted);margin-top:10px;">Phase ${phase} 에서 구현 예정</p>
+// ─── 공통: Celery 작업 폴링 ───────────────────────────────
+async function pollTask(taskId, onState, maxMs = 180000) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    let s;
+    try { s = await api('/admin/system/tasks/' + encodeURIComponent(taskId)); } catch { return null; }
+    if (onState) onState(s);
+    if (s.state === 'SUCCESS' || s.state === 'FAILURE') return s;
+    await new Promise(r => setTimeout(r, 2500));
+  }
+  return null;
+}
+function metricChips(m) {
+  if (!m) return '<span style="color:var(--color-text-muted);">지표 없음</span>';
+  const item = (k, v, suf) => `<span style="display:inline-block;margin-right:14px;"><b>${k}</b> ${v == null ? '—' : v}${suf || ''}</span>`;
+  return item('낙찰률', m.win_rate, '%') + item('통과율', m.pass_rate, '%') + item('탈락률', m.dropout_rate, '%') + (m.rate_error != null ? item('사정률오차', m.rate_error, '%p') : '');
+}
+
+// ─── 자가보정 (Phase D) ───────────────────────────────────
+pages.autocalibrate = async function(content) {
+  content.innerHTML = '<div class="card">불러오는 중...</div>';
+  let status = {}, versions = { items: [] };
+  try { status = await api('/admin/stats/autocalibrate-status'); } catch {}
+  try { versions = await api('/admin/autocalibrate/versions'); } catch {}
+  const a = status.active;
+  const histRows = (status.recent_history || []).map(h =>
+    `<tr><td>${fmtDateTime(h.at)}</td><td><span class="badge">${h.event}</span></td><td style="font-family:monospace;font-size:12px;">${h.version_id || '—'}</td></tr>`).join('');
+  const verRows = (versions.items || []).map(v =>
+    `<tr><td style="font-family:monospace;font-size:12px;">${v.version_id}</td><td>${fmtDateTime(v.created_at)}</td><td>${v.status}</td><td>${metricChips(v.metrics)}</td>
+      <td><button class="ac-rollback" data-v="${v.version_id}" style="font-size:12px;padding:5px 10px;border:1px solid var(--color-border,#E5E8EB);border-radius:8px;background:#fff;cursor:pointer;">롤백</button></td></tr>`).join('');
+  content.innerHTML = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <h3>현재 전략 ${a ? '<span style="font-family:monospace;font-size:13px;">' + a.version_id + '</span>' : '(없음)'}</h3>
+        <button id="ac-run" style="background:#3182F6;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-weight:700;cursor:pointer;">재보정 실행</button>
       </div>
-    `;
-  };
-});
+      <p style="margin-top:8px;">${a ? metricChips(a.metrics) : '활성 전략 정보가 없어요.'}</p>
+      <p style="color:var(--color-text-muted);font-size:13px;margin-top:6px;">다음 자동 실행: ${fmtDateTime(status.next_scheduled)}</p>
+      <div id="ac-run-out" style="margin-top:10px;font-size:13px;"></div>
+    </div>
+    <div class="card"><h3>버전 이력</h3><table style="width:100%;font-size:13px;"><tbody>${verRows || '<tr><td>버전 없음</td></tr>'}</tbody></table></div>
+    <div class="card"><h3>변경 로그</h3><table style="width:100%;font-size:13px;"><tbody>${histRows || '<tr><td>이력 없음</td></tr>'}</tbody></table></div>`;
+
+  document.getElementById('ac-run').addEventListener('click', async (e) => {
+    e.target.disabled = true; e.target.textContent = '실행 중...';
+    const out = document.getElementById('ac-run-out');
+    try {
+      const r = await api('/admin/autocalibrate/run', { method: 'POST' });
+      out.textContent = '작업 시작 (' + r.task_id.slice(0, 8) + ')... 수십 초 소요됩니다.';
+      const fin = await pollTask(r.task_id, s => { out.textContent = '상태: ' + s.state; });
+      if (fin && fin.state === 'SUCCESS') { toast('자가보정 완료', 'success'); pages.autocalibrate(content); }
+      else { out.textContent = '결과: ' + (fin ? (fin.error || fin.state) : '시간 초과'); toast('완료 또는 시간초과', 'info'); }
+    } catch { toast('실행 실패', 'error'); e.target.disabled = false; e.target.textContent = '재보정 실행'; }
+  });
+  content.querySelectorAll('.ac-rollback').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm(b.dataset.v + ' 버전으로 롤백할까요?')) return;
+    try { await api('/admin/autocalibrate/rollback/' + encodeURIComponent(b.dataset.v), { method: 'POST' }); toast('롤백 완료', 'success'); pages.autocalibrate(content); }
+    catch { toast('롤백 실패', 'error'); }
+  }));
+};
+
+// ─── 시스템 (Phase D) ─────────────────────────────────────
+pages.system = async function(content) {
+  content.innerHTML = '<div class="card">불러오는 중...</div>';
+  let triggers = { tasks: [] };
+  try { triggers = await api('/admin/system/triggers'); } catch {}
+  const rows = (triggers.tasks || []).map(t =>
+    `<tr><td>${t.desc}</td><td style="font-family:monospace;font-size:12px;color:var(--color-text-muted);">${t.name}</td>
+      <td><button class="sys-run" data-name="${t.name}" style="font-size:12px;padding:6px 12px;border:none;border-radius:8px;background:#3182F6;color:#fff;cursor:pointer;">실행</button></td>
+      <td class="sys-out" data-out="${t.name}" style="font-size:12px;color:var(--color-text-muted);"></td></tr>`).join('');
+  content.innerHTML = `<div class="card"><h3>수동 작업 실행</h3>
+    <p style="color:var(--color-text-muted);font-size:13px;margin-bottom:12px;">Celery 작업을 즉시 트리거합니다 (정기 스케줄과 별개).</p>
+    <table style="width:100%;font-size:13px;"><tbody>${rows || '<tr><td>작업 없음</td></tr>'}</tbody></table></div>`;
+  content.querySelectorAll('.sys-run').forEach(b => b.addEventListener('click', async () => {
+    const name = b.dataset.name; const out = content.querySelector('.sys-out[data-out="' + name + '"]');
+    b.disabled = true; out.textContent = '시작...';
+    try {
+      const r = await api('/admin/system/tasks/' + encodeURIComponent(name) + '/trigger', { method: 'POST' });
+      const fin = await pollTask(r.task_id, s => { out.textContent = s.state; });
+      if (fin && fin.state === 'SUCCESS') out.textContent = '✓ ' + (JSON.stringify(fin.result) || '완료').slice(0, 60);
+      else out.textContent = '✗ ' + (fin ? (fin.error || fin.state) : '시간초과');
+    } catch { out.textContent = '실패'; } finally { b.disabled = false; }
+  }));
+};
+
+// ─── 시뮬레이션 (Phase E) ─────────────────────────────────
+pages.simulation = async function(content) {
+  content.innerHTML = '<div class="card">불러오는 중...</div>';
+  let ds = { by_year: {}, methods: [], total: 0 };
+  try { ds = await api('/admin/simulation/datasets'); } catch {}
+  const yearOpts = Object.keys(ds.by_year || {});
+  const methodOpts = ds.methods || [];
+  content.innerHTML = `
+    <div class="card">
+      <h3>모의 투찰 백테스트</h3>
+      <p style="color:var(--color-text-muted);font-size:13px;">과거 개찰결과 ${fmtNumber(ds.total)}건에 현재 전략을 적용해 낙찰률·탈락률을 측정합니다.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center;">
+        <label style="font-size:13px;">연도 <input id="sim-yf" type="number" placeholder="from" style="width:90px;padding:7px;border:1px solid #E5E8EB;border-radius:8px;"> ~ <input id="sim-yt" type="number" placeholder="to" style="width:90px;padding:7px;border:1px solid #E5E8EB;border-radius:8px;"></label>
+        <select id="sim-method" style="padding:7px;border:1px solid #E5E8EB;border-radius:8px;"><option value="">전체 입찰방법</option>${methodOpts.map(m => '<option>' + m + '</option>').join('')}</select>
+        <button id="sim-run" style="background:#3182F6;color:#fff;border:none;border-radius:10px;padding:9px 18px;font-weight:700;cursor:pointer;">백테스트 실행</button>
+        <button id="sim-whatif" style="background:#fff;color:#3182F6;border:1px solid #C6DCFF;border-radius:10px;padding:9px 18px;font-weight:700;cursor:pointer;">여유분 민감도</button>
+      </div>
+      <div style="font-size:12px;color:var(--color-text-muted);margin-top:8px;">데이터: ${yearOpts.length ? yearOpts.join(', ') + '년' : '없음'}</div>
+    </div>
+    <div id="sim-result"></div>`;
+
+  function params() {
+    const b = {};
+    if ($('sim-yf').value) b.year_from = Number($('sim-yf').value);
+    if ($('sim-yt').value) b.year_to = Number($('sim-yt').value);
+    if ($('sim-method').value) b.bid_method = $('sim-method').value;
+    return b;
+  }
+  function $(id) { return document.getElementById(id); }
+
+  $('sim-run').addEventListener('click', async () => {
+    const r = $('sim-result'); r.innerHTML = '<div class="card">백테스트 중...</div>';
+    try {
+      const d = await api('/admin/simulation/backtest', { method: 'POST', body: JSON.stringify(params()) });
+      const m = d.metrics || {};
+      const brRows = (d.by_bracket || []).map(x => `<tr><td>${x.bracket}</td><td>${fmtNumber(x.total)}</td><td>${x.win_rate}%</td><td>${x.pass_rate}%</td><td>${x.dropout_rate}%</td></tr>`).join('');
+      r.innerHTML = `<div class="card"><h3>결과 (표본 ${fmtNumber(d.sample)}건)</h3><p style="margin:8px 0;">${metricChips(m)}</p>
+        <table style="width:100%;font-size:13px;margin-top:10px;"><thead><tr><th style="text-align:left;">가격대</th><th style="text-align:left;">건수</th><th style="text-align:left;">낙찰률</th><th style="text-align:left;">통과율</th><th style="text-align:left;">탈락률</th></tr></thead><tbody>${brRows}</tbody></table></div>`;
+    } catch (e) { r.innerHTML = '<div class="card">오류: ' + e.message + '</div>'; }
+  });
+  $('sim-whatif').addEventListener('click', async () => {
+    const r = $('sim-result'); r.innerHTML = '<div class="card">민감도 분석 중...</div>';
+    try {
+      const d = await api('/admin/simulation/whatif', { method: 'POST', body: JSON.stringify(params()) });
+      const rows = (d.results || []).map(x => `<tr><td>${x.margin_delta > 0 ? '+' : ''}${x.margin_delta}%p</td><td>${x.win_rate}%</td><td>${x.pass_rate}%</td><td>${x.dropout_rate}%</td></tr>`).join('');
+      r.innerHTML = `<div class="card"><h3>여유분 민감도 (margin ±)</h3><p style="color:var(--color-text-muted);font-size:13px;">여유분을 늘리면 통과율↑·낙찰률↓ 트레이드오프를 봅니다.</p>
+        <table style="width:100%;font-size:13px;margin-top:10px;"><thead><tr><th style="text-align:left;">여유분 가산</th><th style="text-align:left;">낙찰률</th><th style="text-align:left;">통과율</th><th style="text-align:left;">탈락률</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    } catch (e) { r.innerHTML = '<div class="card">오류: ' + e.message + '</div>'; }
+  });
+};
 
 // ─── 부팅 ────────────────────────────────────────────────────
 
