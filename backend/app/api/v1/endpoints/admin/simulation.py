@@ -8,7 +8,9 @@
 import copy
 
 from fastapi import APIRouter, Depends, HTTPException, Body
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.core.security import require_admin
 from app.core.logging import get_logger
 
@@ -18,9 +20,10 @@ router = APIRouter()
 _BRACKETS = ["small", "medium", "large", "xlarge", "xxlarge"]
 
 
-def _load_records():
+def _load_records(db=None):
+    """정적 과거 파일 + (db 제공 시) 누적 opening_results 병합."""
     from app.services.autocalibrate.dataset import load_records
-    return load_records()
+    return load_records(db=db)
 
 
 def _active_params():
@@ -40,10 +43,10 @@ def _filter(records, year_from, year_to, bid_method):
 
 
 @router.get("/simulation/datasets")
-def datasets(_admin=Depends(require_admin)):
-    """백테스트 가능한 데이터셋 현황 (연도별 건수)."""
+def datasets(db: Session = Depends(get_db), _admin=Depends(require_admin)):
+    """백테스트 가능한 데이터셋 현황 (정적 + 누적 DB, 연도별 건수)."""
     try:
-        records = _load_records()
+        records = _load_records(db)
     except Exception as e:
         return {"available": False, "error": str(e), "by_year": {}, "total": 0, "methods": []}
     by_year, methods = {}, set()
@@ -60,12 +63,12 @@ def datasets(_admin=Depends(require_admin)):
 
 
 @router.post("/simulation/backtest")
-def run_backtest(body: dict = Body(default={}), _admin=Depends(require_admin)):
+def run_backtest(body: dict = Body(default={}), db: Session = Depends(get_db), _admin=Depends(require_admin)):
     """현재(또는 override) 전략으로 백테스트 → 종합 + 가격대별 지표."""
     from app.services.autocalibrate.optimizer import evaluate_params
 
     try:
-        records = _load_records()
+        records = _load_records(db)
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"백테스트 데이터를 불러올 수 없어요: {e}")
     records = _filter(records, body.get("year_from"), body.get("year_to"), body.get("bid_method"))
@@ -88,7 +91,7 @@ def run_backtest(body: dict = Body(default={}), _admin=Depends(require_admin)):
 
 
 @router.post("/simulation/whatif")
-def whatif(body: dict = Body(default={}), _admin=Depends(require_admin)):
+def whatif(body: dict = Body(default={}), db: Session = Depends(get_db), _admin=Depends(require_admin)):
     """여유분(margin) 전역 가산값을 범위로 변화시키며 지표 변화 관찰.
 
     body: { year_from?, year_to?, bid_method?, margin_deltas?: [..%p..] }
@@ -97,7 +100,7 @@ def whatif(body: dict = Body(default={}), _admin=Depends(require_admin)):
     from app.services.autocalibrate.optimizer import evaluate_params
 
     try:
-        records = _filter(_load_records(), body.get("year_from"), body.get("year_to"), body.get("bid_method"))
+        records = _filter(_load_records(db), body.get("year_from"), body.get("year_to"), body.get("bid_method"))
         base = _active_params()
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"데이터/전략 로드 실패: {e}")

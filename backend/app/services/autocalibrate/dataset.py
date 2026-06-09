@@ -70,13 +70,56 @@ class BidRecord:
         return (self.bid_method, self.bracket)
 
 
+def _load_db_records(db, existing_bid_nos: set) -> list[BidRecord]:
+    """누적 opening_results 테이블(매일 크롤 적재)에서 BidRecord 생성.
+
+    정적 파일과 중복(bid_no)은 제외. OpeningResult 는 공사 개찰결과라
+    lower_limit_rate=87.745(공사) 기본. estimated_price 는 reserved_price 로 대체.
+    """
+    out: list[BidRecord] = []
+    try:
+        from app.db import models
+        rows = (
+            db.query(models.OpeningResult)
+            .filter(
+                models.OpeningResult.basic_price > 0,
+                models.OpeningResult.winner_price > 0,
+                models.OpeningResult.reserved_price > 0,
+            )
+            .all()
+        )
+    except Exception:
+        return out
+    for r in rows:
+        if not r.bid_no or r.bid_no in existing_bid_nos:
+            continue
+        existing_bid_nos.add(r.bid_no)
+        year = r.open_date.year if getattr(r, "open_date", None) else 0
+        out.append(BidRecord(
+            bid_no=r.bid_no,
+            title="",
+            org=r.organization or "",
+            bid_method=r.bid_method or "",
+            basic_price=float(r.basic_price),
+            estimated_price=float(r.reserved_price or 0),
+            reserved_price=float(r.reserved_price),
+            winner_price=float(r.winner_price),
+            winner_rate=float(r.winner_rate or 0),
+            lower_limit_rate=87.745,
+            year=year,
+        ))
+    return out
+
+
 def load_records(
     year_range: tuple[int, int] = (2021, 2027),
     data_dir: Path = _DATA_DIR,
+    db=None,
 ) -> list[BidRecord]:
-    """opening_results_{year}.json 들을 로드·정제.
+    """opening_results_{year}.json 들을 로드·정제 (+ db 제공 시 누적 DB 병합).
 
-    유효 조건: basic_price > 0 AND winner_price > 0 AND reserved_price > 0
+    유효 조건: basic_price > 0 AND winner_price > 0 AND reserved_price > 0.
+    db 전달 시 매일 쌓이는 opening_results 테이블도 합쳐 최신 시장 반영.
     """
     records: list[BidRecord] = []
     for year in range(year_range[0], year_range[1]):
@@ -114,6 +157,9 @@ def load_records(
                     year=y,
                 )
             )
+    # 누적 DB 병합 (db 제공 시) — 매일 크롤된 최신 개찰결과 포함
+    if db is not None:
+        records.extend(_load_db_records(db, {r.bid_no for r in records}))
     return records
 
 

@@ -24,8 +24,14 @@ def recalibrate_strategy() -> str:
     """
     # 지연 import — Celery worker 부팅 시 무거운 의존성 회피
     from app.services.autocalibrate.loop import run_calibration_cycle
+    from app.db.session import SessionLocal
 
-    report = run_calibration_cycle(trigger="scheduled")
+    # 누적 opening_results(매일 크롤) 도 학습 데이터에 병합 → 최신 시장 반영
+    db = SessionLocal()
+    try:
+        report = run_calibration_cycle(trigger="scheduled", db=db)
+    finally:
+        db.close()
     summary = report.summary()
     logger.info(f"[autocalibrate] {summary}")
 

@@ -60,6 +60,7 @@ def should_recalibrate(records: list) -> bool:
 def run_calibration_cycle(
     trigger: str = "manual",
     dry_run: bool = False,
+    db=None,
     **objective_kwargs,
 ) -> CycleReport:
     """자가보정 사이클 1회 실행.
@@ -67,6 +68,7 @@ def run_calibration_cycle(
     Args:
         trigger: "manual" | "scheduled" | "new_data"
         dry_run: True 면 후보 생성·검증만 하고 저장소를 변경하지 않음
+        db: 제공 시 누적 opening_results 도 학습 데이터에 병합 (최신 시장 반영)
         objective_kwargs: lam, gamma, tau, eta — 목적함수 하이퍼파라미터 오버라이드
     """
     store = get_default_store()
@@ -75,8 +77,8 @@ def run_calibration_cycle(
 
     store.ensure_bootstrap(BID_STRATEGY)
 
-    # ── 1. 데이터 적재 ──────────────────────────────────────
-    records = ds.load_records()
+    # ── 1. 데이터 적재 (정적 + 누적 DB) ─────────────────────
+    records = ds.load_records(db=db)
     if not records:
         return CycleReport(skipped=True, reason="데이터 없음")
 

@@ -147,3 +147,24 @@ def test_bracket_boundaries():
     assert ds.get_bracket(5e8) == "large"
     assert ds.get_bracket(1e9) == "xlarge"
     assert ds.get_bracket(5e9) == "xxlarge"
+
+
+def test_load_records_merges_db(db_session):
+    """누적 opening_results 가 load_records(db=) 에 병합되는지."""
+    from datetime import datetime
+    from app.db import models
+    from app.services.autocalibrate.dataset import load_records
+
+    db_session.add(models.OpeningResult(
+        bid_no="OPRTEST-1", organization="A기관", bid_method="적격심사제",
+        open_date=datetime(2026, 6, 1), basic_price=1e8, reserved_price=1.005e8,
+        winner_price=0.88e8, winner_rate=88.0, participants_count=5,
+    ))
+    db_session.commit()
+
+    static_only = load_records()
+    merged = load_records(db=db_session)
+    assert len(merged) == len(static_only) + 1
+    assert any(r.bid_no == "OPRTEST-1" for r in merged)
+    # 무효 데이터(가격 0)는 제외
+    assert all(r.basic_price > 0 and r.winner_price > 0 for r in merged)
