@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>디자인 시스템 — BidEasy</title>
+  <link rel="icon" href="/brand/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>
+    html,body{margin:0;}
+    .wrap{max-width:960px;margin:0 auto;padding:48px 28px 80px;}
+    .sec{margin-top:52px;}
+    .sec-h{font-family:var(--font-mono);font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+    .sec-t{font-size:22px;font-weight:800;letter-spacing:-0.5px;margin:0 0 20px;}
+    .grid-sw{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;}
+    .sw{border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+    .sw .chip-c{height:64px;}
+    .sw .meta{padding:10px 12px;}
+    .sw .nm{font-size:12.5px;font-weight:700;}
+    .sw .hex{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);margin-top:2px;}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+    .codeln{font-family:var(--font-mono);font-size:12px;color:var(--muted);}
+    table{width:100%;border-collapse:collapse;}
+    th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);font-size:13.5px;}
+    th{font-family:var(--font-mono);font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);font-weight:500;}
+    td .num{font-family:var(--font-mono);}
+  </style>
+  <script src="/assets/app.js"></script>
+</head>
+<body class="bd" data-theme="light">
+  <div class="wrap">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <img src="/brand/bideasy-mark.svg" width="32" height="32" alt="">
+      <span style="font-size:14px;font-weight:700;color:var(--muted);">디자인 시스템 · Direction A 정밀 계기</span>
+      <button id="theme" class="btn btn-ghost btn-sm" style="margin-left:auto;" aria-label="테마 전환">테마</button>
+    </div>
+    <h1 style="font-size:36px;font-weight:800;letter-spacing:-1.2px;margin:18px 0 8px;">토큰 &amp; 컴포넌트 레퍼런스</h1>
+    <p style="font-size:15.5px;color:var(--muted);line-height:1.6;max-width:600px;">모든 화면이 <code class="codeln" style="color:var(--accent);">assets/theme.css</code>의 토큰·클래스로 구성됩니다. 아래 클래스명을 그대로 쓰면 동일한 UI가 나옵니다. API 연동은 <b style="color:var(--ink);">INTEGRATION.md</b> 참고.</p>
+
+    <!-- COLORS -->
+    <div class="sec">
+      <div class="sec-h">Color Tokens</div><h2 class="sec-t">컬러</h2>
+      <div class="grid-sw" id="colors"></div>
+      <p style="font-size:12.5px;color:var(--faint);margin-top:12px;">다크 모드는 동일 토큰명에 자동 매핑 — <code class="codeln">[data-theme="dark"]</code>. 인디고는 다크에서 #6E8BFF로 보정됩니다.</p>
+    </div>
+
+    <!-- TYPE -->
+    <div class="sec">
+      <div class="sec-h">Typography</div><h2 class="sec-t">타이포그래피</h2>
+      <div class="card" style="padding:8px 24px;" id="type"></div>
+      <p style="font-size:12.5px;color:var(--faint);margin-top:12px;">본문 Pretendard · 숫자 IBM Plex Mono(<code class="codeln">.num</code>, tabular). 마이크로 라벨 <code class="codeln">.micro</code>, 아이브로 <code class="codeln">.eyebrow</code>.</p>
+    </div>
+
+    <!-- COMPONENTS -->
+    <div class="sec">
+      <div class="sec-h">Components</div><h2 class="sec-t">컴포넌트</h2>
+
+      <div style="margin-top:8px;"><div class="codeln" style="margin-bottom:10px;">.btn · .btn-primary / .btn-ghost / .btn-quiet · .btn-sm / .btn-lg</div>
+        <div class="row"><button class="btn btn-primary">Primary</button><button class="btn btn-ghost">Ghost</button><button class="btn btn-quiet">Quiet</button><button class="btn btn-primary btn-sm">Small</button><button class="btn btn-primary btn-lg">Large</button></div>
+      </div>
+
+      <div style="margin-top:24px;"><div class="codeln" style="margin-bottom:10px;">.chip · .chip-accent / -safe / -warn / -danger / -neutral</div>
+        <div class="row"><span class="chip chip-accent">accent</span><span class="chip chip-safe">safe</span><span class="chip chip-warn">warn</span><span class="chip chip-danger">danger</span><span class="chip chip-neutral">neutral</span></div>
+      </div>
+
+      <div style="margin-top:24px;display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="cols-2">
+        <div><div class="codeln" style="margin-bottom:10px;">.card + .drow</div>
+          <div class="card" style="padding:6px 18px;"><div class="drow"><span class="k">낙찰하한선</span><span class="v">438,725,000</span></div><div class="drow"><span class="k">하한 대비 여유</span><span class="v" style="color:var(--safe);font-weight:700;">+2.85 %p</span></div></div>
+        </div>
+        <div><div class="codeln" style="margin-bottom:10px;">.input · .field-label</div>
+          <label class="field-label">기초금액 (원)</label><input class="input" value="500,000,000">
+        </div>
+      </div>
+
+      <div style="margin-top:24px;"><div class="codeln" style="margin-bottom:10px;">.seg (segmented control)</div>
+        <div class="seg" style="max-width:300px;"><button class="active">공사</button><button>용역</button><button>물품</button></div>
+      </div>
+
+      <div style="margin-top:24px;"><div class="codeln" style="margin-bottom:10px;">SafetyGauge (안전선 게이지) — 핵심 패턴</div>
+        <div class="card" style="padding:20px;max-width:340px;">
+          <div style="position:relative;height:8px;border-radius:4px;overflow:hidden;background:linear-gradient(90deg,var(--danger-soft) 0 37.5%,var(--safe-soft) 37.5% 100%);"></div>
+          <div style="position:relative;height:0;"><div style="position:absolute;left:37.5%;top:-14px;width:2px;height:16px;background:var(--ink);border-radius:1px;"></div><div style="position:absolute;left:63%;top:-13px;transform:translateX(-50%);width:14px;height:14px;border-radius:50%;background:var(--surface);border:3px solid var(--safe);box-shadow:var(--shadow-sm);"></div></div>
+          <div style="display:flex;justify-content:space-between;margin-top:9px;"><span class="micro" style="font-size:9.5px;">낙찰하한선</span><span class="micro" style="font-size:9.5px;color:var(--safe);">내 투찰가</span></div>
+        </div>
+      </div>
+
+      <div style="margin-top:24px;"><div class="codeln" style="margin-bottom:10px;">Icons — BD.icon('name', size)</div>
+        <div class="row" id="icons" style="gap:18px;color:var(--ink-2);"></div>
+      </div>
+    </div>
+
+    <!-- SPACING / RADIUS -->
+    <div class="sec">
+      <div class="sec-h">Radius &amp; Shadow</div><h2 class="sec-t">반경 · 그림자</h2>
+      <div class="row">
+        <div style="text-align:center;"><div style="width:72px;height:48px;border-radius:11px;background:var(--surface);border:1px solid var(--line-2);"></div><div class="codeln" style="margin-top:8px;">11px · btn</div></div>
+        <div style="text-align:center;"><div style="width:72px;height:48px;border-radius:16px;background:var(--surface);border:1px solid var(--line-2);"></div><div class="codeln" style="margin-top:8px;">16px · card</div></div>
+        <div style="text-align:center;"><div style="width:72px;height:48px;border-radius:12px;background:var(--surface);box-shadow:var(--shadow-sm);"></div><div class="codeln" style="margin-top:8px;">shadow-sm</div></div>
+        <div style="text-align:center;"><div style="width:72px;height:48px;border-radius:12px;background:var(--surface);box-shadow:var(--shadow-md);"></div><div class="codeln" style="margin-top:8px;">shadow-md</div></div>
+        <div style="text-align:center;"><div style="width:72px;height:48px;border-radius:12px;background:var(--surface);box-shadow:var(--shadow-lg);"></div><div class="codeln" style="margin-top:8px;">shadow-lg</div></div>
+      </div>
+    </div>
+
+    <!-- SCREEN MAP -->
+    <div class="sec">
+      <div class="sec-h">Screen Map</div><h2 class="sec-t">화면 맵</h2>
+      <div class="card" style="overflow:hidden;"><table id="screens"></table></div>
+    </div>
+
+    <p style="margin-top:48px;font-size:13px;color:var(--faint);line-height:1.7;">핸드오프 파일 · <span class="num codeln">assets/theme.css</span>(토큰) · <span class="num codeln">assets/app.js</span>(공유 동작) · <span class="num codeln">brand/</span>(로고) · <span class="num codeln">INTEGRATION.md</span>(API 연동) · 본 페이지(컴포넌트 레퍼런스).</p>
+  </div>
+
+  <script>
+  (function () {
+    var BD = window.BD;
+    document.getElementById('theme').addEventListener('click', function () { BD.setTheme(BD.getTheme() === 'dark' ? 'light' : 'dark'); });
+
+    var COLORS = [['--accent', '#2B50E0', 'Primary'], ['--ink', '#11151C', '본문'], ['--ink-2', '#2A313C', '본문 강조'], ['--muted', '#5A6472', '보조'], ['--faint', '#6B7280', '미세'], ['--line', '#E6E9EE', '경계'], ['--surface', '#FFFFFF', '카드'], ['--canvas', '#F6F8FB', '배경'], ['--sunken', '#F2F5F9', '인셋'], ['--safe', '#0E9F6E', '안전'], ['--warn', '#B7791F', '주의'], ['--danger', '#E5484D', '위험']];
+    document.getElementById('colors').innerHTML = COLORS.map(function (c) {
+      var dark = c[0] === '--surface' || c[0] === '--canvas';
+      return '<div class="sw"><div class="chip-c" style="background:var(' + c[0] + ');' + (dark ? 'border-bottom:1px solid var(--line);' : '') + '"></div><div class="meta"><div class="nm">' + c[2] + '</div><div class="hex">' + c[0] + ' · ' + c[1] + '</div></div></div>';
+    }).join('');
+
+    var TYPE = [['Display', 'h-hero · clamp→52px / 800', '1원 단위까지, 안전하게', 'font-size:34px;font-weight:800;letter-spacing:-1px;'], ['Section', 'h-sec · clamp→33px / 800', '쓸수록 똑똑해지는', 'font-size:26px;font-weight:800;letter-spacing:-0.6px;'], ['Heading', '18px / 800', '투찰가 계산기', 'font-size:18px;font-weight:800;'], ['Body', '15px / 500', '낙찰가는 찍지 않아요 — 적자 수주를 막는 정밀 계기입니다.', 'font-size:15px;color:var(--ink-2);'], ['Number', '.num · IBM Plex Mono / tabular', '451,230,000', 'font-family:var(--font-mono);font-size:24px;font-weight:600;'], ['Micro', '.micro · mono / uppercase', '예상 투찰가', '']];
+    document.getElementById('type').innerHTML = TYPE.map(function (t, i) {
+      var sample = t[0] === 'Micro' ? '<span class="micro">' + t[2] + '</span>' : '<div style="' + t[3] + '">' + t[2] + '</div>';
+      return '<div style="display:flex;align-items:center;gap:20px;padding:16px 0;' + (i ? 'border-top:1px solid var(--line);' : '') + '"><div style="width:160px;flex-shrink:0;"><div style="font-size:13px;font-weight:700;">' + t[0] + '</div><div class="codeln" style="margin-top:2px;">' + t[1] + '</div></div><div style="flex:1;min-width:0;">' + sample + '</div></div>';
+    }).join('');
+
+    var ICONS = ['search', 'filter', 'check', 'alert', 'bell', 'doc', 'bolt', 'shield', 'chart', 'user', 'clock', 'copy', 'star', 'chevR', 'chevD', 'arrowR', 'sun', 'moon'];
+    document.getElementById('icons').innerHTML = ICONS.map(function (n) { return '<span title="' + n + '" style="display:flex;flex-direction:column;align-items:center;gap:5px;"><span style="display:flex;">' + BD.icon(n, 20) + '</span><span class="codeln" style="font-size:10px;">' + n + '</span></span>'; }).join('');
+
+    var SCREENS = [['index.html', '랜딩 (공개·SEO)', '히어로·자가보정·요금제·CTA'], ['search.html', '공고 검색·피드', '검색·필터·공고 카드·즐겨찾기'], ['bid.html', '공고 상세 + AI', '자격 매칭·AI 분석 패널'], ['calculator.html', '투찰가 계산기', '투찰률 슬라이더·게이지·복사'], ['dashboard.html', '대시보드', 'KPI·마감 추적·자가보정'], ['pricing.html', '요금제 (공개·SEO)', '월/연 토글·비교표'], ['account.html', '마이페이지', '회사 정보·알림·구독'], ['login · signup', '인증', '소셜·약관·Pro 체험'], ['checkout.html', 'Pro 결제', '주문 요약·PG·처리'], ['guide · terms', '공개 문서', '가이드·약관']];
+    document.getElementById('screens').innerHTML = '<tr><th>파일</th><th>화면</th><th>핵심 요소</th></tr>' + SCREENS.map(function (s) { return '<tr><td><span class="num" style="color:var(--accent);font-size:12.5px;">' + s[0] + '</span></td><td style="font-weight:600;">' + s[1] + '</td><td style="color:var(--muted);">' + s[2] + '</td></tr>'; }).join('');
+  })();
+  </script>
+</body>
+</html>
