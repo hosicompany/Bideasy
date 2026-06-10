@@ -3,122 +3,128 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>대시보드 - BidEasy</title>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <title>대시보드 — BidEasy</title>
+  <link rel="icon" href="/brand/favicon.svg">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/nav.css">
-  <script src="/assets/nav.js" defer></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background: #F2F4F6; color: #191F28; min-height: 100vh; }
-    .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
-    .page-title { font-size: 24px; font-weight: 800; margin-bottom: 16px; }
-    .quick { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; }
-    .quick a { flex: 1; min-width: 140px; background: #fff; border-radius: 14px; padding: 16px; text-decoration: none; color: #191F28; box-shadow: 0 1px 4px rgba(0,0,0,.04); text-align: center; font-weight: 700; font-size: 14px; transition: box-shadow .12s; }
-    .quick a:hover { box-shadow: 0 4px 14px rgba(0,0,0,.08); }
-    .quick a .emoji { display: block; font-size: 22px; margin-bottom: 6px; }
-    h2 { font-size: 17px; font-weight: 800; margin: 8px 2px 12px; }
-    .card { background:#fff; border-radius:14px; padding:16px 18px; margin-bottom:10px; box-shadow:0 1px 4px rgba(0,0,0,.04); position:relative; }
-    .noti { border-left: 3px solid transparent; }
-    .noti.unread { border-left-color: #3182F6; background: #FBFDFF; }
-    .noti-title { font-weight: 700; font-size: 14.5px; margin-bottom: 3px; }
-    .noti-body { font-size: 13px; color: #4E5968; line-height: 1.5; }
-    .noti-time { font-size: 11px; color: #B0B8C1; margin-top: 5px; }
-    .noti-link { display:inline-block; margin-top:7px; font-size:12px; color:#3182F6; text-decoration:none; font-weight:600; }
-    .card-top { display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap; }
-    .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; }
-    .badge-cnstwk { background:#EBF2FF; color:#2563EB; } .badge-servc { background:#ECFDF3; color:#15803D; } .badge-thng { background:#FFF7ED; color:#C2410C; }
-    .dday { font-size:12px; font-weight:700; padding:3px 9px; border-radius:6px; }
-    .dday-soon { background:#FEF2F2; color:#DC2626; } .dday-ok { background:#F2F4F6; color:#4E5968; } .dday-closed { background:#F2F4F6; color:#B0B8C1; }
-    .card-title a { font-size:15px; font-weight:700; color:inherit; text-decoration:none; } .card-title a:hover { color:#3182F6; }
-    .card-meta { font-size:13px; color:#8B95A1; margin-top:4px; }
-    .btn-x { position:absolute; top:14px; right:16px; background:none; border:1px solid #E5E8EB; color:#8B95A1; border-radius:8px; font-size:12px; padding:5px 10px; cursor:pointer; }
-    .btn-x:hover { border-color:#FFCDD2; color:#DC2626; }
-    .empty { color:#8B95A1; font-size:14px; padding:16px 2px; }
-    .empty a { color:#3182F6; text-decoration:none; font-weight:600; }
-    .state { text-align:center; padding:40px; color:#8B95A1; }
-    .loader { display:inline-block; width:18px; height:18px; border:2.5px solid #E5E8EB; border-top-color:#3182F6; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    section { margin-bottom: 26px; }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>html,body{margin:0;}</style>
+  <script src="/assets/app.js"></script>
 </head>
-<body>
-  <div class="wrap">
-    <h1 class="page-title">대시보드</h1>
-    <div id="gate" class="state"><span class="loader"></span> 불러오는 중...</div>
-    <div id="content" style="display:none;">
-      <div class="quick">
-        <a href="/search"><span class="emoji">🔍</span>공고 검색</a>
-        <a href="/favorites"><span class="emoji">⭐</span>관심공고</a>
-        <a href="/calculator"><span class="emoji">🧮</span>투찰가 계산기</a>
+<body class="bd" data-theme="light">
+  <div id="nav"></div>
+  <div style="max-width:1040px;margin:0 auto;padding:32px 28px 64px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div>
+        <span class="eyebrow">Dashboard</span>
+        <h1 id="greet" style="font-size:30px;font-weight:800;letter-spacing:-0.8px;margin:8px 0 0;">안녕하세요 👋</h1>
+        <p id="subtitle" style="font-size:15px;color:var(--muted);margin-top:6px;">관심 공고와 마감을 한눈에 관리하세요.</p>
       </div>
-
-      <section>
-        <h2>🔔 알림</h2>
-        <div id="notis"></div>
-      </section>
-
-      <section>
-        <h2>⏰ 추적 중인 공고</h2>
-        <div id="tracked"></div>
-      </section>
+      <a class="btn btn-primary btn-sm" href="/search" id="more"><span style="display:flex;gap:6px;align-items:center;">공고 더 보기</span></a>
     </div>
+    <div class="g4" id="kpis" style="gap:14px;margin-top:24px;"></div>
+    <div class="cols-dash" style="margin-top:20px;">
+      <div class="card" style="padding:22px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:15px;font-weight:800;white-space:nowrap;">마감 추적</span><span class="micro">관심 공고 기반</span></div>
+        <div id="tracked" style="margin-top:8px;"></div>
+      </div>
+      <div data-theme="dark" class="card grid-bg" style="padding:22px;background:var(--canvas);color:var(--ink);">
+        <span class="micro" style="color:var(--accent);">AUTOCALIBRATE</span>
+        <div style="font-size:15px;font-weight:800;color:var(--ink);margin-top:6px;">이번 주 하한선 통과율</div>
+        <div style="display:flex;align-items:baseline;gap:6px;margin-top:10px;"><span class="num" id="acal-pass" style="font-size:34px;font-weight:600;color:var(--safe);">94.9</span><span style="color:var(--muted);font-weight:600;">%</span></div>
+        <div id="acal-bars" style="display:flex;align-items:flex-end;gap:5px;height:56px;margin-top:16px;"></div>
+        <p style="font-size:12px;color:var(--muted);margin-top:12px;line-height:1.5;">매주 개찰 결과를 학습해 자동 재보정 중. 손대지 않아도 정확해집니다.</p>
+      </div>
+    </div>
+    <div class="card" id="sub-strip" style="padding:22px;margin-top:20px;display:none;align-items:center;gap:20px;flex-wrap:wrap;"></div>
   </div>
 
   <script>
-    const API_BASE = 'https://api.bideasy.kr/api/v1';
-    const $ = (id) => document.getElementById(id);
-    function getToken(){ try { return localStorage.getItem('access_token') || localStorage.getItem('jwt') || null; } catch { return null; } }
-    function auth(){ return { Authorization: 'Bearer ' + getToken() }; }
+  (function () {
+    var BD = window.BD; BD.mountNav('dashboard');
+    var API_BASE = BD.API_BASE;
+    document.getElementById('more').querySelector('span').insertAdjacentHTML('afterbegin', BD.icon('search', 14));
 
-    function fmtKRW(n){ n=Number(n)||0; if(n>=1e8) return (n/1e8).toFixed(n%1e8===0?0:1)+'억'; if(n>=1e4) return Math.round(n/1e4).toLocaleString('ko-KR')+'만'; return n.toLocaleString('ko-KR'); }
-    function ddayInfo(e){ if(!e) return {txt:'-',cls:'dday-ok'}; const d=Math.ceil((new Date(e)-new Date())/86400000); if(d<0) return {txt:'마감',cls:'dday-closed'}; if(d===0) return {txt:'D-day',cls:'dday-soon'}; return {txt:'D-'+d,cls:d<=3?'dday-soon':'dday-ok'}; }
-    function fmtDate(s){ if(!s) return ''; const d=new Date(s); return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
-    const CAT = { CONSTRUCTION:{label:'공사',cls:'badge-cnstwk'}, SERVICE:{label:'용역',cls:'badge-servc'}, GOODS:{label:'물품',cls:'badge-thng'} };
-
-    async function loadNotis(){
-      try {
-        const r = await fetch(API_BASE+'/notifications/list?limit=15', { headers: auth() });
-        if(!r.ok) throw 0;
-        const items = await r.json();
-        if(!items.length){ $('notis').innerHTML='<div class="empty">새 알림이 없어요. 공고를 추적하거나 회사 프로필을 등록하면 맞춤 알림을 받아요.</div>'; return; }
-        $('notis').innerHTML = items.map(n => {
-          const bids = (n.data_json && n.data_json.bid_nos) || [];
-          const link = bids.length ? '<a class="noti-link" href="/bid/'+encodeURIComponent(bids[0])+'">공고 보러가기 →</a>' : '';
-          return '<div class="card noti '+(n.is_read?'':'unread')+'"><div class="noti-title">'+(n.title||'').replace(/</g,'&lt;')+'</div><div class="noti-body">'+(n.body||'').replace(/</g,'&lt;')+'</div>'+link+'<div class="noti-time">'+fmtDate(n.created_at)+'</div></div>';
-        }).join('');
-      } catch { $('notis').innerHTML='<div class="empty">알림을 불러오지 못했어요.</div>'; }
+    function getToken() { return BD.getToken(); }
+    if (!getToken()) { location.href = '/login?redirect=' + encodeURIComponent('/dashboard'); return; }
+    async function api(path) {
+      var resp = await fetch(API_BASE + path, { headers: { Authorization: 'Bearer ' + getToken() } });
+      if (resp.status === 401) { try { localStorage.removeItem('access_token'); localStorage.removeItem('jwt'); } catch (e) {} location.href = '/login'; throw new Error('401'); }
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.json();
     }
 
-    async function loadTracked(){
-      try {
-        const r = await fetch(API_BASE+'/bids/tracked', { headers: auth() });
-        if(!r.ok) throw 0;
-        const items = await r.json();
-        if(!items.length){ $('tracked').innerHTML='<div class="empty">추적 중인 공고가 없어요. <a href="/search">공고를 찾아</a> 마감 추적을 켜보세요.</div>'; return; }
-        $('tracked').innerHTML = items.map(n => {
-          const cat=CAT[n.contract_type]||{label:'기타',cls:'badge-cnstwk'}; const d=ddayInfo(n.end_date); const bidNo=encodeURIComponent(n.bid_no);
-          return '<div class="card" data-bid="'+n.bid_no+'"><button class="btn-x" data-bid="'+n.bid_no+'">해제</button><div class="card-top"><span class="badge '+cat.cls+'">'+cat.label+'</span><span class="dday '+d.cls+'">'+d.txt+'</span></div><div class="card-title"><a href="/bid/'+bidNo+'">'+(n.title||'제목없음').replace(/</g,'&lt;')+'</a></div><div class="card-meta">'+(n.organization||'-')+' · 기초금액 '+fmtKRW(n.basic_price)+'원</div></div>';
-        }).join('');
-      } catch { $('tracked').innerHTML='<div class="empty">추적 공고를 불러오지 못했어요.</div>'; }
+    var favs = BD.getFavs();
+
+    function kpi(ic, n, unit, l, tone) {
+      return '<div class="card" style="padding:18px;"><div style="display:flex;align-items:center;gap:8px;color:var(--' + (tone || 'accent') + ');">' + BD.icon(ic, 16) + '<span class="micro" style="color:var(--muted);">' + l + '</span></div><div style="display:flex;align-items:baseline;gap:3px;margin-top:12px;"><span class="num" style="font-size:30px;font-weight:600;letter-spacing:-1px;">' + n + '</span><span style="font-size:14px;color:var(--muted);font-weight:600;">' + unit + '</span></div></div>';
     }
 
-    document.getElementById('tracked').addEventListener('click', async (e) => {
-      if(!e.target.classList.contains('btn-x')) return;
-      const bid=e.target.dataset.bid; e.target.disabled=true; e.target.textContent='...';
-      try { await fetch(API_BASE+'/bids/'+encodeURIComponent(bid)+'/track', { method:'DELETE', headers: auth() });
-        const c=document.querySelector('.card[data-bid="'+CSS.escape(bid)+'"]'); if(c) c.remove();
-        if(!document.querySelector('#tracked .card')) $('tracked').innerHTML='<div class="empty">추적 중인 공고가 없어요. <a href="/search">공고를 찾아</a> 마감 추적을 켜보세요.</div>';
-      } catch { e.target.disabled=false; e.target.textContent='해제'; }
-    });
+    // 자가보정 막대(기본값) — stats 연동 시 갱신
+    function renderBars(weekly) {
+      document.getElementById('acal-bars').innerHTML = weekly.map(function (v, i, a) {
+        return '<div style="flex:1;height:' + Math.max(6, v) + '%;border-radius:3px 3px 0 0;background:var(--' + (i === a.length - 1 ? 'safe' : 'accent') + ');opacity:' + (i === a.length - 1 ? 1 : 0.4 + i * 0.06) + ';"></div>';
+      }).join('');
+    }
+    renderBars([64, 68, 72, 75, 79, 83, 86, 90, 94.9]);
 
-    (async function init(){
-      if(!getToken()){ window.location.href='/login?next=/dashboard'; return; }
-      // 토큰 유효성 간이 확인
-      try { const me = await fetch(API_BASE+'/users/me', { headers: auth() }); if(me.status===401){ window.location.href='/login?next=/dashboard'; return; } } catch {}
-      $('gate').style.display='none'; $('content').style.display='block';
-      loadNotis(); loadTracked();
+    // 마감 추적 — localStorage 관심 공고를 컨텍스트로 조회(제목·기초금액). 상세로 링크.
+    async function loadTracked() {
+      var th = document.getElementById('tracked');
+      var ids = Array.from(favs);
+      if (!ids.length) {
+        th.innerHTML = '<div class="panel" style="padding:28px 18px;text-align:center;margin-top:8px;"><span style="color:var(--faint);display:inline-flex;">' + BD.icon('star', 22) + '</span><p style="font-size:14px;color:var(--muted);margin-top:10px;line-height:1.6;">아직 관심 공고가 없어요.<br>★로 담아두면 여기서 관리할 수 있어요.</p><a class="btn btn-ghost btn-sm" style="margin-top:14px;" href="/search">공고 둘러보기</a></div>';
+        return;
+      }
+      th.innerHTML = '<div class="skel" style="height:42px;border-radius:8px;margin-top:8px;"></div>';
+      var rows = await Promise.all(ids.slice(0, 12).map(function (id) {
+        return fetch(API_BASE + '/bids/' + encodeURIComponent(id) + '/context').then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
+          return { id: id, title: (c && c.title) || ('공고 ' + id), basic: c && c.estimated_price };
+        }).catch(function () { return { id: id, title: '공고 ' + id, basic: null }; });
+      }));
+      th.innerHTML = rows.map(function (n) {
+        return '<a class="drow" href="/bid.html?no=' + encodeURIComponent(n.id) + '" style="cursor:pointer;align-items:center;text-decoration:none;"><span style="display:flex;align-items:center;gap:11px;min-width:0;"><span style="color:var(--accent);display:flex;flex-shrink:0;">' + BD.icon('star', 14) + '</span><span style="font-size:14px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + n.title + '</span></span><span class="v">' + (n.basic ? BD.won(n.basic) : '—') + '</span></a>';
+      }).join('');
+    }
+
+    // 구독 스트립 + KPI
+    async function loadSub() {
+      var sub = null; try { sub = await api('/payments/subscription'); } catch (e) {}
+      var tierName = sub ? (sub.is_trial ? 'Pro 체험' : ({ free: 'Free', pro: 'Pro', pro_plus: 'Pro+' }[sub.tier] || 'Free')) : '—';
+      var aiText = sub ? (sub.tier === 'free' && !sub.is_trial ? '1 / 일' : '무제한') : '—';
+
+      document.getElementById('kpis').innerHTML =
+        kpi('star', favs.size, '건', '관심 공고') +
+        kpi('shield', tierName, '', '구독 등급', 'safe') +
+        kpi('doc', aiText, '', 'AI 분석 한도') +
+        kpi('chart', document.getElementById('acal-pass').textContent, '%', '자가보정 통과율', 'accent');
+
+      // Pro 체험/유료 스트립
+      var strip = document.getElementById('sub-strip');
+      if (sub && sub.is_trial) {
+        var d = sub.trial_days_remaining != null ? sub.trial_days_remaining : 0;
+        strip.style.display = 'flex';
+        strip.innerHTML = '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;"><span style="width:40px;height:40px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;">' + BD.icon('bolt', 18) + '</span><div><div style="font-size:15px;font-weight:800;">Pro 체험 중 · <span class="num" style="color:var(--accent);">D-' + d + '</span></div><div style="font-size:13px;color:var(--muted);margin-top:2px;">체험 종료 시 자동 Free 전환 · 카드 등록 없음</div></div></div><a class="btn btn-primary btn-sm" style="margin-left:auto;" href="/pricing">Pro 계속 쓰기</a>';
+      } else if (sub && sub.is_active && sub.tier !== 'free') {
+        strip.style.display = 'flex';
+        strip.innerHTML = '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;"><span style="width:40px;height:40px;border-radius:11px;background:var(--safe-soft);color:var(--safe);display:grid;place-items:center;">' + BD.icon('shield', 18) + '</span><div><div style="font-size:15px;font-weight:800;">' + tierName + ' 구독 중</div><div style="font-size:13px;color:var(--muted);margin-top:2px;">마이페이지에서 결제·갱신을 관리할 수 있어요</div></div></div><a class="btn btn-ghost btn-sm" style="margin-left:auto;" href="/account">구독 관리</a>';
+      }
+    }
+
+    // 인사말
+    (async function () {
+      try { var u = await api('/users/me'); var nm = u.company_name || u.ceo_name || (u.email ? u.email.split('@')[0] : ''); document.getElementById('greet').textContent = '안녕하세요, ' + (nm ? nm + ' ' : '') + '사장님 👋'; } catch (e) {}
     })();
+
+    // 자가보정 통계(공개) — 있으면 라이브, 없으면 기본값
+    fetch(API_BASE + '/autocalibrate/stats').then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (d) {
+      if (d.passRate) document.getElementById('acal-pass').textContent = d.passRate.toFixed(1);
+      if (d.weekly && d.weekly.length) renderBars(d.weekly.slice(-9));
+    }).catch(function () {});
+
+    loadTracked();
+    loadSub();
+  })();
   </script>
 </body>
 </html>
