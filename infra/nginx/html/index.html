@@ -18,6 +18,23 @@
     .ic { width: 15px; height: 15px; flex-shrink: 0; }
     a { color: inherit; }
   </style>
+  <script>
+    // 소셜 로그인(OAuth) 콜백 처리 — 백엔드가 /?token= (성공) 또는 /?error= (실패) 로 리다이렉트.
+    (function () {
+      try {
+        var p = new URLSearchParams(location.search);
+        var token = p.get('token');
+        if (token) {
+          try { localStorage.setItem('access_token', token); localStorage.setItem('jwt', token); } catch (e) {}
+          try { window.postMessage({ type: 'BIDEASY_TOKEN', token: token }, location.origin); } catch (e) {}
+          location.replace('/dashboard');
+          return;
+        }
+        var err = p.get('error');
+        if (err) { location.replace('/login?error=' + encodeURIComponent(err)); return; }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body class="bd" data-theme="light">
 
