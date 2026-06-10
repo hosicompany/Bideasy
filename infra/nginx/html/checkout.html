@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pro 결제 — BidEasy</title>
+  <link rel="icon" href="/brand/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>html,body{margin:0;}</style>
+  <script src="/assets/app.js"></script>
+  <script src="https://js.tosspayments.com/v1"></script>
+</head>
+<body class="bd" data-theme="light">
+  <div style="border-bottom:1px solid var(--line);position:sticky;top:0;background:color-mix(in srgb,var(--surface) 90%,transparent);backdrop-filter:blur(8px);z-index:10;">
+    <div style="max-width:900px;margin:0 auto;padding:13px 28px;display:flex;align-items:center;gap:14px;">
+      <a class="btn btn-quiet btn-sm" href="/account" style="margin-left:-8px;"><span id="back" style="display:flex;gap:6px;align-items:center;">마이페이지</span></a>
+      <div style="margin-left:auto;"><span class="chip chip-accent" id="safe-chip"></span></div>
+    </div>
+  </div>
+
+  <div style="max-width:900px;margin:0 auto;padding:32px 28px 64px;">
+    <span class="eyebrow">Upgrade</span>
+    <h1 id="title" style="font-size:30px;font-weight:800;letter-spacing:-0.8px;margin:8px 0 0;">Pro로 업그레이드</h1>
+    <p style="font-size:15px;color:var(--muted);margin-top:6px;">카드를 등록하면 첫 결제가 진행되고 유료 구독이 시작돼요. 다음 결제일 전까지 <b style="color:var(--ink);">언제든 해지</b>할 수 있어요.</p>
+
+    <div class="cols-2" style="margin-top:24px;">
+      <div class="card" style="padding:24px;align-self:start;">
+        <span class="micro">주문 요약</span>
+        <div class="seg" id="billing" style="margin-top:12px;"><button class="active" data-b="m">월간</button><button data-b="a">연간 <span style="color:var(--safe);font-family:var(--font-mono);font-size:12px;">−20%</span></button></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:18px;"><span style="width:40px;height:40px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;" id="plan-ic"></span><div><div style="font-size:16px;font-weight:800;" id="plan-name">BidEasy Pro</div><div style="font-size:12.5px;color:var(--muted);" id="plan-desc">AI 무제한 · Deep 분석 · 경쟁 예측</div></div></div>
+        <div style="margin-top:18px;" id="summary"></div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;padding-top:14px;border-top:2px solid var(--ink);"><span style="font-size:15px;font-weight:800;white-space:nowrap;">첫 결제 금액</span><span class="num" style="font-size:24px;font-weight:600;" id="total">— 원</span></div>
+        <p style="font-size:11.5px;color:var(--faint);margin-top:10px;line-height:1.5;">카드 등록 즉시 위 금액이 결제되어 구독이 시작됩니다. 이후 매 주기 자동 갱신되며 마이페이지에서 해지할 수 있어요.</p>
+      </div>
+
+      <div class="card sticky-col" style="padding:24px;position:sticky;top:84px;">
+        <span class="micro">결제 수단</span>
+        <div id="pg-note" class="panel" style="padding:16px;margin-top:10px;font-size:13px;color:var(--muted);line-height:1.6;">결제 수단을 확인하는 중…</div>
+        <button id="pay" class="btn btn-primary btn-block btn-lg" style="margin-top:18px;">카드 등록하고 결제</button>
+        <div id="pay-err" style="display:none;background:var(--danger-soft);color:var(--danger);font-size:13px;font-weight:600;padding:11px 14px;border-radius:10px;margin-top:12px;"></div>
+        <p style="font-size:11.5px;color:var(--faint);margin-top:12px;text-align:center;line-height:1.5;">토스페이먼츠 · 페이플 안전결제 — 카드 정보는 PG사 보안창에서만 입력되며 저장되지 않아요.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var BD = window.BD;
+    var API_BASE = BD.API_BASE;
+    document.getElementById('back').insertAdjacentHTML('afterbegin', '<span style="transform:rotate(180deg);display:flex;">' + BD.icon('chevR', 13) + '</span>');
+    document.getElementById('safe-chip').innerHTML = BD.icon('shield', 12) + ' 안전 결제';
+    document.getElementById('plan-ic').innerHTML = BD.icon('bolt', 20);
+
+    // 로그인 게이트
+    var token = BD.getToken();
+    if (!token) { location.href = '/signup?redirect=' + encodeURIComponent(location.pathname + location.search); return; }
+
+    var params = new URLSearchParams(location.search);
+    var tier = params.get('tier') === 'pro_plus' ? 'pro_plus' : 'pro';
+    var cycle = params.get('cycle') === 'annual' ? 'annual' : 'monthly';
+    var PRICES = { pro: { monthly: 14900, annual: 140000 }, pro_plus: { monthly: 29900, annual: 280000 } };
+    var TIER_KO = { pro: 'Pro', pro_plus: 'Pro+' };
+    var TIER_DESC = { pro: 'AI 일 50회 · Deep 분석 · 경쟁 예측', pro_plus: 'AI 무제한 · 기관 프로파일링 · 사정률 ML' };
+
+    function syncCycleButtons() {
+      document.querySelectorAll('#billing button').forEach(function (x) { x.classList.toggle('active', x.getAttribute('data-b') === (cycle === 'annual' ? 'a' : 'm')); });
+    }
+    function renderSummary() {
+      document.getElementById('title').textContent = TIER_KO[tier] + '로 업그레이드';
+      document.getElementById('plan-name').textContent = 'BidEasy ' + TIER_KO[tier];
+      document.getElementById('plan-desc').textContent = TIER_DESC[tier];
+      var price = PRICES[tier][cycle];
+      var unit = cycle === 'annual' ? '원/년' : '원/월';
+      document.getElementById('summary').innerHTML =
+        '<div class="drow"><span class="k">플랜</span><span class="v" style="font-family:var(--font-sans);font-weight:600;">' + TIER_KO[tier] + ' · ' + (cycle === 'annual' ? '연간' : '월간') + '</span></div>' +
+        '<div class="drow"><span class="k">결제 금액</span><span class="v">' + BD.won(price) + ' ' + unit + '</span></div>' +
+        (cycle === 'annual' ? '<div class="drow"><span class="k">월 환산</span><span class="v" style="color:var(--safe);">' + BD.won(Math.round(price / 12)) + ' 원/월</span></div>' : '');
+      document.getElementById('total').textContent = BD.won(price) + ' 원';
+    }
+    document.querySelectorAll('#billing button').forEach(function (b) {
+      b.addEventListener('click', function () { cycle = b.getAttribute('data-b') === 'a' ? 'annual' : 'monthly'; syncCycleButtons(); renderSummary(); });
+    });
+    syncCycleButtons(); renderSummary();
+
+    var errEl = document.getElementById('pay-err');
+    function showErr(m) { errEl.textContent = m; errEl.style.display = 'block'; }
+    function hideErr() { errEl.style.display = 'none'; }
+
+    // ── 활성 PG 확인 ──
+    var provider = 'toss';
+    fetch(API_BASE + '/payments/provider').then(function (r) { return r.ok ? r.json() : null; }).then(function (p) {
+      if (p && p.provider) provider = p.provider;
+      document.getElementById('pg-note').innerHTML = provider === 'payple'
+        ? '<b style="color:var(--ink-2);">페이플 정기결제</b><br>결제하기를 누르면 페이플 보안 결제창이 열려 카드를 등록하고 첫 결제가 진행됩니다.'
+        : '<b style="color:var(--ink-2);">토스페이먼츠 카드 자동결제</b><br>결제하기를 누르면 토스 카드 등록창으로 이동해 빌링키를 등록하고 첫 결제가 진행됩니다.';
+    }).catch(function () { document.getElementById('pg-note').innerHTML = '카드 자동결제로 진행됩니다.'; });
+
+    // ── 페이플 SDK 동적 로드 ──
+    var _sdk = false;
+    function loadScript(src) { return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function () { rej(new Error('스크립트 로드 실패')); }; document.head.appendChild(s); }); }
+    async function ensurePaypleSdk(host) {
+      if (_sdk && typeof PaypleCpayAuthCheck !== 'undefined') return;
+      if (typeof jQuery === 'undefined') await loadScript('https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js');
+      await loadScript(host.replace(/\/$/, '') + '/js/v1/payment.js');
+      _sdk = true;
+    }
+
+    async function prepare(path) {
+      var resp = await fetch(API_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ tier: tier, billing_cycle: cycle }) });
+      if (!resp.ok) { var t = await resp.text(); var msg = '주문 생성 실패'; try { var j = JSON.parse(t); if (j.detail) msg = j.detail; } catch (e) {} throw new Error(msg); }
+      return resp.json();
+    }
+
+    async function viaPayple() {
+      var prep = await prepare('/payments/payple/prepare');
+      await ensurePaypleSdk(prep.host);
+      if (typeof PaypleCpayAuthCheck === 'undefined') throw new Error('페이플 SDK 로드 실패. 새로고침 후 다시 시도해주세요.');
+      PaypleCpayAuthCheck({
+        clientKey: prep.client_key, PCD_PAY_TYPE: 'card', PCD_PAY_WORK: 'CERT', PCD_CARD_VER: '01',
+        PCD_PAY_GOODS: prep.goods, PCD_PAY_TOTAL: prep.amount, PCD_PAY_OID: prep.order_id,
+        PCD_PAYER_NO: prep.payer_no, PCD_PAYER_NAME: prep.payer_name, PCD_PAYER_EMAIL: prep.payer_email,
+        PCD_RST_URL: prep.rst_url,
+      });
+      // 오버레이가 뜸. 완료 시 PCD_RST_URL(백엔드)로 POST → /account 리다이렉트. 취소 대비 버튼 복구.
+      setTimeout(resetBtn, 2500);
+    }
+    async function viaToss() {
+      var order = await prepare('/payments/billing/prepare');
+      if (typeof TossPayments === 'undefined') throw new Error('토스 SDK 로드 실패. 새로고침 후 다시 시도해주세요.');
+      var toss = TossPayments(order.toss_client_key);
+      var oid = encodeURIComponent(order.order_id);
+      await toss.requestBillingAuth('카드', {
+        customerKey: order.customer_key,
+        successUrl: API_BASE + '/payments/billing/success?orderId=' + oid,
+        failUrl: API_BASE + '/payments/billing/fail?orderId=' + oid,
+      });
+    }
+
+    var btn = document.getElementById('pay'), busy = false, orig = btn.textContent;
+    function resetBtn() { busy = false; btn.disabled = false; btn.textContent = orig; btn.style.opacity = ''; }
+    btn.addEventListener('click', async function () {
+      if (busy) return; busy = true; hideErr();
+      btn.disabled = true; btn.textContent = '결제창 여는 중…'; btn.style.opacity = '.85';
+      try {
+        if (provider === 'payple') await viaPayple(); else await viaToss();
+        // 두 흐름 모두 결제창(리다이렉트/오버레이)으로 진입 → 성공 시 이후 코드 미실행
+      } catch (e) {
+        if (e && e.code !== 'USER_CANCEL') showErr(e.message || '결제 처리 중 오류가 발생했어요');
+        resetBtn();
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
