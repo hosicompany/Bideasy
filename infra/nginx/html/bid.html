@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>공고 상세 — BidEasy</title>
+  <meta name="description" content="공고 상세 정보, 자격 자동 매칭, AI 3줄 요약과 독소조항 탐지.">
+  <link rel="icon" href="/brand/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>html,body{margin:0;}</style>
+  <script src="/assets/app.js"></script>
+</head>
+<body class="bd" data-theme="light">
+  <div id="nav"></div>
+  <div style="max-width:1040px;margin:0 auto;padding:24px 28px 64px;">
+    <a class="btn btn-quiet btn-sm" href="/search" style="margin-left:-8px;"><span id="back-ic" style="display:flex;gap:6px;align-items:center;">공고 목록</span></a>
+    <div class="cols-bid" style="margin-top:12px;">
+      <div id="detail"><div class="skel" style="height:220px;border-radius:16px;"></div></div>
+      <div class="card sticky-col" id="ai" style="padding:22px;position:sticky;top:84px;overflow:hidden;"></div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var BD = window.BD; BD.mountNav('search');
+    var API_BASE = BD.API_BASE;
+    document.getElementById('back-ic').insertAdjacentHTML('afterbegin', '<span style="transform:rotate(180deg);display:flex;">' + BD.icon('chevR', 13) + '</span>');
+
+    var TKO = { CONSTRUCTION: '공사', SERVICE: '용역', GOODS: '물품' };
+    var no = new URLSearchParams(location.search).get('no');
+    var token = BD.getToken();
+    function authHeaders() { return token ? { Authorization: 'Bearer ' + token } : {}; }
+
+    if (!no) { document.getElementById('detail').innerHTML = '<div class="panel" style="padding:40px;text-align:center;">공고번호가 없어요. <a href="/search" style="color:var(--accent);">검색으로</a></div>'; document.getElementById('ai').style.display = 'none'; return; }
+
+    var bid = { title: '공고 ' + no, basic: null, type: 'CONSTRUCTION' };
+
+    function fact(k, v, mono) { return '<div><div class="micro" style="font-size:9.5px;">' + k + '</div><div class="' + (mono ? 'num' : '') + '" style="font-size:15px;font-weight:600;margin-top:5px;">' + v + '</div></div>'; }
+
+    function renderDetail() {
+      var favs = BD.getFavs(), isFav = favs.has(no);
+      document.getElementById('detail').innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="chip chip-neutral">' + (TKO[bid.type] || '공고') + '</span></div>' +
+        '<h1 style="font-size:26px;font-weight:800;letter-spacing:-0.6px;line-height:1.3;margin:12px 0 0;">' + bid.title + '</h1>' +
+        '<p style="font-size:14px;color:var(--muted);margin-top:6px;">공고번호 ' + no + '</p>' +
+        '<div class="card" style="padding:22px;margin-top:18px;display:grid;grid-template-columns:1fr 1fr 1fr;row-gap:20px;column-gap:16px;">' +
+          fact('기초금액', bid.basic ? BD.fmt(bid.basic) : '—', 1) + fact('계약 종류', TKO[bid.type] || '—') + fact('공고번호', no, 1) + '</div>' +
+        '<div style="margin-top:22px;"><span class="micro">자격 자동 매칭</span><div class="card" id="qual" style="padding:14px 18px;margin-top:10px;"><div class="skel" style="height:18px;border-radius:6px;"></div></div></div>' +
+        '<div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap;"><a class="btn btn-primary" href="/calculator.html?no=' + encodeURIComponent(no) + '">' + BD.icon('bolt', 15) + ' 투찰가 계산하기</a>' +
+          '<button id="fav" class="btn ' + (isFav ? 'btn-primary' : 'btn-ghost') + '"' + (isFav ? ' style="background:var(--accent-soft);color:var(--accent);"' : '') + '>' + BD.icon('star', 15) + ' <span id="favtxt">' + (isFav ? '즐겨찾기됨' : '즐겨찾기') + '</span></button></div>';
+      document.getElementById('fav').addEventListener('click', function () {
+        var added = BD.toggleFav(no);
+        BD.toast(added ? '즐겨찾기에 담았어요' : '즐겨찾기에서 뺐어요', added ? 'accent' : 'danger');
+        var b = document.getElementById('fav'); b.className = 'btn ' + (added ? 'btn-primary' : 'btn-ghost');
+        b.style.cssText = added ? 'background:var(--accent-soft);color:var(--accent);' : '';
+        document.getElementById('favtxt').textContent = added ? '즐겨찾기됨' : '즐겨찾기';
+      });
+      loadQualification();
+    }
+
+    // 자격 자동 매칭 — 실제 per-user 판정 (로그인 필요)
+    function loadQualification() {
+      var el = document.getElementById('qual');
+      if (!token) { el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--accent);display:flex;">' + BD.icon('user', 15) + '</span><span style="font-size:13.5px;color:var(--muted);">로그인하면 회사 정보로 <b style="color:var(--ink-2);">입찰 가능 여부</b>를 자동 판정해드려요.</span><a class="btn btn-ghost btn-sm" style="margin-left:auto;" href="/login?redirect=' + encodeURIComponent('/bid.html?no=' + no) + '">로그인</a></div>'; return; }
+      fetch(API_BASE + '/bids/' + encodeURIComponent(no) + '/qualification', { headers: authHeaders() }).then(function (r) { return r.ok ? r.json() : null; }).then(function (q) {
+        if (!q) { el.innerHTML = '<div style="font-size:13.5px;color:var(--muted);">자격 판정을 불러오지 못했어요.</div>'; return; }
+        var pass = q.status === 'PASS', unknown = q.status === 'UNKNOWN';
+        var tone = pass ? 'safe' : unknown ? 'neutral' : 'danger';
+        var label = pass ? '입찰 가능' : unknown ? '판정 불가' : '자격 미달';
+        var head = '<div style="display:flex;align-items:center;gap:9px;padding-bottom:' + (q.details && q.details.length ? '12px' : '0') + ';"><span class="chip chip-' + tone + '">' + BD.icon(pass ? 'check' : 'alert', 12, 2) + label + '</span><span style="font-size:13.5px;color:var(--ink-2);">' + (q.message || '') + '</span></div>';
+        var rows = (q.details && q.details.length) ? '<div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px;">' + q.details.map(function (d) {
+          return '<div style="display:flex;align-items:center;gap:9px;"><span style="width:18px;height:18px;border-radius:5px;display:grid;place-items:center;background:var(--' + (pass ? 'safe' : 'danger') + '-soft);color:var(--' + (pass ? 'safe' : 'danger') + ');">' + BD.icon(pass ? 'check' : 'alert', 11, 2) + '</span><span style="font-size:13.5px;color:var(--ink-2);">' + d + '</span></div>';
+        }).join('') + '</div>' : '';
+        el.innerHTML = head + rows;
+      }).catch(function () { el.innerHTML = '<div style="font-size:13.5px;color:var(--muted);">자격 판정 오류.</div>'; });
+    }
+
+    // 공고 컨텍스트 로드 → 상세 채움
+    fetch(API_BASE + '/bids/' + encodeURIComponent(no) + '/context').then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
+      if (c) { if (c.title) bid.title = c.title; if (c.estimated_price) bid.basic = c.estimated_price; if (c.contract_type) bid.type = c.contract_type; }
+      renderDetail();
+    }).catch(function () { renderDetail(); });
+
+    // ── AI 패널 ──────────────────────────────────────────
+    var ai = document.getElementById('ai');
+    function head() { return '<div style="display:flex;align-items:center;gap:8px;"><span style="width:26px;height:26px;border-radius:8px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;">' + BD.icon('doc', 15) + '</span><span style="font-size:15px;font-weight:800;white-space:nowrap;">AI 공고 분석</span><span class="chip chip-accent" style="margin-left:auto;">GPT</span></div>'; }
+    function idle() {
+      ai.innerHTML = head() + '<div style="text-align:center;padding:26px 8px 8px;"><div class="grid-bg" style="border-radius:12px;padding:28px 16px;border:1px solid var(--line);"><p style="font-size:14px;color:var(--muted);line-height:1.6;">GPT 분석가가 공고문을 읽고<br>핵심 요약 + 독소조항을 뽑아드려요.</p><button id="run" class="btn btn-primary" style="margin-top:16px;">' + BD.icon('bolt', 15) + ' AI 분석 실행</button><div class="micro" style="margin-top:12px;font-size:9.5px;">Free 일 1회 · Pro 무제한</div></div></div>';
+      document.getElementById('run').addEventListener('click', run);
+    }
+    function loading() {
+      ai.innerHTML = head() + '<div style="padding:36px 8px;"><div class="micro" style="text-align:center;">분석 중…</div><div style="height:6px;border-radius:3px;background:var(--sunken);margin-top:14px;overflow:hidden;"><div class="skel" style="height:100%;width:100%;"></div></div><div style="margin-top:18px;display:flex;flex-direction:column;gap:9px;">' +
+        ['공고문 텍스트 파싱', '독소조항 탐지', '자격 요건 대조'].map(function (t) { return '<div style="display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);"><span style="color:var(--accent);display:flex;">' + BD.icon('clock', 14, 2) + '</span>' + t + '</div>'; }).join('') + '</div></div>';
+    }
+    function run() {
+      if (!token) { ai.innerHTML = head() + '<div style="text-align:center;padding:30px 12px;"><p style="font-size:14px;color:var(--muted);line-height:1.6;">AI 분석은 로그인 후 이용할 수 있어요.</p><a class="btn btn-primary" style="margin-top:14px;" href="/login?redirect=' + encodeURIComponent('/bid.html?no=' + no) + '">로그인</a></div>'; return; }
+      loading();
+      fetch(API_BASE + '/ai/' + encodeURIComponent(no) + '/analysis', { headers: authHeaders() }).then(function (r) {
+        if (r.status === 429) throw { rate: true };
+        return r.ok ? r.json() : Promise.reject();
+      }).then(function (d) { renderResult(d); BD.toast('AI 분석을 완료했어요', 'accent'); }).catch(function (e) {
+        if (e && e.rate) { ai.innerHTML = head() + '<div style="text-align:center;padding:30px 12px;"><p style="font-size:14px;color:var(--muted);line-height:1.6;">오늘 무료 AI 분석을 다 쓰셨어요.<br>Pro로 업그레이드하면 무제한이에요.</p><a class="btn btn-primary" style="margin-top:14px;" href="/pricing">Pro 보기</a><button id="back" class="btn btn-ghost btn-block btn-sm" style="margin-top:8px;">돌아가기</button></div>'; var b = document.getElementById('back'); if (b) b.addEventListener('click', idle); return; }
+        ai.innerHTML = head() + '<div style="text-align:center;padding:30px 12px;"><p style="font-size:14px;color:var(--danger);">분석에 실패했어요. 잠시 후 다시 시도해주세요.</p><button id="retry" class="btn btn-ghost btn-sm" style="margin-top:14px;">다시 시도</button></div>'; var rt = document.getElementById('retry'); if (rt) rt.addEventListener('click', run);
+      });
+    }
+    function renderResult(d) {
+      var tips = (d && Array.isArray(d.tips)) ? d.tips : [];
+      var summary = d && d.summary ? d.summary : '';
+      var IMP = { high: 'danger', medium: 'warn', low: 'neutral' };
+      var body = '';
+      if (summary) body += '<div style="margin-top:16px;display:flex;align-items:center;gap:9px;padding:12px 14px;border-radius:11px;background:var(--accent-soft);"><span style="color:var(--accent);display:flex;flex-shrink:0;">' + BD.icon('doc', 16, 2) + '</span><span style="font-size:13.5px;color:var(--ink-2);line-height:1.5;">' + summary + '</span></div>';
+      if (tips.length) {
+        body += '<div class="micro" style="margin-top:18px;">분석 결과 ' + tips.length + '건</div><div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">' +
+          tips.map(function (t) {
+            var tone = IMP[(t.importance || 'low')] || 'neutral';
+            var icon = t.icon ? '<span style="font-size:13px;">' + t.icon + '</span>' : '';
+            return '<div class="panel" style="padding:11px 13px;border-left:3px solid var(--' + tone + ');"><div style="display:flex;align-items:center;gap:7px;">' + icon + '<span style="font-size:12.5px;font-weight:700;">' + (t.title || '') + '</span></div>' + (t.text ? '<p style="font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.5;">' + t.text + '</p>' : '') + '</div>';
+          }).join('') + '</div>';
+      }
+      if (!summary && !tips.length) body += '<p style="font-size:13.5px;color:var(--muted);margin-top:16px;">분석 결과가 비어 있어요. 공고문 본문이 없는 공고일 수 있어요.</p>';
+      ai.innerHTML = head() + body + '<button id="rerun" class="btn btn-ghost btn-block btn-sm" style="margin-top:16px;">' + BD.icon('clock', 13) + ' 다시 분석</button>';
+      var rr = document.getElementById('rerun'); if (rr) rr.addEventListener('click', run);
+    }
+    idle();
+  })();
+  </script>
+</body>
+</html>
