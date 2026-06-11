@@ -45,8 +45,11 @@
   function getToken() { try { return localStorage.getItem('access_token') || localStorage.getItem('jwt') || null; } catch (e) { return null; } }
 
   function mountNav(active) {
-    var links = [['search.html', '공고 검색', 'search'], ['dashboard.html', '대시보드', 'dashboard'], ['calculator.html', '계산기', 'calculator'], ['pricing.html', '요금제', 'pricing']];
     var authed = !!getToken();
+    // 대시보드는 로그인 시에만 노출 (로그아웃 상태에서 클릭 → 로그인 튕김 방지)
+    var links = authed
+      ? [['search.html', '공고 검색', 'search'], ['dashboard.html', '대시보드', 'dashboard'], ['calculator.html', '계산기', 'calculator'], ['pricing.html', '요금제', 'pricing']]
+      : [['search.html', '공고 검색', 'search'], ['calculator.html', '계산기', 'calculator'], ['pricing.html', '요금제', 'pricing']];
     var right = authed
       ? '<a class="navlink" href="account.html">마이</a><a class="navlink" id="navlogout" href="#">로그아웃</a>'
       : '<a class="navlink" href="login.html">로그인</a><a class="btn btn-primary btn-sm" href="signup.html">14일 체험</a>';

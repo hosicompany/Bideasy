@@ -45,16 +45,27 @@
       <a class="brand" href="/"><img src="/brand/bideasy-mark.svg" width="22" height="22" alt="">BidEasy</a>
       <ul class="navlinks">
         <li><a class="navlink" href="/search">공고 검색</a></li>
-        <li><a class="navlink" href="/dashboard">대시보드</a></li>
+        <li id="nav-dash" style="display:none;"><a class="navlink" href="/dashboard">대시보드</a></li>
         <li><a class="navlink" href="/calculator">계산기</a></li>
         <li><a class="navlink" href="/pricing">요금제</a></li>
       </ul>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
-        <a class="navlink" href="/account">마이</a>
-        <a class="btn btn-primary btn-sm" href="/search">공고 보기</a>
+      <div id="nav-right" style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+        <a class="navlink" href="/login">로그인</a>
+        <a class="btn btn-primary btn-sm" href="/signup">14일 무료 체험</a>
       </div>
     </div>
   </nav>
+  <script>
+    // 로그인 상태별 nav — 기본값은 로그아웃(대시보드 숨김, 로그인/체험). 토큰 있으면 로그인 버전으로.
+    (function () {
+      var authed = false;
+      try { authed = !!(localStorage.getItem('access_token') || localStorage.getItem('jwt')); } catch (e) {}
+      if (!authed) return;
+      var d = document.getElementById('nav-dash'); if (d) d.style.display = '';
+      var r = document.getElementById('nav-right');
+      if (r) r.innerHTML = '<a class="navlink" href="/account">마이</a><a class="btn btn-primary btn-sm" href="/search">공고 보기</a>';
+    })();
+  </script>
 
   <!-- HERO -->
   <header style="position:relative;overflow:hidden;">
