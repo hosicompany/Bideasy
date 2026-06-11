@@ -46,12 +46,19 @@
 
   function mountNav(active) {
     var authed = !!getToken();
-    // 대시보드는 로그인 시에만 노출 (로그아웃 상태에서 클릭 → 로그인 튕김 방지)
-    var links = authed
-      ? [['search.html', '공고 검색', 'search'], ['dashboard.html', '대시보드', 'dashboard'], ['calculator.html', '계산기', 'calculator'], ['pricing.html', '요금제', 'pricing']]
-      : [['search.html', '공고 검색', 'search'], ['calculator.html', '계산기', 'calculator'], ['pricing.html', '요금제', 'pricing']];
+    // 왼쪽 nav = 공개 기능(항상 동일) — 로그인 여부와 무관해 레이아웃이 흔들리지 않음.
+    // 대시보드·계정은 오른쪽 "내 영역"으로 분리: [대시보드] 버튼 + 아바타 드롭다운(마이·관심·로그아웃).
+    var links = [['search.html', '공고 검색', 'search'], ['calculator.html', '계산기', 'calculator'], ['pricing.html', '요금제', 'pricing']];
     var right = authed
-      ? '<a class="navlink" href="account.html">마이</a><a class="navlink" id="navlogout" href="#">로그아웃</a>'
+      ? '<a class="btn btn-primary btn-sm"' + (active === 'dashboard' ? ' aria-current="page"' : '') + ' href="dashboard.html">대시보드</a>' +
+        '<div class="navmenu">' +
+          '<button class="navavatar" id="navavatar" aria-haspopup="true" aria-expanded="false" aria-label="내 메뉴">' + icon('user', 18) + '</button>' +
+          '<div class="navmenu-pop" id="navmenupop" role="menu">' +
+            '<a class="navmenu-item" role="menuitem" href="account.html">마이페이지</a>' +
+            '<a class="navmenu-item" role="menuitem" href="favorites.html">관심공고</a>' +
+            '<button class="navmenu-item navmenu-danger" type="button" role="menuitem" id="navlogout">로그아웃</button>' +
+          '</div>' +
+        '</div>'
       : '<a class="navlink" href="login.html">로그인</a><a class="btn btn-primary btn-sm" href="signup.html">14일 체험</a>';
     var html = '<nav class="topnav"><div class="topnav-in">' +
       '<a class="brand" href="index.html"><img src="brand/bideasy-mark.svg" width="22" height="22" alt="">BidEasy</a>' +
@@ -62,6 +69,14 @@
       '</div></div></nav>';
     var el = document.getElementById('nav'); if (el) el.outerHTML = html;
     var tb = document.getElementById('themebtn'); if (tb) tb.addEventListener('click', function () { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); });
+    // 아바타 드롭다운 토글 (바깥 클릭·ESC 닫힘)
+    var av = document.getElementById('navavatar'), pop = document.getElementById('navmenupop');
+    if (av && pop) {
+      av.addEventListener('click', function (e) { e.stopPropagation(); var open = pop.classList.toggle('open'); av.setAttribute('aria-expanded', open ? 'true' : 'false'); });
+      pop.addEventListener('click', function (e) { e.stopPropagation(); });
+      document.addEventListener('click', function () { pop.classList.remove('open'); av.setAttribute('aria-expanded', 'false'); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { pop.classList.remove('open'); av.setAttribute('aria-expanded', 'false'); } });
+    }
     var lo = document.getElementById('navlogout');
     if (lo) lo.addEventListener('click', function (e) { e.preventDefault(); if (confirm('로그아웃하시겠어요?')) { try { localStorage.removeItem('access_token'); localStorage.removeItem('jwt'); } catch (x) {} location.href = '/'; } });
     // skip-to-content link + focusable main heading (a11y)

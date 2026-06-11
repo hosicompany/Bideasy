@@ -183,6 +183,32 @@
 .navlink:hover { color: var(--ink); background: var(--sunken); }
 .navlink.active { color: var(--accent); background: var(--accent-soft); }
 
+/* ── 계정 아바타 + 드롭다운 ("내 영역") ── */
+.navmenu { position: relative; display: inline-flex; }
+.navavatar {
+  width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+  display: grid; place-items: center; color: var(--muted);
+  background: var(--sunken); border: 1px solid var(--line-2);
+  transition: color .14s, background .14s, border-color .14s;
+}
+.navavatar:hover { color: var(--ink); border-color: var(--accent); }
+.navavatar[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.navmenu-pop {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 60;
+  min-width: 170px; padding: 6px; display: none; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow-md);
+}
+.navmenu-pop.open { display: flex; }
+.navmenu-item {
+  font-size: 14px; font-weight: 600; color: var(--ink); text-align: left;
+  text-decoration: none; padding: 9px 12px; border-radius: 8px; cursor: pointer;
+  background: none; border: 0; width: 100%; transition: background .12s, color .12s;
+}
+.navmenu-item:hover { background: var(--sunken); }
+.navmenu-danger { color: var(--danger); }
+.navmenu-danger:hover { background: var(--danger-soft); }
+
 /* ── Skip-to-content link (a11y) — 평소엔 화면 밖에 숨김, 키보드 포커스 시에만 노출 ── */
 .skip-link {
   position: absolute; left: 8px; top: -48px; z-index: 1000;
