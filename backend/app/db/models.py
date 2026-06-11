@@ -281,3 +281,38 @@ class Notification(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     user = relationship("User")
+
+
+class SupportMessage(Base):
+    """고객 챗봇 대화 로그 — 자가학습(질문 군집·FAQ 마이닝)의 데이터 소스.
+
+    session_id 로 한 대화를 묶음. role=user/assistant. 비로그인도 기록(user_id NULL).
+    """
+    __tablename__ = "support_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(64), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    role = Column(String(16), nullable=False)  # user | assistant
+    content = Column(Text, nullable=False)
+    # 자가학습용 — 군집 라벨/해결여부 등 후속 단계에서 채움
+    resolved = Column(Boolean, nullable=True)
+    topic = Column(String(80), nullable=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+    user = relationship("User")
+
+
+class SupportTicket(Base):
+    """고객 문의 접수 — 챗봇이 못 풀었거나 '상담원 연결' 요청한 건."""
+    __tablename__ = "support_tickets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    email = Column(String(255), nullable=True)
+    message = Column(Text, nullable=False)
+    session_id = Column(String(64), nullable=True)
+    status = Column(String(20), default="open", index=True)  # open | closed
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+    user = relationship("User")
