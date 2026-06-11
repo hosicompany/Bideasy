@@ -3,89 +3,68 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>관심공고 - BidEasy</title>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <title>관심공고 — BidEasy</title>
+  <link rel="icon" href="/brand/favicon.svg">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/nav.css">
-  <script src="/assets/nav.js" defer></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background: #F2F4F6; color: #191F28; min-height: 100vh; }
-    .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
-    .page-title { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
-    .page-sub { font-size: 14px; color: #8B95A1; margin-bottom: 20px; }
-    .card { background:#fff; border-radius:14px; padding:16px 18px; margin-bottom:10px; box-shadow:0 1px 4px rgba(0,0,0,.04); position:relative; }
-    .card-top { display:flex; align-items:center; gap:8px; margin-bottom:7px; flex-wrap:wrap; }
-    .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; }
-    .badge-cnstwk { background:#EBF2FF; color:#2563EB; } .badge-servc { background:#ECFDF3; color:#15803D; } .badge-thng { background:#FFF7ED; color:#C2410C; }
-    .dday { font-size:12px; font-weight:700; padding:3px 9px; border-radius:6px; }
-    .dday-soon { background:#FEF2F2; color:#DC2626; } .dday-ok { background:#F2F4F6; color:#4E5968; } .dday-closed { background:#F2F4F6; color:#B0B8C1; }
-    .card-title { font-size:15.5px; font-weight:700; line-height:1.4; margin-bottom:8px; }
-    .card-title a { color:inherit; text-decoration:none; } .card-title a:hover { color:#3182F6; }
-    .card-info { display:flex; flex-wrap:wrap; gap:4px 16px; font-size:13px; color:#4E5968; }
-    .card-info .k { color:#8B95A1; }
-    .btn-remove { position:absolute; top:14px; right:16px; background:none; border:1px solid #E5E8EB; color:#8B95A1; border-radius:8px; font-size:12px; padding:5px 10px; cursor:pointer; }
-    .btn-remove:hover { border-color:#FFCDD2; color:#DC2626; }
-    .state { text-align:center; padding:48px 16px; color:#8B95A1; font-size:14px; }
-    .state a { color:#3182F6; text-decoration:none; font-weight:600; }
-    .loader { display:inline-block; width:18px; height:18px; border:2.5px solid #E5E8EB; border-top-color:#3182F6; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>html,body{margin:0;}</style>
+  <script src="/assets/app.js"></script>
 </head>
-<body>
-  <div class="wrap">
-    <h1 class="page-title">관심공고</h1>
-    <p class="page-sub">저장한 공고를 모아봅니다. 마감일 임박순으로 정렬됩니다.</p>
-    <div id="results"></div>
-    <div id="state" class="state"><span class="loader"></span> 불러오는 중...</div>
+<body class="bd" data-theme="light">
+  <div id="nav"></div>
+  <div style="max-width:880px;margin:0 auto;padding:32px 28px 64px;">
+    <span class="eyebrow">Favorites</span>
+    <h1 style="font-size:30px;font-weight:800;letter-spacing:-0.8px;margin:8px 0 0;">관심공고</h1>
+    <p style="font-size:15px;color:var(--muted);margin-top:6px;">★로 담은 공고를 모아봅니다. 마감 알림·투찰가 계산으로 바로 이어가세요.</p>
+    <div id="list" style="margin-top:24px;"></div>
   </div>
 
   <script>
-    const API_BASE = 'https://api.bideasy.kr/api/v1';
-    const $ = (id) => document.getElementById(id);
-    function getToken() { try { return localStorage.getItem('access_token') || localStorage.getItem('jwt') || null; } catch { return null; } }
+  (function () {
+    var BD = window.BD; BD.mountNav();
+    var API_BASE = BD.API_BASE;
+    var host = document.getElementById('list');
+    var TKO = { CONSTRUCTION: '공사', SERVICE: '용역', GOODS: '물품' };
 
-    function fmtKRW(n){ n=Number(n)||0; if(n>=1e8) return (n/1e8).toFixed(n%1e8===0?0:1)+'억'; if(n>=1e4) return Math.round(n/1e4).toLocaleString('ko-KR')+'만'; return n.toLocaleString('ko-KR'); }
-    function ddayInfo(e){ if(!e) return {txt:'-',cls:'dday-ok'}; const d=Math.ceil((new Date(e)-new Date())/86400000); if(d<0) return {txt:'마감',cls:'dday-closed'}; if(d===0) return {txt:'D-day',cls:'dday-soon'}; return {txt:'D-'+d,cls:d<=3?'dday-soon':'dday-ok'}; }
-    const CAT = { CONSTRUCTION:{label:'공사',cls:'badge-cnstwk'}, SERVICE:{label:'용역',cls:'badge-servc'}, GOODS:{label:'물품',cls:'badge-thng'} };
-
-    function cardHTML(n){
-      const cat=CAT[n.contract_type]||{label:'기타',cls:'badge-cnstwk'}; const d=ddayInfo(n.end_date);
-      const bidNo=encodeURIComponent(n.bid_no);
-      return `<div class="card" data-bid="${n.bid_no}">
-        <button class="btn-remove" data-bid="${n.bid_no}">해제</button>
-        <div class="card-top"><span class="badge ${cat.cls}">${cat.label}</span><span class="dday ${d.cls}">${d.txt}</span>${n.region?`<span style="font-size:12px;color:#8B95A1;">${n.region}</span>`:''}</div>
-        <div class="card-title"><a href="/bid/${bidNo}">${(n.title||'제목없음').replace(/</g,'&lt;')}</a></div>
-        <div class="card-info"><span><span class="k">기관</span> ${n.organization||'-'}</span><span><span class="k">기초금액</span> ${fmtKRW(n.basic_price)}원</span></div>
-      </div>`;
+    function emptyState() {
+      return '<div class="panel" style="padding:56px 24px;text-align:center;"><span style="color:var(--faint);display:inline-flex;">' + BD.icon('star', 28) + '</span>' +
+        '<p style="font-size:15px;color:var(--muted);margin-top:14px;line-height:1.6;">아직 관심공고가 없어요.<br>공고 검색에서 ★를 눌러 담아보세요.</p>' +
+        '<a class="btn btn-primary btn-sm" style="margin-top:16px;" href="/search">공고 검색하러 가기</a></div>';
     }
-
-    async function load(){
-      const token = getToken();
-      if(!token){ $('state').innerHTML = '로그인이 필요합니다. <a href="/login?next=/favorites">로그인하기 →</a>'; return; }
-      try{
-        const resp = await fetch(API_BASE+'/bids/favorites/list',{ headers:{ Authorization:'Bearer '+token } });
-        if(resp.status===401){ $('state').innerHTML='세션이 만료됐어요. <a href="/login?next=/favorites">다시 로그인 →</a>'; return; }
-        if(!resp.ok) throw new Error('HTTP '+resp.status);
-        const items = await resp.json();
-        if(items.length===0){ $('state').innerHTML='아직 관심공고가 없어요. <a href="/search">공고 검색하러 가기 →</a>'; return; }
-        $('results').innerHTML = items.map(cardHTML).join('');
-        $('state').textContent='';
-      }catch(e){ $('state').textContent='불러오기 오류: '+e.message; }
+    function card(n) {
+      return '<div class="card" data-id="' + n.id + '" style="padding:18px 20px;">' +
+        '<div style="display:flex;align-items:flex-start;gap:14px;">' +
+          '<div style="flex:1;min-width:0;">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' + (n.type ? '<span class="chip chip-neutral">' + (TKO[n.type] || '공고') + '</span>' : '') + '<span class="micro" style="font-size:9.5px;">공고 ' + n.id + '</span></div>' +
+            '<a href="/bid.html?no=' + encodeURIComponent(n.id) + '" style="font-size:15.5px;font-weight:700;letter-spacing:-0.3px;text-decoration:none;color:var(--ink);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + n.title + '</a>' +
+            '<div class="num" style="font-size:13.5px;color:var(--muted);margin-top:6px;">기초금액 ' + (n.basic ? BD.won(n.basic) + '원' : '—') + '</div>' +
+          '</div>' +
+          '<button class="btn btn-quiet btn-sm rm" data-id="' + n.id + '" style="color:var(--faint);flex-shrink:0;">해제</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:14px;"><a class="btn btn-ghost btn-sm" href="/bid.html?no=' + encodeURIComponent(n.id) + '">상세 보기</a><a class="btn btn-primary btn-sm" href="/calculator.html?no=' + encodeURIComponent(n.id) + '">투찰가 계산</a></div>' +
+      '</div>';
     }
-
-    document.getElementById('results').addEventListener('click', async (e)=>{
-      if(!e.target.classList.contains('btn-remove')) return;
-      const bid = e.target.dataset.bid; const token=getToken();
-      e.target.disabled=true; e.target.textContent='...';
-      try{
-        await fetch(API_BASE+'/bids/'+encodeURIComponent(bid)+'/favorite',{ method:'POST', headers:{ Authorization:'Bearer '+token } });
-        const card=document.querySelector('.card[data-bid="'+CSS.escape(bid)+'"]'); if(card) card.remove();
-        if(!document.querySelector('.card')) $('state').innerHTML='아직 관심공고가 없어요. <a href="/search">공고 검색하러 가기 →</a>';
-      }catch{ e.target.disabled=false; e.target.textContent='해제'; }
-    });
-
-    load();
+    function render() {
+      var ids = Array.from(BD.getFavs());
+      if (!ids.length) { host.innerHTML = emptyState(); return; }
+      host.innerHTML = '<div class="skel" style="height:96px;border-radius:16px;"></div>';
+      Promise.all(ids.map(function (id) {
+        return fetch(API_BASE + '/bids/' + encodeURIComponent(id) + '/context').then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
+          return { id: id, title: (c && c.title) || ('공고 ' + id), basic: c && c.estimated_price, type: (c && c.contract_type) || null };
+        }).catch(function () { return { id: id, title: '공고 ' + id, basic: null, type: null }; });
+      })).then(function (rows) {
+        host.innerHTML = '<div style="display:flex;flex-direction:column;gap:12px;">' + rows.map(card).join('') + '</div>';
+        host.querySelectorAll('.rm').forEach(function (b) {
+          b.addEventListener('click', function (e) {
+            e.preventDefault(); BD.toggleFav(b.getAttribute('data-id'));
+            BD.toast('관심공고에서 뺐어요', 'danger'); render();
+          });
+        });
+      });
+    }
+    render();
+  })();
   </script>
 </body>
 </html>
