@@ -23,6 +23,9 @@ services:
     volumes:
       - ../backend/models:/app/models:ro
       - ../backend/data/historical:/app/data/historical:ro
+      # 자가보정 전략 저장소 — worker(재학습 write)와 app(계산기 read)이 공유.
+      # 공유 named 볼륨이라야 학습 결과가 계산기에 반영되고, 재배포에도 영속.
+      - strategy_data:/app/data/strategy
     depends_on:
       db:
         condition: service_healthy
@@ -56,6 +59,9 @@ services:
     volumes:
       - ../backend/models:/app/models:ro
       - ../backend/data/historical:/app/data/historical:ro
+      # 자가보정 전략 저장소 — worker(재학습 write)와 app(계산기 read)이 공유.
+      # 공유 named 볼륨이라야 학습 결과가 계산기에 반영되고, 재배포에도 영속.
+      - strategy_data:/app/data/strategy
     depends_on:
       db:
         condition: service_healthy
@@ -102,6 +108,9 @@ services:
     volumes:
       - ../backend/models:/app/models:ro
       - ../backend/data/historical:/app/data/historical:ro
+      # 자가보정 전략 저장소 — worker(재학습 write)와 app(계산기 read)이 공유.
+      # 공유 named 볼륨이라야 학습 결과가 계산기에 반영되고, 재배포에도 영속.
+      - strategy_data:/app/data/strategy
       # 마지막 실행 시각 영속화 — 컨테이너 재시작 시 스케줄 중복/누락 방지
       - celerybeat_data:/app/celerybeat
     depends_on:
@@ -191,3 +200,4 @@ volumes:
   certbot_webroot:
   certbot_certs:
   celerybeat_data:
+  strategy_data:
