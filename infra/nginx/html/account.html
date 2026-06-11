@@ -197,7 +197,37 @@
 
     // 버튼들
     document.getElementById('logoutbtn').addEventListener('click', function () { if (confirm('로그아웃하시겠어요?')) { clearToken(); location.href = '/'; } });
-    document.getElementById('pwbtn').addEventListener('click', function () { BD.toast('비밀번호 변경은 support@bideasy.kr 로 문의해 주세요'); });
+    document.getElementById('pwbtn').addEventListener('click', openPwModal);
+    function openPwModal() {
+      var ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:500;background:rgba(17,21,28,.45);display:flex;align-items:center;justify-content:center;padding:20px;';
+      ov.innerHTML = '<div class="card" style="width:min(380px,100%);padding:24px;">' +
+        '<div style="font-size:18px;font-weight:800;">비밀번호 변경</div>' +
+        '<div id="pw-err" style="display:none;background:var(--danger-soft);color:var(--danger);font-size:13px;font-weight:600;padding:10px 13px;border-radius:9px;margin-top:14px;"></div>' +
+        '<div style="margin-top:16px;"><label class="field-label">현재 비밀번호</label><input id="pw-cur" class="input" type="password" style="font-family:var(--font-sans);"></div>' +
+        '<div style="margin-top:14px;"><label class="field-label">새 비밀번호 (8자 이상)</label><input id="pw-new" class="input" type="password" style="font-family:var(--font-sans);"></div>' +
+        '<div style="margin-top:14px;"><label class="field-label">새 비밀번호 확인</label><input id="pw-new2" class="input" type="password" style="font-family:var(--font-sans);"></div>' +
+        '<div style="display:flex;gap:10px;margin-top:20px;"><button id="pw-cancel" class="btn btn-ghost btn-block">취소</button><button id="pw-save" class="btn btn-primary btn-block">변경</button></div></div>';
+      document.body.appendChild(ov);
+      function close() { if (ov.parentNode) document.body.removeChild(ov); }
+      ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+      document.getElementById('pw-cancel').addEventListener('click', close);
+      var errEl = document.getElementById('pw-err');
+      function showErr(m) { errEl.textContent = m; errEl.style.display = 'block'; }
+      var saveBtn = document.getElementById('pw-save');
+      saveBtn.addEventListener('click', async function () {
+        errEl.style.display = 'none';
+        var cur = document.getElementById('pw-cur').value, nw = document.getElementById('pw-new').value, nw2 = document.getElementById('pw-new2').value;
+        if (!cur || !nw) { showErr('현재·새 비밀번호를 입력해주세요'); return; }
+        if (nw.length < 8) { showErr('새 비밀번호는 8자 이상이어야 해요'); return; }
+        if (nw !== nw2) { showErr('새 비밀번호가 일치하지 않아요'); return; }
+        saveBtn.disabled = true; saveBtn.textContent = '변경 중...';
+        try {
+          await api('/users/me/password', { method: 'PUT', body: JSON.stringify({ current_password: cur, new_password: nw }) });
+          close(); BD.toast('비밀번호가 변경되었어요');
+        } catch (e) { showErr(e.message || '변경에 실패했어요'); saveBtn.disabled = false; saveBtn.textContent = '변경'; }
+      });
+    }
 
     // init
     document.getElementById('edit').querySelector('span').insertAdjacentHTML('afterbegin', BD.icon('doc', 13));

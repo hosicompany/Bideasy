@@ -39,3 +39,8 @@ class UserResponse(UserBase):
 class SocialLoginRequest(BaseModel):
     provider: str       # 'kakao' | 'naver'
     access_token: str   # social SDK token
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
