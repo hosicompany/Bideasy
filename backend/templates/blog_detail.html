@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% if found %}
+  <title>{{ post.title }} - BidEasy 블로그</title>
+  <meta name="description" content="{{ post.summary }}">
+  <link rel="canonical" href="{{ site_url }}/blog/{{ post.slug }}">
+  {% if post.draft %}<meta name="robots" content="noindex">{% endif %}
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="{{ post.title }}">
+  <meta property="og:description" content="{{ post.summary }}">
+  <meta property="og:url" content="{{ site_url }}/blog/{{ post.slug }}">
+  <meta property="og:site_name" content="BidEasy">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": {{ post.title | tojson }},
+    "description": {{ post.summary | tojson }},
+    {% if post.date %}"datePublished": "{{ post.date }}",{% endif %}
+    "author": { "@type": "Organization", "name": "BidEasy" },
+    "publisher": { "@type": "Organization", "name": "BidEasy" },
+    "mainEntityOfPage": "{{ site_url }}/blog/{{ post.slug }}"
+  }
+  </script>
+  {% else %}
+  <title>글을 찾을 수 없어요 - BidEasy 블로그</title>
+  <meta name="robots" content="noindex">
+  {% endif %}
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/nav.css">
+  <script src="/assets/nav.js" defer></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background: #F2F4F6; color: #191F28; min-height: 100vh; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 22px 16px 64px; }
+    a.back { color: #3182F6; text-decoration: none; font-size: 14px; }
+    .head { margin: 14px 0 22px; }
+    .cat { display: inline-block; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px; background: #EBF2FF; color: #2563EB; }
+    .head h1 { font-size: 26px; font-weight: 800; line-height: 1.35; margin-top: 12px; letter-spacing: -0.5px; }
+    .head .meta { color: #8B95A1; font-size: 13px; margin-top: 12px; }
+    .card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
+    .muted { color: #8B95A1; font-size: 14px; }
+    .prose { background: #fff; border-radius: 16px; padding: 28px 26px; box-shadow: 0 2px 8px rgba(0,0,0,.04); font-size: 16px; line-height: 1.78; color: #2B3138; }
+    .prose h2 { font-size: 20px; font-weight: 800; margin: 30px 0 12px; letter-spacing: -0.3px; }
+    .prose h3 { font-size: 17px; font-weight: 700; margin: 24px 0 10px; }
+    .prose p { margin: 14px 0; }
+    .prose ul, .prose ol { margin: 14px 0; padding-left: 22px; }
+    .prose li { margin: 7px 0; }
+    .prose strong { font-weight: 700; color: #191F28; }
+    .prose a { color: #3182F6; text-decoration: none; }
+    .prose blockquote { margin: 18px 0; padding: 14px 18px; background: #F2F7FF; border-left: 3px solid #3182F6; border-radius: 0 10px 10px 0; color: #1B4FA0; font-weight: 600; }
+    .prose code { background: #F2F4F6; padding: 2px 6px; border-radius: 5px; font-size: 14px; }
+    .prose table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+    .prose th, .prose td { border: 1px solid #E5E8EB; padding: 8px 10px; text-align: left; }
+    .prose th { background: #F8FAFB; font-weight: 700; }
+    .cta { margin-top: 22px; background: linear-gradient(135deg,#EBF2FF,#DBEAFE); border: 1px solid #C6DCFF; border-radius: 16px; padding: 22px; text-align: center; }
+    .cta a { display: inline-block; margin-top: 12px; background: #3182F6; color: #fff; text-decoration: none; padding: 11px 22px; border-radius: 12px; font-weight: 700; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/blog">← 블로그</a>
+    {% if not found %}
+    <div class="card" style="margin-top:14px;">
+      <h1 style="font-size:20px;font-weight:800;">글을 찾을 수 없어요</h1>
+      <p class="muted" style="margin-top:8px;">주소가 바뀌었거나 삭제된 글일 수 있어요. <a href="/blog" style="color:#3182F6;">블로그 목록</a>으로 돌아가세요.</p>
+    </div>
+    {% else %}
+    <article>
+      <div class="head">
+        {% if post.category %}<span class="cat">{{ post.category }}</span>{% endif %}
+        <h1>{{ post.title }}</h1>
+        <div class="meta">{% if post.date %}{{ post.date }} · {% endif %}BidEasy</div>
+      </div>
+      <div class="prose">{{ post.body_html | safe }}</div>
+    </article>
+    <div class="cta">
+      <div style="font-weight:800;font-size:17px;">직접 계산해보세요</div>
+      <div class="muted" style="margin-top:4px;">투찰가 · 낙찰하한선 · A값 계산은 무료, 가입 없이 가능합니다.</div>
+      <a href="/calculator">무료 계산기 →</a>
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>

@@ -16,6 +16,7 @@ from app.db.session import get_db
 from app.db import models
 from app.core.logging import get_logger
 from app.api.v1.endpoints.bids import _lookup_notice, get_bid_context
+from app.services import blog as blog_svc
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -74,6 +75,24 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
     return templates.TemplateResponse("bid_detail.html", ctx)
 
 
+@router.get("/blog", response_class=HTMLResponse)
+def blog_list_page(request: Request):
+    return templates.TemplateResponse(
+        "blog_list.html",
+        {"request": request, "posts": blog_svc.list_posts(), "site_url": SITE_URL},
+    )
+
+
+@router.get("/blog/{slug}", response_class=HTMLResponse)
+def blog_detail_page(slug: str, request: Request):
+    post = blog_svc.get_post(slug)
+    return templates.TemplateResponse(
+        "blog_detail.html",
+        {"request": request, "post": post, "found": bool(post), "slug": slug, "site_url": SITE_URL},
+        status_code=200 if post else 404,
+    )
+
+
 @router.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
     return f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}/sitemap.xml\n"
@@ -90,7 +109,12 @@ def sitemap(db: Session = Depends(get_db)):
         .limit(5000)
         .all()
     )
-    locs = [f"  <url><loc>{SITE_URL}/search</loc></url>"]
+    locs = [
+        f"  <url><loc>{SITE_URL}/search</loc></url>",
+        f"  <url><loc>{SITE_URL}/blog</loc></url>",
+    ]
+    for p in blog_svc.list_posts():
+        locs.append(f"  <url><loc>{SITE_URL}/blog/{p['slug']}</loc></url>")
     for n in notices:
         locs.append(f"  <url><loc>{SITE_URL}/bid/{n.bid_no}</loc></url>")
     xml = (

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BidEasy 블로그 — 공공입찰 실무 가이드 · 데이터 인사이트</title>
+  <meta name="description" content="나라장터 공공입찰 실무 가이드, 제도 소식, 데이터로 본 낙찰 인사이트. 적자 수주를 막는 BidEasy의 콘텐츠.">
+  <link rel="canonical" href="{{ site_url }}/blog">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="BidEasy 블로그">
+  <meta property="og:description" content="공공입찰 실무 가이드 · 제도 소식 · 데이터 인사이트">
+  <meta property="og:url" content="{{ site_url }}/blog">
+  <meta property="og:site_name" content="BidEasy">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/nav.css">
+  <script src="/assets/nav.js" defer></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; background: #F2F4F6; color: #191F28; min-height: 100vh; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px 64px; }
+    .hero { margin: 8px 0 22px; }
+    .hero h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
+    .hero .sub { color: #8B95A1; font-size: 15px; margin-top: 8px; }
+    .list { display: flex; flex-direction: column; gap: 12px; }
+    a.post { display: block; background: #fff; border-radius: 16px; padding: 20px 22px; box-shadow: 0 2px 8px rgba(0,0,0,.04); text-decoration: none; color: inherit; transition: box-shadow .15s, transform .15s; }
+    a.post:hover { box-shadow: 0 6px 18px rgba(0,0,0,.08); transform: translateY(-1px); }
+    .cat { display: inline-block; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px; background: #EBF2FF; color: #2563EB; }
+    a.post h2 { font-size: 18px; font-weight: 700; line-height: 1.4; margin-top: 10px; }
+    a.post .sum { color: #4E5968; font-size: 14px; line-height: 1.6; margin-top: 7px; }
+    a.post .date { color: #8B95A1; font-size: 12.5px; margin-top: 10px; }
+    .card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
+    .muted { color: #8B95A1; font-size: 14px; }
+    .cta { margin-top: 22px; background: linear-gradient(135deg,#EBF2FF,#DBEAFE); border: 1px solid #C6DCFF; border-radius: 16px; padding: 22px; text-align: center; }
+    .cta a { display: inline-block; margin-top: 12px; background: #3182F6; color: #fff; text-decoration: none; padding: 11px 22px; border-radius: 12px; font-weight: 700; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>BidEasy 블로그</h1>
+      <p class="sub">공공입찰 실무 가이드 · 제도 소식 · 데이터로 본 낙찰 인사이트</p>
+    </div>
+    {% if posts %}
+    <div class="list">
+      {% for p in posts %}
+      <a class="post" href="/blog/{{ p.slug }}">
+        {% if p.category %}<span class="cat">{{ p.category }}</span>{% endif %}
+        <h2>{{ p.title }}</h2>
+        {% if p.summary %}<p class="sum">{{ p.summary }}</p>{% endif %}
+        {% if p.date %}<div class="date">{{ p.date }}</div>{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card"><p class="muted">첫 글을 준비 중이에요. 곧 찾아옵니다.</p></div>
+    {% endif %}
+    <div class="cta">
+      <div style="font-weight:800;font-size:17px;">공고를 직접 분석해보세요</div>
+      <div class="muted" style="margin-top:4px;">투찰가 · 낙찰하한선 · A값 계산은 무료입니다.</div>
+      <a href="/calculator">무료 계산기 열기 →</a>
+    </div>
+  </div>
+</body>
+</html>
