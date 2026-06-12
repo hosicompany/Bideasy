@@ -94,7 +94,7 @@ def collect_daily_report(
         )
         .scalar() or 0
     )
-    mrr_estimate = active_pro * 14900 + active_pro_plus * 29900
+    mrr_estimate = active_pro * 24900 + active_pro_plus * 49900
 
     # ─── 2. 사용자 ──────────────────────────────────────────
     # 신규 가입 (trial_started_at = 가입 시점 자동)

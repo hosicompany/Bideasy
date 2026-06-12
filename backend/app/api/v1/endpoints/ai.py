@@ -23,7 +23,7 @@ router = APIRouter()
 
 # tier별 일일 분석 한도 (B 시나리오)
 AI_DAILY_LIMIT = {
-    "free": 3,
+    "free": 1,
     "pro": 50,
     "pro_plus": None,  # None = 무제한
 }

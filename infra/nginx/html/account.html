@@ -83,7 +83,7 @@
       var winbackBanner = sub.winback_eligible
         ? '<div style="background:var(--warn-soft);color:var(--warn);padding:11px 14px;border-radius:10px;font-size:13px;font-weight:700;margin-top:14px;display:flex;gap:8px;align-items:center;"><span style="display:flex;">' + BD.icon('bolt', 14) + '</span>첫 달 ' + sub.winback_discount_pct + '% 할인 자격 — ' + winbackDays + '일 안에 월간 결제 시 자동 적용</div>'
         : '';
-      var winbackPrice = sub.winback_eligible ? Math.round(14900 * (1 - sub.winback_discount_pct / 100)) : 14900;
+      var winbackPrice = sub.winback_eligible ? Math.round(24900 * (1 - sub.winback_discount_pct / 100)) : 24900;
 
       function head(title, chipHtml, desc, ctaHtml) {
         return '<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">' +

@@ -247,8 +247,8 @@
     // pricing
     var TIERS = [
       ['Free','0','영구 무료',['투찰가 계산기 무제한','공고 피드 · 즐겨찾기','AI 분석 일 1회'],false,'무료로 시작','/signup'],
-      ['Pro','14,900','연 140,000원 · 20% 할인',['AI 분석 일 50회','Deep Analysis (HWP·PDF)','경쟁 강도 예측 · 투찰가 검증','Pro 14일 무료 체험'],true,'14일 무료 체험','/signup'],
-      ['Pro+','29,900','연 280,000원 · 20% 할인',['Pro의 모든 기능','AI 분석 무제한','기관 프로파일링 · 사정률 ML','스마트 투찰 추천'],false,'자세히 보기','/pricing']
+      ['Pro','24,900','연 239,000원 · 20% 할인',['AI 분석 일 50회','Deep Analysis (HWP·PDF)','경쟁 강도 예측 · 투찰가 검증','Pro 14일 무료 체험'],true,'14일 무료 체험','/signup'],
+      ['Pro+','49,900','연 479,000원 · 20% 할인',['Pro의 모든 기능','AI 분석 무제한','기관 프로파일링 · 사정률 ML','스마트 투찰 추천'],false,'자세히 보기','/pricing']
     ];
     document.getElementById('pricing').innerHTML = TIERS.map(function (t) {
       var feats = t[3].map(function (f) { return '<div style="display:flex;gap:8px;font-size:13.5px;color:var(--muted);"><span style="color:var(--safe);margin-top:1px;">' + CHECK + '</span>' + f + '</div>'; }).join('');

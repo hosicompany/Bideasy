@@ -95,7 +95,7 @@ def test_billing_prepare_creates_order_and_customer_key(billing_client, db_sessi
     data = resp.json()
     assert data["order_id"].startswith("BILL_")
     assert data["customer_key"]
-    assert data["amount"] in (14_900, 7_450)  # 정가 또는 win-back 50%
+    assert data["amount"] in (24_900, 12_450)  # 정가 또는 win-back 50%
     assert data["tier"] == "pro"
     assert data["toss_client_key"] is not None
 

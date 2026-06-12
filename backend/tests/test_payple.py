@@ -97,7 +97,7 @@ def test_payple_prepare_creates_order(payple_client, db_session):
     assert data["order_id"].startswith("PYP_")
     assert data["client_key"]
     assert data["host"]
-    assert data["amount"] in (14_900, 7_450)  # 정가 또는 win-back 50%
+    assert data["amount"] in (24_900, 12_450)  # 정가 또는 win-back 50%
     assert data["rst_url"].endswith("/payments/payple/callback")
     assert data["payer_no"]
 

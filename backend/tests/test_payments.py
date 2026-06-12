@@ -138,8 +138,8 @@ class TestSubscription:
             "/api/v1/payments/subscribe",
             json={"tier": "pro", "billing_cycle": "annual"},
         )
-        assert resp.json()["amount"] == ANNUAL_PRICES[TIER_PRO]  # 140,000
-        assert resp.json()["amount"] == 140_000
+        assert resp.json()["amount"] == ANNUAL_PRICES[TIER_PRO]  # 239,000
+        assert resp.json()["amount"] == 239_000
 
         # Pro+ 월간
         resp = free_client.post(
@@ -153,8 +153,8 @@ class TestSubscription:
             "/api/v1/payments/subscribe",
             json={"tier": "pro_plus", "billing_cycle": "annual"},
         )
-        assert resp.json()["amount"] == ANNUAL_PRICES[TIER_PRO_PLUS]  # 280,000
-        assert resp.json()["amount"] == 280_000
+        assert resp.json()["amount"] == ANNUAL_PRICES[TIER_PRO_PLUS]  # 479,000
+        assert resp.json()["amount"] == 479_000
 
     def test_annual_discount_is_20_percent(self, free_client):
         """연간 가격이 월간 × 12 대비 20% 할인 (실제 ~21.7%) 인지."""
