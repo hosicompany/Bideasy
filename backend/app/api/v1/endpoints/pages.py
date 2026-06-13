@@ -109,10 +109,8 @@ def sitemap(db: Session = Depends(get_db)):
         .limit(5000)
         .all()
     )
-    locs = [
-        f"  <url><loc>{SITE_URL}/search</loc></url>",
-        f"  <url><loc>{SITE_URL}/blog</loc></url>",
-    ]
+    static_paths = ["", "/search", "/calculator", "/guide", "/pricing", "/blog"]
+    locs = [f"  <url><loc>{SITE_URL}{p}</loc></url>" for p in static_paths]
     for p in blog_svc.list_posts():
         locs.append(f"  <url><loc>{SITE_URL}/blog/{p['slug']}</loc></url>")
     for n in notices:

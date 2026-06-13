@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>요금제 — BidEasy</title>
   <meta name="description" content="BidEasy 요금제. Free·Pro·Pro+. 신용카드 없이 Pro 14일 무료 체험.">
+  <link rel="canonical" href="https://bideasy.kr/pricing">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="요금제 — BidEasy">
+  <meta property="og:description" content="Free·Pro·Pro+. 신용카드 없이 Pro 14일 무료 체험.">
+  <meta property="og:url" content="https://bideasy.kr/pricing">
+  <meta property="og:site_name" content="BidEasy">
   <link rel="icon" href="/brand/favicon.svg">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -74,10 +80,4 @@
       '<div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;background:var(--sunken);padding:14px 22px;"><span class="micro">기능</span>' + ['Free', 'Pro', 'Pro+'].map(function (h) { return '<span class="micro" style="text-align:center;">' + h + '</span>'; }).join('') + '</div>' +
       COMPARE.map(function (row) {
         return '<div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;padding:14px 22px;border-top:1px solid var(--line);align-items:center;"><span style="font-size:13.5px;color:var(--ink-2);font-weight:600;">' + row[0] + '</span>' +
-          row.slice(1).map(function (c) { return '<span style="text-align:center;">' + (c === '○' ? '<span style="color:var(--safe);display:inline-flex;">' + BD.icon('check', 15, 2.2) + '</span>' : c === '—' ? '<span style="color:var(--faint);">—</span>' : '<span class="num" style="font-size:13px;color:var(--ink-2);">' + c + '</span>') + '</span>'; }).join('') + '</div>';
-      }).join('');
-    renderTiers();
-  })();
-  </script>
-</body>
-</html>
+          row.slice(1).map(function (c) { return '<span style="text

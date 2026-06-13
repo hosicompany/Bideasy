@@ -5,8 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BidEasy — 공공입찰, 1원 단위까지 정확하게 안전하게</title>
   <meta name="description" content="나라장터 공고에서 바로 투찰률 계산·낙찰하한선·A값·AI 분석·자격 매칭. 매주 자동 학습하는 자가보정 알고리즘. 신규 가입 Pro 14일 무료.">
+  <link rel="canonical" href="https://bideasy.kr/">
+  <meta property="og:type" content="website">
   <meta property="og:title" content="BidEasy — 데이터 기반 입찰 안전 비서">
   <meta property="og:description" content="나라장터에서 바로 투찰가 계산·AI 분석·자격 매칭. 신규 가입 Pro 14일 무료 체험.">
+  <meta property="og:url" content="https://bideasy.kr/">
+  <meta property="og:site_name" content="BidEasy">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "BidEasy",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web, Chrome Extension",
+    "description": "나라장터 공공입찰 분석·투찰 비서. 투찰가 계산, 낙찰하한율, A값 자동 수집, AI 공고 분석, 자격 매칭.",
+    "url": "https://bideasy.kr",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "KRW", "description": "Free 플랜 + Pro 14일 무료 체험" }
+  }
+  </script>
   <link rel="icon" href="/brand/favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
@@ -297,13 +313,4 @@
 
     // ── live autocalibrate stats (graceful: falls back to baked-in numbers) ──
     fetch('/api/v1/autocalibrate/stats').then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (d) {
-      if (d.passRate) { document.getElementById('acal-pass').setAttribute('data-count', d.passRate.toFixed(1) + '%'); document.getElementById('acal-pass').textContent = d.passRate.toFixed(1) + '%'; }
-      if (d.dropRate) { document.getElementById('acal-drop').setAttribute('data-count', d.dropRate.toFixed(1) + '%'); document.getElementById('acal-drop').textContent = d.dropRate.toFixed(1) + '%'; }
-      if (d.dataCount) { document.getElementById('acal-count').setAttribute('data-count', d.dataCount.toLocaleString('ko-KR') + '건'); document.getElementById('acal-count').textContent = d.dataCount.toLocaleString('ko-KR') + '건'; }
-      if (d.weekly) renderBars(d.weekly);
-      if (d.lastTrainedAt) document.getElementById('acal-ts').textContent = '마지막 학습 ' + d.lastTrainedAt + ' · 다음 자동 갱신 D-' + (d.nextUpdateDays || 2);
-    }).catch(function () { /* keep baked-in numbers */ });
-  })();
-  </script>
-</body>
-</html>
+      if (d.passRate) { document.getElementById('acal-pass').setAttribute('data-count', d.passRate.toFixed(1) + '%'); document.getElementById('acal-pass').textConten

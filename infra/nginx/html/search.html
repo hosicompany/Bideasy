@@ -3,8 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>공고 검색 — BidEasy</title>
-  <meta name="description" content="나라장터 공고를 종류·지역으로 검색. 공사·용역·물품 통합 피드와 마감 추적.">
+  <title>나라장터 입찰공고 검색 — 공사·용역·물품 | BidEasy</title>
+  <meta name="description" content="나라장터(G2B) 입찰공고를 키워드·종류·지역으로 무료 검색. 공사·용역·물품 통합 피드, 투찰가 계산과 마감 추적까지 한 번에.">
+  <link rel="canonical" href="https://bideasy.kr/search">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="나라장터 입찰공고 검색 — BidEasy">
+  <meta property="og:description" content="공사·용역·물품 공고를 키워드·지역으로 무료 검색해요.">
+  <meta property="og:url" content="https://bideasy.kr/search">
+  <meta property="og:site_name" content="BidEasy">
   <link rel="icon" href="/brand/favicon.svg">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -137,13 +143,4 @@
     }
 
     var debounce;
-    document.getElementById('q').addEventListener('input', function (e) { state.q = e.target.value.trim(); clearTimeout(debounce); debounce = setTimeout(loadFeed, 350); });
-    document.getElementById('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { clearTimeout(debounce); state.q = e.target.value.trim(); loadFeed(); } });
-    document.getElementById('searchbtn').addEventListener('click', function () { clearTimeout(debounce); state.q = document.getElementById('q').value.trim(); loadFeed(); });
-
-    renderFilters();
-    loadFeed();
-  })();
-  </script>
-</body>
-</html>
+    document.getElementById('q').addEventListener('input', funct
