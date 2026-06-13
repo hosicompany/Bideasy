@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>BidEasy 카드 메이커 (내부)</title>
+<link rel="icon" href="/brand/favicon.svg">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+<style>
+  :root{ --blue:#2B50E0; --ink:#16203A; --line:#E6E9F2; --muted:#8B94AD; }
+  *{ box-sizing:border-box; }
+  body{ font-family:'Pretendard',-apple-system,'Malgun Gothic',sans-serif; margin:0; background:#0E1530; color:#E7ECFF; }
+  .wrap{ display:flex; gap:24px; max-width:1180px; margin:0 auto; padding:28px 22px 60px; flex-wrap:wrap; }
+  h1{ font-size:20px; margin:0 0 4px; }
+  .sub{ color:#9FB0E8; font-size:13px; margin:0 0 22px; }
+  .panel{ flex:1; min-width:300px; background:#161E3C; border:1px solid #28335E; border-radius:14px; padding:20px; }
+  label{ display:block; font-size:12.5px; font-weight:600; color:#A9B6E8; margin:14px 0 6px; }
+  select,input,textarea{ width:100%; padding:10px 12px; border-radius:9px; border:1px solid #34406E; background:#0E1530; color:#fff; font-family:inherit; font-size:14px; }
+  textarea{ resize:vertical; line-height:1.5; }
+  .row{ display:flex; gap:10px; }
+  .row>div{ flex:1; }
+  button{ font-family:inherit; cursor:pointer; border:none; }
+  .dl{ width:100%; margin-top:20px; background:var(--blue); color:#fff; font-weight:800; font-size:15px; padding:14px; border-radius:11px; }
+  .dl:hover{ background:#2243C4; }
+  .preview{ flex:0 0 360px; }
+  .canvas-box{ position:sticky; top:20px; }
+  canvas{ width:100%; border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,.5); display:block; }
+  .hint{ font-size:11.5px; color:#7E8BC0; margin-top:10px; line-height:1.6; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <h1>BidEasy 카드 메이커 <span style="font-size:12px;color:#7E8BC0;font-weight:400;">· 내부용</span></h1>
+      <p class="sub">텍스트만 바꾸면 인스타 카드(1080×1350)가 완성 — PNG로 다운로드해서 바로 올리세요.</p>
+
+      <label>프리셋 (A값 6종)</label>
+      <select id="preset">
+        <option value="">— 직접 입력 —</option>
+        <option value="cover">표지: A값을 모르면…</option>
+        <option value="c1">01 · A값이 뭐예요?</option>
+        <option value="c2">02 · 왜 중요하냐면</option>
+        <option value="c3">03 · 안 빼면 손해</option>
+        <option value="c4">04 · A값은 어디 있나</option>
+        <option value="cta">마무리 · CTA</option>
+      </select>
+
+      <label>카드 종류</label>
+      <select id="kind">
+        <option value="cover">표지 (파란 배경)</option>
+        <option value="content">내용 (흰 배경)</option>
+        <option value="highlight">강조 (연파랑 배경)</option>
+        <option value="cta">마무리 CTA (파란 배경)</option>
+      </select>
+
+      <label>상단 배지 / 라벨</label>
+      <input id="badge" value="공사 입찰 필수상식 ①">
+
+      <label>헤드라인 (줄바꿈 = Enter)</label>
+      <textarea id="headline" rows="2">A값을 모르면
+적자가 납니다</textarea>
+
+      <label>본문 / 부제 (줄바꿈 = Enter)</label>
+      <textarea id="body" rows="3">투찰가에서 빠뜨리면 안 되는 이유</textarea>
+
+      <div class="row">
+        <div><label>하단 왼쪽</label><input id="fl" value="BidEasy"></div>
+        <div><label>하단 오른쪽 / 버튼</label><input id="fr" value="밀어서 보기 →"></div>
+      </div>
+
+      <button class="dl" id="dl">PNG 다운로드 (1080×1350)</button>
+      <p class="hint">표지/CTA = 파란 배경·흰 글자, 내용 = 흰 배경, 강조 = 연파랑+주황 포인트. 프리셋을 고르면 자동으로 채워져요.</p>
+    </div>
+
+    <div class="preview">
+      <div class="canvas-box">
+        <canvas id="cv" width="1080" height="1350"></canvas>
+        <p class="hint">↑ 실시간 미리보기 (실제 1080×1350px로 저장됩니다)</p>
+      </div>
+    </div>
+  </div>
+
+<script>
+const PRESETS = {
+  cover:    { kind:'cover',     badge:'공사 입찰 필수상식 ①', headline:'A값을 모르면\n적자가 납니다', body:'투찰가에서 빠뜨리면 안 되는 이유', fl:'BidEasy', fr:'밀어서 보기 →' },
+  c1:       { kind:'content',   badge:'01 · A값이 뭐예요?', headline:'국민연금·건강보험·산재·고용·\n노인장기요양', body:"공사하며 내는 '사후정산 비목'의 합계예요.", fl:'BidEasy', fr:'2 / 6' },
+  c2:       { kind:'content',   badge:'02 · 왜 중요하냐면', headline:'A값엔\n투찰률이 안 붙어요', body:'= 깎이지 않는 돈.\n그래서 따로 떼서 계산해야 정확합니다.', fl:'BidEasy', fr:'3 / 6' },
+  c3:       { kind:'highlight', badge:'03 · 안 빼면 이만큼 손해', headline:'약 491만 원\n차이!', body:'10억 공사·A값 4천만 원이면\n무시 8억 7,745만 → 분리 8억 8,236만', fl:'BidEasy', fr:'4 / 6' },
+  c4:       { kind:'content',   badge:'04 · A값은 어디 있나?', headline:'OpenAPI엔\n없어요', body:'오직 ① 공고 첨부문서\n② 나라장터 화면에만 있어요.', fl:'BidEasy', fr:'5 / 6' },
+  cta:      { kind:'cta',       badge:'BidEasy가 자동으로', headline:'익스텐션이 A값 자동 수집\n→ 계산기 자동 반영', body:'1원 단위 정밀 투찰가.', fl:'BidEasy', fr:'무료로 계산 · bideasy.kr' },
+};
+
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const F = "Pretendard, 'Malgun Gothic', sans-serif";
+
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+function lines(text){ return String(text).split('\n').filter(l=>l.length); }
+
+function drawLinesBlock(arr, x, y, size, weight, color, lh){
+  ctx.font = weight+' '+size+'px '+F; ctx.fillStyle = color; ctx.textAlign='left';
+  arr.forEach((l,i)=> ctx.fillText(l, x, y + i*lh + size*0.8));
+  return y + arr.length*lh;
+}
+
+function pill(x,y,text,bg,fg){
+  ctx.font = "600 30px "+F; const tw = ctx.measureText(text).width;
+  const padX=26, h=58, w=tw+padX*2;
+  ctx.fillStyle=bg; roundRect(x,y,w,h,h/2); ctx.fill();
+  ctx.fillStyle=fg; ctx.textAlign='left'; ctx.fillText(text, x+padX, y+h*0.66);
+  return h;
+}
+
+function render(){
+  const kind=$('kind').value, badge=$('badge').value, hl=lines($('headline').value), bd=lines($('body').value), fl=$('fl').value, fr=$('fr').value;
+  const W=1080,H=1350,P=96;
+  ctx.clearRect(0,0,W,H);
+
+  const theme = {
+    cover:     { bg:'#2B50E0', badgeBg:'rgba(255,255,255,.18)', badgeFg:'#fff', label:'#D6DEFF', head:'#fff', body:'#D6DEFF', foot:'#C6D2FF' },
+    cta:       { bg:'#2B50E0', badgeBg:'rgba(255,255,255,.18)', badgeFg:'#fff', label:'#D6DEFF', head:'#fff', body:'#D6DEFF', foot:'#C6D2FF' },
+    content:   { bg:'#FFFFFF', badgeBg:null, badgeFg:'#2B50E0', label:'#2B50E0', head:'#16203A', body:'#4E5968', foot:'#8B94AD' },
+    highlight: { bg:'#F4F6FF', badgeBg:null, badgeFg:'#C2410C', label:'#C2410C', head:'#16203A', body:'#5A647E', foot:'#8B94AD' },
+  }[kind];
+
+  ctx.fillStyle=theme.bg; ctx.fillRect(0,0,W,H);
+
+  // 상단 배지/라벨
+  if(kind==='cover'||kind==='cta'){ pill(P,P,badge,theme.badgeBg,theme.badgeFg); }
+  else { ctx.font="700 30px "+F; ctx.fillStyle=theme.label; ctx.textAlign='left'; ctx.fillText(badge, P, P+34); }
+
+  // 헤드라인 (표지/CTA는 큰 글씨, 내용/강조는 중상단)
+  const headSize = (kind==='cover') ? 88 : (kind==='highlight') ? 96 : 64;
+  const headLH = headSize*1.22;
+  let hy = (kind==='cover') ? 470 : (kind==='cta') ? 440 : 360;
+  let after = drawLinesBlock(hl, P, hy, headSize, '800', theme.head, headLH);
+
+  // 본문/부제
+  if(bd.length){
+    const bsize = (kind==='cover'||kind==='cta') ? 34 : 38;
+    drawLinesBlock(bd, P, after+24, bsize, '600', theme.body, bsize*1.45);
+  }
+
+  // 하단
+  if(kind==='cta'){
+    const bh=92, by=H-P-bh;
+    ctx.fillStyle='#fff'; roundRect(P,by,W-P*2,bh,16); ctx.fill();
+    ctx.fillStyle='#2B50E0'; ctx.font="800 38px "+F; ctx.textAlign='center'; ctx.fillText(fr, W/2, by+bh*0.64);
+    ctx.textAlign='left'; ctx.font="700 32px "+F; ctx.fillStyle=theme.foot; ctx.fillText(fl, P, by-30);
+  } else {
+    ctx.font="700 32px "+F; ctx.fillStyle=(kind==='cover')?'#fff':theme.foot; ctx.textAlign='left'; ctx.fillText(fl, P, H-P);
+    ctx.textAlign='right'; ctx.fillStyle=theme.foot; ctx.font="600 30px "+F; ctx.fillText(fr, W-P, H-P);
+  }
+}
+
+['kind','badge','headline','body','fl','fr'].forEach(id=> $(id).addEventListener('input', render));
+$('preset').addEventListener('change', e=>{
+  const p=PRESETS[e.target.value]; if(!p) return;
+  $('kind').value=p.kind; $('badge').value=p.badge; $('headline').value=p.headline; $('body').value=p.body; $('fl').value=p.fl; $('fr').value=p.fr;
+  render();
+});
+$('dl').addEventListener('click', ()=>{
+  cv.toBlob(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='bideasy_card_'+Date.now()+'.png'; a.click(); }, 'image/png');
+});
+
+// 폰트 로드 후 정확히 렌더
+if(document.fonts && document.fonts.ready){ document.fonts.load("800 80px Pretendard").then(()=>document.fonts.ready).then(render); }
+render();
+</script>
+</body>
+</html>
