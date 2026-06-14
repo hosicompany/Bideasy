@@ -18,9 +18,12 @@
   label{ display:block; font-size:12.5px; font-weight:600; color:#A9B6E8; margin:14px 0 6px; }
   select,input,textarea{ width:100%; padding:10px 12px; border-radius:9px; border:1px solid #34406E; background:#0E1530; color:#fff; font-family:inherit; font-size:14px; }
   textarea{ resize:vertical; line-height:1.5; }
+  input[type=range]{ padding:0; border:none; background:transparent; accent-color:var(--blue); }
+  input[type=file]{ padding:8px; font-size:12.5px; }
   .row{ display:flex; gap:10px; }
   .row>div{ flex:1; }
   button{ font-family:inherit; cursor:pointer; border:none; }
+  .ghost{ background:#0E1530; border:1px solid #34406E; color:#A9B6E8; border-radius:9px; padding:0 14px; font-size:13px; white-space:nowrap; }
   .dl{ width:100%; margin-top:20px; background:var(--blue); color:#fff; font-weight:800; font-size:15px; padding:14px; border-radius:11px; }
   .dl:hover{ background:#2243C4; }
   .preview{ flex:0 0 360px; }
@@ -54,6 +57,13 @@
         <option value="cta">마무리 CTA (파란 배경)</option>
       </select>
 
+      <label>배경 이미지 (선택) — 힉스필드 배경·사진을 글자 뒤에</label>
+      <input type="file" id="bgfile" accept="image/*">
+      <div class="row" style="align-items:flex-end;margin-top:8px;">
+        <div><label style="margin-top:0;">어둡게 덮기 <span id="dimval" style="color:#7E8BC0;">35%</span></label><input type="range" id="dim" min="0" max="85" value="35"></div>
+        <button class="ghost" id="bgclear" style="height:40px;">이미지 제거</button>
+      </div>
+
       <label>상단 배지 / 라벨</label>
       <input id="badge" value="공사 입찰 필수상식 ①">
 
@@ -70,7 +80,7 @@
       </div>
 
       <button class="dl" id="dl">PNG 다운로드 (1080×1350)</button>
-      <p class="hint">표지/CTA = 파란 배경·흰 글자, 내용 = 흰 배경, 강조 = 연파랑+주황 포인트. 프리셋을 고르면 자동으로 채워져요.</p>
+      <p class="hint">사진을 배경에 깔 땐 글자색이 흰색인 <b>표지·CTA</b> 종류가 잘 어울려요. "어둡게 덮기"로 글자 가독성을 맞추세요. 프리셋을 고르면 텍스트가 자동으로 채워져요.</p>
     </div>
 
     <div class="preview">
@@ -94,10 +104,16 @@ const PRESETS = {
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d');
 const F = "Pretendard, 'Malgun Gothic', sans-serif";
+let bgImg = null;
 
 function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
-
 function lines(text){ return String(text).split('\n').filter(l=>l.length); }
+
+function drawCover(img){
+  const cw=1080, ch=1350, ir=img.width/img.height, cr=cw/ch;
+  let dw,dh; if(ir>cr){ dh=ch; dw=ch*ir; } else { dw=cw; dh=cw/ir; }
+  ctx.drawImage(img, (cw-dw)/2, (ch-dh)/2, dw, dh);
+}
 
 function drawLinesBlock(arr, x, y, size, weight, color, lh){
   ctx.font = weight+' '+size+'px '+F; ctx.fillStyle = color; ctx.textAlign='left';
@@ -115,6 +131,7 @@ function pill(x,y,text,bg,fg){
 
 function render(){
   const kind=$('kind').value, badge=$('badge').value, hl=lines($('headline').value), bd=lines($('body').value), fl=$('fl').value, fr=$('fr').value;
+  const dim=(+$('dim').value)/100;
   const W=1080,H=1350,P=96;
   ctx.clearRect(0,0,W,H);
 
@@ -125,47 +142,50 @@ function render(){
     highlight: { bg:'#F4F6FF', badgeBg:null, badgeFg:'#C2410C', label:'#C2410C', head:'#16203A', body:'#5A647E', foot:'#8B94AD' },
   }[kind];
 
+  // 1) 배경색 → 2) 배경 이미지(cover) → 3) 어둡게 오버레이 → 4) 텍스트
   ctx.fillStyle=theme.bg; ctx.fillRect(0,0,W,H);
+  if(bgImg){ drawCover(bgImg); if(dim>0){ ctx.fillStyle='rgba(0,0,0,'+dim+')'; ctx.fillRect(0,0,W,H); } }
 
-  // 상단 배지/라벨
   if(kind==='cover'||kind==='cta'){ pill(P,P,badge,theme.badgeBg,theme.badgeFg); }
   else { ctx.font="700 30px "+F; ctx.fillStyle=theme.label; ctx.textAlign='left'; ctx.fillText(badge, P, P+34); }
 
-  // 헤드라인 (표지/CTA는 큰 글씨, 내용/강조는 중상단)
   const headSize = (kind==='cover') ? 88 : (kind==='highlight') ? 96 : 64;
   const headLH = headSize*1.22;
   let hy = (kind==='cover') ? 470 : (kind==='cta') ? 440 : 360;
   let after = drawLinesBlock(hl, P, hy, headSize, '800', theme.head, headLH);
 
-  // 본문/부제
   if(bd.length){
     const bsize = (kind==='cover'||kind==='cta') ? 34 : 38;
     drawLinesBlock(bd, P, after+24, bsize, '600', theme.body, bsize*1.45);
   }
 
-  // 하단
   if(kind==='cta'){
     const bh=92, by=H-P-bh;
     ctx.fillStyle='#fff'; roundRect(P,by,W-P*2,bh,16); ctx.fill();
     ctx.fillStyle='#2B50E0'; ctx.font="800 38px "+F; ctx.textAlign='center'; ctx.fillText(fr, W/2, by+bh*0.64);
     ctx.textAlign='left'; ctx.font="700 32px "+F; ctx.fillStyle=theme.foot; ctx.fillText(fl, P, by-30);
   } else {
-    ctx.font="700 32px "+F; ctx.fillStyle=(kind==='cover')?'#fff':theme.foot; ctx.textAlign='left'; ctx.fillText(fl, P, H-P);
-    ctx.textAlign='right'; ctx.fillStyle=theme.foot; ctx.font="600 30px "+F; ctx.fillText(fr, W-P, H-P);
+    ctx.font="700 32px "+F; ctx.fillStyle=(kind==='cover'||bgImg)?'#fff':theme.foot; ctx.textAlign='left'; ctx.fillText(fl, P, H-P);
+    ctx.textAlign='right'; ctx.fillStyle=(bgImg?'#E7ECFF':theme.foot); ctx.font="600 30px "+F; ctx.fillText(fr, W-P, H-P);
   }
 }
 
 ['kind','badge','headline','body','fl','fr'].forEach(id=> $(id).addEventListener('input', render));
+$('dim').addEventListener('input', ()=>{ $('dimval').textContent=$('dim').value+'%'; render(); });
 $('preset').addEventListener('change', e=>{
   const p=PRESETS[e.target.value]; if(!p) return;
   $('kind').value=p.kind; $('badge').value=p.badge; $('headline').value=p.headline; $('body').value=p.body; $('fl').value=p.fl; $('fr').value=p.fr;
   render();
 });
+$('bgfile').addEventListener('change', e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  const img=new Image(); img.onload=()=>{ bgImg=img; render(); }; img.src=URL.createObjectURL(f);
+});
+$('bgclear').addEventListener('click', ()=>{ bgImg=null; $('bgfile').value=''; render(); });
 $('dl').addEventListener('click', ()=>{
   cv.toBlob(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='bideasy_card_'+Date.now()+'.png'; a.click(); }, 'image/png');
 });
 
-// 폰트 로드 후 정확히 렌더
 if(document.fonts && document.fonts.ready){ document.fonts.load("800 80px Pretendard").then(()=>document.fonts.ready).then(render); }
 render();
 </script>
