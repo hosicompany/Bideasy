@@ -80,4 +80,10 @@
       '<div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;background:var(--sunken);padding:14px 22px;"><span class="micro">기능</span>' + ['Free', 'Pro', 'Pro+'].map(function (h) { return '<span class="micro" style="text-align:center;">' + h + '</span>'; }).join('') + '</div>' +
       COMPARE.map(function (row) {
         return '<div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;padding:14px 22px;border-top:1px solid var(--line);align-items:center;"><span style="font-size:13.5px;color:var(--ink-2);font-weight:600;">' + row[0] + '</span>' +
-          row.slice(1).map(function (c) { return '<span style="text
+          row.slice(1).map(function (c) { return '<span style="text-align:center;">' + (c === '○' ? '<span style="color:var(--safe);display:inline-flex;">' + BD.icon('check', 15, 2.2) + '</span>' : c === '—' ? '<span style="color:var(--faint);">—</span>' : '<span class="num" style="font-size:13px;color:var(--ink-2);">' + c + '</span>') + '</span>'; }).join('') + '</div>';
+      }).join('');
+    renderTiers();
+  })();
+  </script>
+</body>
+</html>

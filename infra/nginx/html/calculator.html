@@ -159,4 +159,28 @@
         st.copied = false; render();
       });
     });
-    document.getElementById('basic').addEventListener('input', fun
+    document.getElementById('basic').addEventListener('input', function (e) { st.basic = num('basic'); st.copied = false; render(); });
+    document.getElementById('aval').addEventListener('input', function () { st.aval = num('aval'); st.copied = false; render(); });
+    document.getElementById('tcl').addEventListener('input', function (e) { st.tcl = Number(e.target.value); st.copied = false; render(); });
+    render();
+
+    // ?no= 프리필 — 실제 공고 컨텍스트(GET /bids/{no}/context)로 기초금액·종류 자동 입력
+    var no = new URLSearchParams(location.search).get('no');
+    if (no) {
+      fetch(API_BASE + '/bids/' + encodeURIComponent(no) + '/context').then(function (r) { return r.ok ? r.json() : null; }).then(function (ctx) {
+        if (!ctx || ctx.found === false) return;
+        if (ctx.estimated_price) { st.basic = ctx.estimated_price; document.getElementById('basic').value = BD.won(st.basic); }
+        if (ctx.contract_type) {
+          st.ct = ctx.contract_type;
+          document.querySelectorAll('#seg button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-ct') === st.ct); });
+          document.getElementById('aval-wrap').style.display = st.ct === 'GOODS' ? 'none' : 'block';
+        }
+        var nm = ctx.title || ('공고 ' + no);
+        document.getElementById('banner').innerHTML = '<div class="card" style="margin-top:16px;padding:12px 16px;display:flex;align-items:center;gap:12px;border-color:var(--accent);background:var(--accent-soft);flex-wrap:wrap;"><span style="color:var(--accent);display:flex;flex-shrink:0;">' + BD.icon('doc', 15) + '</span><span style="font-size:13.5px;color:var(--ink-2);"><b style="color:var(--ink);">' + nm + '</b> 기준 · 기초금액·종류 자동 입력됨</span><a class="btn btn-quiet btn-sm" style="margin-left:auto;color:var(--accent);" href="/bid.html?no=' + encodeURIComponent(no) + '">공고 상세 →</a></div>';
+        st.copied = false; render();
+      }).catch(function () {});
+    }
+  })();
+  </script>
+</body>
+</html>

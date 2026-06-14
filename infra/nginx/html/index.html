@@ -313,4 +313,13 @@
 
     // ── live autocalibrate stats (graceful: falls back to baked-in numbers) ──
     fetch('/api/v1/autocalibrate/stats').then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (d) {
-      if (d.passRate) { document.getElementById('acal-pass').setAttribute('data-count', d.passRate.toFixed(1) + '%'); document.getElementById('acal-pass').textConten
+      if (d.passRate) { document.getElementById('acal-pass').setAttribute('data-count', d.passRate.toFixed(1) + '%'); document.getElementById('acal-pass').textContent = d.passRate.toFixed(1) + '%'; }
+      if (d.dropRate) { document.getElementById('acal-drop').setAttribute('data-count', d.dropRate.toFixed(1) + '%'); document.getElementById('acal-drop').textContent = d.dropRate.toFixed(1) + '%'; }
+      if (d.dataCount) { document.getElementById('acal-count').setAttribute('data-count', d.dataCount.toLocaleString('ko-KR') + '건'); document.getElementById('acal-count').textContent = d.dataCount.toLocaleString('ko-KR') + '건'; }
+      if (d.weekly) renderBars(d.weekly);
+      if (d.lastTrainedAt) document.getElementById('acal-ts').textContent = '마지막 학습 ' + d.lastTrainedAt + ' · 다음 자동 갱신 D-' + (d.nextUpdateDays || 2);
+    }).catch(function () { /* keep baked-in numbers */ });
+  })();
+  </script>
+</body>
+</html>

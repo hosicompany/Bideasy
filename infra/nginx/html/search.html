@@ -143,4 +143,13 @@
     }
 
     var debounce;
-    document.getElementById('q').addEventListener('input', funct
+    document.getElementById('q').addEventListener('input', function (e) { state.q = e.target.value.trim(); clearTimeout(debounce); debounce = setTimeout(loadFeed, 350); });
+    document.getElementById('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { clearTimeout(debounce); state.q = e.target.value.trim(); loadFeed(); } });
+    document.getElementById('searchbtn').addEventListener('click', function () { clearTimeout(debounce); state.q = document.getElementById('q').value.trim(); loadFeed(); });
+
+    renderFilters();
+    loadFeed();
+  })();
+  </script>
+</body>
+</html>
