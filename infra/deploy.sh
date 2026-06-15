@@ -118,6 +118,17 @@ case "${1:-deploy}" in
     dc \
       exec app alembic upgrade head
 
+    # Reload nginx to apply conf.d changes (routing/redirects).
+    # git pull 이 mount된 conf 를 갱신해도 nginx 는 reload 해야 적용됨.
+    # nginx -t 통과할 때만 reload (잘못된 설정으로 죽는 것 방지).
+    echo "Reloading nginx config..."
+    if dc exec -T nginx nginx -t; then
+      dc exec -T nginx nginx -s reload
+      echo "nginx reloaded."
+    else
+      echo "WARNING: nginx config test FAILED — reload 건너뜀. ./nginx/conf.d 확인 후 수동 reload 필요."
+    fi
+
     echo "=== Deploy complete ==="
     ;;
 
