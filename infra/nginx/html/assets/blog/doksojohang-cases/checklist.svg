@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 340" role="img" aria-label="낙찰받고도 손해 보는 독소조항 5가지: 지체상금, 임의 변경, 하자담보, 대금 지연, 특정업체 자격">
+  <rect width="900" height="340" rx="16" fill="#F4F6FF"/>
+  <g font-family="'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif">
+    <text x="40" y="50" fill="#16203A" font-size="18" font-weight="800">낙찰받고도 손해 보는 독소조항 5</text>
+    <g>
+      <rect x="40" y="74" width="820" height="44" rx="11" fill="#ffffff"/>
+      <circle cx="68" cy="96" r="11" fill="#C2410C"/><text x="68" y="101" fill="#fff" font-size="14" font-weight="800" text-anchor="middle">1</text>
+      <text x="92" y="101" fill="#2B3138" font-size="15" font-weight="700">과도한 지체상금 &#183; 이행보증 조건</text>
+    </g>
+    <g>
+      <rect x="40" y="126" width="820" height="44" rx="11" fill="#ffffff"/>
+      <circle cx="68" cy="148" r="11" fill="#C2410C"/><text x="68" y="153" fill="#fff" font-size="14" font-weight="800" text-anchor="middle">2</text>
+      <text x="92" y="153" fill="#2B3138" font-size="15" font-weight="700">발주기관 임의 변경 &#183; 해지 조항</text>
+    </g>
+    <g>
+      <rect x="40" y="178" width="820" height="44" rx="11" fill="#ffffff"/>
+      <circle cx="68" cy="200" r="11" fill="#C2410C"/><text x="68" y="205" fill="#fff" font-size="14" font-weight="800" text-anchor="middle">3</text>
+      <text x="92" y="205" fill="#2B3138" font-size="15" font-weight="700">하자담보 &#183; 무상 유지보수 기간의 함정</text>
+    </g>
+    <g>
+      <rect x="40" y="230" width="820" height="44" rx="11" fill="#ffffff"/>
+      <circle cx="68" cy="252" r="11" fill="#C2410C"/><text x="68" y="257" fill="#fff" font-size="14" font-weight="800" text-anchor="middle">4</text>
+      <text x="92" y="257" fill="#2B3138" font-size="15" font-weight="700">대금 지급 &#8220;예산 사정에 따라&#8221;</text>
+    </g>
+    <g>
+      <rect x="40" y="282" width="820" height="44" rx="11" fill="#ffffff"/>
+      <circle cx="68" cy="304" r="11" fill="#C2410C"/><text x="68" y="309" fill="#fff" font-size="14" font-weight="800" text-anchor="middle">5</text>
+      <text x="92" y="309" fill="#2B3138" font-size="15" font-weight="700">사실상 특정 업체용 자격 조건</text>
+    </g>
+  </g>
+</svg>

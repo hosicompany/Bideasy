@@ -98,8 +98,10 @@ case "${1:-deploy}" in
     # Build new images
     dc build app celery_worker
 
-    # Rolling restart: app first, then celery
-    dc up -d --no-deps app
+    # Rolling restart: app first, then celery.
+    # --force-recreate: 코드/템플릿이 볼륨 마운트면 이미지 해시가 안 바뀌어 컨테이너가
+    # 재생성되지 않아 옛 프로세스가 남는다. 강제 재생성으로 항상 새 코드·템플릿 로드.
+    dc up -d --no-deps --force-recreate app
     echo "Waiting for app health check..."
     sleep 10
 
@@ -112,7 +114,7 @@ case "${1:-deploy}" in
     fi
 
     # Update celery worker
-    dc up -d --no-deps celery_worker
+    dc up -d --no-deps --force-recreate celery_worker
 
     # Run migrations
     dc \

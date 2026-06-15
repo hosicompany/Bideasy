@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 230" role="img" aria-label="공종별 낙찰하한율: 공사 87.745퍼센트, 일반용역 약 60퍼센트, 물품 하한 없음">
+  <rect width="900" height="230" rx="16" fill="#F4F6FF"/>
+  <g font-family="'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif">
+    <text x="40" y="48" fill="#16203A" font-size="18" font-weight="800">공종별 낙찰하한율</text>
+    <g>
+      <rect x="40" y="72" width="260" height="120" rx="14" fill="#2B50E0"/>
+      <text x="64" y="112" fill="#D6DEFF" font-size="15" font-weight="700">공사 (적격심사)</text>
+      <text x="64" y="156" fill="#fff" font-size="32" font-weight="800">87.745%</text>
+    </g>
+    <g>
+      <rect x="320" y="72" width="260" height="120" rx="14" fill="#ffffff"/>
+      <text x="344" y="112" fill="#8B95A1" font-size="15" font-weight="700">일반용역</text>
+      <text x="344" y="156" fill="#16203A" font-size="32" font-weight="800">약 60%</text>
+    </g>
+    <g>
+      <rect x="600" y="72" width="260" height="120" rx="14" fill="#ffffff"/>
+      <text x="624" y="112" fill="#8B95A1" font-size="15" font-weight="700">물품</text>
+      <text x="624" y="156" fill="#16203A" font-size="26" font-weight="800">하한 없음</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 200" role="img" aria-label="투찰가 계산 4단계: 예가 추정, 낙찰하한가, A값 보정, 절사">
+  <rect width="900" height="200" rx="16" fill="#F4F6FF"/>
+  <g font-family="'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif">
+    <g><rect x="24" y="48" width="170" height="104" rx="13" fill="#2B50E0"/>
+      <circle cx="50" cy="76" r="13" fill="#fff" opacity="0.18"/><text x="50" y="81" fill="#fff" font-size="15" font-weight="800" text-anchor="middle">1</text>
+      <text x="40" y="116" fill="#fff" font-size="15" font-weight="700">예가 추정</text></g>
+    <text x="212" y="106" fill="#2B50E0" font-size="24" font-weight="800" text-anchor="middle">&#8594;</text>
+    <g><rect x="238" y="48" width="170" height="104" rx="13" fill="#2B50E0"/>
+      <circle cx="264" cy="76" r="13" fill="#fff" opacity="0.18"/><text x="264" y="81" fill="#fff" font-size="15" font-weight="800" text-anchor="middle">2</text>
+      <text x="254" y="116" fill="#fff" font-size="15" font-weight="700">낙찰하한가</text></g>
+    <text x="426" y="106" fill="#2B50E0" font-size="24" font-weight="800" text-anchor="middle">&#8594;</text>
+    <g><rect x="452" y="48" width="170" height="104" rx="13" fill="#2B50E0"/>
+      <circle cx="478" cy="76" r="13" fill="#fff" opacity="0.18"/><text x="478" y="81" fill="#fff" font-size="15" font-weight="800" text-anchor="middle">3</text>
+      <text x="468" y="116" fill="#fff" font-size="15" font-weight="700">A값 보정</text></g>
+    <text x="640" y="106" fill="#2B50E0" font-size="24" font-weight="800" text-anchor="middle">&#8594;</text>
+    <g><rect x="666" y="48" width="180" height="104" rx="13" fill="#16203A"/>
+      <circle cx="692" cy="76" r="13" fill="#fff" opacity="0.18"/><text x="692" y="81" fill="#fff" font-size="15" font-weight="800" text-anchor="middle">4</text>
+      <text x="682" y="116" fill="#fff" font-size="15" font-weight="700">절사 &#8594; 투찰가</text></g>
+  </g>
+</svg>
