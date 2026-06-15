@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db import models
 from app.core.logging import get_logger
+from app.core.config import settings
 from app.api.v1.endpoints.bids import _lookup_notice, get_bid_context
 from app.services import blog as blog_svc
 
@@ -24,6 +25,9 @@ router = APIRouter()
 # backend/templates  (이 파일: app/api/v1/endpoints/pages.py → parents[4]=backend)
 _TEMPLATES_DIR = Path(__file__).resolve().parents[4] / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+# SSR 템플릿 공통 전역 — 검색엔진 소유확인 메타(빈 값이면 미출력)
+templates.env.globals["google_verification"] = settings.GOOGLE_SITE_VERIFICATION
+templates.env.globals["naver_verification"] = settings.NAVER_SITE_VERIFICATION
 
 SITE_URL = "https://bideasy.kr"
 API_BASE = "https://api.bideasy.kr/api/v1"
@@ -112,7 +116,9 @@ def sitemap(db: Session = Depends(get_db)):
     static_paths = ["", "/search", "/calculator", "/guide", "/pricing", "/blog"]
     locs = [f"  <url><loc>{SITE_URL}{p}</loc></url>" for p in static_paths]
     for p in blog_svc.list_posts():
-        locs.append(f"  <url><loc>{SITE_URL}/blog/{p['slug']}</loc></url>")
+        _lm = p.get("updated") or p.get("date") or ""
+        _lmtag = f"<lastmod>{_lm}</lastmod>" if _lm else ""
+        locs.append(f"  <url><loc>{SITE_URL}/blog/{p['slug']}</loc>{_lmtag}</url>")
     for n in notices:
         locs.append(f"  <url><loc>{SITE_URL}/bid/{n.bid_no}</loc></url>")
     xml = (

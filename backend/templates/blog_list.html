@@ -11,6 +11,22 @@
   <meta property="og:description" content="공공입찰 실무 가이드 · 제도 소식 · 데이터 인사이트">
   <meta property="og:url" content="{{ site_url }}/blog">
   <meta property="og:site_name" content="BidEasy">
+  <meta property="og:image" content="{{ site_url }}/brand/bideasy-logo.svg">
+  {% if google_verification %}<meta name="google-site-verification" content="{{ google_verification }}">{% endif %}
+  {% if naver_verification %}<meta name="naver-site-verification" content="{{ naver_verification }}">{% endif %}
+  <link rel="icon" href="/brand/favicon.svg">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    "name": "BidEasy 블로그",
+    "url": "{{ site_url }}/blog",
+    "publisher": { "@type": "Organization", "name": "BidEasy", "logo": { "@type": "ImageObject", "url": "{{ site_url }}/brand/bideasy-logo.svg" } },
+    "blogPost": [
+      {% for p in posts %}{ "@type": "BlogPosting", "headline": {{ p.title | tojson }}, "url": "{{ site_url }}/blog/{{ p.slug }}"{% if p.date %}, "datePublished": "{{ p.date }}"{% endif %}{% if p.hero %}, "image": "{{ site_url }}{{ p.hero }}"{% endif %} }{% if not loop.last %},{% endif %}{% endfor %}
+    ]
+  }
+  </script>
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
   <link rel="stylesheet" href="/assets/nav.css">
@@ -29,6 +45,7 @@
     a.post h2 { font-size: 18px; font-weight: 700; line-height: 1.4; margin-top: 10px; }
     a.post .sum { color: #4E5968; font-size: 14px; line-height: 1.6; margin-top: 7px; }
     a.post .date { color: #8B95A1; font-size: 12.5px; margin-top: 10px; }
+    a.post .thumb { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 12px; margin-bottom: 14px; }
     .card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
     .muted { color: #8B95A1; font-size: 14px; }
     .cta { margin-top: 22px; background: linear-gradient(135deg,#EBF2FF,#DBEAFE); border: 1px solid #C6DCFF; border-radius: 16px; padding: 22px; text-align: center; }
@@ -45,10 +62,11 @@
     <div class="list">
       {% for p in posts %}
       <a class="post" href="/blog/{{ p.slug }}">
+        {% if p.cover %}<img class="thumb" src="{{ p.cover }}" alt="{{ p.title }}" loading="lazy">{% endif %}
         {% if p.category %}<span class="cat">{{ p.category }}</span>{% endif %}
         <h2>{{ p.title }}</h2>
         {% if p.summary %}<p class="sum">{{ p.summary }}</p>{% endif %}
-        {% if p.date %}<div class="date">{{ p.date }}</div>{% endif %}
+        <div class="date">{% if p.date %}{{ p.date }} · {% endif %}{{ p.author }} · 읽는 시간 {{ p.reading_time }}분</div>
       </a>
       {% endfor %}
     </div>

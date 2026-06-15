@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 280" role="img" aria-label="A값 무시하면 8억 7745만, 분리하면 8억 8236만, 차이 약 491만원">
+  <rect width="900" height="280" rx="16" fill="#F4F6FF"/>
+  <g font-family="'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif">
+    <text x="40" y="52" fill="#16203A" font-size="17" font-weight="800">10억 공사 &#183; A값 4천만 원 &#183; 투찰률 87.745% 기준</text>
+    <rect x="40" y="74" width="820" height="56" rx="12" fill="#ffffff"/>
+    <text x="62" y="109" fill="#8B95A1" font-size="15" font-weight="700">A값 무시 (잘못된 계산)</text>
+    <text x="838" y="109" fill="#8B95A1" font-size="18" font-weight="800" text-anchor="end" text-decoration="line-through">8억 7,745만 원</text>
+    <rect x="40" y="140" width="820" height="56" rx="12" fill="#ffffff" stroke="#2B50E0" stroke-width="2"/>
+    <text x="62" y="175" fill="#2B50E0" font-size="15" font-weight="800">A값 분리 (정답)</text>
+    <text x="838" y="175" fill="#16203A" font-size="18" font-weight="800" text-anchor="end">8억 8,236만 원</text>
+    <rect x="40" y="214" width="820" height="46" rx="23" fill="#FBEAE2"/>
+    <text x="450" y="243" fill="#C2410C" font-size="17" font-weight="800" text-anchor="middle">차이 약 491만 원 &#8212; 낙찰과 마진을 가른다</text>
+  </g>
+</svg>

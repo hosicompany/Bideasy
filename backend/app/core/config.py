@@ -130,6 +130,11 @@ class Settings(BaseSettings):
     # === Monitoring ===
     SENTRY_DSN: str = ""  # Leave empty to disable Sentry
 
+    # === SEO (검색엔진 소유확인) ===
+    # 빈 값이면 메타태그 미출력. Google Search Console / 네이버 서치어드바이저 코드.
+    GOOGLE_SITE_VERIFICATION: str = ""
+    NAVER_SITE_VERIFICATION: str = ""
+
     # === Logging ===
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "text"  # "json" | "text"

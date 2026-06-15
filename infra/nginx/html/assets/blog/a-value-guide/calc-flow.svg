@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 240" role="img" aria-label="A값 분리 계산 3단계: 기초금액에서 A값 빼기, 남은 금액에 투찰률 적용, A값 다시 더하기">
+  <rect width="900" height="240" rx="16" fill="#F4F6FF"/>
+  <g font-family="'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif">
+    <g>
+      <rect x="24" y="56" width="184" height="128" rx="14" fill="#2B50E0"/>
+      <circle cx="52" cy="86" r="15" fill="#ffffff" opacity="0.18"/>
+      <text x="52" y="92" fill="#fff" font-size="18" font-weight="800" text-anchor="middle">1</text>
+      <text x="42" y="130" fill="#fff" font-size="16" font-weight="700">기초금액에서</text>
+      <text x="42" y="154" fill="#fff" font-size="16" font-weight="700">A값 빼기</text>
+    </g>
+    <text x="226" y="130" fill="#2B50E0" font-size="26" font-weight="800" text-anchor="middle">&#8594;</text>
+    <g>
+      <rect x="244" y="56" width="184" height="128" rx="14" fill="#2B50E0"/>
+      <circle cx="272" cy="86" r="15" fill="#ffffff" opacity="0.18"/>
+      <text x="272" y="92" fill="#fff" font-size="18" font-weight="800" text-anchor="middle">2</text>
+      <text x="262" y="130" fill="#fff" font-size="16" font-weight="700">남은 금액에</text>
+      <text x="262" y="154" fill="#fff" font-size="16" font-weight="700">투찰률 적용</text>
+    </g>
+    <text x="446" y="130" fill="#2B50E0" font-size="26" font-weight="800" text-anchor="middle">&#8594;</text>
+    <g>
+      <rect x="464" y="56" width="184" height="128" rx="14" fill="#2B50E0"/>
+      <circle cx="492" cy="86" r="15" fill="#ffffff" opacity="0.18"/>
+      <text x="492" y="92" fill="#fff" font-size="18" font-weight="800" text-anchor="middle">3</text>
+      <text x="482" y="130" fill="#fff" font-size="16" font-weight="700">A값 다시</text>
+      <text x="482" y="154" fill="#fff" font-size="16" font-weight="700">더하기</text>
+    </g>
+    <text x="666" y="130" fill="#2B50E0" font-size="26" font-weight="800" text-anchor="middle">=</text>
+    <g>
+      <rect x="684" y="56" width="192" height="128" rx="14" fill="#16203A"/>
+      <text x="704" y="116" fill="#9FB0E8" font-size="12" font-weight="700" letter-spacing="1">정답</text>
+      <text x="704" y="146" fill="#fff" font-size="19" font-weight="800">정확한 투찰가</text>
+    </g>
+  </g>
+</svg>

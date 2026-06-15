@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% if google_verification %}<meta name="google-site-verification" content="{{ google_verification }}">{% endif %}
+  {% if naver_verification %}<meta name="naver-site-verification" content="{{ naver_verification }}">{% endif %}
+  <link rel="icon" href="/brand/favicon.svg">
   {% if found %}
   <title>{{ post.title }} - BidEasy 블로그</title>
   <meta name="description" content="{{ post.summary }}">
@@ -13,15 +16,22 @@
   <meta property="og:description" content="{{ post.summary }}">
   <meta property="og:url" content="{{ site_url }}/blog/{{ post.slug }}">
   <meta property="og:site_name" content="BidEasy">
+  {% if post.hero %}<meta property="og:image" content="{{ site_url }}{{ post.hero }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="{{ site_url }}{{ post.hero }}">{% endif %}
+  <meta name="twitter:title" content="{{ post.title }}">
+  <meta name="twitter:description" content="{{ post.summary }}">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "Article",
     "headline": {{ post.title | tojson }},
     "description": {{ post.summary | tojson }},
+    {% if post.hero %}"image": ["{{ site_url }}{{ post.hero }}"],{% endif %}
     {% if post.date %}"datePublished": "{{ post.date }}",{% endif %}
-    "author": { "@type": "Organization", "name": "BidEasy" },
-    "publisher": { "@type": "Organization", "name": "BidEasy" },
+    {% if post.updated %}"dateModified": "{{ post.updated }}",{% endif %}
+    "author": { "@type": "Organization", "name": "BidEasy", "url": "{{ site_url }}" },
+    "publisher": { "@type": "Organization", "name": "BidEasy", "logo": { "@type": "ImageObject", "url": "{{ site_url }}/brand/bideasy-logo.svg" } },
     "mainEntityOfPage": "{{ site_url }}/blog/{{ post.slug }}"
   }
   </script>
@@ -57,6 +67,16 @@
     .prose table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
     .prose th, .prose td { border: 1px solid #E5E8EB; padding: 8px 10px; text-align: left; }
     .prose th { background: #F8FAFB; font-weight: 700; }
+    .prose img { max-width: 100%; height: auto; border-radius: 12px; display: block; margin: 6px auto; }
+    .prose figure { margin: 24px 0; }
+    .prose figcaption { color: #8B95A1; font-size: 13px; text-align: center; margin-top: 9px; }
+    .hero { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 16px; margin: 6px 0 20px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+    .byline { display: flex; align-items: center; gap: 11px; margin-top: 16px; }
+    .byline .av { width: 38px; height: 38px; border-radius: 50%; background: #EBF2FF; display: grid; place-items: center; flex-shrink: 0; }
+    .byline .who b { font-weight: 700; color: #191F28; font-size: 14px; }
+    .byline .who .sub { color: #8B95A1; font-size: 12.5px; margin-top: 1px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 18px; }
+    .tags .t { font-size: 12px; color: #4E5968; background: #F2F4F6; padding: 5px 11px; border-radius: 999px; }
     .cta { margin-top: 22px; background: linear-gradient(135deg,#EBF2FF,#DBEAFE); border: 1px solid #C6DCFF; border-radius: 16px; padding: 22px; text-align: center; }
     .cta a { display: inline-block; margin-top: 12px; background: #3182F6; color: #fff; text-decoration: none; padding: 11px 22px; border-radius: 12px; font-weight: 700; font-size: 14px; }
   </style>
@@ -74,9 +94,17 @@
       <div class="head">
         {% if post.category %}<span class="cat">{{ post.category }}</span>{% endif %}
         <h1>{{ post.title }}</h1>
-        <div class="meta">{% if post.date %}{{ post.date }} · {% endif %}BidEasy</div>
+        <div class="byline">
+          <span class="av"><img src="{{ post.author_avatar }}" alt="" width="22" height="22"></span>
+          <div class="who">
+            <b>{{ post.author }}</b>
+            <div class="sub">{% if post.date %}{{ post.date }} · {% endif %}읽는 시간 {{ post.reading_time }}분{% if post.updated and post.updated != post.date %} · 수정 {{ post.updated }}{% endif %}</div>
+          </div>
+        </div>
       </div>
+      {% if post.hero %}<img class="hero" src="{{ post.hero }}" alt="{{ post.title }}" loading="eager">{% endif %}
       <div class="prose">{{ post.body_html | safe }}</div>
+      {% if post.tags %}<div class="tags">{% for t in post.tags %}<span class="t">#{{ t }}</span>{% endfor %}</div>{% endif %}
     </article>
     <div class="cta">
       <div style="font-weight:800;font-size:17px;">직접 계산해보세요</div>
