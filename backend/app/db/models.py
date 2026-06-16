@@ -316,3 +316,36 @@ class SupportTicket(Base):
     created_at = Column(DateTime, default=_utcnow, index=True)
 
     user = relationship("User")
+
+
+class BlogPost(Base):
+    """DB 기반 블로그 글 — 런타임 발행(배포 0)용.
+
+    마크다운 파일 블로그(content/blog/*.md)와 **하이브리드**: 손으로 쓰는 상록수
+    가이드는 파일(git), 자동 데이터스토리·관리자 즉석글은 이 테이블. 읽는 경로는
+    services/blog.py 에서 하나로 병합(slug 중복 시 파일 우선). 필드는 마크다운
+    post dict 와 동형 — 템플릿/sitemap 무변경. author 는 저장 안 하고 읽을 때
+    BLOG_AUTHOR 주입.
+
+    status=draft 는 목록·sitemap 제외(직접 URL 은 noindex 미리보기). 발행=published.
+    source=auto 는 Track B 자동초안, admin 은 수동 작성.
+    """
+    __tablename__ = "blog_posts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(200), unique=True, index=True, nullable=False)
+    title = Column(String(300), nullable=False)
+    summary = Column(Text, default="")
+    category = Column(String(80), default="")
+    tags = Column(String(300), default="")        # 콤마 구분 (마크다운과 동일)
+    cover = Column(String(500), default="")
+    hero = Column(String(500), default="")
+    body_md = Column(Text, nullable=False, default="")     # 원본 마크다운 (편집 대상)
+    body_html = Column(Text, nullable=False, default="")   # 렌더 캐시 (저장 시 생성)
+    reading_time = Column(Integer, nullable=False, default=1)
+    status = Column(String(20), nullable=False, default="draft", server_default="draft", index=True)  # draft | published
+    source = Column(String(20), nullable=False, default="admin", server_default="admin")  # admin | auto
+    date = Column(String(10), default="")          # YYYY-MM-DD 발행일 (정렬·sitemap 용, 발행 시 세팅)
+    publish_at = Column(DateTime, nullable=True)   # 예약 발행(옵션)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

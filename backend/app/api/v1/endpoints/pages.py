@@ -80,16 +80,16 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
 
 
 @router.get("/blog", response_class=HTMLResponse)
-def blog_list_page(request: Request):
+def blog_list_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(
         "blog_list.html",
-        {"request": request, "posts": blog_svc.list_posts(), "site_url": SITE_URL},
+        {"request": request, "posts": blog_svc.list_posts(db), "site_url": SITE_URL},
     )
 
 
 @router.get("/blog/{slug}", response_class=HTMLResponse)
-def blog_detail_page(slug: str, request: Request):
-    post = blog_svc.get_post(slug)
+def blog_detail_page(slug: str, request: Request, db: Session = Depends(get_db)):
+    post = blog_svc.get_post(slug, db)
     return templates.TemplateResponse(
         "blog_detail.html",
         {"request": request, "post": post, "found": bool(post), "slug": slug, "site_url": SITE_URL},
@@ -115,7 +115,7 @@ def sitemap(db: Session = Depends(get_db)):
     )
     static_paths = ["", "/search", "/calculator", "/guide", "/pricing", "/blog"]
     locs = [f"  <url><loc>{SITE_URL}{p}</loc></url>" for p in static_paths]
-    for p in blog_svc.list_posts():
+    for p in blog_svc.list_posts(db):
         _lm = p.get("updated") or p.get("date") or ""
         _lmtag = f"<lastmod>{_lm}</lastmod>" if _lm else ""
         locs.append(f"  <url><loc>{SITE_URL}/blog/{p['slug']}</loc>{_lmtag}</url>")

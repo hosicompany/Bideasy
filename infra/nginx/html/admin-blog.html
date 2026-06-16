@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>블로그 관리 · BidEasy Admin</title>
+  <style>
+    :root{
+      --blue:#3182F6; --ink:#16203A; --muted:#8B95A1; --line:#E5E8EB;
+      --bg:#F4F6F8; --card:#fff; --green:#15803D; --green-bg:#DCFCE7;
+      --amber:#B45309; --amber-bg:#FEF3C7; --red:#DC2626;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+    a{color:var(--blue);text-decoration:none}
+    header{display:flex;align-items:center;gap:14px;padding:14px 22px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+    header .brand{font-weight:800;font-size:16px}
+    header .sp{flex:1}
+    .wrap{display:grid;grid-template-columns:380px 1fr;gap:18px;padding:18px 22px;max-width:1280px;margin:0 auto}
+    @media(max-width:880px){.wrap{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+    .card h2{margin:0 0 12px;font-size:14px}
+    .btn{border:0;border-radius:9px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer;background:var(--blue);color:#fff}
+    .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+    .btn.green{background:var(--green)}
+    .btn.amber{background:var(--amber)}
+    .btn.danger{background:#fff;border:1px solid #FECACA;color:var(--red)}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .list{display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow:auto}
+    .item{border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+    .item:hover{border-color:var(--blue)}
+    .item.active{border-color:var(--blue);background:#F0F6FF}
+    .item .t{font-weight:700;margin-bottom:4px}
+    .item .m{font-size:12px;color:var(--muted)}
+    .badge{display:inline-block;font-size:11px;font-weight:800;padding:2px 7px;border-radius:6px;margin-right:5px}
+    .b-draft{background:var(--amber-bg);color:var(--amber)}
+    .b-pub{background:var(--green-bg);color:var(--green)}
+    .b-auto{background:#EEF2FF;color:#4338CA}
+    label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:10px 0 4px}
+    input,textarea,select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;color:var(--ink)}
+    textarea{resize:vertical}
+    textarea.body{min-height:340px;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.6}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .hint{font-size:12px;color:var(--muted);margin-top:6px}
+    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none;z-index:50}
+    .toast.show{opacity:1}
+    .empty{color:var(--muted);text-align:center;padding:30px 0}
+  </style>
+</head>
+<body>
+  <header>
+    <span class="brand">✍️ 블로그 관리</span>
+    <span class="m" style="color:var(--muted);font-size:12px">DB 글은 배포 없이 즉시 반영 · 파일 글(상록수)은 git에서 관리</span>
+    <span class="sp"></span>
+    <a href="/admin" class="btn ghost">← Admin</a>
+  </header>
+
+  <div class="wrap">
+    <!-- 목록 -->
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">글 목록</h2>
+        <button class="btn" onclick="newPost()">+ 새 글</button>
+      </div>
+      <div id="list" class="list"><div class="empty">불러오는 중…</div></div>
+    </div>
+
+    <!-- 에디터 -->
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 id="editTitle" style="margin:0">새 글</h2>
+        <div id="statusBadge"></div>
+      </div>
+
+      <div class="grid2">
+        <div><label>제목 *</label><input id="f-title" placeholder="글 제목" /></div>
+        <div><label>슬러그 (URL)</label><input id="f-slug" placeholder="예: weekly-2026-w25 (비우면 자동)" /></div>
+      </div>
+      <div class="grid2">
+        <div><label>카테고리</label><input id="f-category" placeholder="실무 가이드 / 데이터 스토리 …" /></div>
+        <div><label>태그 (콤마)</label><input id="f-tags" placeholder="A값, 낙찰하한율" /></div>
+      </div>
+      <div class="grid2">
+        <div><label>히어로 이미지 URL</label><input id="f-hero" placeholder="/assets/blog/{slug}/hero.png" /></div>
+        <div><label>커버(목록 썸네일)</label><input id="f-cover" placeholder="/assets/blog/{slug}/hero.png" /></div>
+      </div>
+      <label>요약 (summary)</label>
+      <textarea id="f-summary" rows="2" placeholder="검색결과·목록에 보이는 한두 줄 요약"></textarea>
+      <label>본문 (마크다운)</label>
+      <textarea id="f-body" class="body" placeholder="# 제목&#10;&#10;본문…  이미지: ![캡션](/assets/blog/{slug}/img.png)"></textarea>
+      <div class="hint">저장 시 서버가 파일 글과 동일한 파이프라인으로 렌더(figure·읽는시간). 발행 전엔 비공개(직접 URL은 noindex 미리보기).</div>
+
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="btnSave" onclick="save()">저장</button>
+        <button class="btn green" id="btnPublish" onclick="publish()" style="display:none">발행</button>
+        <button class="btn amber" id="btnUnpublish" onclick="unpublish()" style="display:none">게시취소</button>
+        <button class="btn ghost" id="btnPreview" onclick="preview()" style="display:none">미리보기 ↗</button>
+        <span class="sp" style="flex:1"></span>
+        <button class="btn danger" id="btnDelete" onclick="del()" style="display:none">삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const API_BASE = 'https://api.bideasy.kr/api/v1';
+    let editingId = null;
+    let editingSlug = null;
+
+    function getToken(){ try{ return localStorage.getItem('access_token')||localStorage.getItem('jwt')||null }catch{ return null } }
+    function authHeaders(json){ const h={Authorization:'Bearer '+getToken()}; if(json) h['Content-Type']='application/json'; return h; }
+    function toast(msg,ok){ const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show'; t.style.background = ok===false ? '#DC2626' : '#16203A'; setTimeout(()=>t.classList.remove('show'),3000); }
+    function el(id){ return document.getElementById(id); }
+
+    async function api(path, opts={}){
+      const r = await fetch(API_BASE+path, opts);
+      if(r.status===204) return null;
+      const data = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(data.detail || ('오류 '+r.status));
+      return data;
+    }
+
+    async function guard(){
+      const tok=getToken();
+      if(!tok){ location.href='/login'; return false; }
+      try{
+        const me = await api('/users/me', {headers:authHeaders()});
+        if(!me.is_admin){ alert('관리자 전용 페이지입니다.'); location.href='/'; return false; }
+        return true;
+      }catch(e){ location.href='/login'; return false; }
+    }
+
+    async function loadPosts(){
+      const list = el('list');
+      try{
+        const posts = await api('/admin/blog', {headers:authHeaders()});
+        if(!posts.length){ list.innerHTML='<div class="empty">아직 DB 글이 없어요. "+ 새 글"로 시작하세요.<br><span style="font-size:12px">(상록수 4편은 git 파일이라 여기 안 보입니다)</span></div>'; return; }
+        list.innerHTML = posts.map(p=>{
+          const st = p.status==='published' ? '<span class="badge b-pub">발행</span>' : '<span class="badge b-draft">초안</span>';
+          const src = p.source==='auto' ? '<span class="badge b-auto">자동</span>' : '';
+          return `<div class="item ${p.id===editingId?'active':''}" onclick="selectPost(${p.id})">
+            <div class="t">${escapeHtml(p.title)}</div>
+            <div class="m">${st}${src} /${escapeHtml(p.slug)} · ${p.date||'미발행'} · ${p.reading_time||1}분</div>
+          </div>`;
+        }).join('');
+      }catch(e){ list.innerHTML='<div class="empty">불러오기 실패: '+e.message+'</div>'; }
+    }
+
+    function escapeHtml(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+    function fillForm(p){
+      el('f-title').value=p?.title||''; el('f-slug').value=p?.slug||'';
+      el('f-category').value=p?.category||''; el('f-tags').value=p?.tags||'';
+      el('f-hero').value=p?.hero||''; el('f-cover').value=p?.cover||'';
+      el('f-summary').value=p?.summary||''; el('f-body').value=p?.body_md||'';
+      editingId = p?.id||null; editingSlug = p?.slug||null;
+      el('editTitle').textContent = p ? '글 편집' : '새 글';
+      const published = p?.status==='published';
+      el('statusBadge').innerHTML = p ? (published?'<span class="badge b-pub">발행됨</span>':'<span class="badge b-draft">초안</span>') : '';
+      el('btnPublish').style.display = (p && !published) ? '' : 'none';
+      el('btnUnpublish').style.display = (p && published) ? '' : 'none';
+      el('btnPreview').style.display = p ? '' : 'none';
+      el('btnDelete').style.display = p ? '' : 'none';
+    }
+
+    function newPost(){ fillForm(null); window.scrollTo({top:0,behavior:'smooth'}); }
+
+    async function selectPost(id){
+      try{ const p = await api('/admin/blog/'+id, {headers:authHeaders()}); fillForm(p); loadPosts(); }
+      catch(e){ toast(e.message,false); }
+    }
+
+    function collect(){
+      return {
+        title: el('f-title').value.trim(),
+        slug: el('f-slug').value.trim(),
+        category: el('f-category').value.trim(),
+        tags: el('f-tags').value.trim(),
+        hero: el('f-hero').value.trim(),
+        cover: el('f-cover').value.trim(),
+        summary: el('f-summary').value,
+        body_md: el('f-body').value,
+      };
+    }
+
+    async function save(){
+      const body = collect();
+      if(!body.title){ toast('제목을 입력하세요',false); return; }
+      el('btnSave').disabled=true;
+      try{
+        let p;
+        if(editingId){ p = await api('/admin/blog/'+editingId, {method:'PUT', headers:authHeaders(true), body:JSON.stringify(body)}); }
+        else { p = await api('/admin/blog', {method:'POST', headers:authHeaders(true), body:JSON.stringify(body)}); }
+        fillForm(p); loadPosts(); toast('저장됐어요');
+      }catch(e){ toast(e.message,false); }
+      finally{ el('btnSave').disabled=false; }
+    }
+
+    async function publish(){
+      if(!editingId) return;
+      if(!confirm('이 글을 발행할까요? (배포 없이 즉시 /blog 에 공개)')) return;
+      try{ const p = await api('/admin/blog/'+editingId+'/publish', {method:'POST', headers:authHeaders()}); fillForm(p); loadPosts(); toast('발행됐어요 🎉'); }
+      catch(e){ toast(e.message,false); }
+    }
+    async function unpublish(){
+      if(!editingId) return;
+      try{ const p = await api('/admin/blog/'+editingId+'/unpublish', {method:'POST', headers:authHeaders()}); fillForm(p); loadPosts(); toast('게시 취소됨'); }
+      catch(e){ toast(e.message,false); }
+    }
+    async function del(){
+      if(!editingId) return;
+      if(!confirm('정말 삭제할까요? 되돌릴 수 없어요.')) return;
+      try{ await api('/admin/blog/'+editingId, {method:'DELETE', headers:authHeaders()}); fillForm(null); loadPosts(); toast('삭제됨'); }
+      catch(e){ toast(e.message,false); }
+    }
+    function preview(){ if(editingSlug) window.open('/blog/'+editingSlug, '_blank'); }
+
+    (async function init(){ if(await guard()){ loadPosts(); } })();
+  </script>
+</body>
+</html>

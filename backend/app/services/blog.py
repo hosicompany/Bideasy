@@ -124,12 +124,68 @@ def _load_all(force: bool = False) -> list:
     return _CACHE
 
 
-def list_posts(include_drafts: bool = False) -> list:
-    return [p for p in _load_all() if include_drafts or not p["draft"]]
+def render(body_md: str) -> tuple:
+    """마크다운 본문 → (렌더 HTML, 읽는 시간). DB 글 저장 시 재사용 (파일과 동일 파이프라인)."""
+    return _render_markdown(body_md), _reading_time(body_md)
 
 
-def get_post(slug: str) -> Optional[dict]:
+def _db_to_dict(post) -> dict:
+    """BlogPost(ORM) → 마크다운 post 와 동형 dict. author 는 BLOG_AUTHOR 주입."""
+    date = post.date or ""
+    updated = ""
+    if post.updated_at:
+        try:
+            updated = post.updated_at.date().isoformat()
+        except Exception:
+            updated = ""
+    cover = post.cover or ""
+    return {
+        "slug": post.slug,
+        "title": post.title,
+        "date": date,
+        "updated": updated or date,
+        "category": post.category or "",
+        "summary": post.summary or "",
+        "cover": cover,
+        "hero": post.hero or cover,
+        "tags": [t.strip() for t in (post.tags or "").split(",") if t.strip()],
+        "draft": post.status != "published",
+        "reading_time": post.reading_time or 1,
+        "author": BLOG_AUTHOR["name"],
+        "author_avatar": BLOG_AUTHOR["avatar"],
+        "author_bio": BLOG_AUTHOR["bio"],
+        "body_html": post.body_html or "",
+    }
+
+
+def _db_posts(db, include_drafts: bool = False) -> list:
+    """DB 글 → dict 목록. db 없으면 빈 목록(하위호환)."""
+    if db is None:
+        return []
+    from app.db import models  # 지연 임포트 (순환 방지)
+    q = db.query(models.BlogPost)
+    if not include_drafts:
+        q = q.filter(models.BlogPost.status == "published")
+    return [_db_to_dict(p) for p in q.all()]
+
+
+def list_posts(db=None, include_drafts: bool = False) -> list:
+    """마크다운 파일 + DB 글 병합. slug 중복 시 파일 우선. date 내림차순."""
+    md = [p for p in _load_all() if include_drafts or not p["draft"]]
+    seen = {p["slug"] for p in md}
+    merged = md + [p for p in _db_posts(db, include_drafts) if p["slug"] not in seen]
+    merged.sort(key=lambda x: x.get("date") or "", reverse=True)
+    return merged
+
+
+def get_post(slug: str, db=None) -> Optional[dict]:
+    """파일 먼저 → 없으면 DB. 직접 URL 은 draft 도 반환(noindex 미리보기)."""
     for p in _load_all():
         if p["slug"] == slug:
             return p
+    if db is not None:
+        from app.db import models  # 지연 임포트
+        row = db.query(models.BlogPost).filter(models.BlogPost.slug == slug).first()
+        if row:
+            return _db_to_dict(row)
     return None
