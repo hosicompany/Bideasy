@@ -20,6 +20,7 @@
           <ul class="bd-nav-links">
             <li><a href="/search" class="bd-nav-link" data-path="/search">공고 검색</a></li>
             <li><a href="/calculator" class="bd-nav-link" data-path="/calculator">계산기</a></li>
+            <li><a href="/blog" class="bd-nav-link" data-path="/blog">블로그</a></li>
             <li><a href="/guide" class="bd-nav-link" data-path="/guide">사용 가이드</a></li>
             <li><a href="/pricing" class="bd-nav-link" data-path="/pricing">요금제</a></li>
           </ul>
