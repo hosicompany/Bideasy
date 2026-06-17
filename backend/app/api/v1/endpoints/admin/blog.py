@@ -85,6 +85,19 @@ def create_blog_post(payload: BlogPostCreate, db: Session = Depends(get_db), _ad
     return post
 
 
+@router.post("/blog/generate-data-story", response_model=BlogPostOut)
+def generate_data_story_now(db: Session = Depends(get_db), _admin=Depends(require_admin)):
+    """지난주 개찰 데이터로 데이터스토리 초안 즉시 생성(수동·테스트용).
+
+    Celery 주간 task(content.weekly_data_story)와 동일 로직. 이미 같은 주 초안이 있으면 그걸 반환.
+    """
+    from app.services import data_story
+    post, status = data_story.create_weekly_draft(db)
+    if status == "no_data":
+        raise HTTPException(404, "지난주 개찰 데이터가 없어요 (opening_results 비어있음)")
+    return post
+
+
 @router.put("/blog/{post_id}", response_model=BlogPostOut)
 def update_blog_post(post_id: int, payload: BlogPostUpdate, db: Session = Depends(get_db), _admin=Depends(require_admin)):
     post = _get_or_404(post_id, db)

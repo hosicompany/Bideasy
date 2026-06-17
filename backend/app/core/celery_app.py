@@ -15,6 +15,7 @@ celery_app = Celery(
         "app.tasks.notice_crawl_tasks",
         "app.tasks.deadline_tasks",
         "app.tasks.recommendation_tasks",
+        "app.tasks.content_tasks",
     ],
 )
 
@@ -86,5 +87,10 @@ celery_app.conf.beat_schedule = {
     "daily-avalue-backfill": {
         "task": "notices.backfill_avalue",
         "schedule": crontab(hour=6, minute=30),
+    },
+    # 11) 매주 월요일 08:00 — Track B 데이터스토리 주간 초안 생성(draft → 사람 1클릭 발행)
+    "weekly-data-story-draft": {
+        "task": "content.weekly_data_story",
+        "schedule": crontab(hour=8, minute=0, day_of_week=1),
     },
 }

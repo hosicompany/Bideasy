@@ -62,7 +62,10 @@
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <h2 style="margin:0">글 목록</h2>
-        <button class="btn" onclick="newPost()">+ 새 글</button>
+        <div class="row" style="gap:6px">
+          <button class="btn ghost" onclick="genDataStory(this)" title="지난주 개찰 데이터로 초안 자동 생성">⚡ 데이터스토리</button>
+          <button class="btn" onclick="newPost()">+ 새 글</button>
+        </div>
       </div>
       <div id="list" class="list"><div class="empty">불러오는 중…</div></div>
     </div>
@@ -167,6 +170,15 @@
     }
 
     function newPost(){ fillForm(null); window.scrollTo({top:0,behavior:'smooth'}); }
+
+    async function genDataStory(btn){
+      if(btn) btn.disabled=true;
+      try{
+        const p = await api('/admin/blog/generate-data-story', {method:'POST', headers:authHeaders()});
+        fillForm(p); loadPosts(); toast('데이터스토리 초안 생성됨 — 검토 후 발행하세요');
+      }catch(e){ toast(e.message,false); }
+      finally{ if(btn) btn.disabled=false; }
+    }
 
     async function selectPost(id){
       try{ const p = await api('/admin/blog/'+id, {headers:authHeaders()}); fillForm(p); loadPosts(); }
