@@ -888,18 +888,18 @@ async def payple_callback(request: Request, db: Session = Depends(get_db)):
     order = db.query(models.PaymentOrder).filter(models.PaymentOrder.order_id == oid).first()
     if not order:
         logger.warning(f"Payple callback: order not found: {oid}")
-        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message=주문을 찾을 수 없습니다")
+        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message=주문을 찾을 수 없습니다", status_code=303)
 
     if rst != "success" or not payer_id:
         order.status = "FAILED"
         order.fail_reason = (form.get("PCD_PAY_MSG") or "카드 등록 실패")[:500]
         db.commit()
         msg = form.get("PCD_PAY_MSG") or "결제에 실패했습니다"
-        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message={msg}")
+        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message={msg}", status_code=303)
 
     user = db.query(models.User).filter(models.User.id == order.user_id).first()
     if not user:
-        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message=사용자를 찾을 수 없습니다")
+        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message=사용자를 찾을 수 없습니다", status_code=303)
 
     # order_id: PYP_{uid}_{code}_{cyc}_{ts}_{rand}
     parts = oid.split("_")
@@ -924,4 +924,5 @@ async def payple_callback(request: Request, db: Session = Depends(get_db)):
     logger.info(f"Payple first charge confirmed: order={oid} user={user.id} tier={tier} days={days}")
     log_event("payple_first_charge", user_id=user.id, tier=tier, cycle=user.billing_cycle, amount=order.amount)
     params = urlencode({"payment": "success", "amount": str(order.amount), "type": "billing"})
-    return RedirectResponse(f"{settings.FRONTEND_URL}/account?{params}")
+    # 303 See Other: POST 콜백 → GET /account 로 전환 (307 이면 메서드 유지돼 정적 /account 에 POST → nginx 405)
+    return RedirectResponse(f"{settings.FRONTEND_URL}/account?{params}", status_code=303)

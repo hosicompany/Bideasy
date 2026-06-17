@@ -131,7 +131,7 @@ def test_payple_callback_success_upgrades(payple_client, db_session):
         data=_success_form(prep["order_id"]),
         follow_redirects=False,
     )
-    assert resp.status_code in (302, 307), resp.text
+    assert resp.status_code == 303, resp.text  # 303: POST 콜백 → GET /account (정적 POST 405 방지)
     assert "payment=success" in resp.headers["location"]
     assert "/account" in resp.headers["location"]
 
@@ -191,7 +191,7 @@ def test_payple_callback_failure_no_upgrade(payple_client, db_session):
     resp = payple_client.post(
         "/api/v1/payments/payple/callback", data=form, follow_redirects=False
     )
-    assert resp.status_code in (302, 307)
+    assert resp.status_code == 303
     assert "payment=fail" in resp.headers["location"]
 
     db_session.expire_all()
