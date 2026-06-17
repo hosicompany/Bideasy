@@ -168,7 +168,9 @@ def is_winback_eligible(user, db) -> bool:
     조건 (모두 충족):
       1) Trial 시작한 적 있음 (trial_started_at != None)
       2) 첫 결제 (CONFIRMED PaymentOrder 없음)
-      3) Trial 활성 OR Trial 만료 후 WINBACK_GRACE_DAYS 일 이내
+      3) Trial 이 '만료'됨 + 만료 후 WINBACK_GRACE_DAYS 일 이내 (이탈자 전용)
+         — 체험 활성 중엔 정가. 14일 체험이 곧 전환 인센티브라 중복 할인 안 함.
+         할인은 "체험 써보고도 결제 안 하고 떠난 고객"을 되찾는 회수 레버로만.
 
     DB 조회를 1회만 하도록 호출자에서 db 세션 전달.
     """
@@ -179,9 +181,11 @@ def is_winback_eligible(user, db) -> bool:
     if not getattr(user, "trial_started_at", None) or trial_exp is None:
         return False
 
-    # 3) Trial 만료 후 grace period 초과 → 자격 없음
-    cutoff = trial_exp + timedelta(days=WINBACK_GRACE_DAYS)
-    if datetime.now(timezone.utc) > cutoff:
+    # 3) 이탈자 전용 — Trial 이 '만료'된 뒤 grace(7일) 이내만.
+    now = datetime.now(timezone.utc)
+    if now <= trial_exp:  # 아직 체험 중 → 정가 (체험 자체가 전환 인센티브)
+        return False
+    if now > trial_exp + timedelta(days=WINBACK_GRACE_DAYS):  # grace 초과
         return False
 
     # 2) 이미 결제 이력 있음 → 자격 없음

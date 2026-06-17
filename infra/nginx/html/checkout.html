@@ -67,22 +67,38 @@
     function syncCycleButtons() {
       document.querySelectorAll('#billing button').forEach(function (x) { x.classList.toggle('active', x.getAttribute('data-b') === (cycle === 'annual' ? 'a' : 'm')); });
     }
+    var winback = { eligible: false, pct: 0 };  // 이탈자 첫 달 할인 자격 (구독 응답에서 채움)
     function renderSummary() {
       document.getElementById('title').textContent = TIER_KO[tier] + '로 업그레이드';
       document.getElementById('plan-name').textContent = 'BidEasy ' + TIER_KO[tier];
       document.getElementById('plan-desc').textContent = TIER_DESC[tier];
       var price = PRICES[tier][cycle];
       var unit = cycle === 'annual' ? '원/년' : '원/월';
-      document.getElementById('summary').innerHTML =
+      // 윈백 할인은 월간 + 자격자에게만 (백엔드 prepare 와 동일 규칙). 첫 달만 적용.
+      var applyWb = winback.eligible && cycle === 'monthly' && winback.pct > 0;
+      var first = applyWb ? price - Math.floor(price * winback.pct / 100) : price;
+      var html =
         '<div class="drow"><span class="k">플랜</span><span class="v" style="font-family:var(--font-sans);font-weight:600;">' + TIER_KO[tier] + ' · ' + (cycle === 'annual' ? '연간' : '월간') + '</span></div>' +
         '<div class="drow"><span class="k">결제 금액</span><span class="v">' + BD.won(price) + ' ' + unit + '</span></div>' +
         (cycle === 'annual' ? '<div class="drow"><span class="k">월 환산</span><span class="v" style="color:var(--safe);">' + BD.won(Math.round(price / 12)) + ' 원/월</span></div>' : '');
-      document.getElementById('total').textContent = BD.won(price) + ' 원';
+      if (applyWb) {
+        html +=
+          '<div class="drow"><span class="k" style="color:var(--safe);font-weight:700;">윈백 할인 · 첫 달 ' + winback.pct + '%</span><span class="v" style="color:var(--safe);">- ' + BD.won(price - first) + ' 원</span></div>' +
+          '<div class="drow"><span class="k">이후 매월</span><span class="v" style="color:var(--muted);">' + BD.won(price) + ' 원/월</span></div>';
+      }
+      document.getElementById('summary').innerHTML = html;
+      document.getElementById('total').textContent = BD.won(first) + ' 원';
     }
     document.querySelectorAll('#billing button').forEach(function (b) {
       b.addEventListener('click', function () { cycle = b.getAttribute('data-b') === 'a' ? 'annual' : 'monthly'; syncCycleButtons(); renderSummary(); });
     });
     syncCycleButtons(); renderSummary();
+
+    // ── 윈백(이탈자 첫 달 50%) 자격 확인 → 자격자에게만 주문요약에 할인 노출 ──
+    fetch(API_BASE + '/payments/subscription', { headers: { 'Authorization': 'Bearer ' + token } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) { if (s && s.winback_eligible) { winback.eligible = true; winback.pct = s.winback_discount_pct || 50; renderSummary(); } })
+      .catch(function () {});
 
     var errEl = document.getElementById('pay-err');
     function showErr(m) { errEl.textContent = m; errEl.style.display = 'block'; }
