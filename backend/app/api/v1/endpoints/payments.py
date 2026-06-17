@@ -879,7 +879,11 @@ def payple_prepare(
 
 @router.post("/payple/callback")
 async def payple_callback(request: Request, db: Session = Depends(get_db)):
-    """페이플 카드등록+첫청구 결과 콜백 → 빌링키 저장 + 티어 적용 + 리다이렉트."""
+    """페이플 카드등록(CERT) 콜백 → 빌링키 저장 + 첫 청구(PAYM) 실행 → 성공 시 티어 적용.
+
+    CERT 는 카드만 등록(100원 인증 후 취소)하고 실제 금액은 청구하지 않으므로,
+    여기서 빌링키로 첫 청구를 직접 실행해야 매출이 발생한다(청구 성공 시에만 구독 적용).
+    """
     form = dict(await request.form())
     rst = str(form.get("PCD_PAY_RST", "")).lower()
     oid = form.get("PCD_PAY_OID", "")
@@ -906,6 +910,32 @@ async def payple_callback(request: Request, db: Session = Depends(get_db)):
     tier = _CODE_TIER.get(parts[2], TIER_PRO) if len(parts) >= 6 else TIER_PRO
     is_annual = (parts[3] == "a") if len(parts) >= 6 else (order.amount >= 100_000)
 
+    # ── CERT 콜백 = 카드 등록(빌링키 발급) 성공이지 '결제' 성공이 아님. ──
+    # 실제 첫 청구는 빌링키로 서버에서 직접(PAYM). 갱신 태스크(billing_tasks)와 동일 경로.
+    charge_oid = f"PYPC_{user.id}_{int(datetime.now(timezone.utc).timestamp())}_{secrets.token_hex(3)}"
+    goods = f"BidEasy {TIER_DISPLAY_NAMES.get(tier, tier)} 자동결제 ({'연간' if is_annual else '월간'})"
+    try:
+        charge = payple_svc.charge_billing(
+            payer_id=payer_id, amount=int(order.amount), oid=charge_oid, goods=goods,
+            payer_name=form.get("PCD_PAYER_NAME") or user.company_name or user.email,
+            payer_email=form.get("PCD_PAYER_EMAIL") or user.email or "",
+        )
+    except payple_svc.PaypleError as e:
+        # 카드 등록은 됐으나 첫 청구 실패 → 빌링키만 저장(재시도용), 구독 미적용.
+        user.billing_key = payer_id
+        user.billing_provider = "payple"
+        user.billing_card = payple_svc.card_display(form)
+        order.status = "FAILED"
+        order.fail_reason = (getattr(e, "message", "") or "첫 청구 실패")[:500]
+        db.commit()
+        logger.warning(
+            f"Payple first charge FAILED: reg_oid={oid} user={user.id} "
+            f"code={getattr(e, 'code', '')} msg={getattr(e, 'message', '')}"
+        )
+        msg = getattr(e, "message", "") or "첫 결제에 실패했습니다"
+        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message={msg}", status_code=303)
+
+    # ── 첫 청구 성공 → 빌링키 저장 + 구독 적용 + CONFIRMED ──
     user.billing_key = payer_id
     user.billing_provider = "payple"
     user.billing_card = payple_svc.card_display(form)
@@ -914,9 +944,8 @@ async def payple_callback(request: Request, db: Session = Depends(get_db)):
     user.auto_renew = True
     user.trial_expires_at = datetime.now(timezone.utc)  # 결제 → 체험 종료
     order.status = "CONFIRMED"
-    # payment_key 는 UNIQUE — 빌링키(payer_id)는 재등록 시 재사용되어 충돌 가능하므로
-    # 주문 고유 OID 를 거래 참조로 저장 (빌링키는 user.billing_key 에 보관). 갱신 태스크와 동일.
-    order.payment_key = oid
+    # 실제 청구 OID 를 거래 참조로 저장 (빌링키는 user.billing_key 에 보관).
+    order.payment_key = charge.get("PCD_PAY_OID") or charge_oid
     order.method = "card"
     order.confirmed_at = datetime.now(timezone.utc)
     db.commit()

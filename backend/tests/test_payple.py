@@ -126,11 +126,12 @@ def test_payple_callback_success_upgrades(payple_client, db_session):
         json={"tier": "pro", "billing_cycle": "monthly"},
     ).json()
 
-    resp = payple_client.post(
-        "/api/v1/payments/payple/callback",
-        data=_success_form(prep["order_id"]),
-        follow_redirects=False,
-    )
+    with patch("app.services.payple.charge_billing", return_value={"PCD_PAY_RST": "success", "PCD_PAY_OID": "CHG1"}):
+        resp = payple_client.post(
+            "/api/v1/payments/payple/callback",
+            data=_success_form(prep["order_id"]),
+            follow_redirects=False,
+        )
     assert resp.status_code == 303, resp.text  # 303: POST 콜백 → GET /account (정적 POST 405 방지)
     assert "payment=success" in resp.headers["location"]
     assert "/account" in resp.headers["location"]
@@ -165,11 +166,12 @@ def test_payple_callback_ends_active_trial(payple_client, db_session):
         "/api/v1/payments/payple/prepare",
         json={"tier": "pro", "billing_cycle": "monthly"},
     ).json()
-    payple_client.post(
-        "/api/v1/payments/payple/callback",
-        data=_success_form(prep["order_id"]),
-        follow_redirects=False,
-    )
+    with patch("app.services.payple.charge_billing", return_value={"PCD_PAY_RST": "success"}):
+        payple_client.post(
+            "/api/v1/payments/payple/callback",
+            data=_success_form(prep["order_id"]),
+            follow_redirects=False,
+        )
 
     sub = payple_client.get("/api/v1/payments/subscription").json()
     assert sub["is_trial"] is False
@@ -198,6 +200,39 @@ def test_payple_callback_failure_no_upgrade(payple_client, db_session):
     user = _get_payple_user(db_session)
     assert user.tier != "pro"
     assert user.auto_renew is False
+
+    order = (
+        db_session.query(models.PaymentOrder)
+        .filter(models.PaymentOrder.order_id == prep["order_id"])
+        .first()
+    )
+    assert order.status == "FAILED"
+
+
+def test_payple_callback_charge_failure_no_upgrade(payple_client, db_session):
+    """CERT(카드등록)는 성공했으나 첫 청구(PAYM) 실패 → 구독 미적용 + 주문 FAILED.
+
+    이 케이스가 막혀야 '청구 안 됐는데 구독만 켜지는' 매출 누락 버그가 안 생김.
+    """
+    prep = payple_client.post(
+        "/api/v1/payments/payple/prepare",
+        json={"tier": "pro", "billing_cycle": "monthly"},
+    ).json()
+
+    with patch("app.services.payple.charge_billing", side_effect=PaypleError("카드 한도 초과")):
+        resp = payple_client.post(
+            "/api/v1/payments/payple/callback",
+            data=_success_form(prep["order_id"]),
+            follow_redirects=False,
+        )
+    assert resp.status_code == 303
+    assert "payment=fail" in resp.headers["location"]
+
+    db_session.expire_all()
+    user = _get_payple_user(db_session)
+    assert user.tier != "pro"           # 구독 미적용
+    assert user.auto_renew is False
+    assert user.billing_key == "payerid_test_abc123"  # 빌링키는 저장(재시도용)
 
     order = (
         db_session.query(models.PaymentOrder)
