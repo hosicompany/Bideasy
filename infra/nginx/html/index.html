@@ -154,8 +154,8 @@
   <!-- TRUST -->
   <section class="lp-x"><div style="max-width:1080px;margin:0 auto;">
     <div class="g4" data-rv style="border-top:1px solid var(--line);border-bottom:1px solid var(--line);">
-      <div style="padding:24px 0;"><div class="num" data-count="94.9%" style="font-size:24px;font-weight:600;color:var(--accent);">94.9%</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">하한선 통과율</div></div>
-      <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" data-count="4,848" style="font-size:24px;font-weight:600;">4,848</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">학습 개찰 데이터</div></div>
+      <div style="padding:24px 0;"><div class="num" id="hero-pass" data-count="94.9%" style="font-size:24px;font-weight:600;color:var(--accent);">94.9%</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">하한선 통과율</div></div>
+      <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" id="hero-count" data-count="4,848" style="font-size:24px;font-weight:600;">4,848</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">학습 개찰 데이터</div></div>
       <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" style="font-size:24px;font-weight:600;">매주</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">자가보정 재학습</div></div>
       <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" data-count="30s" style="font-size:24px;font-weight:600;">30s</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">공고 분석 시간</div></div>
     </div>
@@ -314,9 +314,9 @@
 
     // ── live autocalibrate stats (graceful: falls back to baked-in numbers) ──
     fetch('/api/v1/autocalibrate/stats').then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (d) {
-      if (d.passRate) { document.getElementById('acal-pass').setAttribute('data-count', d.passRate.toFixed(1) + '%'); document.getElementById('acal-pass').textContent = d.passRate.toFixed(1) + '%'; }
+      if (d.passRate) { var _p = d.passRate.toFixed(1) + '%'; ['acal-pass', 'hero-pass'].forEach(function (id) { var e = document.getElementById(id); if (e) { e.setAttribute('data-count', _p); e.textContent = _p; } }); }
       if (d.dropRate) { document.getElementById('acal-drop').setAttribute('data-count', d.dropRate.toFixed(1) + '%'); document.getElementById('acal-drop').textContent = d.dropRate.toFixed(1) + '%'; }
-      if (d.dataCount) { document.getElementById('acal-count').setAttribute('data-count', d.dataCount.toLocaleString('ko-KR') + '건'); document.getElementById('acal-count').textContent = d.dataCount.toLocaleString('ko-KR') + '건'; }
+      if (d.dataCount) { var _n = d.dataCount.toLocaleString('ko-KR'); var ac = document.getElementById('acal-count'); if (ac) { ac.setAttribute('data-count', _n + '건'); ac.textContent = _n + '건'; } var hc = document.getElementById('hero-count'); if (hc) { hc.setAttribute('data-count', _n); hc.textContent = _n; } }
       if (d.weekly) renderBars(d.weekly);
       if (d.lastTrainedAt) document.getElementById('acal-ts').textContent = '마지막 학습 ' + d.lastTrainedAt + ' · 다음 자동 갱신 D-' + (d.nextUpdateDays || 2);
     }).catch(function () { /* keep baked-in numbers */ });
