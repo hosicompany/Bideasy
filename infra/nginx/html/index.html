@@ -269,13 +269,13 @@
     ];
     document.getElementById('pricing').innerHTML = TIERS.map(function (t) {
       var feats = t[3].map(function (f) { return '<div style="display:flex;gap:8px;font-size:13.5px;color:var(--muted);"><span style="color:var(--safe);margin-top:1px;">' + CHECK + '</span>' + f + '</div>'; }).join('');
-      return '<div class="card" data-rv style="padding:26px;position:relative;border-color:' + (t[4] ? 'var(--accent)' : 'var(--line)') + ';box-shadow:' + (t[4] ? 'var(--shadow-md)' : 'var(--shadow-sm)') + ';">' +
+      return '<div class="card" data-rv style="display:flex;flex-direction:column;padding:26px;position:relative;border-color:' + (t[4] ? 'var(--accent)' : 'var(--line)') + ';box-shadow:' + (t[4] ? 'var(--shadow-md)' : 'var(--shadow-sm)') + ';">' +
         (t[4] ? '<span class="chip chip-accent" style="position:absolute;top:-11px;left:26px;">인기</span>' : '') +
         '<div style="font-size:19px;font-weight:800;">' + t[0] + '</div>' +
         '<div style="margin-top:12px;display:flex;align-items:baseline;gap:4px;"><span class="num" style="font-size:30px;font-weight:600;">' + t[1] + '</span><span style="font-size:15px;color:var(--muted);font-weight:600;">원' + (t[0] !== 'Free' ? '/월' : '') + '</span></div>' +
         '<div style="font-size:12.5px;color:var(--safe);font-weight:600;margin-top:4px;min-height:16px;">' + t[2] + '</div>' +
         '<div style="margin:18px 0;display:flex;flex-direction:column;gap:9px;">' + feats + '</div>' +
-        '<a class="btn btn-block ' + (t[4] ? 'btn-primary' : 'btn-ghost') + '" href="' + t[6] + '">' + t[5] + '</a></div>';
+        '<a class="btn btn-block ' + (t[4] ? 'btn-primary' : 'btn-ghost') + '" style="margin-top:auto;" href="' + t[6] + '">' + t[5] + '</a></div>';
     }).join('');
 
     // ── motion: reveal + count-up + bars (safe: classes added by JS only) ──
