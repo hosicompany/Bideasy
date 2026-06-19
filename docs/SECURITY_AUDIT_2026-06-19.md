@@ -25,9 +25,19 @@
 | 14 | config production fail-fast | ✅ 패치 |
 | 16 | 익스텐션 401 폐기/baseURL/CSP | ✅ 패치 |
 | 22 | 회원가입 EmailStr + 비번 8자 | ✅ 패치 |
-| 10·15·17·19·20·21·23 | 빌링키 암호화·컨테이너 root·계정열거·프롬프트 인젝션·예외노출·정적 admin·sitemap escape | ⬜ 백로그(미패치) |
+| 10 | 빌링키 at-rest 암호화(Fernet) + 카드 로그 제거 | ✅ 패치 (2차) |
+| 12 | AI 일일한도 Redis 이관 + 효과 tier | ✅ 패치 (2차) |
+| 15 | 컨테이너 비-root + dev DB 로컬 바인딩 | ✅ 패치 (2차) |
+| 17·18 | 앱 레벨 레이트리밋(register/login/social) | ✅ 패치 (2차) |
+| 19 | LLM 프롬프트 인젝션 구분자/가드 | ✅ 패치 (2차) |
+| 20 | 예외 메시지 일반화 | ✅ 패치 (2차) |
+| 21 | nginx /admin noindex + auth 가이드 | ✅ 패치 (2차) |
+| 23 | sitemap XML escape + 토스 티어 화이트리스트 | ✅ 패치 (2차) |
+| — | 익스텐션 PRIVACY_POLICY 실제 구현 일치 | ✅ 패치 (2차) |
+| 8 | 운영 시크릿 로테이션 | ⚠️ **사용자 작업 필요** |
 
-> 백엔드 테스트 296건 통과, 익스텐션 tsc + vitest 41건 통과. **운영 배포 전 페이플 콜백·시크릿 로테이션 확인 필수.**
+> **전 항목 코드 패치 완료.** 백엔드 테스트 301건 통과, 익스텐션 tsc + vitest 41건 통과.
+> **운영 배포 전 확인**: 페이플 콜백(라이브) 샌드박스 점검, 시크릿 로테이션, `alembic upgrade head`(token_version·billing_key 폭 확장), 기존 strategy_data/celerybeat_data 볼륨 `chown 10001`(비-root 전환), 빌링키 암호화 사용 시 `BILLING_ENC_KEY` 설정.
 
 ---
 
