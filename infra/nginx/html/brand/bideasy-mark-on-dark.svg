@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="BidEasy">
-  <rect width="64" height="64" rx="19" fill="#6E8BFF"></rect>
-  <rect x="19" y="19" width="26" height="26" rx="6" fill="#08101F"></rect>
+  <rect width="64" height="64" rx="15" fill="#6E8BFF"></rect>
+  <circle cx="32" cy="32" r="18" fill="none" stroke="#FFFFFF" stroke-width="4"></circle>
+  <circle cx="32" cy="32" r="9.5" fill="none" stroke="#FFFFFF" stroke-width="4"></circle>
+  <circle cx="32" cy="32" r="4.5" fill="#0E9F6E"></circle>
 </svg>
