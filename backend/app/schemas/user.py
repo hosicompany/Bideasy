@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
 class UserBase(BaseModel):
@@ -11,8 +11,9 @@ class UserBase(BaseModel):
     performance_record: Optional[int] = 0
 
 class UserCreate(UserBase):
-    email: str
-    password: str
+    # 형식 검증된 이메일 + 최소 8자 비밀번호 (비밀번호 변경 정책과 일치)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
 
 class UserUpdate(UserBase):
     pass

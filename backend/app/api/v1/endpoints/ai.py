@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.core.analytics import log_event
 from app.core.rate_limit import limiter, get_user_tier
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_admin
 from app.db.session import get_db
 from app.db import models
 from app.schemas.subscription import tier_at_least, TIER_PRO, TIER_PRO_PLUS
@@ -396,8 +396,12 @@ async def analyze_bid(
 
 
 @router.delete("/{bid_no}/analysis/cache")
-async def clear_analysis_cache(bid_no: str, db: Session = Depends(get_db)):
-    """캐시 삭제 (디버깅용)"""
+async def clear_analysis_cache(
+    bid_no: str,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_admin),
+):
+    """캐시 삭제 (관리자 전용 — 임의 삭제 시 재분석 비용 유발 방지)"""
     cached = db.query(models.AIAnalysisLog).filter(
         models.AIAnalysisLog.bid_no == bid_no
     ).first()

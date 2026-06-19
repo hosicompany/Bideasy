@@ -79,16 +79,19 @@ class TestAiAnalysis:
         assert r1.status_code == 200
         assert r2.status_code == 200
 
-    def test_clear_cache(self, pro_client, sample_notice, monkeypatch):
-        """DELETE cache endpoint works."""
+    def test_clear_cache(self, pro_client, admin_client, sample_notice, monkeypatch):
+        """DELETE cache endpoint works (관리자 전용)."""
         monkeypatch.setattr(
             "app.services.scraper.ScraperService.fetch_page_content",
             lambda url: None,
         )
-        # Generate cache first
+        # Generate cache first (Pro 사용자)
         pro_client.get(
             "/api/v1/ai/TEST-001/analysis",
             params={"title": "test", "basic_price": 100000000},
         )
-        resp = pro_client.delete("/api/v1/ai/TEST-001/analysis/cache")
+        # 비관리자(Pro)는 캐시 삭제 거부
+        assert pro_client.delete("/api/v1/ai/TEST-001/analysis/cache").status_code == 403
+        # 관리자는 삭제 가능
+        resp = admin_client.delete("/api/v1/ai/TEST-001/analysis/cache")
         assert resp.status_code == 200

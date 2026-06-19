@@ -8,7 +8,7 @@ from app.schemas import bid as schemas
 from app.services.calculator import CalculatorService
 from app.db import models
 from app.core.logging import get_logger
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_admin
 
 logger = get_logger(__name__)
 
@@ -174,9 +174,12 @@ def get_feed(
     return q.offset(offset).limit(limit).all()
 
 @router.post("/crawl")
-def trigger_crawl(db: Session = Depends(get_db)):
+def trigger_crawl(
+    db: Session = Depends(get_db),
+    _: models.User = Depends(require_admin),
+):
     """
-    Trigger real data crawling manually.
+    Trigger real data crawling manually. (관리자 전용 — 크롤 fan-out·DDL 수행)
     """
     from app.services.crawler import CrawlerService
     from sqlalchemy import text
@@ -456,10 +459,15 @@ def report_a_value(
 
 
 @router.get("/{bid_no}/scrape-avalue")
-def scrape_a_value(bid_no: str, db: Session = Depends(get_db)):
+def scrape_a_value(
+    bid_no: str,
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
+):
     """A값 자동 추정 (Tier 2) — 캐시 우선, 없으면 첨부문서 파싱.
 
-    공개(A값은 공개 공고정보). 캐시 hit 시 즉시 반환(재파싱 없음).
+    A값은 공개 공고정보지만, 비캐시 시 외부 첨부 다운로드+HWP/PDF 파싱(고비용)이
+    발생하므로 인증 사용자로 제한(비인증 리소스 고갈 방지). 캐시 hit 시 즉시 반환.
     best-effort — 첨부 양식 편차로 못 찾을 수 있음. 계산기 '자동 추정' 버튼용.
     """
     notice = _lookup_notice(db, bid_no)

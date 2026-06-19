@@ -1,4 +1,5 @@
 import secrets
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -9,7 +10,9 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"  # development | production
 
     # === Security ===
-    JWT_SECRET_KEY: str = secrets.token_urlsafe(32)
+    # 운영(production)에서는 반드시 환경변수로 주입해야 한다(아래 validator 가 강제).
+    # 미설정 시 dev/test 에서만 임시 랜덤 키를 생성 — 운영에서 비면 기동 실패.
+    JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
@@ -138,6 +141,29 @@ class Settings(BaseSettings):
     # === Logging ===
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "text"  # "json" | "text"
+
+    @model_validator(mode="after")
+    def _enforce_production_secrets(self):
+        """운영(production)에서 필수 시크릿 누락 시 기동 실패(fail-fast).
+
+        dev/test 에서 JWT_SECRET_KEY 미설정 시에는 임시 랜덤 키를 생성해 편의를 유지하되,
+        운영에서는 반드시 명시적으로 주입하도록 강제한다(워커별 키 불일치·재시작 시 전원
+        로그아웃 같은 조용한 사고 방지).
+        """
+        if self.APP_ENV == "production":
+            missing = []
+            if not self.JWT_SECRET_KEY:
+                missing.append("JWT_SECRET_KEY")
+            if self.DATABASE_MODE == "postgresql" and self.POSTGRES_PASSWORD in ("", "bideasy_pass"):
+                missing.append("POSTGRES_PASSWORD")
+            if missing:
+                raise ValueError(
+                    "production 환경에 필수 시크릿이 설정되지 않았습니다: "
+                    + ", ".join(missing)
+                )
+        elif not self.JWT_SECRET_KEY:
+            self.JWT_SECRET_KEY = secrets.token_urlsafe(32)
+        return self
 
     class Config:
         env_file = ".env"
