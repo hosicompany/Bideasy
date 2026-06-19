@@ -894,6 +894,34 @@ async def payple_callback(request: Request, db: Session = Depends(get_db)):
         logger.warning(f"Payple callback: order not found: {oid}")
         return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message=주문을 찾을 수 없습니다", status_code=303)
 
+    # 멱등성: 이미 확정된 주문이면 재청구 없이 성공 응답 (콜백 재전송/중복 POST 방어)
+    if order.status == "CONFIRMED":
+        logger.info(f"Payple callback: order already confirmed, skip recharge: {oid}")
+        params = urlencode({"payment": "success", "amount": str(order.amount), "type": "billing"})
+        return RedirectResponse(f"{settings.FRONTEND_URL}/account?{params}", status_code=303)
+
+    # 콜백 진위 검증: 콜백에 가맹점 식별자(CST_ID)가 있으면 자사 값과 일치해야 함 (위조 콜백 차단)
+    cb_cst_id = form.get("PCD_CST_ID")
+    if cb_cst_id and cb_cst_id != settings.PAYPLE_CST_ID:
+        logger.warning(f"Payple callback: CST_ID mismatch oid={oid} got={cb_cst_id!r}")
+        order.status = "FAILED"
+        order.fail_reason = "콜백 검증 실패(CST_ID 불일치)"
+        db.commit()
+        return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message=결제 검증에 실패했습니다", status_code=303)
+
+    # 금액 변조 방어: 콜백이 결제총액을 보고한 경우 서버 주문금액과 대조
+    cb_total = form.get("PCD_PAY_TOTAL")
+    if cb_total:
+        try:
+            if int(str(cb_total).replace(",", "")) != int(order.amount):
+                logger.warning(f"Payple callback: amount mismatch oid={oid} cb={cb_total} order={order.amount}")
+                order.status = "FAILED"
+                order.fail_reason = "콜백 검증 실패(금액 불일치)"
+                db.commit()
+                return RedirectResponse(f"{settings.FRONTEND_URL}/account?payment=fail&message=결제 금액 검증에 실패했습니다", status_code=303)
+        except (ValueError, TypeError):
+            pass
+
     if rst != "success" or not payer_id:
         order.status = "FAILED"
         order.fail_reason = (form.get("PCD_PAY_MSG") or "카드 등록 실패")[:500]
@@ -921,10 +949,9 @@ async def payple_callback(request: Request, db: Session = Depends(get_db)):
             payer_email=form.get("PCD_PAYER_EMAIL") or user.email or "",
         )
     except payple_svc.PaypleError as e:
-        # 카드 등록은 됐으나 첫 청구 실패 → 빌링키만 저장(재시도용), 구독 미적용.
-        user.billing_key = payer_id
-        user.billing_provider = "payple"
-        user.billing_card = payple_svc.card_display(form)
+        # 첫 청구 실패 → 빌링키를 저장하지 않음.
+        # (미검증 payer_id 가 user.billing_key 에 남아 다음 Celery 갱신 때
+        #  타인 카드로 청구되는 오염을 방지. 빌링키는 청구 성공 시에만 저장한다.)
         order.status = "FAILED"
         order.fail_reason = (getattr(e, "message", "") or "첫 청구 실패")[:500]
         db.commit()

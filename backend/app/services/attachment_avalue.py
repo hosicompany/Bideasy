@@ -15,6 +15,7 @@ import urllib3
 from app.services.document_parser import DocumentParser
 from app.services.scraper import ScraperService
 from app.core.logging import get_logger
+from app.core.url_guard import is_safe_public_url
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = get_logger(__name__)
@@ -36,10 +37,14 @@ class AttachmentAValueExtractor:
         """첨부 다운로드 → 파싱 → A값 추출. {found, total, breakdown} 반환."""
         if not attachment_url:
             return {"found": False}
+        # SSRF 가드: 화이트리스트 도메인 + 공인 IP 만 허용 (내부망·메타데이터 차단)
+        if not is_safe_public_url(attachment_url):
+            logger.warning(f"A값 첨부 차단(SSRF guard): {attachment_url[:80]!r}")
+            return {"found": False}
         ext = AttachmentAValueExtractor._guess_ext(attachment_name, attachment_url)
         path = None
         try:
-            resp = requests.get(attachment_url, timeout=timeout, verify=False)
+            resp = requests.get(attachment_url, timeout=timeout, verify=False, allow_redirects=False)
             if resp.status_code != 200 or not resp.content:
                 logger.info(f"A값 첨부 다운로드 실패 {resp.status_code}: {attachment_url[:80]}")
                 return {"found": False}

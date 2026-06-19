@@ -42,6 +42,10 @@ class User(Base):
     # 관리자 권한 (require_admin 의존성에서 검사)
     is_admin = Column(Boolean, nullable=False, default=False, server_default="false")
 
+    # 토큰 무효화용 버전. 비밀번호 변경·로그아웃·강제 로그아웃 시 +1 하면
+    # 발급된 기존 JWT(tv 클레임이 옛 값)가 전부 즉시 무효화된다.
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
+
     # === 자동결제(빌링) ===
     # 토스 빌링키 — 카드 등록(requestBillingAuth) 후 발급, 영구 보관하며 매 주기 자동청구에 사용.
     billing_key = Column(String(200), nullable=True)

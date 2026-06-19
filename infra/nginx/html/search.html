@@ -72,12 +72,12 @@
       var dc = (n.dday != null && n.dday <= 1) ? 'danger' : (n.dday != null && n.dday <= 3) ? 'warn' : 'neutral';
       var ddTxt = (n.dday == null) ? '—' : (n.dday < 0 ? '마감' : 'D-' + n.dday);
       var isFav = favs.has(n.id);
-      return '<div class="card" data-id="' + n.id + '" style="padding:18px 20px;display:flex;align-items:center;gap:18px;cursor:pointer;">' +
+      return '<div class="card" data-id="' + BD.esc(n.id) + '" style="padding:18px 20px;display:flex;align-items:center;gap:18px;cursor:pointer;">' +
         '<div style="flex:1;min-width:0;">' +
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;"><span class="chip chip-neutral">' + (TYPE_KO[n.type] || '공고') + '</span>' +
-          (n.region ? '<span class="micro" style="font-size:10px;">' + n.region + '</span>' : '') + '</div>' +
-          '<div style="font-size:15.5px;font-weight:700;letter-spacing:-0.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (n.title || '(제목 없음)') + '</div>' +
-          '<div style="font-size:13px;color:var(--muted);margin-top:5px;">' + (n.agency || '—') + ' · 공고 ' + n.id + '</div>' +
+          (n.region ? '<span class="micro" style="font-size:10px;">' + BD.esc(n.region) + '</span>' : '') + '</div>' +
+          '<div style="font-size:15.5px;font-weight:700;letter-spacing:-0.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (n.title ? BD.esc(n.title) : '(제목 없음)') + '</div>' +
+          '<div style="font-size:13px;color:var(--muted);margin-top:5px;">' + (n.agency ? BD.esc(n.agency) : '—') + ' · 공고 ' + BD.esc(n.id) + '</div>' +
         '</div>' +
         '<div style="text-align:right;flex-shrink:0;"><div class="micro" style="font-size:9.5px;">기초금액</div>' +
           '<div class="num" style="font-size:17px;font-weight:600;margin-top:3px;">' + (n.basic ? BD.won(n.basic) : '—') + '</div>' +

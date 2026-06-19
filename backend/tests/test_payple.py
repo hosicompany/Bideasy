@@ -232,7 +232,8 @@ def test_payple_callback_charge_failure_no_upgrade(payple_client, db_session):
     user = _get_payple_user(db_session)
     assert user.tier != "pro"           # 구독 미적용
     assert user.auto_renew is False
-    assert user.billing_key == "payerid_test_abc123"  # 빌링키는 저장(재시도용)
+    # 보안: 첫 청구 실패 시 빌링키를 저장하지 않는다 (미검증 payer_id 오염·악성 갱신청구 방지)
+    assert user.billing_key is None
 
     order = (
         db_session.query(models.PaymentOrder)
@@ -240,6 +241,54 @@ def test_payple_callback_charge_failure_no_upgrade(payple_client, db_session):
         .first()
     )
     assert order.status == "FAILED"
+
+
+def test_payple_callback_idempotent_when_confirmed(payple_client, db_session):
+    """이미 CONFIRMED 된 주문에 콜백이 재전송돼도 재청구 없이 성공 응답 (중복청구 방어)."""
+    prep = payple_client.post(
+        "/api/v1/payments/payple/prepare",
+        json={"tier": "pro", "billing_cycle": "monthly"},
+    ).json()
+
+    with patch("app.services.payple.charge_billing", return_value={"PCD_PAY_RST": "success"}) as charge:
+        payple_client.post(
+            "/api/v1/payments/payple/callback",
+            data=_success_form(prep["order_id"]),
+            follow_redirects=False,
+        )
+        assert charge.call_count == 1
+        # 동일 콜백 재전송
+        resp = payple_client.post(
+            "/api/v1/payments/payple/callback",
+            data=_success_form(prep["order_id"]),
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+        assert "payment=success" in resp.headers["location"]
+        assert charge.call_count == 1  # 재청구 없음
+
+
+def test_payple_callback_rejects_cst_id_mismatch(payple_client, db_session):
+    """콜백에 위조된 PCD_CST_ID 가 오면 청구 시도 없이 거부."""
+    prep = payple_client.post(
+        "/api/v1/payments/payple/prepare",
+        json={"tier": "pro", "billing_cycle": "monthly"},
+    ).json()
+
+    form = _success_form(prep["order_id"])
+    form["PCD_CST_ID"] = "attacker_cst_id"
+    with patch("app.services.payple.charge_billing", return_value={"PCD_PAY_RST": "success"}) as charge:
+        resp = payple_client.post(
+            "/api/v1/payments/payple/callback", data=form, follow_redirects=False
+        )
+    assert resp.status_code == 303
+    assert "payment=fail" in resp.headers["location"]
+    assert charge.call_count == 0  # 검증 실패 → 청구 자체를 안 함
+
+    db_session.expire_all()
+    user = _get_payple_user(db_session)
+    assert user.tier != "pro"
+    assert user.billing_key is None
 
 
 # ─── 서비스 단위: charge_billing (httpx 모킹) ─────────────

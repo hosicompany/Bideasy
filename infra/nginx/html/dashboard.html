@@ -83,7 +83,7 @@
         }).catch(function () { return { id: id, title: '공고 ' + id, basic: null }; });
       }));
       th.innerHTML = rows.map(function (n) {
-        return '<a class="drow" href="/bid.html?no=' + encodeURIComponent(n.id) + '" style="cursor:pointer;align-items:center;text-decoration:none;"><span style="display:flex;align-items:center;gap:11px;min-width:0;"><span style="color:var(--accent);display:flex;flex-shrink:0;">' + BD.icon('star', 14) + '</span><span style="font-size:14px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + n.title + '</span></span><span class="v">' + (n.basic ? BD.won(n.basic) : '—') + '</span></a>';
+        return '<a class="drow" href="/bid.html?no=' + encodeURIComponent(n.id) + '" style="cursor:pointer;align-items:center;text-decoration:none;"><span style="display:flex;align-items:center;gap:11px;min-width:0;"><span style="color:var(--accent);display:flex;flex-shrink:0;">' + BD.icon('star', 14) + '</span><span style="font-size:14px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + BD.esc(n.title) + '</span></span><span class="v">' + (n.basic ? BD.won(n.basic) : '—') + '</span></a>';
       }).join('');
     }
 

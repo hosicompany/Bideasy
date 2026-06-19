@@ -5,6 +5,7 @@ import asyncio
 import aiohttp
 from typing import List, Dict, Optional
 from app.core.logging import get_logger
+from app.core.url_guard import is_safe_public_url
 
 logger = get_logger(__name__)
 
@@ -63,7 +64,9 @@ class ScraperService:
         Fetch HTML from URL and extract relevant text for LLM context.
         Targeting G2B specific structure.
         """
-        if not url or not url.startswith("http"):
+        # SSRF 가드: 화이트리스트 도메인 + 공인 IP 만 허용 (내부망·메타데이터 차단)
+        if not is_safe_public_url(url):
+            logger.warning(f"fetch_page_content blocked unsafe url: {url!r}")
             return ""
 
         try:
@@ -71,9 +74,10 @@ class ScraperService:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
-            
+
             # 1. Verification Bypass (Optional, G2B sometimes requires SSL verify=False)
-            response = requests.get(url, headers=headers, verify=False, timeout=5)
+            #    allow_redirects=False 로 리다이렉트를 통한 화이트리스트 우회 차단.
+            response = requests.get(url, headers=headers, verify=False, timeout=5, allow_redirects=False)
             response.encoding = 'utf-8' # G2B is usually utf-8 or euc-kr
             
             if response.status_code != 200:
@@ -189,15 +193,17 @@ class ScraperService:
     @staticmethod
     async def fetch_page_async(session: aiohttp.ClientSession, url: str) -> Dict:
         """Async version of page fetching."""
-        if not url or not url.startswith("http"):
+        # SSRF 가드: 화이트리스트 도메인 + 공인 IP 만 허용
+        if not is_safe_public_url(url):
+            logger.warning(f"fetch_page_async blocked unsafe url: {url!r}")
             return {"url": url, "content": "", "location": None}
-        
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
-        
+
         try:
-            async with session.get(url, headers=headers, ssl=False, timeout=aiohttp.ClientTimeout(total=5)) as response:
+            async with session.get(url, headers=headers, ssl=False, allow_redirects=False, timeout=aiohttp.ClientTimeout(total=5)) as response:
                 if response.status != 200:
                     return {"url": url, "content": "", "location": None}
                 

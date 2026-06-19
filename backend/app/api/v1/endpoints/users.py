@@ -11,7 +11,7 @@ from app.schemas.subscription import (
     has_used_trial,
 )
 from app.db.session import get_db
-from app.core.security import get_current_user, verify_password, get_password_hash
+from app.core.security import get_current_user, verify_password, get_password_hash, create_token_for_user
 
 router = APIRouter()
 
@@ -60,9 +60,19 @@ def change_password(
         raise HTTPException(status_code=400, detail="새 비밀번호가 기존과 동일해요.")
 
     current_user.hashed_password = get_password_hash(payload.new_password)
+    # 토큰 무효화: 비밀번호 변경 시 기존에 발급된 모든 JWT 를 무효화한다
+    # (유출 토큰 차단). 현재 클라이언트는 응답의 새 access_token 으로 교체한다.
+    current_user.token_version = (current_user.token_version or 0) + 1
     db.add(current_user)
     db.commit()
-    return {"status": "ok", "message": "비밀번호가 변경되었어요."}
+    db.refresh(current_user)
+    new_token = create_token_for_user(current_user)
+    return {
+        "status": "ok",
+        "message": "비밀번호가 변경되었어요.",
+        "access_token": new_token,
+        "token_type": "bearer",
+    }
 
 
 @router.get("/me/trial", response_model=TrialStatus)

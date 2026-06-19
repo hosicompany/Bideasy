@@ -105,10 +105,10 @@
     document.getElementById('kakao').addEventListener('click', function () { social('kakao'); });
     document.getElementById('naver').addEventListener('click', function () { social('naver'); });
 
-    // OAuth 콜백 ?token= 처리 (소셜 로그인 후 리다이렉트)
+    // OAuth 콜백 처리 — 토큰은 #token= (fragment), 오류는 ?error= 로 전달
     (function () {
-      var p = new URLSearchParams(location.search);
-      var token = p.get('token');
+      var hp = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+      var token = hp.get('token');
       if (token) {
         saveToken(token);
         BD.toast('소셜 로그인 성공');
@@ -116,7 +116,7 @@
         setTimeout(function () { location.href = redirectTarget(); }, 500);
         return;
       }
-      var err = p.get('error');
+      var err = new URLSearchParams(location.search).get('error');
       if (err) { showErr('OAuth 오류: ' + err); history.replaceState(null, '', location.pathname); }
     })();
   })();

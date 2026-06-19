@@ -36,18 +36,21 @@
     a { color: inherit; }
   </style>
   <script>
-    // 소셜 로그인(OAuth) 콜백 처리 — 백엔드가 /?token= (성공) 또는 /?error= (실패) 로 리다이렉트.
+    // 소셜 로그인(OAuth) 콜백 처리 — 백엔드가 /#token= (성공) 또는 /?error= (실패) 로 리다이렉트.
+    // 토큰은 URL fragment(#) 로 전달됨: 서버 액세스로그·Referer 에 남지 않아 쿼리스트링보다 안전.
     (function () {
       try {
-        var p = new URLSearchParams(location.search);
-        var token = p.get('token');
+        var hp = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+        var token = hp.get('token');
         if (token) {
+          // 주소창·히스토리에서 토큰 즉시 제거
+          try { history.replaceState(null, '', location.pathname); } catch (e) {}
           try { localStorage.setItem('access_token', token); localStorage.setItem('jwt', token); } catch (e) {}
           try { window.postMessage({ type: 'BIDEASY_TOKEN', token: token }, location.origin); } catch (e) {}
           location.replace('/dashboard');
           return;
         }
-        var err = p.get('error');
+        var err = new URLSearchParams(location.search).get('error');
         if (err) { location.replace('/login?error=' + encodeURIComponent(err)); return; }
       } catch (e) {}
     })();

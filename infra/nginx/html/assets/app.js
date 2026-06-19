@@ -31,6 +31,8 @@
   }
   function won(n) { return Number(n).toLocaleString('ko-KR'); }
   function fmt(n) { return '\u20a9 ' + won(Math.round(n)); }
+  // XSS \ubc29\uc5b4: \uc678\ubd80 \ub370\uc774\ud130(\uacf5\uace0 \uc81c\ubaa9\u00b7\uae30\uad00\uba85 \ub4f1)\ub97c innerHTML \uc5d0 \ub123\uae30 \uc804 HTML \uc774\uc2a4\ucf00\uc774\ud504.
+  function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
   function getTheme() { try { return localStorage.getItem('bideasy_theme') || 'light'; } catch (e) { return 'light'; } }
   function setTheme(t) {
@@ -196,7 +198,7 @@
     });
   }
 
-  window.BD = { icon: icon, won: won, fmt: fmt, mountNav: mountNav, toast: toast, getFavs: getFavs, toggleFav: toggleFav, getTheme: getTheme, setTheme: setTheme, getToken: getToken, mountSupportChat: mountSupportChat, API_BASE: 'https://api.bideasy.kr/api/v1' };
+  window.BD = { icon: icon, won: won, fmt: fmt, esc: esc, mountNav: mountNav, toast: toast, getFavs: getFavs, toggleFav: toggleFav, getTheme: getTheme, setTheme: setTheme, getToken: getToken, mountSupportChat: mountSupportChat, API_BASE: 'https://api.bideasy.kr/api/v1' };
   // 전 페이지 자동 마운트 (auth/checkout 등 모두 — 문의 접점 극대화)
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { try { mountSupportChat(); } catch (e) {} });
   else { try { mountSupportChat(); } catch (e) {} }

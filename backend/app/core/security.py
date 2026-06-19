@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import secrets as _secrets
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -34,6 +35,38 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def create_token_for_user(user: "models.User") -> str:
+    """사용자용 액세스 토큰 — token_version(tv) 클레임 포함.
+
+    tv 는 무효화에 쓰인다(비밀번호 변경/로그아웃 시 User.token_version 증가 →
+    옛 tv 를 가진 기존 토큰은 get_current_user 에서 거부됨).
+    """
+    return create_access_token({"sub": str(user.id), "tv": getattr(user, "token_version", 0) or 0})
+
+
+def create_oauth_state(expires_minutes: int = 10) -> str:
+    """OAuth CSRF 방어용 서명 state.
+
+    서버가 발급했음을 HMAC 서명으로 보증하고 TTL(기본 10분)로 재사용을 제한한다.
+    별도 저장소(Redis/세션) 없이 멀티워커에서 검증 가능 — 공격자가 임의 state 를
+    위조해 콜백을 위조하는 로그인 CSRF 를 차단한다.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
+    payload = {"purpose": "oauth_state", "nonce": _secrets.token_urlsafe(8), "exp": expire}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_oauth_state(state: Optional[str]) -> bool:
+    """create_oauth_state 가 발급한 유효(미만료) state 인지 검증."""
+    if not state:
+        return False
+    try:
+        payload = jwt.decode(state, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return False
+    return payload.get("purpose") == "oauth_state"
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -54,6 +87,10 @@ def get_current_user(
 
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if user is None:
+        raise credentials_exception
+    # 토큰 무효화 검사: 토큰의 tv 가 현재 token_version 과 다르면 거부
+    # (비밀번호 변경/로그아웃으로 무효화된 토큰. tv 없는 옛 토큰은 0 으로 간주.)
+    if payload.get("tv", 0) != (user.token_version or 0):
         raise credentials_exception
     return user
 
@@ -86,7 +123,12 @@ def get_current_user_optional(
         user_id = int(sub)
     except (JWTError, ValueError):
         return None
-    return db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user is None:
+        return None
+    if payload.get("tv", 0) != (user.token_version or 0):
+        return None
+    return user
 
 
 def require_admin(current_user: models.User = Depends(get_current_user)) -> models.User:

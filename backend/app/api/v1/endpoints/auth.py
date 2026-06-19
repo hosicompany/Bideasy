@@ -3,7 +3,6 @@ from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import httpx
-import secrets as stdlib_secrets
 
 from app.db.session import get_db
 from app.db import models
@@ -13,7 +12,9 @@ from app.schemas.subscription import activate_trial
 from app.core.security import (
     verify_password,
     get_password_hash,
-    create_access_token,
+    create_token_for_user,
+    create_oauth_state,
+    verify_oauth_state,
 )
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -32,24 +33,38 @@ def _find_or_create_social_user(
     social_id: str,
     email: str | None,
     profile_image: str | None,
+    email_verified: bool = False,
 ) -> models.User:
-    """Find existing user by social identity, email, or create new one."""
+    """Find existing user by social identity, email, or create new one.
+
+    보안: 이메일로 기존 계정에 소셜 식별자를 병합(계정 연결)하는 것은 공급자가
+    이메일 소유를 검증(email_verified=True)한 경우에만 허용한다. 미검증 이메일로
+    타인의 기존 계정(비밀번호 가입)을 탈취하는 경로를 차단한다.
+    """
     user = db.query(models.User).filter(
         models.User.social_provider == provider,
         models.User.social_id == social_id,
     ).first()
 
-    if not user and email:
-        user = db.query(models.User).filter(models.User.email == email).first()
-        if user:
-            user.social_provider = provider
-            user.social_id = social_id
+    if not user and email and email_verified:
+        existing = db.query(models.User).filter(models.User.email == email).first()
+        if existing:
+            existing.social_provider = provider
+            existing.social_id = social_id
             if profile_image:
-                user.profile_image_url = profile_image
+                existing.profile_image_url = profile_image
+            user = existing
 
     if not user:
+        # 새 계정 생성. 단, 미검증 이메일이 기존 계정과 충돌하면 이메일 없이 생성
+        # (미검증 이메일로 기존 계정과 같은 이메일을 차지해 혼동/탈취되는 것 방지).
+        email_for_new = email
+        if email and not email_verified:
+            conflict = db.query(models.User).filter(models.User.email == email).first()
+            if conflict:
+                email_for_new = None
         user = models.User(
-            email=email,
+            email=email_for_new,
             hashed_password=None,
             social_provider=provider,
             social_id=social_id,
@@ -128,7 +143,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(data={"sub": str(user.id)})
+    access_token = create_token_for_user(user)
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -141,6 +156,7 @@ async def social_login(
     social_id = None
     email = None
     profile_image = None
+    email_verified = False
 
     async with httpx.AsyncClient() as client:
         if payload.provider == "kakao":
@@ -155,6 +171,8 @@ async def social_login(
             social_id = str(data["id"])
             kakao_account = data.get("kakao_account", {})
             email = kakao_account.get("email")
+            # 카카오는 이메일 검증 여부를 명시적으로 제공
+            email_verified = bool(email) and kakao_account.get("is_email_verified") is True
             profile_image = kakao_account.get("profile", {}).get("thumbnail_image_url")
 
         elif payload.provider == "naver":
@@ -171,6 +189,8 @@ async def social_login(
             data = result["response"]
             social_id = data["id"]
             email = data.get("email")
+            # 네이버 계정 이메일은 가입 시 검증됨
+            email_verified = bool(email)
             profile_image = data.get("profile_image")
 
         else:
@@ -178,10 +198,10 @@ async def social_login(
 
     user = _find_or_create_social_user(
         db, provider=payload.provider, social_id=social_id,
-        email=email, profile_image=profile_image,
+        email=email, profile_image=profile_image, email_verified=email_verified,
     )
 
-    access_token = create_access_token(data={"sub": str(user.id)})
+    access_token = create_token_for_user(user)
     logger.info(f"Social login: provider={payload.provider}, user_id={user.id}")
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -189,7 +209,9 @@ async def social_login(
 @router.get("/social-urls")
 def get_social_login_urls():
     """OAuth 인가 URL 반환 (프론트엔드에서 호출)"""
-    naver_state = stdlib_secrets.token_urlsafe(16)
+    # CSRF 방어: 서명된 state 를 발급하고 콜백에서 검증 (카카오·네이버 모두)
+    kakao_state = create_oauth_state()
+    naver_state = create_oauth_state()
     base = f"{settings.BACKEND_URL}{settings.API_V1_STR}"
     kakao_cb = f"{base}/auth/callback/kakao"
     naver_cb = f"{base}/auth/callback/naver"
@@ -200,6 +222,7 @@ def get_social_login_urls():
             f"?client_id={settings.KAKAO_REST_API_KEY}"
             f"&redirect_uri={kakao_cb}"
             f"&response_type=code"
+            f"&state={kakao_state}"
         ),
         "naver": (
             f"https://nid.naver.com/oauth2.0/authorize"
@@ -212,8 +235,12 @@ def get_social_login_urls():
 
 
 @router.get("/callback/kakao")
-async def kakao_callback(code: str, db: Session = Depends(get_db)):
+async def kakao_callback(code: str, state: str = "", db: Session = Depends(get_db)):
     """카카오 OAuth 콜백 - 인가 코드 → JWT → 프론트엔드 리다이렉트"""
+    # CSRF 방어: 서버가 발급한 서명 state 인지 검증
+    if not verify_oauth_state(state):
+        logger.warning("Kakao callback: invalid/expired oauth state")
+        return RedirectResponse(f"{settings.FRONTEND_URL}/?error=invalid_state")
     callback_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/auth/callback/kakao"
 
     async with httpx.AsyncClient() as client:
@@ -245,21 +272,27 @@ async def kakao_callback(code: str, db: Session = Depends(get_db)):
     social_id = str(data["id"])
     kakao_account = data.get("kakao_account", {})
     email = kakao_account.get("email")
+    email_verified = bool(email) and kakao_account.get("is_email_verified") is True
     profile_image = kakao_account.get("profile", {}).get("thumbnail_image_url")
 
     user = _find_or_create_social_user(
         db, provider="kakao", social_id=social_id,
-        email=email, profile_image=profile_image,
+        email=email, profile_image=profile_image, email_verified=email_verified,
     )
 
-    jwt_token = create_access_token(data={"sub": str(user.id)})
+    jwt_token = create_token_for_user(user)
     logger.info(f"Kakao OAuth callback: user_id={user.id}")
-    return RedirectResponse(f"{settings.FRONTEND_URL}/?token={jwt_token}")
+    # 토큰을 URL fragment 로 전달 — 쿼리스트링과 달리 서버 액세스로그·Referer 에 남지 않음
+    return RedirectResponse(f"{settings.FRONTEND_URL}/#token={jwt_token}")
 
 
 @router.get("/callback/naver")
 async def naver_callback(code: str, state: str, db: Session = Depends(get_db)):
     """네이버 OAuth 콜백 - 인가 코드 → JWT → 프론트엔드 리다이렉트"""
+    # CSRF 방어: 서버가 발급한 서명 state 인지 검증
+    if not verify_oauth_state(state):
+        logger.warning("Naver callback: invalid/expired oauth state")
+        return RedirectResponse(f"{settings.FRONTEND_URL}/?error=invalid_state")
     callback_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/auth/callback/naver"
 
     async with httpx.AsyncClient() as client:
@@ -294,13 +327,15 @@ async def naver_callback(code: str, state: str, db: Session = Depends(get_db)):
 
     social_id = naver_data["id"]
     email = naver_data.get("email")
+    email_verified = bool(email)  # 네이버 계정 이메일은 가입 시 검증됨
     profile_image = naver_data.get("profile_image")
 
     user = _find_or_create_social_user(
         db, provider="naver", social_id=social_id,
-        email=email, profile_image=profile_image,
+        email=email, profile_image=profile_image, email_verified=email_verified,
     )
 
-    jwt_token = create_access_token(data={"sub": str(user.id)})
+    jwt_token = create_token_for_user(user)
     logger.info(f"Naver OAuth callback: user_id={user.id}")
-    return RedirectResponse(f"{settings.FRONTEND_URL}/?token={jwt_token}")
+    # 토큰을 URL fragment 로 전달 — 쿼리스트링과 달리 서버 액세스로그·Referer 에 남지 않음
+    return RedirectResponse(f"{settings.FRONTEND_URL}/#token={jwt_token}")
