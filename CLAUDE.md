@@ -162,7 +162,7 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 `deploy.sh`가 자동 수행: `git pull origin master` → `dc build app celery_worker` → 롤링 재시작 → 헬스체크 → **`dc exec app alembic upgrade head`**.
 - 기타: `./deploy.sh {status|logs|backup|rollback|ssl-init}`. 프로젝트명 `-p infra` 고정.
 - 마이그레이션만 수동: `docker compose -f docker-compose.prod.yml --env-file .env.production -p infra exec app alembic upgrade head`
-- **현재 마이그레이션 head**: `c4f1a9e63b27` (add billing_provider).
+- **현재 마이그레이션 head**: `f2d9a1c84b56` (add token_version to users — JWT 무효화). 직전 `e1a4c7b2f039`.
 
 ---
 
