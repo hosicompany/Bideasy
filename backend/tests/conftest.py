@@ -11,6 +11,11 @@ from app.db.base import Base
 from app.db.session import get_db
 from main import app
 
+# 테스트에서는 레이트리밋 비활성화 — 누적 호출이 분당 한도에 걸려 flaky 해지는 것 방지.
+# (레이트리밋 동작은 test_rate_limit.py 에서 별도로 명시 검증)
+from app.core.rate_limit import limiter as _limiter
+_limiter.enabled = False
+
 
 @pytest.fixture(scope="session")
 def engine():

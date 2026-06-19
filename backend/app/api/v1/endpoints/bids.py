@@ -37,8 +37,11 @@ def calculate_bid(request: schemas.BidCalculationRequest):
             is_safe=is_safe,
             warning_message=None if is_safe else f"투찰금액이 낙찰하한선({lower_limit_rate}%) 미만입니다."
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))  # 검증 메시지(의도적 노출)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"calculate error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="계산 처리 중 오류가 발생했어요.")
 
 
 @router.post("/calculate/detailed", response_model=schemas.DetailedBidCalculationResponse)
@@ -78,8 +81,11 @@ def calculate_bid_detailed(request: schemas.BidCalculationRequest):
             lower_limit_formatted=f"{result.lower_limit_price:,}원",
             a_value_formatted=f"{result.a_value:,}원" if result.a_value > 0 else None
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))  # 검증 메시지(의도적 노출)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"detailed calculate error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="계산 처리 중 오류가 발생했어요.")
 
 
 @router.get("/feed", response_model=List[schemas.Notice])
@@ -198,7 +204,8 @@ def trigger_crawl(
         saved_count = CrawlerService.save_notices(db, notices)
         return {"message": "Crawl Success", "fetched": len(notices), "saved": saved_count}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"crawl error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="크롤 처리 중 오류가 발생했어요.")
 
 
 # ── DOM 의존도 축소 리팩터: 공고 컨텍스트 엔드포인트 ────────────────

@@ -6,6 +6,7 @@
 """
 from datetime import datetime
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
@@ -117,10 +118,10 @@ def sitemap(db: Session = Depends(get_db)):
     locs = [f"  <url><loc>{SITE_URL}{p}</loc></url>" for p in static_paths]
     for p in blog_svc.list_posts(db):
         _lm = p.get("updated") or p.get("date") or ""
-        _lmtag = f"<lastmod>{_lm}</lastmod>" if _lm else ""
-        locs.append(f"  <url><loc>{SITE_URL}/blog/{p['slug']}</loc>{_lmtag}</url>")
+        _lmtag = f"<lastmod>{xml_escape(str(_lm))}</lastmod>" if _lm else ""
+        locs.append(f"  <url><loc>{SITE_URL}/blog/{xml_escape(str(p['slug']))}</loc>{_lmtag}</url>")
     for n in notices:
-        locs.append(f"  <url><loc>{SITE_URL}/bid/{n.bid_no}</loc></url>")
+        locs.append(f"  <url><loc>{SITE_URL}/bid/{xml_escape(str(n.bid_no))}</loc></url>")
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'

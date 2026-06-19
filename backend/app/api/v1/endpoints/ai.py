@@ -1,6 +1,6 @@
 import asyncio
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -8,11 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.core.analytics import log_event
-from app.core.rate_limit import limiter, get_user_tier
 from app.core.security import get_current_user, require_admin
+from app.core.cache import _get_redis, cache_key
 from app.db.session import get_db
 from app.db import models
-from app.schemas.subscription import tier_at_least, TIER_PRO, TIER_PRO_PLUS
+from app.schemas.subscription import tier_at_least, TIER_PRO_PLUS, get_effective_tier
 from app.services.tips_generator import generate_tips
 from app.services.scraper import ScraperService
 
@@ -28,45 +28,69 @@ AI_DAILY_LIMIT = {
     "pro_plus": None,  # None = 무제한
 }
 
-# in-memory rate counter (운영 시 redis로 교체 권장)
+# Redis 미가용(dev/test) 시 폴백용 in-memory 카운터.
+# ⚠️ 멀티워커/재시작에 취약하므로 운영에서는 Redis 경로가 1차다.
 _user_call_log: dict[int, deque[datetime]] = defaultdict(deque)
 
 
+def _kst_date() -> str:
+    """KST 기준 날짜(YYYYMMDD) — 일일 한도 캘린더 리셋 키."""
+    return (datetime.now(timezone.utc) + timedelta(hours=9)).strftime("%Y%m%d")
+
+
+def _raise_limit(tier: str, limit_per_day: int):
+    upgrade_target = "Pro" if tier == "free" else "Pro+"
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=(
+            f"하루 AI 분석 한도({limit_per_day}회)를 초과했어요. "
+            f"{upgrade_target}로 업그레이드하면 더 많이 분석 가능합니다."
+        ),
+    )
+
+
 def check_ai_rate_limit(user: models.User) -> int:
-    """사용자 tier에 따라 일일 AI 분석 호출 한도 적용.
+    """효과 tier(체험 포함)에 따라 일일 AI 분석 호출 한도 적용.
 
-    Returns: 이번 호출 후 사용한 횟수 (응답 헤더에 노출 가능).
-    Raises: 429 Too Many Requests — 한도 초과 시.
+    Redis 기반 일일 카운터(멀티워커·재시작 무관)를 1차로 쓰고, Redis 미가용 시
+    in-memory 폴백. Returns: 이번 호출 포함 사용 횟수. Raises: 429 한도 초과.
     """
-    user_tier = (getattr(user, "tier", "free") or "free")
+    # 체험(Trial) 사용자도 Pro 한도를 받도록 효과 tier 사용
+    effective_tier = get_effective_tier(user)
 
-    # Pro+ 무제한
-    if tier_at_least(user_tier, TIER_PRO_PLUS):
+    if tier_at_least(effective_tier, TIER_PRO_PLUS):
         return 0
 
-    limit_per_day = AI_DAILY_LIMIT.get(user_tier, AI_DAILY_LIMIT["free"])
+    limit_per_day = AI_DAILY_LIMIT.get(effective_tier, AI_DAILY_LIMIT["free"])
     if limit_per_day is None:
         return 0
 
     user_id = getattr(user, "id", 0)
+
+    # ── 1차: Redis 카운터 (INCR + 일일 만료) ──
+    r = _get_redis()
+    if r is not None:
+        try:
+            key = cache_key("ai_limit", user_id, _kst_date())
+            new_count = r.incr(key)
+            if new_count == 1:
+                r.expire(key, 86400)  # 24h 후 자동 소멸
+            if new_count > limit_per_day:
+                _raise_limit(effective_tier, limit_per_day)
+            return new_count
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"AI rate limit Redis 실패, in-memory 폴백: {e}")
+
+    # ── 폴백: in-memory 롤링 24h ──
     now = datetime.now()
     cutoff = now - timedelta(days=1)
     log = _user_call_log[user_id]
-
-    # 24시간 이전 기록 제거
     while log and log[0] < cutoff:
         log.popleft()
-
     if len(log) >= limit_per_day:
-        upgrade_target = "Pro" if user_tier == "free" else "Pro+"
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=(
-                f"하루 AI 분석 한도({limit_per_day}회)를 초과했어요. "
-                f"{upgrade_target}로 업그레이드하면 더 많이 분석 가능합니다."
-            ),
-        )
-
+        _raise_limit(effective_tier, limit_per_day)
     log.append(now)
     return len(log)
 

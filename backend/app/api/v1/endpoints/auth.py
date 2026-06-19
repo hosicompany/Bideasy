@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import httpx
 
+from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.db import models
 from app.schemas import user as user_schemas
@@ -91,8 +92,9 @@ def _find_or_create_social_user(
 
 
 @router.post("/register", response_model=user_schemas.UserResponse)
-def register(user_in: user_schemas.UserCreate, db: Session = Depends(get_db)):
-    """회원가입"""
+@limiter.limit("5/minute")
+def register(request: Request, user_in: user_schemas.UserCreate, db: Session = Depends(get_db)):
+    """회원가입 — IP당 분당 5회로 제한(계정 대량 생성·이메일 열거 어뷰징 완화)."""
     existing = db.query(models.User).filter(models.User.email == user_in.email).first()
     if existing:
         raise HTTPException(
@@ -133,8 +135,9 @@ def register(user_in: user_schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """로그인 (JWT 토큰 발급)"""
+@limiter.limit("10/minute")
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """로그인 (JWT 토큰 발급) — IP당 분당 10회로 제한(브루트포스 완화, nginx 보강)."""
     user = db.query(models.User).filter(models.User.email == form_data.username).first()
     if not user or not user.hashed_password or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -148,7 +151,9 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 
 @router.post("/social")
+@limiter.limit("10/minute")
 async def social_login(
+    request: Request,
     payload: user_schemas.SocialLoginRequest,
     db: Session = Depends(get_db),
 ):

@@ -1,11 +1,31 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text, Boolean
 from sqlalchemy.orm import relationship
+from sqlalchemy.types import TypeDecorator
 from datetime import datetime, timezone
 from app.db.base import Base
 
 
 def _utcnow():
     return datetime.now(timezone.utc)
+
+
+class EncryptedString(TypeDecorator):
+    """빌링키 등 민감 문자열의 투명 at-rest 암호화 컬럼 타입.
+
+    BILLING_ENC_KEY 설정 시에만 암호화하고, 미설정/레거시 평문은 그대로 통과.
+    호출부는 평문처럼 읽고 쓰면 된다(암복호화는 이 레이어에서 처리).
+    """
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        from app.core.crypto import encrypt_secret
+        return encrypt_secret(value)
+
+    def process_result_value(self, value, dialect):
+        from app.core.crypto import decrypt_secret
+        return decrypt_secret(value)
 
 
 class User(Base):
@@ -48,9 +68,10 @@ class User(Base):
 
     # === 자동결제(빌링) ===
     # 토스 빌링키 — 카드 등록(requestBillingAuth) 후 발급, 영구 보관하며 매 주기 자동청구에 사용.
-    billing_key = Column(String(200), nullable=True)
+    # at-rest 암호화(EncryptedString): BILLING_ENC_KEY 설정 시 암호문 저장(길이 여유 위해 500).
+    billing_key = Column(EncryptedString(500), nullable=True)
     # 빌링키 발급 시 사용한 customerKey — 청구 시 동일 값 필요 (사용자당 1개 재사용)
-    billing_customer_key = Column(String(100), nullable=True)
+    billing_customer_key = Column(EncryptedString(500), nullable=True)
     # 표시용 마스킹 카드정보 (예: "신한 ****1234") — 보안상 원본 카드번호 미보관
     billing_card = Column(String(80), nullable=True)
     # 자동 갱신 주기 (monthly | annual)

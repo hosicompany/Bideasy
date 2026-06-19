@@ -365,6 +365,11 @@ async def subscription_success(
     # Parse tier and billing cycle from order_id: SUB_{uid}_{tier}_{ts}_{rand}
     parts = orderId.split("_")
     tier = parts[2] if len(parts) >= 4 else TIER_PRO
+    # 방어적 화이트리스트: order_id 는 서버 생성이지만, 비정상 값이 user.tier 에
+    # 그대로 대입되지 않도록 유효 티어만 허용(아니면 Pro 로 폴백).
+    if tier not in (TIER_PRO, TIER_PRO_PLUS):
+        logger.warning(f"Toss subscribe callback: unexpected tier {tier!r} in {orderId}, fallback to pro")
+        tier = TIER_PRO
     is_annual = order.amount >= 100_000  # annual payments are > 100k
 
     # Upgrade user tier
@@ -742,7 +747,7 @@ async def billing_success(
 
     logger.info(
         f"Billing first charge confirmed: order={orderId}, user={user.id}, "
-        f"tier={tier}, days={days}, card={user.billing_card}"
+        f"tier={tier}, days={days}"
     )
     log_event(
         "billing_first_charge",

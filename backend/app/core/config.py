@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     # 운영(production)에서는 반드시 환경변수로 주입해야 한다(아래 validator 가 강제).
     # 미설정 시 dev/test 에서만 임시 랜덤 키를 생성 — 운영에서 비면 기동 실패.
     JWT_SECRET_KEY: str = ""
+
+    # 빌링키 at-rest 암호화 키(Fernet). 비어 있으면 평문 저장(기존 동작).
+    # 설정 시 신규 빌링키는 암호화 저장, 레거시 평문은 자동 폴백 복호화. → app/core/crypto.py
+    BILLING_ENC_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
