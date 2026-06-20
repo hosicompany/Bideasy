@@ -14,6 +14,12 @@ class UserCreate(UserBase):
     # 형식 검증된 이메일 + 최소 8자 비밀번호 (비밀번호 변경 정책과 일치)
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+    # 유입 귀속(선택) — 프론트 first-touch 캡처에서 전달, 가입 시 User 에 저장.
+    # 길이 제한은 두지 않고(긴 referrer URL 이 가입을 막지 않도록) 서버에서 컬럼 길이로 절단.
+    signup_source: Optional[str] = None
+    signup_medium: Optional[str] = None
+    signup_campaign: Optional[str] = None
+    signup_referrer: Optional[str] = None
 
 class UserUpdate(UserBase):
     pass

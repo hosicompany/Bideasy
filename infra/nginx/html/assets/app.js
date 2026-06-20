@@ -2,6 +2,21 @@
    Exposes window.BD: icon, won, fmt, mountNav, toast, getFavs, toggleFav, theme.
    In production these favorites/feed calls would hit your api(). */
 (function () {
+  // ── first-touch 유입 귀속: 최초 방문 1회 채널 저장(가입 시 함께 전송) ──
+  // UTM 우선 → 외부 referrer → direct. 이미 저장돼 있으면 덮어쓰지 않음(첫 터치 고정).
+  try {
+    if (!localStorage.getItem('bd_attr')) {
+      var _q = new URLSearchParams(location.search);
+      var _ref = document.referrer || '';
+      var _internal = _ref.indexOf('//' + location.host) !== -1;
+      var _src = _q.get('utm_source') || '', _med = _q.get('utm_medium') || '', _cmp = _q.get('utm_campaign') || '';
+      if (!_src) {
+        if (_ref && !_internal) { try { _src = new URL(_ref).hostname.replace(/^www\./, ''); } catch (e) { _src = 'referral'; } _med = _med || 'referral'; }
+        else { _src = 'direct'; }
+      }
+      localStorage.setItem('bd_attr', JSON.stringify({ source: _src, medium: _med, campaign: _cmp, referrer: _internal ? '' : _ref }));
+    }
+  } catch (e) {}
   var ICONS = {
     search: 'M7.5 7.5m-5 0a5 5 0 1 0 10 0a5 5 0 1 0 -10 0 M11 11l4 4',
     filter: 'M2.5 4h11 M4.5 8h7 M6.5 12h3',

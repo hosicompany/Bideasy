@@ -81,6 +81,14 @@ class User(Base):
     # 빌링키 발급 PG (toss | payple) — 자동청구 시 어느 PG API 를 쓸지 구분
     billing_provider = Column(String(20), nullable=True)
 
+    # === 유입 귀속(attribution) — 가입 시점 first-touch 채널 ===
+    # UTM(utm_source/medium/campaign) + 최초 유입 referrer. "어느 채널이 가입·결제를
+    # 데려오나"를 우리 데이터로 직접 집계(외부 분석도구·쿠키 불요). 프론트 first-touch 캡처.
+    signup_source = Column(String(120), nullable=True)
+    signup_medium = Column(String(120), nullable=True)
+    signup_campaign = Column(String(160), nullable=True)
+    signup_referrer = Column(String(300), nullable=True)
+
     bids = relationship("UserBid", back_populates="user")
     point_transactions = relationship("PointTransaction", back_populates="user")
 

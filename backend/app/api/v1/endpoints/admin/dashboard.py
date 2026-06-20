@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.core.security import require_admin
@@ -57,6 +57,44 @@ def _aware(dt: Optional[datetime]) -> Optional[datetime]:
     if dt is None:
         return None
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
+@router.get("/stats/attribution")
+def attribution_stats(db: Session = Depends(get_db), _admin=Depends(require_admin)):
+    """유입 채널별 가입·전환 — signup_source(first-touch) 기준 집계.
+
+    trial 은 user.tier 를 바꾸지 않으므로(get_effective_tier 가 오버레이) tier != free
+    = 실제 유료 전환. 외부 분석도구·쿠키 없이 우리 DB 만으로 채널→가입→매출 귀속.
+    """
+    rows = (
+        db.query(
+            models.User.signup_source.label("source"),
+            func.count(models.User.id).label("signups"),
+            func.coalesce(
+                func.sum(case((models.User.tier != TIER_FREE, 1), else_=0)), 0
+            ).label("paid"),
+        )
+        .group_by(models.User.signup_source)
+        .order_by(func.count(models.User.id).desc())
+        .all()
+    )
+    channels = []
+    for r in rows:
+        signups = int(r.signups or 0)
+        paid = int(r.paid or 0)
+        channels.append(
+            {
+                "source": r.source or "(unknown)",
+                "signups": signups,
+                "paid": paid,
+                "conversion_pct": round(paid / signups * 100, 1) if signups else 0.0,
+            }
+        )
+    return {
+        "channels": channels,
+        "total_signups": sum(c["signups"] for c in channels),
+        "total_paid": sum(c["paid"] for c in channels),
+    }
 
 
 # ─── /stats/revenue ───────────────────────────────────────

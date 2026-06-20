@@ -112,6 +112,11 @@ def register(request: Request, user_in: user_schemas.UserCreate, db: Session = D
         capacity_cost=user_in.capacity_cost or 0,
         performance_record=user_in.performance_record or 0,
         points=SIGNUP_BONUS,
+        # 유입 귀속 — 컬럼 길이로 안전 절단, 빈 문자열은 None 으로 정규화
+        signup_source=(user_in.signup_source or "")[:120] or None,
+        signup_medium=(user_in.signup_medium or "")[:120] or None,
+        signup_campaign=(user_in.signup_campaign or "")[:160] or None,
+        signup_referrer=(user_in.signup_referrer or "")[:300] or None,
     )
     db.add(user)
     db.flush()  # user.id 확보

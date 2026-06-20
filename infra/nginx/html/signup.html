@@ -85,10 +85,12 @@
       if (!agreed) { BD.toast('약관에 동의해 주세요', 'danger'); return; }
       go.disabled = true; var orig = go.textContent; go.textContent = '가입 처리 중...';
       try {
-        // 1) 회원가입
+        // 1) 회원가입 (+ first-touch 유입 귀속 동봉)
+        var _a = {}; try { _a = JSON.parse(localStorage.getItem('bd_attr') || '{}'); } catch (e) {}
         var reg = await fetch(API_BASE + '/auth/register', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email, password: pw, company_name: company || null, ceo_name: null }),
+          body: JSON.stringify({ email: email, password: pw, company_name: company || null, ceo_name: null,
+            signup_source: _a.source || null, signup_medium: _a.medium || null, signup_campaign: _a.campaign || null, signup_referrer: _a.referrer || null }),
         });
         if (!reg.ok) {
           var t = await reg.text(); var msg = '회원가입에 실패했어요';
