@@ -1,7 +1,8 @@
 # BidEasy — 개발 가이드 & 핸드오프 문서
 
+> **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
-> 최종 갱신: 2026-06-09 (페이플 정기결제 연동 배포 직후)
+> 최종 갱신: 2026-07-05 (정본 선언 + 6/17 페이플 라이브·6/19 보안 하드닝·6/22 UTM 귀속 반영)
 
 ---
 
@@ -27,19 +28,38 @@
 - **자격매칭** — `QualificationChecker` 단일소스, 뱃지
 - **관리자 대시보드** — 일일리포트·사용자·결제/환불·정확도·자가보정·시스템·시뮬레이션
 - **자가보정(autocalibrate)** — 누적 개찰결과(DB) 병합한 백테스트·전략 재보정 (Celery 주간)
+- **페이플 운영 라이브 (6/17)** — `PAYMENT_PROVIDER=payple` 실매출 가능, 실결제 24,900원 승인 검증. 환불은 페이플 콘솔 수동(`PCD_REFUND_KEY` 미연동), 콘솔 취소↔DB 동기화 없음(웹훅 없음). 윈백 50%는 "체험 만료 후 grace 7일 내 미결제자"에게만
+- **보안 하드닝 (6/19, head `a3c7e1f9b204`)** — JWT `token_version` 무효화, 빌링키 Fernet 암호화(`BILLING_ENC_KEY`), SSRF 가드, 정적 웹 XSS 이스케이프(`BD.esc`), OAuth state, 레이트리밋. 보고서 `docs/SECURITY_AUDIT_2026-06-19.md`
+- **검색엔진 등록 (6/16)** — Google·Naver 소유확인 + 사이트맵 제출 (루트 HTML 파일 방식)
+- **웹스토어 ASO + UTM 귀속 (6/20~22)** — 스토어 listing 캐논 `docs/STORE_LISTING.md`, first-touch UTM(`users.signup_source` 등, 마이그레이션 `c4f8a1e7d602`) + `GET /admin/stats/attribution`
 
 ### ⏳ 대기 중인 외부 작업 (코드 아님, 사용자/제3자 처리)
 | 항목 | 상태 |
 |---|---|
-| **토스 MID 심사** | 진행 중, 1~2개월 추가 소요 통보받음 → 그래서 페이플 우회 준비 |
-| **페이플 가맹 신청** | 사용자가 가입문의 제출 단계. 승인 시 운영키 받아 `PAYMENT_PROVIDER=payple` 전환 |
-| **Chrome 웹스토어** | v1.0.x 심사 대기 |
+| **토스 MID 심사** | 진행 중 — 페이플 운영 라이브(6/17)로 긴급성 낮음, 병행 가능 |
+| **Chrome 웹스토어** | ASO 개정판 검토 제출(6/20). 익스텐션 툴바 아이콘은 `npm run build` + 재제출 대기 |
 | **익스텐션 A값 Tier1 활성화** | 웹스토어 승인 후 |
+| **OpenAI 키·POSTGRES_PASSWORD 로테이션** | ⚠️ 미완 — 6/19 감사에서 노출 확인, 사용자 처리 필요 |
 
 ### 다음 후보 작업 (미착수)
-- 페이플 운영키 수령 후 prod 전환 (`.env.production` 플래그 + 재배포)
-- Pro+ ML 기능 웹 노출, 웹푸시(FCM), 입찰 이력 분석
-- 익스텐션 프로필·관심 백엔드 이관
+- (6/22 기준) UTM 마이그레이션 배포(`./deploy.sh deploy`) + 마케팅 링크 UTM 태깅 + Cloudflare Web Analytics — **완료 여부 확인 필요**
+- 2차는 코드가 아니라 **고객 검증부터**: "안전 vs 예측" 랜딩 A/B + 퍼널 측정 (GTM 전략 6/18 확정)
+- 자가학습 안전비서 Phase1(`UserBid`↔`OpeningResult` 피드백 루프) — **고객 검증 통과 후 착수** (선착수 금지)
+- Pro+ ML 웹 노출, 웹푸시(FCM), 윈백 이메일 인프라(SES 등 — 이탈자는 앱내 알림으로 안 닿음)
+
+---
+
+## ⚠️ 함정·금지 목록 (필독 — 위반 시 운영 사고)
+
+1. **`BILLING_ENC_KEY` 변경·재생성 절대 금지** — 변경/분실 시 암호화된 빌링키 전부 복호화 불가(고객 전원 재카드등록). `infra/.env.production`에만 존재, 안전 백업 필수.
+2. **KPI·마케팅에 '낙찰률' 사용 금지** — 개찰데이터 검증 결과 승률 지표는 과적합(8%→23%) + 사정률 추첨은 랜덤. 핵심 지표 = 유효율 95% + 입찰당 재사용률.
+3. **`deploy.sh`가 안 하는 것**: `celery_beat` 재생성 안 함 → 새 코드 반영은 수동 `docker compose -f docker-compose.prod.yml --env-file .env.production -p infra up -d --force-recreate celery_beat`.
+4. **config fail-fast**: `APP_ENV=production`에서 `JWT_SECRET_KEY` 미설정 또는 `POSTGRES_PASSWORD=bideasy_pass`(기본값)면 앱 기동 실패.
+5. **비-root 컨테이너(uid 10001)**: named 볼륨(`infra_strategy_data`·`infra_celerybeat_data`)이 root 소유면 백그라운드 워커 쓰기 실패. 최초 1회 `docker run --rm -v <볼륨>:/d alpine chown -R 10001:10001 /d`.
+6. **헬스체크 10초 오탐**: deploy.sh는 app 재생성 10초 뒤 체크 → `WARNING: Health check failed`는 대개 오탐. 진짜 상태는 `https://api.bideasy.kr/health`(200 + `database:connected`).
+7. **app 수동 재생성 시 nginx reload 필수** — 도커 IP가 바뀌어 nginx가 옛 IP로 502. `./deploy.sh deploy`는 자동 처리(수동 compose up 시 누락 주의).
+8. **페이플 콜백 리다이렉트는 303** (307이면 정적 `/account`에 POST 재전송 → nginx 405).
+9. **버전 표기**: 현재 v1.1 — 변경 성격(MAJOR/MINOR/PATCH)을 판단해 랜딩 푸터에 반영.
 
 ---
 
@@ -166,11 +186,12 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 
 ---
 
-## 8. 테스트
+## 8. 테스트 — 검증 명령 (코드 변경 후 반드시 실행)
 
 ```bash
-cd backend && pytest          # 239건 통과 (SQLite in-memory/파일)
+cd backend && pytest          # 305건 통과 기준 (6/22. SQLite in-memory/파일)
 ```
+- **모든 코드 변경 후 위 명령을 실행하고, 완료 보고(Gate Check)에 결과와 신뢰도(🟢🟡🔴)를 기재한다.** 실패 상태로 커밋·배포 금지. 실패 수정은 2회까지, 이후 에스컬레이션.
 - 결제: `tests/test_billing.py`(토스), `tests/test_payple.py`(페이플 9건 — provider/prepare/callback/서비스청구/Celery갱신, HTTP 모킹).
 - 그 외 feed/calculator/qualification/favorites/deadline/ai 등.
 

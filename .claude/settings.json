@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\\Project\\Bideasy\\.claude\\hooks\\posttool-flag.ps1'",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\\Project\\Bideasy\\.claude\\hooks\\stop-verify.ps1'",
+            "timeout": 300,
+            "statusMessage": "검증 게이트: pytest 실행 중..."
+          }
+        ]
+      }
+    ]
+  }
+}
