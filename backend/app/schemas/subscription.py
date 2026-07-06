@@ -25,24 +25,25 @@ TIER_RANK = {TIER_FREE: 0, TIER_PRO: 1, TIER_PRO_PLUS: 2}
 
 # ─── Pricing ───
 # 월간: 표시 가격 그대로 청구
+# 2026-07 런칭 기념가 개편: Pro 24,900→19,900 (2만원 벽 돌파), Pro+ 49,900→39,900 (1:2 사다리)
 MONTHLY_PRICES = {
     TIER_FREE: 0,
-    TIER_PRO: 24_900,
-    TIER_PRO_PLUS: 49_900,
+    TIER_PRO: 19_900,
+    TIER_PRO_PLUS: 39_900,
 }
 
 # 연간: 1회 결제, 365일 유효. 약 20% 할인 + 천 단위 라운딩
 ANNUAL_PRICES = {
     TIER_FREE: 0,
-    TIER_PRO: 239_000,       # 월환산 19,917원 (vs 월간 24,900원, 약 20% 할인)
-    TIER_PRO_PLUS: 479_000,  # 월환산 39,917원 (vs 월간 49,900원, 약 20% 할인)
+    TIER_PRO: 191_000,       # 월환산 15,917원 (vs 월간 19,900원, 약 20% 할인)
+    TIER_PRO_PLUS: 383_000,  # 월환산 31,917원 (vs 월간 39,900원, 약 20% 할인)
 }
 
 # UI 표시용: 연간 플랜의 월환산 가격 (실제 청구는 ANNUAL_PRICES 사용)
 ANNUAL_MONTHLY_PRICES = {
     TIER_FREE: 0,
-    TIER_PRO: 19_917,
-    TIER_PRO_PLUS: 39_917,
+    TIER_PRO: 15_917,
+    TIER_PRO_PLUS: 31_917,
 }
 
 # 마케팅용 표기 할인율 (실제 약 20%)

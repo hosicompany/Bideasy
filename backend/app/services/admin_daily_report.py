@@ -94,7 +94,8 @@ def collect_daily_report(
         )
         .scalar() or 0
     )
-    mrr_estimate = active_pro * 24900 + active_pro_plus * 49900
+    from app.schemas.subscription import MONTHLY_PRICES, TIER_PRO, TIER_PRO_PLUS
+    mrr_estimate = active_pro * MONTHLY_PRICES[TIER_PRO] + active_pro_plus * MONTHLY_PRICES[TIER_PRO_PLUS]
 
     # ─── 2. 사용자 ──────────────────────────────────────────
     # 신규 가입 (trial_started_at = 가입 시점 자동)
