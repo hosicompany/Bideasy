@@ -82,3 +82,7 @@ PATENT.md
 # Ad-hoc internal session reports (keep local only)
 MORNING_CHECKLIST.md
 OVERNIGHT_REPORT.md
+
+# Claude Code verification-hook state files
+.claude/hooks/.pending-verify
+.claude/hooks/.verify-failcount
