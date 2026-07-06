@@ -23,6 +23,44 @@
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "KRW", "description": "Free 플랜 + Pro 14일 무료 체험" }
   }
   </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "낙찰가를 예측해 주나요?",
+        "acceptedAnswer": { "@type": "Answer", "text": "아니요, 예측하지 않아요. 나라장터의 예정가격은 15개 복수예비가격 중 추첨으로 정해지기 때문에 구조적으로 랜덤이에요. '낙찰가 맞혀드립니다'는 검증이 불가능한 약속이라 저희는 하지 않습니다. 대신 무효 입찰과 적자 수주를 막는 안전 검증에 집중해요." }
+      },
+      {
+        "@type": "Question",
+        "name": "무료로는 어디까지 쓸 수 있나요?",
+        "acceptedAnswer": { "@type": "Answer", "text": "투찰가·낙찰하한선 계산기는 회원가입 없이도 무제한 무료예요. 가입하면 공고 검색·관심공고·마감 추적과 AI 공고 분석 일 1회가 추가돼요. Pro는 계산된 숫자가 실제로 안전한지 과거 개찰 데이터로 검증하고, 경쟁 강도 참고치와 첨부문서 심층분석까지 제공해요." }
+      },
+      {
+        "@type": "Question",
+        "name": "14일 무료 체험에 신용카드가 필요한가요?",
+        "acceptedAnswer": { "@type": "Answer", "text": "아니요. 가입만 하면 카드 등록 없이 Pro 전 기능이 14일간 자동으로 열려요. 체험이 끝나면 자동으로 무료 플랜으로 전환되고, 결제는 직접 선택하실 때만 진행돼요." }
+      },
+      {
+        "@type": "Question",
+        "name": "크롬 익스텐션 없이 웹만으로도 쓸 수 있나요?",
+        "acceptedAnswer": { "@type": "Answer", "text": "네. bideasy.kr에서 공고 검색·계산기·AI 분석·대시보드를 모두 쓸 수 있어요. 익스텐션을 설치하면 나라장터 공고 페이지를 여는 순간 그 위에 분석 패널이 바로 떠서 왔다 갔다 할 필요가 없어요. 계정 하나로 둘 다 연동됩니다." }
+      },
+      {
+        "@type": "Question",
+        "name": "A값이 뭔가요? 왜 중요한가요?",
+        "acceptedAnswer": { "@type": "Answer", "text": "국민연금·건강보험·노인장기요양·산재·고용보험 합계 금액으로, 공사 입찰에서 투찰률이 적용되지 않는 부분이에요. A값을 빼먹고 계산하면 하한선 미달로 무효가 될 수 있어요. A값은 조달청 OpenAPI에 없고 공고문·첨부문서에만 있는데, BidEasy는 첨부 파싱과 사용자 제보로 자동 수집해 계산에 반영해요." }
+      },
+      {
+        "@type": "Question",
+        "name": "구독 해지는 어떻게 하나요?",
+        "acceptedAnswer": { "@type": "Answer", "text": "마이페이지에서 언제든 클릭 몇 번으로 해지할 수 있어요. 해지해도 이미 결제한 기간이 끝날 때까지는 그대로 쓸 수 있고, 이후 무료 플랜으로 전환돼요. 위약금 같은 건 없습니다." }
+      }
+    ]
+  }
+  </script>
   <link rel="icon" href="/brand/favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
@@ -34,6 +72,22 @@
     body { margin: 0; }
     .ic { width: 15px; height: 15px; flex-shrink: 0; }
     a { color: inherit; }
+    /* ── 히어로 데모 계산기: Pro 잠금 행 ── */
+    .lockrow { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+    .lockrow + .lockrow { border-top: 1px dashed var(--line); }
+    .lockrow .lk { color: var(--faint); display: flex; flex-shrink: 0; }
+    .lockrow .t { font-size: 12.5px; color: var(--muted); }
+    .lockrow .tier { font-size: 10px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 1px 5px; flex-shrink: 0; }
+    .lockrow .v { margin-left: auto; font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); filter: blur(5px); user-select: none; pointer-events: none; }
+    /* ── 익스텐션 장면 목업 ── */
+    .skel-ln { height: 9px; border-radius: 4px; background: var(--sunken); }
+    /* ── FAQ ── */
+    .faq details { border-bottom: 1px solid var(--line); }
+    .faq summary { cursor: pointer; padding: 17px 2px; font-size: 15.5px; font-weight: 700; list-style: none; display: flex; align-items: center; gap: 14px; }
+    .faq summary::-webkit-details-marker { display: none; }
+    .faq summary::after { content: '+'; margin-left: auto; font-size: 20px; font-weight: 400; color: var(--faint); font-family: var(--font-mono); transition: transform .18s; }
+    .faq details[open] summary::after { content: '−'; color: var(--accent); }
+    .faq .fa { padding: 0 2px 18px; font-size: 14.5px; color: var(--muted); line-height: 1.75; max-width: 660px; }
   </style>
   <script>
     // 소셜 로그인(OAuth) 콜백 처리 — 백엔드가 /#token= (성공) 또는 /?error= (실패) 로 리다이렉트.
@@ -79,7 +133,7 @@
       </ul>
       <div id="nav-right" style="margin-left:auto;display:flex;align-items:center;gap:10px;">
         <a class="navlink" href="/login">로그인</a>
-        <a class="btn btn-primary btn-sm" href="/signup">14일 무료 체험</a>
+        <a class="btn btn-primary btn-sm" href="/signup" data-ev="cta_nav_trial">14일 무료 체험</a>
       </div>
     </div>
   </nav>
@@ -115,7 +169,7 @@
     })();
   </script>
 
-  <!-- HERO -->
+  <!-- HERO : 카피 + 만져볼 수 있는 미니 계산기 (무료 체험 → Pro 잠금 노출) -->
   <header style="position:relative;overflow:hidden;">
     <div class="grid-bg" style="position:absolute;inset:0;opacity:.9;-webkit-mask-image:radial-gradient(120% 90% at 70% 0%,#000 30%,transparent 75%);mask-image:radial-gradient(120% 90% at 70% 0%,#000 30%,transparent 75%);"></div>
     <div class="lp-x hero-grid" style="position:relative;max-width:1080px;margin:0 auto;padding:64px 0 56px;">
@@ -127,35 +181,54 @@
         <h1 class="h-hero" style="font-weight:800;letter-spacing:-1.8px;line-height:1.12;margin:22px 0 0;">1원 단위까지,<br>정확하게 <span style="color:var(--accent);">안전하게</span>.</h1>
         <p style="font-size:17.5px;color:var(--muted);line-height:1.65;margin-top:18px;max-width:430px;">공고를 여는 순간 투찰률·낙찰하한선·A값을 계산합니다. 낙찰가는 찍지 않아요 — 적자 수주를 막는 정밀 계기입니다.</p>
         <div style="display:flex;gap:10px;margin-top:28px;flex-wrap:wrap;">
-          <a class="btn btn-primary btn-lg" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener">Chrome에 설치</a>
-          <a class="btn btn-ghost btn-lg" href="/signup">14일 무료 체험</a>
+          <a class="btn btn-primary btn-lg" href="/signup" data-ev="cta_hero_trial">14일 무료로 시작하기</a>
+          <a class="btn btn-ghost btn-lg" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener" data-ev="cta_hero_install">Chrome에 설치</a>
         </div>
-        <p style="margin-top:16px;font-size:13px;color:var(--faint);">신규 가입 시 <span style="color:var(--muted);font-weight:600;">Pro 14일 무료</span> · 신용카드 불필요</p>
+        <p style="margin-top:16px;font-size:13px;color:var(--faint);">신용카드 불필요 · 체험 종료 시 자동으로 무료 플랜 전환 · 30초 가입</p>
       </div>
       <div style="display:flex;justify-content:center;">
-        <div style="width:min(340px,100%);">
-          <!-- calc mock -->
+        <div style="width:min(360px,100%);">
+          <!-- 살아있는 데모: 무료 계산기 그대로 + Pro 판단 지표는 잠금 -->
           <div class="card" style="padding:18px;width:100%;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span class="micro">투찰가 계산</span><span class="chip chip-accent">공사</span>
+              <span class="micro">투찰가 계산 — 직접 움직여 보세요</span><span class="chip chip-accent">공사</span>
+            </div>
+            <div style="margin-top:14px;">
+              <label class="field-label" for="demo-basic" style="margin-bottom:5px;font-size:12px;">기초금액 (원)</label>
+              <input id="demo-basic" class="input" style="padding:9px 12px;font-size:14.5px;" value="500,000,000" inputmode="numeric" autocomplete="off">
+            </div>
+            <div style="margin-top:12px;">
+              <label class="field-label" id="demo-tcl-label" for="demo-tcl" style="margin-bottom:7px;font-size:12px;">투찰률 — 현재 88.20%</label>
+              <input id="demo-tcl" class="slider" type="range" min="86.5" max="90.5" step="0.01" value="88.20" aria-label="투찰률">
             </div>
             <div class="micro" style="margin-top:14px;font-size:10px;">예상 투찰가</div>
-            <div class="num" style="font-size:27px;font-weight:600;margin-top:4px;">451,230,000</div>
-            <div style="margin-top:16px;">
-              <div style="position:relative;height:8px;border-radius:4px;overflow:hidden;background:linear-gradient(90deg,var(--danger-soft) 0 38%,var(--safe-soft) 38% 100%);"></div>
+            <div class="num" id="demo-bid" style="font-size:26px;font-weight:600;margin-top:3px;">441,000,000</div>
+            <div style="margin-top:15px;">
+              <div style="position:relative;height:8px;border-radius:4px;overflow:hidden;background:linear-gradient(90deg,var(--danger-soft) 0 31.1%,var(--safe-soft) 31.1% 100%);"></div>
               <div style="position:relative;height:0;">
-                <div style="position:absolute;left:38%;top:-14px;width:2px;height:16px;background:var(--ink);border-radius:1px;"></div>
-                <div style="position:absolute;left:63%;top:-13px;transform:translateX(-50%);width:14px;height:14px;border-radius:50%;background:var(--surface);border:3px solid var(--safe);box-shadow:var(--shadow-sm);"></div>
+                <div style="position:absolute;left:31.1%;top:-14px;width:2px;height:16px;background:var(--ink);border-radius:1px;"></div>
+                <div id="demo-thumb" style="position:absolute;left:42.5%;top:-13px;transform:translateX(-50%);width:14px;height:14px;border-radius:50%;background:var(--surface);border:3px solid var(--safe);box-shadow:var(--shadow-sm);transition:left .08s linear;"></div>
               </div>
               <div style="display:flex;justify-content:space-between;margin-top:9px;">
-                <span class="micro" style="font-size:9.5px;letter-spacing:1px;">낙찰하한선</span>
+                <span class="micro" style="font-size:9.5px;letter-spacing:1px;">낙찰하한선 87.745%</span>
                 <span class="micro" style="font-size:9.5px;letter-spacing:1px;color:var(--safe);">내 투찰가</span>
               </div>
             </div>
-            <div style="display:flex;align-items:center;gap:7px;margin-top:14px;">
-              <span class="dot" style="background:var(--safe);"></span>
-              <span style="font-size:13px;font-weight:700;color:var(--safe);">안전선 통과</span>
-              <span class="num" style="margin-left:auto;font-size:13px;color:var(--safe);font-weight:600;">+2.85%p</span>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:13px;">
+              <span class="dot" id="demo-dot" style="background:var(--safe);"></span>
+              <span id="demo-state" style="font-size:13px;font-weight:700;color:var(--safe);">안전선 통과</span>
+              <span class="num" id="demo-diff" style="margin-left:auto;font-size:13px;color:var(--safe);font-weight:600;">+0.45%p</span>
+            </div>
+            <!-- 무료는 여기까지 = "숫자". 아래부터 Pro = "판단" -->
+            <div style="margin-top:15px;padding-top:11px;border-top:1px solid var(--line);">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+                <span class="micro" style="font-size:9.5px;">이 투찰가, 정말 안전할까요?</span>
+              </div>
+              <div class="lockrow"><span class="lk"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg></span><span class="t">과거 개찰 4,848건 대비 검증</span><span class="tier">Pro</span><span class="v">상위 안전 구간</span></div>
+              <div class="lockrow"><span class="lk"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg></span><span class="t">예상 경쟁 강도 참고치</span><span class="tier">Pro</span><span class="v">경쟁 42개사</span></div>
+              <div class="lockrow"><span class="lk"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg></span><span class="t">발주기관 사정률 분포</span><span class="tier" style="color:var(--warn);background:var(--warn-soft);">Pro+</span><span class="v">-1.2%~+0.8%</span></div>
+              <a class="btn btn-primary btn-block btn-sm" style="margin-top:11px;" href="/signup" data-ev="cta_demo_unlock">Pro 14일 무료로 잠금 해제</a>
+              <a href="/calculator" data-ev="cta_demo_calc" style="display:block;text-align:center;margin-top:9px;font-size:12.5px;color:var(--muted);text-decoration:none;">A값까지 넣어 정밀 계산하기 →</a>
             </div>
           </div>
         </div>
@@ -173,8 +246,70 @@
     </div>
   </div></section>
 
+  <!-- EXTENSION SCENE : 나라장터 위에 바로 뜨는 오버레이 -->
+  <section class="lp-x" style="padding-top:84px;"><div style="max-width:1080px;margin:0 auto;">
+    <div class="feat-grid">
+      <div class="feat-text" data-rv>
+        <span class="eyebrow">Chrome 익스텐션</span>
+        <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">나라장터 공고를 여는 순간,<br>분석이 옆에 떠 있어요</h2>
+        <p style="font-size:16px;color:var(--muted);line-height:1.7;margin-top:14px;max-width:440px;">엑셀로 옮겨 적을 필요 없어요. 보고 있는 공고 페이지 위에 낙찰하한선·A값·자격 매칭·AI 요약이 바로 나타납니다. 계정 하나로 웹과 자동 연동돼요.</p>
+        <div style="display:flex;flex-direction:column;gap:9px;margin-top:20px;" class="ext-points"></div>
+        <a class="btn btn-primary btn-lg" style="margin-top:26px;" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener" data-ev="cta_ext_install">Chrome에 무료 설치</a>
+      </div>
+      <div data-rv>
+        <!-- 브라우저 목업: 나라장터 페이지(스켈레톤) + BidEasy 오버레이 패널 -->
+        <div class="card" style="overflow:hidden;box-shadow:var(--shadow-md);">
+          <div style="display:flex;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--sunken);">
+            <span class="dot" style="width:9px;height:9px;background:var(--danger);opacity:.55;"></span>
+            <span class="dot" style="width:9px;height:9px;background:var(--warn);opacity:.55;"></span>
+            <span class="dot" style="width:9px;height:9px;background:var(--safe);opacity:.55;"></span>
+            <span class="num" style="margin-left:10px;font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:3px 10px;flex:1;text-align:center;">g2b.go.kr — 입찰공고 상세</span>
+          </div>
+          <div style="display:flex;gap:14px;padding:16px;">
+            <div style="flex:1;min-width:0;">
+              <div class="skel-ln" style="width:70%;height:12px;background:var(--line);"></div>
+              <div class="skel-ln" style="width:45%;margin-top:10px;"></div>
+              <div style="margin-top:14px;border:1px solid var(--line);border-radius:8px;padding:10px;">
+                <div class="skel-ln" style="width:90%;"></div>
+                <div class="skel-ln" style="width:80%;margin-top:7px;"></div>
+                <div class="skel-ln" style="width:85%;margin-top:7px;"></div>
+                <div class="skel-ln" style="width:60%;margin-top:7px;"></div>
+              </div>
+              <div style="margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:10px;">
+                <div class="skel-ln" style="width:85%;"></div>
+                <div class="skel-ln" style="width:75%;margin-top:7px;"></div>
+                <div class="skel-ln" style="width:88%;margin-top:7px;"></div>
+              </div>
+            </div>
+            <div style="width:172px;flex-shrink:0;">
+              <div class="card" style="padding:12px;border-color:var(--accent);box-shadow:var(--shadow-md);">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <img src="/brand/bideasy-mark.svg" width="15" height="15" alt="">
+                  <span style="font-size:11.5px;font-weight:800;">BidEasy</span>
+                  <span class="chip chip-safe" style="margin-left:auto;font-size:9.5px;padding:2px 6px;">자격 PASS</span>
+                </div>
+                <div style="margin-top:10px;">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);"><span style="font-size:10.5px;color:var(--muted);">낙찰하한선</span><span class="num" style="font-size:10.5px;font-weight:600;">438,725,120</span></div>
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);"><span style="font-size:10.5px;color:var(--muted);">A값 <span style="color:var(--safe);">자동</span></span><span class="num" style="font-size:10.5px;font-weight:600;">12,340,000</span></div>
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;"><span style="font-size:10.5px;color:var(--muted);">안전 투찰가</span><span class="num" style="font-size:10.5px;font-weight:700;color:var(--safe);">441,001,230</span></div>
+                </div>
+                <div style="position:relative;height:6px;border-radius:3px;overflow:hidden;background:linear-gradient(90deg,var(--danger-soft) 0 38%,var(--safe-soft) 38% 100%);margin-top:6px;"></div>
+                <div style="margin-top:10px;padding:8px;border-radius:8px;background:var(--sunken);">
+                  <span class="micro" style="font-size:8.5px;">AI 3줄 요약</span>
+                  <div class="skel-ln" style="width:95%;height:6px;margin-top:6px;background:var(--line);"></div>
+                  <div class="skel-ln" style="width:82%;height:6px;margin-top:5px;background:var(--line);"></div>
+                  <div style="display:flex;gap:4px;margin-top:8px;"><span class="chip chip-warn" style="font-size:8.5px;padding:2px 5px;">독소조항 1</span><span class="chip chip-safe" style="font-size:8.5px;padding:2px 5px;">SAFE</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div></section>
+
   <!-- PROBLEM / SOLUTION -->
-  <section class="lp-x" style="padding-top:80px;padding-bottom:20px;"><div style="max-width:1080px;margin:0 auto;">
+  <section class="lp-x" style="padding-top:84px;padding-bottom:20px;"><div style="max-width:1080px;margin:0 auto;">
     <div data-rv style="text-align:center;">
       <span class="eyebrow">왜 BidEasy인가</span>
       <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">손으로 계산하다 적자 수주,<br>이제 그만하세요</h2>
@@ -189,6 +324,16 @@
         <div class="ps-list-2"></div>
       </div>
     </div>
+  </div></section>
+
+  <!-- VALUE LADDER : 계산은 무료 → 판단은 Pro → 전략은 Pro+ -->
+  <section class="lp-x" style="padding-top:84px;"><div style="max-width:1080px;margin:0 auto;">
+    <div data-rv style="text-align:center;">
+      <span class="eyebrow">무료와 Pro의 차이</span>
+      <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">계산은 무료로 드려요.<br>Pro는 <span style="color:var(--accent);">판단</span>을 드립니다</h2>
+      <p style="font-size:16px;color:var(--muted);margin-top:12px;max-width:560px;margin-left:auto;margin-right:auto;">숫자는 누구나 뽑을 수 있어요. 진짜 어려운 건 "이 숫자로 들어가도 되나?"라는 판단이에요.</p>
+    </div>
+    <div class="g3" style="gap:16px;margin-top:40px;" id="ladder"></div>
   </div></section>
 
   <!-- AUTOCALIBRATE (data-driven) -->
@@ -223,6 +368,16 @@
     <div class="g3" id="pricing" style="gap:16px;margin-top:40px;"></div>
   </div></section>
 
+  <!-- FAQ -->
+  <section class="lp-x" style="padding-top:84px;"><div style="max-width:760px;margin:0 auto;">
+    <div data-rv style="text-align:center;">
+      <span class="eyebrow">자주 묻는 질문</span>
+      <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;">궁금한 것부터 확인하세요</h2>
+    </div>
+    <div class="card faq" data-rv style="margin-top:36px;padding:8px 24px;" id="faq"></div>
+    <p data-rv style="text-align:center;margin-top:20px;font-size:13.5px;color:var(--muted);">더 궁금한 점은 <a href="/guide" style="color:var(--accent);font-weight:600;">사용 가이드</a> 또는 support@bideasy.kr로 물어봐 주세요.</p>
+  </div></section>
+
   <!-- CTA -->
   <section class="lp-x" style="padding-top:84px;padding-bottom:84px;"><div style="max-width:1080px;margin:0 auto;">
     <div data-rv style="border-radius:24px;padding:clamp(38px,5vw,52px) clamp(20px,4vw,32px);text-align:center;background:var(--accent);color:var(--on-accent);position:relative;overflow:hidden;">
@@ -231,9 +386,10 @@
         <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.6px;">지금 바로 시작하세요</h2>
         <p style="font-size:16.5px;opacity:.9;margin:12px 0 26px;">설치 1초, 가입 30초. 오늘 보는 공고부터 BidEasy와 함께.</p>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-          <a class="btn btn-lg" style="background:var(--surface);color:var(--accent);" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener">Chrome에 무료 설치</a>
-          <a class="btn btn-lg" style="background:transparent;color:var(--on-accent);border:1.5px solid rgba(255,255,255,.5);" href="/signup">14일 무료 체험</a>
+          <a class="btn btn-lg" style="background:var(--surface);color:var(--accent);" href="/signup" data-ev="cta_final_trial">14일 무료 체험 시작</a>
+          <a class="btn btn-lg" style="background:transparent;color:var(--on-accent);border:1.5px solid rgba(255,255,255,.5);" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener" data-ev="cta_final_install">Chrome에 무료 설치</a>
         </div>
+        <p style="margin-top:16px;font-size:12.5px;opacity:.75;">신용카드 불필요 · 언제든 해지</p>
       </div>
     </div>
   </div></section>
@@ -254,7 +410,7 @@
     <div style="max-width:1080px;margin:28px auto 0;padding-top:20px;border-top:1px solid var(--line);font-size:12px;color:var(--faint);line-height:1.9;">
       상호 호시(HOSI) · 사업자등록번호 420-29-00113 · 통신판매업신고 2022-서울마포-0517호<br>
       서울시 마포구 마포대로 92, A동 3층 · support@bideasy.kr · © 2026 BidEasy
-      <span style="margin-left:8px;padding:1px 7px;border:1px solid var(--line-2);border-radius:999px;font-size:11px;font-weight:600;color:var(--muted);vertical-align:middle;">v1.1</span>
+      <span style="margin-left:8px;padding:1px 7px;border:1px solid var(--line-2);border-radius:999px;font-size:11px;font-weight:600;color:var(--muted);vertical-align:middle;">v1.2</span>
     </div>
   </footer>
 
@@ -273,11 +429,39 @@
     document.querySelector('.ps-list').innerHTML = rowList(BAD, false);
     document.querySelector('.ps-list-2').innerHTML = rowList(GOOD, true);
 
+    // 익스텐션 섹션 포인트
+    var EXT = ['공고 상세 페이지 위 오버레이 — 탭 전환 없음','A값 자동 수집 · 낙찰하한선 즉시 계산','내 면허·지역 기준 자격 PASS/FAIL 뱃지'];
+    document.querySelector('.ext-points').innerHTML = EXT.map(function (t) {
+      return '<div style="display:flex;gap:10px;font-size:14.5px;color:var(--ink-2);font-weight:600;"><span style="color:var(--accent);margin-top:2px;">' + CHECK + '</span>' + t + '</div>';
+    }).join('');
+
+    // ── 가치 사다리: 무료=숫자 / Pro=판단 / Pro+=전략 ──
+    var LADDER = [
+      ['무료', '숫자를 드려요', '투찰가·낙찰하한선을 1원 단위로. 회원가입 없이도 계산기는 무제한이에요.',
+        ['투찰가·하한선 계산 무제한','공고 검색 · 관심공고 · 마감 추적','AI 공고 분석 일 1회'],
+        false, '무료로 계산해 보기', '/calculator', 'cta_ladder_free'],
+      ['Pro', '판단을 드려요', '그 숫자로 들어가도 되는지 — 과거 개찰 데이터가 대신 검증해요.',
+        ['내 투찰가, 과거 개찰 데이터로 검증','예상 경쟁 강도 참고치','첨부문서 심층분석 (HWP·PDF)','AI 분석 일 50회'],
+        true, 'Pro 14일 무료 체험', '/signup', 'cta_ladder_pro'],
+      ['Pro+', '전략을 드려요', '발주기관의 성향까지 읽고 들어가는 한 수 위의 준비.',
+        ['발주기관 프로파일링','사정률 분포 분석','안전 투찰 가이드','AI 분석 무제한'],
+        false, 'Pro+ 자세히 보기', '/pricing', 'cta_ladder_proplus']
+    ];
+    document.getElementById('ladder').innerHTML = LADDER.map(function (l) {
+      var feats = l[3].map(function (f) { return '<div style="display:flex;gap:8px;font-size:13.5px;color:var(--muted);"><span style="color:var(--' + (l[4] ? 'accent' : 'safe') + ');margin-top:1px;">' + CHECK + '</span>' + f + '</div>'; }).join('');
+      return '<div class="card" data-rv style="display:flex;flex-direction:column;padding:26px;border-color:' + (l[4] ? 'var(--accent)' : 'var(--line)') + ';box-shadow:' + (l[4] ? 'var(--shadow-md)' : 'var(--shadow-sm)') + ';">' +
+        '<span class="micro" style="font-size:10px;color:' + (l[4] ? 'var(--accent)' : 'var(--muted)') + ';">' + l[0] + '</span>' +
+        '<div style="font-size:20px;font-weight:800;margin-top:8px;">' + l[1] + '</div>' +
+        '<p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:8px 0 0;min-height:44px;">' + l[2] + '</p>' +
+        '<div style="margin:18px 0;display:flex;flex-direction:column;gap:9px;">' + feats + '</div>' +
+        '<a class="btn btn-block ' + (l[4] ? 'btn-primary' : 'btn-ghost') + '" style="margin-top:auto;" href="' + l[6] + '" data-ev="' + l[7] + '">' + l[5] + '</a></div>';
+    }).join('');
+
     // pricing
     var TIERS = [
-      ['Free','0','영구 무료',['투찰가 계산기 무제한','공고 피드 · 즐겨찾기','AI 분석 일 1회'],false,'무료로 시작','/signup'],
-      ['Pro','24,900','연 239,000원 · 20% 할인',['AI 분석 일 50회','Deep Analysis (HWP·PDF)','경쟁 강도 참고치 · 투찰가 검증','Pro 14일 무료 체험'],true,'14일 무료 체험','/signup'],
-      ['Pro+','49,900','연 479,000원 · 20% 할인',['Pro의 모든 기능','AI 분석 무제한','기관 프로파일링 · 사정률 분포 분석','안전 투찰 가이드'],false,'자세히 보기','/pricing']
+      ['Free','0','영구 무료',['투찰가 계산기 무제한','공고 피드 · 즐겨찾기','AI 분석 일 1회'],false,'무료로 시작','/signup','cta_pricing_free'],
+      ['Pro','24,900','연 239,000원 · 20% 할인',['AI 분석 일 50회','Deep Analysis (HWP·PDF)','경쟁 강도 참고치 · 투찰가 검증','Pro 14일 무료 체험'],true,'14일 무료 체험','/signup','cta_pricing_pro'],
+      ['Pro+','49,900','연 479,000원 · 20% 할인',['Pro의 모든 기능','AI 분석 무제한','기관 프로파일링 · 사정률 분포 분석','안전 투찰 가이드'],false,'자세히 보기','/pricing','cta_pricing_proplus']
     ];
     document.getElementById('pricing').innerHTML = TIERS.map(function (t) {
       var feats = t[3].map(function (f) { return '<div style="display:flex;gap:8px;font-size:13.5px;color:var(--muted);"><span style="color:var(--safe);margin-top:1px;">' + CHECK + '</span>' + f + '</div>'; }).join('');
@@ -287,8 +471,60 @@
         '<div style="margin-top:12px;display:flex;align-items:baseline;gap:4px;"><span class="num" style="font-size:30px;font-weight:600;">' + t[1] + '</span><span style="font-size:15px;color:var(--muted);font-weight:600;">원' + (t[0] !== 'Free' ? '/월' : '') + '</span></div>' +
         '<div style="font-size:12.5px;color:var(--safe);font-weight:600;margin-top:4px;min-height:16px;">' + t[2] + '</div>' +
         '<div style="margin:18px 0;display:flex;flex-direction:column;gap:9px;">' + feats + '</div>' +
-        '<a class="btn btn-block ' + (t[4] ? 'btn-primary' : 'btn-ghost') + '" style="margin-top:auto;" href="' + t[6] + '">' + t[5] + '</a></div>';
+        '<a class="btn btn-block ' + (t[4] ? 'btn-primary' : 'btn-ghost') + '" style="margin-top:auto;" href="' + t[6] + '" data-ev="' + t[7] + '">' + t[5] + '</a></div>';
     }).join('');
+
+    // ── FAQ (본문은 상단 FAQPage JSON-LD와 동일해야 함 — SEO 일치 원칙) ──
+    var FAQ = [
+      ['낙찰가를 예측해 주나요?', '아니요, <b style="color:var(--ink);">예측하지 않아요.</b> 나라장터의 예정가격은 15개 복수예비가격 중 추첨으로 정해지기 때문에 구조적으로 랜덤이에요. "낙찰가 맞혀드립니다"는 검증이 불가능한 약속이라 저희는 하지 않습니다. 대신 무효 입찰과 적자 수주를 막는 <b style="color:var(--ink);">안전 검증</b>에 집중해요.'],
+      ['무료로는 어디까지 쓸 수 있나요?', '투찰가·낙찰하한선 계산기는 회원가입 없이도 <b style="color:var(--ink);">무제한 무료</b>예요. 가입하면 공고 검색·관심공고·마감 추적과 AI 공고 분석 일 1회가 추가돼요. Pro는 계산된 숫자가 실제로 안전한지 과거 개찰 데이터로 검증하고, 경쟁 강도 참고치와 첨부문서 심층분석까지 제공해요.'],
+      ['14일 무료 체험에 신용카드가 필요한가요?', '아니요. 가입만 하면 카드 등록 없이 Pro 전 기능이 14일간 자동으로 열려요. 체험이 끝나면 자동으로 무료 플랜으로 전환되고, 결제는 직접 선택하실 때만 진행돼요.'],
+      ['크롬 익스텐션 없이 웹만으로도 쓸 수 있나요?', '네. bideasy.kr에서 공고 검색·계산기·AI 분석·대시보드를 모두 쓸 수 있어요. 익스텐션을 설치하면 나라장터 공고 페이지를 여는 순간 그 위에 분석 패널이 바로 떠서 왔다 갔다 할 필요가 없어요. 계정 하나로 둘 다 연동됩니다.'],
+      ['A값이 뭔가요? 왜 중요한가요?', '국민연금·건강보험·노인장기요양·산재·고용보험 합계 금액으로, 공사 입찰에서 투찰률이 적용되지 않는 부분이에요. A값을 빼먹고 계산하면 하한선 미달로 무효가 될 수 있어요. A값은 조달청 OpenAPI에 없고 공고문·첨부문서에만 있는데, BidEasy는 첨부 파싱과 사용자 제보로 자동 수집해 계산에 반영해요.'],
+      ['구독 해지는 어떻게 하나요?', '마이페이지에서 언제든 클릭 몇 번으로 해지할 수 있어요. 해지해도 이미 결제한 기간이 끝날 때까지는 그대로 쓸 수 있고, 이후 무료 플랜으로 전환돼요. 위약금 같은 건 없습니다.']
+    ];
+    document.getElementById('faq').innerHTML = FAQ.map(function (q) {
+      return '<details><summary>' + q[0] + '</summary><div class="fa">' + q[1] + '</div></details>';
+    }).join('');
+
+    // ── 히어로 미니 계산기 (데모: A값 제외 단순 계산 — 정밀 계산은 /calculator) ──
+    var DEMO_RATE = 87.745, DEMO_MIN = 86.5, DEMO_MAX = 90.5;
+    var demo = { basic: 500000000, tcl: 88.20, used: false };
+    var $ = function (id) { return document.getElementById(id); };
+    function renderDemo() {
+      var bid = Math.floor(demo.basic * (demo.tcl / 100) / 10) * 10;
+      var diff = demo.tcl - DEMO_RATE;
+      var level = diff < 0 ? 'danger' : diff < 0.25 ? 'warn' : 'safe';
+      var label = { danger: '하한선 미달 — 무효 위험', warn: '하한선 근접 — 주의', safe: '안전선 통과' }[level];
+      $('demo-bid').textContent = bid.toLocaleString('ko-KR');
+      $('demo-tcl-label').textContent = '투찰률 — 현재 ' + demo.tcl.toFixed(2) + '%';
+      $('demo-diff').textContent = (diff >= 0 ? '+' : '') + diff.toFixed(2) + '%p';
+      var pos = Math.max(2, Math.min(98, (demo.tcl - DEMO_MIN) / (DEMO_MAX - DEMO_MIN) * 100));
+      $('demo-thumb').style.left = pos + '%';
+      $('demo-thumb').style.borderColor = 'var(--' + level + ')';
+      $('demo-dot').style.background = 'var(--' + level + ')';
+      $('demo-state').textContent = label;
+      $('demo-state').style.color = 'var(--' + level + ')';
+      $('demo-diff').style.color = 'var(--' + level + ')';
+    }
+    $('demo-tcl').addEventListener('input', function () {
+      demo.tcl = parseFloat(this.value);
+      if (!demo.used) { demo.used = true; try { gtag('event', 'calc_demo_use'); } catch (e) {} }
+      renderDemo();
+    });
+    $('demo-basic').addEventListener('input', function () {
+      var v = parseInt(this.value.replace(/[^\d]/g, ''), 10) || 0;
+      demo.basic = v;
+      this.value = v ? v.toLocaleString('ko-KR') : '';
+      if (!demo.used) { demo.used = true; try { gtag('event', 'calc_demo_use'); } catch (e) {} }
+      renderDemo();
+    });
+    renderDemo();
+
+    // ── GA4 전환 이벤트: data-ev 붙은 CTA 클릭 추적 ──
+    document.querySelectorAll('[data-ev]').forEach(function (el) {
+      el.addEventListener('click', function () { try { gtag('event', this.getAttribute('data-ev')); } catch (e) {} });
+    });
 
     // ── motion: reveal + count-up + bars (safe: classes added by JS only) ──
     var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
