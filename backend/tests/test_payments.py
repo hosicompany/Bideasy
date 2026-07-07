@@ -131,30 +131,30 @@ class TestSubscription:
             "/api/v1/payments/subscribe",
             json={"tier": "pro", "billing_cycle": "monthly"},
         )
-        assert resp.json()["amount"] == MONTHLY_PRICES[TIER_PRO]  # 14,900
+        assert resp.json()["amount"] == MONTHLY_PRICES[TIER_PRO]  # 19,900
 
-        # Pro 연간 — 20% 할인 + 라운딩 = 140,000
+        # Pro 연간 — 20% 할인 + 라운딩 = 191,000
         resp = free_client.post(
             "/api/v1/payments/subscribe",
             json={"tier": "pro", "billing_cycle": "annual"},
         )
-        assert resp.json()["amount"] == ANNUAL_PRICES[TIER_PRO]  # 239,000
-        assert resp.json()["amount"] == 239_000
+        assert resp.json()["amount"] == ANNUAL_PRICES[TIER_PRO]  # 191,000
+        assert resp.json()["amount"] == 191_000
 
         # Pro+ 월간
         resp = free_client.post(
             "/api/v1/payments/subscribe",
             json={"tier": "pro_plus", "billing_cycle": "monthly"},
         )
-        assert resp.json()["amount"] == MONTHLY_PRICES[TIER_PRO_PLUS]  # 29,900
+        assert resp.json()["amount"] == MONTHLY_PRICES[TIER_PRO_PLUS]  # 39,900
 
-        # Pro+ 연간 = 280,000
+        # Pro+ 연간 = 383,000
         resp = free_client.post(
             "/api/v1/payments/subscribe",
             json={"tier": "pro_plus", "billing_cycle": "annual"},
         )
-        assert resp.json()["amount"] == ANNUAL_PRICES[TIER_PRO_PLUS]  # 479,000
-        assert resp.json()["amount"] == 479_000
+        assert resp.json()["amount"] == ANNUAL_PRICES[TIER_PRO_PLUS]  # 383,000
+        assert resp.json()["amount"] == 383_000
 
     def test_annual_discount_is_20_percent(self, free_client):
         """연간 가격이 월간 × 12 대비 20% 할인 (실제 ~21.7%) 인지."""

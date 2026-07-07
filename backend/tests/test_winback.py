@@ -121,8 +121,8 @@ def test_winback_pending_payment_does_not_disqualify(db_session):
 # ── 계산 함수 ───────────────────────────────────────────────
 
 def test_calculate_winback_discount():
-    assert calculate_winback_discount(24_900) == 12_450
-    assert calculate_winback_discount(49_900) == 24_950
+    assert calculate_winback_discount(19_900) == 9_950
+    assert calculate_winback_discount(39_900) == 19_950
     assert calculate_winback_discount(0) == 0
 
 
@@ -141,7 +141,7 @@ def test_winback_expires_at(db_session):
 # ── E2E /payments/subscribe ─────────────────────────────────
 
 def test_subscribe_applies_winback_for_monthly(client, db_session):
-    """이탈자 자격 + 월간 → 12,450원 + discount 기록."""
+    """이탈자 자격 + 월간 → 9,950원 + discount 기록."""
     client, user = _auth(client, db_session, "sub-wb-1@test.com")
     _expire_trial(user, days_ago=2)
     db_session.commit()
@@ -152,19 +152,19 @@ def test_subscribe_applies_winback_for_monthly(client, db_session):
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["amount"] == 12_450  # 24,900 / 2
+    assert data["amount"] == 9_950  # 19,900 / 2
 
     order = (
         db_session.query(models.PaymentOrder)
         .filter(models.PaymentOrder.order_id == data["order_id"])
         .first()
     )
-    assert order.discount_amount == 12_450
+    assert order.discount_amount == 9_950
     assert order.discount_reason == WINBACK_REASON_CODE
 
 
 def test_subscribe_active_trial_pays_full(client, db_session):
-    """활성 Trial 전환자 → 정가 24,900 (윈백 미적용)."""
+    """활성 Trial 전환자 → 정가 19,900 (윈백 미적용)."""
     client, user = _auth(client, db_session, "sub-wb-active@test.com")
     activate_trial(user)
     db_session.commit()
@@ -174,7 +174,7 @@ def test_subscribe_active_trial_pays_full(client, db_session):
         json={"tier": "pro", "billing_cycle": "monthly"},
     )
     assert resp.status_code == 200
-    assert resp.json()["amount"] == 24_900
+    assert resp.json()["amount"] == 19_900
 
 
 def test_subscribe_no_winback_for_annual(client, db_session):
@@ -189,7 +189,7 @@ def test_subscribe_no_winback_for_annual(client, db_session):
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["amount"] == 239_000  # 정가
+    assert data["amount"] == 191_000  # 정가
 
     order = (
         db_session.query(models.PaymentOrder)
@@ -201,7 +201,7 @@ def test_subscribe_no_winback_for_annual(client, db_session):
 
 
 def test_subscribe_no_winback_if_not_eligible(client, db_session):
-    """자격 없는 사용자(Trial 16일 경과) 월간 → 정가 24,900."""
+    """자격 없는 사용자(Trial 16일 경과) 월간 → 정가 19,900."""
     client, user = _auth(client, db_session, "sub-wb-3@test.com")
     user.trial_started_at = datetime.now(timezone.utc) - timedelta(days=30)
     user.trial_expires_at = datetime.now(timezone.utc) - timedelta(days=16)
@@ -212,7 +212,7 @@ def test_subscribe_no_winback_if_not_eligible(client, db_session):
         json={"tier": "pro", "billing_cycle": "monthly"},
     )
     assert resp.status_code == 200
-    assert resp.json()["amount"] == 24_900
+    assert resp.json()["amount"] == 19_900
 
 
 def test_subscribe_pro_plus_winback(client, db_session):
@@ -226,7 +226,7 @@ def test_subscribe_pro_plus_winback(client, db_session):
         json={"tier": "pro_plus", "billing_cycle": "monthly"},
     )
     assert resp.status_code == 200
-    assert resp.json()["amount"] == 24_950  # 49,900 / 2
+    assert resp.json()["amount"] == 19_950  # 39,900 / 2
 
 
 # ── E2E /payments/subscription 응답 ──────────────────────────
