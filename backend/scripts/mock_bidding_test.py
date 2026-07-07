@@ -305,7 +305,6 @@ def main(strategy: dict | None = None):
     print("\n[2~4단계] 풀이 → 채점... (정답지 안 봄!)")
     result = backtest(records, strategy)
     questions = result["questions"]
-    answers = result["answers"]
     our_answers = result["our_answers"]
     grades = result["grades"]
     print(f"  {len(grades)}건 완료")

@@ -1,5 +1,4 @@
 """Tests for points system endpoints."""
-import pytest
 
 
 class TestPointBalance:

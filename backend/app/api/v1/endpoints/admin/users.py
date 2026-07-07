@@ -13,9 +13,9 @@ Endpoints:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -25,8 +25,6 @@ from app.db import models
 from app.db.session import get_db
 from app.schemas.subscription import (
     TIER_FREE,
-    TIER_PRO,
-    TIER_PRO_PLUS,
     VALID_TIERS,
     get_effective_tier,
     is_trial_active,

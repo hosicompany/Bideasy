@@ -16,7 +16,6 @@ FK 제약 RESTRICT 위반 발생. 그 경험을 코드로 구조화.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session

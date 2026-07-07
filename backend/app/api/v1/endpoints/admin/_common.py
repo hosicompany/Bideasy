@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import Query

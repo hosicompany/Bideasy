@@ -1,5 +1,4 @@
 """Tests for payment and subscription endpoints."""
-import pytest
 
 
 class TestCreateOrder:

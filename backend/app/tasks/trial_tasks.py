@@ -15,7 +15,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, or_
+from sqlalchemy import or_
 
 from app.core.celery_app import celery_app
 from app.core.logging import get_logger
