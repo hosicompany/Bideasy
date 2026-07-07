@@ -62,12 +62,32 @@
     document.getElementById('safe-chip').innerHTML = BD.icon('shield', 12) + ' 안전 결제';
     document.getElementById('plan-ic').innerHTML = BD.icon('bolt', 20);
 
+    // ── 익스텐션 연동: URL fragment 로 전달된 토큰 수용 (#token=...) ──
+    // 랜딩 OAuth 콜백과 동일 패턴 — fragment 는 서버 액세스로그·Referer 에 남지 않음.
+    // 저장 후 주소창에서 즉시 제거하고, 아래 로그인 게이트가 localStorage 에서 집어감.
+    try {
+      var hp = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+      var extToken = hp.get('token');
+      if (extToken) {
+        try { localStorage.setItem('access_token', extToken); localStorage.setItem('jwt', extToken); } catch (e) {}
+        try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+      }
+    } catch (e) {}
+
+    var params = new URLSearchParams(location.search);
+
+    // 포인트 충전 요청(type=points)은 이 페이지가 처리하지 않음 → 마이페이지로 안내
+    if (params.get('type') === 'points') { location.replace('/account'); return; }
+
     // 로그인 게이트
     var token = BD.getToken();
     if (!token) { location.href = '/signup?redirect=' + encodeURIComponent(location.pathname + location.search); return; }
 
-    var params = new URLSearchParams(location.search);
-    var tier = params.get('tier') === 'pro_plus' ? 'pro_plus' : 'pro';
+    // 익스텐션발 결제 퍼널 측정
+    if (params.get('source') === 'extension') { try { gtag('event', 'checkout_from_extension'); } catch (e) {} }
+
+    // tier: 익스텐션 구버전이 보내는 plan= 도 별칭으로 수용
+    var tier = (params.get('tier') || params.get('plan')) === 'pro_plus' ? 'pro_plus' : 'pro';
     var cycle = params.get('cycle') === 'annual' ? 'annual' : 'monthly';
     var PRICES = { pro: { monthly: 19900, annual: 191000 }, pro_plus: { monthly: 39900, annual: 383000 } };
     var TIER_KO = { pro: 'Pro', pro_plus: 'Pro+' };
