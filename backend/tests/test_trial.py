@@ -11,7 +11,6 @@
 """
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from app.db import models
 from app.schemas.subscription import (

@@ -87,6 +87,6 @@ def test_all_admin_routes_have_guard():
             missing.append(route.path)
 
     assert not missing, (
-        f"다음 admin 라우트에 require_admin 가드 누락:\n"
+        "다음 admin 라우트에 require_admin 가드 누락:\n"
         + "\n".join(f"  - {p}" for p in missing)
     )

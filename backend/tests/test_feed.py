@@ -1,7 +1,6 @@
 """Tests for bid feed and favorites endpoints."""
 from datetime import datetime, timedelta
 
-import pytest
 
 
 class TestFeed:
@@ -124,7 +123,6 @@ class TestFeedFilters:
     def _seed(self, db_session, rows):
         """rows: list of dict(bid_no,title,org,price,days,ctype). 누적 DB 시딩."""
         from app.db import models
-        from datetime import datetime, timedelta
         now = datetime.now()
         for r in rows:
             if not db_session.query(models.Notice).filter_by(bid_no=r["bid_no"]).first():

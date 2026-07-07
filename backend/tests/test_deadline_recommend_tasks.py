@@ -83,7 +83,7 @@ def test_recommendation_skips_user_without_profile(db_session):
     db_session.commit()
 
     with patch("app.tasks.recommendation_tasks.SessionLocal", lambda: _SessionWrapper(db_session)):
-        r = send_recommendations()
+        send_recommendations()
 
     # 프로필 없는 사용자는 대상 제외 — 알림 없음
     noti = (

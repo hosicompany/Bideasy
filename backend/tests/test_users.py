@@ -1,5 +1,4 @@
 """Tests for user profile endpoints."""
-import pytest
 
 
 class TestGetProfile:

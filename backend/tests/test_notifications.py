@@ -1,5 +1,4 @@
 """Tests for notification endpoints."""
-import pytest
 
 from app.db import models
 
