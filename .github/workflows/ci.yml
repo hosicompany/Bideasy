@@ -65,10 +65,6 @@ jobs:
 
   flutter:
     runs-on: ubuntu-latest
-    # 현재 주력은 크롬 익스텐션 + 웹앱이고 Flutter 앱은 부차(CLAUDE.md §2).
-    # analyze/test 실패가 CI 전체를 red로 만들지 않도록 non-blocking 처리 —
-    # 잡은 계속 실행해 가시성은 유지하되, 실패해도 build 잡(needs)은 진행됨.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
