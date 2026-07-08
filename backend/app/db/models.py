@@ -382,3 +382,50 @@ class BlogPost(Base):
     publish_at = Column(DateTime, nullable=True)   # 예약 발행(옵션)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class Lead(Base):
+    """무료 자격 진단 리드 — 비로그인 방문자가 남긴 연락처 + 진단 입력.
+
+    리드 마그넷("우리 회사가 넣을 수 있는 공고 무료 진단")의 산출물. 두 목적을
+    한 번에: ① 재접촉 가능한 리드 확보 ② 비치헤드 검증 마이크로설문(업종·지역·
+    월 투찰 습관 추정). 진단은 로그인·발송 인프라 없이 동작 — QualificationChecker
+    로 활성 공고를 필터해 매칭 수/샘플을 즉시 보여주고, 연락처를 남기면 이 행을 저장.
+
+    육성(nurture)은 pluggable: nurture_channel 로 카카오 알림톡/이메일(SES) 병행.
+    지금은 캡처만 라이브, 발송은 설계(docs/LEAD_ACQUISITION.md). 가입 전환 시
+    converted_user_id 로 연결해 채널별 리드→유료 성과를 우리 데이터로 직접 집계.
+    """
+    __tablename__ = "leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 연락처 — email 또는 phone 중 최소 하나 (캡처 시점에 검증)
+    email = Column(String(255), nullable=True, index=True)
+    phone = Column(String(30), nullable=True)
+
+    # 진단 입력 = 검증 마이크로설문
+    industry = Column(String(60), nullable=True)     # 업종(예: 전기공사) — 대표 면허 루트
+    licenses = Column(String(255), nullable=True)    # 보유 면허(콤마 구분)
+    region = Column(String(100), nullable=True)      # 사업장 소재지
+    capacity_cost = Column(Integer, nullable=True)   # 시공능력평가액(선택)
+
+    # 진단 결과 스냅샷
+    matched_count = Column(Integer, nullable=False, default=0, server_default="0")
+
+    # 유입 귀속(first-touch UTM) — users 와 동일 스키마
+    utm_source = Column(String(120), nullable=True)
+    utm_medium = Column(String(120), nullable=True)
+    utm_campaign = Column(String(160), nullable=True)
+    referrer = Column(String(300), nullable=True)
+
+    # 육성 채널·상태 (pluggable: kakao | email | null)
+    nurture_channel = Column(String(20), nullable=True)
+    nurture_status = Column(String(20), nullable=False, default="new", server_default="new")  # new|queued|sent|converted|unsub
+
+    # 전환 연결 — 가입 시 users.id (리드→유료 성과 측정)
+    converted_user_id = Column(Integer, nullable=True)
+
+    # 유입 지점 (web_diagnose | ext_diagnose 등)
+    source = Column(String(40), nullable=False, default="web_diagnose", server_default="web_diagnose")
+    created_at = Column(DateTime, default=_utcnow, index=True)

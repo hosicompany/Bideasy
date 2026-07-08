@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>무료 자격 진단 — 우리 회사가 넣을 수 있는 공고 30초 확인 | BidEasy</title>
+  <meta name="description" content="업종·지역만 고르면 지금 우리 회사가 입찰 자격을 만족하는 나라장터 공고를 즉시 확인. 면허·지역 제한을 자동으로 걸러 '넣을 수 있는 공고'만 보여드려요. 회원가입 없이 무료.">
+  <link rel="canonical" href="https://bideasy.kr/diagnose">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="무료 자격 진단 — 우리 회사가 넣을 수 있는 공고 30초 확인">
+  <meta property="og:description" content="업종·지역만 고르면 입찰 자격을 만족하는 공고만 골라 보여드려요. 무료.">
+  <meta property="og:url" content="https://bideasy.kr/diagnose">
+  <meta property="og:site_name" content="BidEasy">
+  <link rel="icon" href="/brand/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>
+    html,body{margin:0;}
+    .dg-wrap{max-width:760px;margin:0 auto;padding:32px 22px 72px;}
+    .dg-chip{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border:1.5px solid var(--line);
+      border-radius:11px;background:var(--surface);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;
+      transition:border-color .12s,background .12s;user-select:none;}
+    .dg-chip:hover{border-color:var(--accent);}
+    .dg-chip.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);}
+    .dg-grid{display:flex;flex-wrap:wrap;gap:9px;}
+    .dg-step{margin:0 0 22px;}
+    .dg-step-h{font-size:13px;font-weight:800;color:var(--muted);letter-spacing:-.2px;margin:0 0 10px;}
+    .dg-input,.dg-select{width:100%;box-sizing:border-box;padding:12px 13px;border:1.5px solid var(--line);
+      border-radius:11px;background:var(--surface);color:var(--text);font-size:15px;font-family:inherit;}
+    .dg-input:focus,.dg-select:focus{outline:none;border-color:var(--accent);}
+    .dg-notice{border:1px solid var(--line);border-radius:13px;padding:14px 15px;margin:0 0 10px;background:var(--surface);}
+    .dg-notice.locked{filter:blur(5px);pointer-events:none;user-select:none;opacity:.75;}
+    .dg-title{font-size:15px;font-weight:700;letter-spacing:-.3px;margin:0 0 6px;line-height:1.35;}
+    .dg-meta{font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 12px;}
+    .dg-lockwrap{position:relative;}
+    .dg-lockcard{position:relative;border:1.5px solid var(--accent);border-radius:15px;padding:20px 18px;
+      background:var(--accent-soft);margin-top:16px;}
+    .dg-count{font-size:40px;font-weight:800;letter-spacing:-1.5px;color:var(--accent);line-height:1;}
+    .dg-hidden{display:none;}
+    .dg-err{color:var(--danger);font-size:13px;font-weight:600;margin-top:8px;}
+    @media(max-width:520px){.dg-count{font-size:32px;}}
+  </style>
+  <script src="/assets/app.js"></script>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-V4ERRL0NH0"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-V4ERRL0NH0');
+  </script>
+</head>
+<body class="bd" data-theme="light">
+  <div id="nav"></div>
+
+  <div class="dg-wrap">
+    <span class="eyebrow">무료 자격 진단</span>
+    <h1 style="font-size:29px;font-weight:800;letter-spacing:-1px;margin:8px 0 6px;line-height:1.2;">
+      우리 회사가 지금 <span style="color:var(--accent);">넣을 수 있는 공고</span>,<br>30초면 확인돼요.
+    </h1>
+    <p style="font-size:15px;color:var(--muted);line-height:1.6;margin:0 0 26px;">
+      업종과 지역만 알려주시면, 면허·지역 제한을 자동으로 걸러 <b>입찰 자격을 만족하는 공고</b>만 골라 보여드려요.
+      회원가입 없이 무료예요.
+    </p>
+
+    <!-- ── 진단 폼 ── -->
+    <div id="dg-form" class="card" style="padding:24px 22px;">
+      <div class="dg-step">
+        <p class="dg-step-h">1. 우리 회사 업종은?</p>
+        <div class="dg-grid" id="dg-trades"></div>
+        <input type="text" id="dg-license-other" class="dg-input dg-hidden" style="margin-top:10px;"
+          placeholder="보유 면허를 입력하세요 (예: 조경공사업, 상하수도)">
+      </div>
+
+      <div class="dg-step">
+        <p class="dg-step-h">2. 사업장 소재지는? <span style="font-weight:600;color:var(--muted);">(지역제한 공고 판정에 필요해요)</span></p>
+        <select id="dg-region" class="dg-select">
+          <option value="">지역 선택</option>
+        </select>
+      </div>
+
+      <div class="dg-step" style="margin-bottom:8px;">
+        <p class="dg-step-h">3. 시공능력평가액 <span style="font-weight:600;color:var(--muted);">(선택 · 억원)</span></p>
+        <input type="number" id="dg-capacity" class="dg-input" placeholder="예: 8" min="0" inputmode="numeric">
+      </div>
+
+      <div id="dg-form-err" class="dg-err dg-hidden"></div>
+      <button id="dg-run" class="btn btn-primary btn-lg btn-block" style="margin-top:16px;">무료로 진단하기</button>
+    </div>
+
+    <!-- ── 결과 ── -->
+    <div id="dg-result" class="dg-hidden" style="margin-top:24px;">
+      <div class="dg-lockcard" style="background:var(--surface);border-color:var(--line);text-align:center;">
+        <div class="dg-count" id="dg-count">0</div>
+        <p id="dg-count-label" style="font-size:15px;font-weight:700;margin:10px 0 0;"></p>
+      </div>
+
+      <div id="dg-preview" style="margin-top:18px;"></div>
+
+      <!-- 잠금: 나머지 목록 + 캡처 -->
+      <div id="dg-lock" class="dg-hidden">
+        <div class="dg-lockwrap">
+          <div id="dg-locked-rows"></div>
+        </div>
+        <div class="dg-lockcard">
+          <p style="font-size:16px;font-weight:800;margin:0 0 4px;">전체 목록 + 새 공고 알림 받기</p>
+          <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 16px;">
+            연락처를 남기시면 나머지 공고 전체를 지금 보여드리고, 조건에 맞는 새 공고가 올라오면 알려드릴게요.
+          </p>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <input type="email" id="dg-email" class="dg-input" placeholder="이메일 (예: boss@company.kr)">
+            <input type="tel" id="dg-phone" class="dg-input" placeholder="휴대폰 (예: 010-1234-5678) — 알림톡 받기">
+          </div>
+          <div id="dg-cap-err" class="dg-err dg-hidden"></div>
+          <button id="dg-capture" class="btn btn-primary btn-lg btn-block" style="margin-top:14px;">전체 공고 보기 →</button>
+          <p style="font-size:11.5px;color:var(--muted);text-align:center;margin:12px 0 0;line-height:1.5;">
+            입력하신 연락처는 공고 알림·서비스 안내에만 사용하며, 언제든 수신 거부할 수 있어요.
+          </p>
+        </div>
+      </div>
+
+      <!-- 캡처 후 전체 목록 -->
+      <div id="dg-full" class="dg-hidden" style="margin-top:16px;"></div>
+
+      <!-- 다음 행동 -->
+      <div id="dg-next" class="dg-hidden dg-lockcard" style="margin-top:18px;text-align:center;">
+        <p style="font-size:16px;font-weight:800;margin:0 0 6px;">나라장터를 떠나지 않고 바로 투찰까지</p>
+        <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 16px;">
+          크롬 익스텐션을 설치하면 지금 보고 있는 공고 위에서 자격·A값·안전 투찰가를 바로 확인해요.
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
+          <a class="btn btn-primary btn-lg" href="/signup" data-ev="cta_diagnose_trial">14일 무료로 시작하기</a>
+          <a class="btn btn-ghost btn-lg" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener" data-ev="cta_diagnose_install">Chrome에 설치</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var API = (window.BD && window.BD.API_BASE) || 'https://api.bideasy.kr/api/v1';
+      var esc = (window.BD && window.BD.esc) || function (s) { return s == null ? '' : String(s); };
+      var won = (window.BD && window.BD.won) || function (n) { return Number(n).toLocaleString('ko-KR'); };
+      if (window.BD && BD.mountNav) BD.mountNav('');
+
+      // 업종 칩 (value = QualificationChecker 가 제목에서 인식하는 키워드와 정합)
+      var TRADES = [
+        ['전기공사', '전기'], ['정보통신공사', '정보통신'], ['소방시설공사', '소방'],
+        ['건축공사', '건축'], ['토목공사', '토목'], ['그 외 / 직접입력', '__other']
+      ];
+      var REGIONS = ['서울특별시','부산광역시','대구광역시','인천광역시','광주광역시','대전광역시','울산광역시','세종특별자치시',
+        '경기도','강원특별자치도','충청북도','충청남도','전북특별자치도','전라남도','경상북도','경상남도','제주특별자치도'];
+
+      var state = { industry: '', licenses: '', matched: 0 };
+
+      // 칩 렌더
+      var tradesEl = document.getElementById('dg-trades');
+      var otherInput = document.getElementById('dg-license-other');
+      TRADES.forEach(function (t) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'dg-chip'; b.textContent = t[0]; b.setAttribute('data-key', t[1]);
+        b.addEventListener('click', function () {
+          Array.prototype.forEach.call(tradesEl.children, function (c) { c.classList.remove('on'); });
+          b.classList.add('on');
+          if (t[1] === '__other') {
+            otherInput.classList.remove('dg-hidden'); otherInput.focus();
+            state.industry = ''; state.licenses = otherInput.value.trim();
+          } else {
+            otherInput.classList.add('dg-hidden');
+            state.industry = t[0]; state.licenses = '';
+          }
+        });
+        tradesEl.appendChild(b);
+      });
+      otherInput.addEventListener('input', function () { state.licenses = otherInput.value.trim(); });
+
+      // 지역 옵션
+      var regionEl = document.getElementById('dg-region');
+      REGIONS.forEach(function (r) { var o = document.createElement('option'); o.value = r; o.textContent = r; regionEl.appendChild(o); });
+
+      function noticeCard(n, locked) {
+        var dday = '';
+        if (n.end_date) {
+          var diff = Math.ceil((new Date(n.end_date) - new Date()) / 86400000);
+          dday = diff >= 0 ? ('D-' + diff) : '마감';
+        }
+        var price = n.basic_price ? ('기초금액 ' + won(n.basic_price) + '원') : '';
+        return '<div class="dg-notice' + (locked ? ' locked' : '') + '">' +
+          '<p class="dg-title">' + esc(n.title || '공고') + '</p>' +
+          '<div class="dg-meta">' +
+            (n.organization ? '<span>' + esc(n.organization) + '</span>' : '') +
+            (n.region ? '<span>' + esc(n.region) + '</span>' : '') +
+            (price ? '<span>' + price + '</span>' : '') +
+            (dday ? '<span style="color:var(--accent);font-weight:700;">' + dday + '</span>' : '') +
+          '</div></div>';
+      }
+
+      function attr() {
+        try { return JSON.parse(localStorage.getItem('bd_attr') || '{}'); } catch (e) { return {}; }
+      }
+
+      // ── 진단 실행 ──
+      document.getElementById('dg-run').addEventListener('click', async function () {
+        var err = document.getElementById('dg-form-err');
+        err.classList.add('dg-hidden');
+        if (!state.industry && !state.licenses) { err.textContent = '업종을 선택하거나 보유 면허를 입력해 주세요.'; err.classList.remove('dg-hidden'); return; }
+        if (!regionEl.value) { err.textContent = '사업장 소재지를 선택해 주세요.'; err.classList.remove('dg-hidden'); return; }
+
+        var btn = this; btn.disabled = true; btn.textContent = '진단 중…';
+        var cap = parseInt(document.getElementById('dg-capacity').value, 10);
+        state.region = regionEl.value;
+        state.capacity_cost = isNaN(cap) ? null : cap;
+        try { gtag('event', 'lead_diagnose', { industry: state.industry || 'other' }); } catch (e) {}
+
+        try {
+          var resp = await fetch(API + '/leads/diagnose', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ industry: state.industry || null, licenses: state.licenses || null, region: state.region, capacity_cost: state.capacity_cost })
+          });
+          if (!resp.ok) throw new Error('진단 실패');
+          var data = await resp.json();
+          renderResult(data);
+        } catch (e) {
+          err.textContent = '진단 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요.'; err.classList.remove('dg-hidden');
+          btn.disabled = false; btn.textContent = '무료로 진단하기';
+        }
+      });
+
+      function renderResult(data) {
+        state.matched = data.matched_count;
+        document.getElementById('dg-form').classList.add('dg-hidden');
+        document.getElementById('dg-result').classList.remove('dg-hidden');
+
+        var label = (state.region ? state.region + ' ' : '') + (state.industry || '우리 회사') + ', 지금 넣을 수 있는 공고';
+        var countEl = document.getElementById('dg-count');
+        countEl.textContent = won(data.matched_count) + (data.capped ? '+' : '') + '건';
+        document.getElementById('dg-count-label').textContent = label;
+
+        var prev = document.getElementById('dg-preview');
+        if (data.matched_count === 0) {
+          prev.innerHTML = '<p style="font-size:14px;color:var(--muted);line-height:1.7;text-align:center;padding:8px 0;">' +
+            '지금 활성 공고 중에는 조건에 딱 맞는 건이 없어요. 새 공고가 올라오면 알려드릴게요 👇</p>';
+        } else {
+          prev.innerHTML = (data.preview || []).map(function (n) { return noticeCard(n, false); }).join('');
+        }
+
+        // 잠금 영역 — 더 볼 게 있거나(locked_count>0) 알림 받을 가치가 있으면 노출
+        var lock = document.getElementById('dg-lock');
+        if (data.locked_count > 0) {
+          document.getElementById('dg-locked-rows').innerHTML =
+            [0, 1, 2].map(function () { return noticeCard({ title: '자격 적합 공고 · 연락처 입력 시 공개', organization: '○○○기관', region: state.region, basic_price: 0 }, true); }).join('');
+        } else {
+          document.getElementById('dg-locked-rows').innerHTML = '';
+        }
+        lock.classList.remove('dg-hidden');
+      }
+
+      // ── 리드 캡처 ──
+      document.getElementById('dg-capture').addEventListener('click', async function () {
+        var email = document.getElementById('dg-email').value.trim();
+        var phone = document.getElementById('dg-phone').value.trim();
+        var err = document.getElementById('dg-cap-err');
+        err.classList.add('dg-hidden');
+        var okEmail = email && email.indexOf('@') > 0 && email.indexOf('.') > email.indexOf('@');
+        var okPhone = phone && (phone.replace(/\D/g, '').length >= 9);
+        if (!okEmail && !okPhone) { err.textContent = '이메일 또는 휴대폰 번호를 정확히 입력해 주세요.'; err.classList.remove('dg-hidden'); return; }
+
+        var btn = this; btn.disabled = true; btn.textContent = '불러오는 중…';
+        var a = attr();
+        try {
+          var resp = await fetch(API + '/leads/capture', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              industry: state.industry || null, licenses: state.licenses || null,
+              region: state.region, capacity_cost: state.capacity_cost,
+              email: email || null, phone: phone || null,
+              nurture_channel: okPhone ? 'kakao' : 'email',
+              utm_source: a.source || null, utm_medium: a.medium || null, utm_campaign: a.campaign || null, referrer: a.referrer || null
+            })
+          });
+          if (!resp.ok) throw new Error('capture 실패');
+          var data = await resp.json();
+          try { gtag('event', 'lead_capture', { channel: okPhone ? 'kakao' : 'email', matched: data.matched_count }); } catch (e) {}
+
+          document.getElementById('dg-lock').classList.add('dg-hidden');
+          var full = document.getElementById('dg-full');
+          var head = '<p style="font-size:14px;font-weight:800;margin:0 0 12px;">✅ 접수됐어요! 넣을 수 있는 공고 ' + won(data.matched_count) + '건 전체예요.</p>';
+          full.innerHTML = head + (data.notices || []).map(function (n) { return noticeCard(n, false); }).join('');
+          full.classList.remove('dg-hidden');
+          document.getElementById('dg-next').classList.remove('dg-hidden');
+        } catch (e) {
+          err.textContent = '전송에 실패했어요. 잠시 후 다시 시도하시거나 support@bideasy.kr 로 문의해 주세요.';
+          err.classList.remove('dg-hidden'); btn.disabled = false; btn.textContent = '전체 공고 보기 →';
+        }
+      });
+
+      // data-ev 클릭 이벤트 자동 발화
+      document.querySelectorAll('[data-ev]').forEach(function (el) {
+        el.addEventListener('click', function () { try { gtag('event', this.getAttribute('data-ev')); } catch (e) {} });
+      });
+    })();
+  </script>
+</body>
+</html>
