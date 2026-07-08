@@ -2,7 +2,7 @@
 
 > **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
-> 최종 갱신: 2026-07-05 (정본 선언 + 6/17 페이플 라이브·6/19 보안 하드닝·6/22 UTM 귀속 반영)
+> 최종 갱신: 2026-07-08 (랜딩 전환 개편 + 런칭 기념가 Pro 19,900/Pro+ 39,900 + checkout 익스텐션 호환 — 전부 prod 배포 / 다음 = 익스텐션 재제출·랜딩 효과 측정)
 
 ---
 
@@ -29,23 +29,41 @@
 - **관리자 대시보드** — 일일리포트·사용자·결제/환불·정확도·자가보정·시스템·시뮬레이션
 - **자가보정(autocalibrate)** — 누적 개찰결과(DB) 병합한 백테스트·전략 재보정 (Celery 주간)
 - **페이플 운영 라이브 (6/17)** — `PAYMENT_PROVIDER=payple` 실매출 가능, 실결제 24,900원 승인 검증. 환불은 페이플 콘솔 수동(`PCD_REFUND_KEY` 미연동), 콘솔 취소↔DB 동기화 없음(웹훅 없음). 윈백 50%는 "체험 만료 후 grace 7일 내 미결제자"에게만
-- **보안 하드닝 (6/19, head `a3c7e1f9b204`)** — JWT `token_version` 무효화, 빌링키 Fernet 암호화(`BILLING_ENC_KEY`), SSRF 가드, 정적 웹 XSS 이스케이프(`BD.esc`), OAuth state, 레이트리밋. 보고서 `docs/SECURITY_AUDIT_2026-06-19.md`
+- **보안 하드닝 (6/19, head `a3c7e1f9b204`)** — JWT `token_version` 무효화, 빌링키 Fernet 암호화, SSRF 가드, 정적 웹 XSS 이스케이프(`BD.esc`), OAuth state, 레이트리밋, 컨테이너 비-root(uid 10001), 페이플 콜백 CST_ID/금액/멱등 검증, AI한도 Redis. 보고서 `docs/SECURITY_AUDIT_2026-06-19.md`.
+  - **`BILLING_ENC_KEY` 운영 설정·암호화 라이브 검증 완료**(서버 `.env.production`) — **분실·변경 절대 금지**(변경 시 기존 빌링키 복호화 불가). 미설정이면 평문 폴백. 비-root 전환으로 신규 볼륨 배포 시 `strategy_data`/`celerybeat_data` `chown 10001` 필요.
 - **검색엔진 등록 (6/16)** — Google·Naver 소유확인 + 사이트맵 제출 (루트 HTML 파일 방식)
 - **웹스토어 ASO + UTM 귀속 (6/20~22)** — 스토어 listing 캐논 `docs/STORE_LISTING.md`, first-touch UTM(`users.signup_source` 등, 마이그레이션 `c4f8a1e7d602`) + `GET /admin/stats/attribution`
+- **랜딩 전환 최적화 개편 (2026-07-08 배포)** — `index.html`: 인터랙티브 미니 계산기(+Pro 지표 blur 잠금)·익스텐션 사용 장면 목업·유스케이스 페르소나(가짜 후기 아님, 상황 기반)·창업자 스토리·경쟁 비교표(A예측형/B알림형/C수기 익명 유형, ✓/△/✕·"특정 업체 아님" 캡션)·FAQ(+FAQPage 스키마, 첫 질문=비예측)·CTA GA4 이벤트(`cta_*`·`calc_demo_use`). 정직·비예측 포지션 유지.
+- **런칭 기념가 개편 (2026-07-08 배포)** — Pro 24,900→19,900, Pro+ 49,900→39,900 (연 191,000/383,000, 윈백 첫 달 Pro 9,950/Pro+ 19,950). §12 반영. 결정 근거·경쟁사 앵커 → 메모리 `pricing-launch-2026-07`·`competitor-dimatools`.
+- **checkout 익스텐션 호환 픽스 (2026-07-08 배포)** — 웹 `checkout.html`이 익스텐션발 파라미터 수용: `plan=`→`tier=` 별칭(Pro+가 Pro로 가던 버그)·`#token=` fragment 수용(비로그인 이탈 방지)·`type=points`→`/account`. 익스텐션 코드 미변경(웹이 흡수 → 웹스토어 재심사 불필요).
 
 ### ⏳ 대기 중인 외부 작업 (코드 아님, 사용자/제3자 처리)
 | 항목 | 상태 |
 |---|---|
 | **토스 MID 심사** | 진행 중 — 페이플 운영 라이브(6/17)로 긴급성 낮음, 병행 가능 |
-| **Chrome 웹스토어** | ASO 개정판 검토 제출(6/20). 익스텐션 툴바 아이콘은 `npm run build` + 재제출 대기 |
+| **Chrome 웹스토어** | ASO 개정판 검토 제출(6/20). ⚠️ **listing 가격 문구 24,900→19,900 갱신 필요**(런칭 기념가). 툴바 아이콘 `npm run build` + 재제출 대기 |
+| **익스텐션 코드 정리** | `plan→tier` 파라미터 정리 + 포인트 버튼 처리 → 다음 재제출에 포함. **지금은 웹 checkout이 흡수해 급하지 않음** |
 | **익스텐션 A값 Tier1 활성화** | 웹스토어 승인 후 |
 | **OpenAI 키·POSTGRES_PASSWORD 로테이션** | ⚠️ 미완 — 6/19 감사에서 노출 확인, 사용자 처리 필요 |
 
-### 다음 후보 작업 (미착수)
-- (6/22 기준) UTM 마이그레이션 배포(`./deploy.sh deploy`) + 마케팅 링크 UTM 태깅 + Cloudflare Web Analytics — **완료 여부 확인 필요**
-- 2차는 코드가 아니라 **고객 검증부터**: "안전 vs 예측" 랜딩 A/B + 퍼널 측정 (GTM 전략 6/18 확정)
-- 자가학습 안전비서 Phase1(`UserBid`↔`OpeningResult` 피드백 루프) — **고객 검증 통과 후 착수** (선착수 금지)
-- Pro+ ML 웹 노출, 웹푸시(FCM), 윈백 이메일 인프라(SES 등 — 이탈자는 앱내 알림으로 안 닿음)
+### 2차 = 고객 검증 (GTM 진행 중 — 상세: 메모리 `bideasy-gtm-strategy`)
+- **비치헤드 확정** (2026-07-07): 전문건설(전기공사 먼저) 1~10인, **월 10건+ 직접 투찰**(빈도 기준). 훅=자격필터 / 지갑=안전 투찰. 물품은 하한선 없어 안전게임 아님(제외).
+- **검증기계(전화 0통)**: 네이버 검색광고 A/B(안전 vs 자격필터 훅) — 캠페인 패키지 완성, **집행 보류 중** → `docs/AD_CAMPAIGN_VALIDATION.md`. 측정 = first-touch UTM + GA4 + `/admin/stats/attribution`.
+- **census 전수조사 = 하지 않음** — 공사 개찰 169k행/일이라 전수는 함정. sample≈census는 통계로 보장. (개찰 API: window ≤24h·시작도 실제시각·num_rows 작게. 코드 `3/5/1`=공사/용역/물품.)
+- 남은 검증 코드: 가입 직후 1문항 마이크로 설문(업종·월 투찰수) + 커뮤니티 질문글.
+
+### 다음 주제 (후보)
+- **익스텐션 재제출** — `plan→tier` 정리 + 포인트 버튼 + 툴바 아이콘 빌드 → Chrome 웹스토어 재제출 (listing 가격 문구도 19,900 갱신).
+- **랜딩 개편 효과 측정** — GA4에서 `cta_*`·`calc_demo_use` 전환율 관찰(배포 2026-07-08). 데이터 보고 개선 반영.
+- **랜딩 A/B 훅 실험** — 안전 vs 자격필터 훅 A/B는 **미착수**(광고 검증 캠페인과 연동, 현재 집행 보류). 이번 랜딩 개편은 전환 구조까지만 완료.
+- **CI green 복구** — `lint`(ruff 25개 기존 오류)·`flutter` 상시 red 정리 (2026-07-08 별도 세션 task 진행 중).
+
+### 이후 (고객 검증 통과 후, 선착수 금지)
+- 자가학습 안전비서 Phase1(`UserBid`↔`OpeningResult` 피드백 루프)
+- Pro+ ML 웹 노출, 웹푸시(FCM), 윈백 이메일 인프라(SES — 이탈자는 앱내 알림으로 안 닿음)
+- (6/22) UTM 마이그레이션 배포·마케팅 링크 UTM 태깅·Cloudflare Web Analytics — 완료 여부 확인 필요
+
+> 세션 루틴: 새 세션 `/kickoff` → 작업 → `/handoff` (전역 슬래시 명령, 2026-07-07 신설).
 
 ---
 
@@ -59,7 +77,7 @@
 6. **헬스체크 10초 오탐**: deploy.sh는 app 재생성 10초 뒤 체크 → `WARNING: Health check failed`는 대개 오탐. 진짜 상태는 `https://api.bideasy.kr/health`(200 + `database:connected`).
 7. **app 수동 재생성 시 nginx reload 필수** — 도커 IP가 바뀌어 nginx가 옛 IP로 502. `./deploy.sh deploy`는 자동 처리(수동 compose up 시 누락 주의).
 8. **페이플 콜백 리다이렉트는 303** (307이면 정적 `/account`에 POST 재전송 → nginx 405).
-9. **버전 표기**: 현재 v1.1 — 변경 성격(MAJOR/MINOR/PATCH)을 판단해 랜딩 푸터에 반영.
+9. **버전 표기**: 현재 v1.2 (2026-07-08 랜딩 개편 시 v1.1→v1.2) — 변경 성격(MAJOR/MINOR/PATCH)을 판단해 랜딩 푸터에 반영.
 
 ---
 
