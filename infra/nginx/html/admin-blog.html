@@ -38,6 +38,7 @@
     .b-draft{background:var(--amber-bg);color:var(--amber)}
     .b-pub{background:var(--green-bg);color:var(--green)}
     .b-auto{background:#EEF2FF;color:#4338CA}
+    .b-sched{background:#FEF3C7;color:#92400E}
     label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:10px 0 4px}
     input,textarea,select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;color:var(--ink)}
     textarea{resize:vertical}
@@ -95,6 +96,11 @@
       <textarea id="f-body" class="body" placeholder="# 제목&#10;&#10;본문…  이미지: ![캡션](/assets/blog/{slug}/img.png)"></textarea>
       <div class="hint">저장 시 서버가 파일 글과 동일한 파이프라인으로 렌더(figure·읽는시간). 발행 전엔 비공개(직접 URL은 noindex 미리보기).</div>
 
+      <div class="grid2" style="margin-top:10px;align-items:end">
+        <div><label>⏰ 예약 발행 일시 (KST)</label><input id="f-publishat" type="datetime-local" /></div>
+        <div class="hint" style="margin:0 0 9px">비우면 예약 없음. 지정하면 그 시각 이후 <b>자동 발행</b>(매시 정각 처리). 데이터스토리 초안은 생성 시 48시간 뒤 예약이 자동으로 잡혀 있어요. 게시취소하면 예약도 해제됩니다.</div>
+      </div>
+
       <div class="row" style="margin-top:14px">
         <button class="btn" id="btnSave" onclick="save()">저장</button>
         <button class="btn green" id="btnPublish" onclick="publish()" style="display:none">발행</button>
@@ -144,9 +150,10 @@
         list.innerHTML = posts.map(p=>{
           const st = p.status==='published' ? '<span class="badge b-pub">발행</span>' : '<span class="badge b-draft">초안</span>';
           const src = p.source==='auto' ? '<span class="badge b-auto">자동</span>' : '';
+          const sched = (p.status!=='published' && p.publish_at) ? `<span class="badge b-sched">⏰ ${kstShort(p.publish_at)}</span>` : '';
           return `<div class="item ${p.id===editingId?'active':''}" onclick="selectPost(${p.id})">
             <div class="t">${escapeHtml(p.title)}</div>
-            <div class="m">${st}${src} /${escapeHtml(p.slug)} · ${p.date||'미발행'} · ${p.reading_time||1}분</div>
+            <div class="m">${st}${src}${sched} /${escapeHtml(p.slug)} · ${p.date||'미발행'} · ${p.reading_time||1}분</div>
           </div>`;
         }).join('');
       }catch(e){ list.innerHTML='<div class="empty">불러오기 실패: '+e.message+'</div>'; }
@@ -154,11 +161,28 @@
 
     function escapeHtml(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+    // publish_at 은 서버에 naive UTC 로 저장/반환. 관리자는 KST 로 보고 입력한다.
+    function _asUtcDate(iso){ if(!iso) return null; const d=new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso)?iso:iso+'Z'); return isNaN(d)?null:d; }
+    function utcIsoToKstLocal(iso){ // 서버 naive UTC → datetime-local 값(KST 벽시계)
+      const d=_asUtcDate(iso); if(!d) return '';
+      const k=new Date(d.getTime()+9*3600*1000), p=n=>String(n).padStart(2,'0');
+      return `${k.getUTCFullYear()}-${p(k.getUTCMonth()+1)}-${p(k.getUTCDate())}T${p(k.getUTCHours())}:${p(k.getUTCMinutes())}`;
+    }
+    function kstLocalToTzIso(local){ // datetime-local(KST 로 간주) → +09:00 붙여 전송(서버가 UTC 정규화)
+      if(!local) return null; return (local.length===16 ? local+':00' : local)+'+09:00';
+    }
+    function kstShort(iso){ // 목록 뱃지용 MM/DD HH:mm (KST)
+      const d=_asUtcDate(iso); if(!d) return '';
+      const k=new Date(d.getTime()+9*3600*1000), p=n=>String(n).padStart(2,'0');
+      return `${p(k.getUTCMonth()+1)}/${p(k.getUTCDate())} ${p(k.getUTCHours())}:${p(k.getUTCMinutes())}`;
+    }
+
     function fillForm(p){
       el('f-title').value=p?.title||''; el('f-slug').value=p?.slug||'';
       el('f-category').value=p?.category||''; el('f-tags').value=p?.tags||'';
       el('f-hero').value=p?.hero||''; el('f-cover').value=p?.cover||'';
       el('f-summary').value=p?.summary||''; el('f-body').value=p?.body_md||'';
+      el('f-publishat').value = p?.publish_at ? utcIsoToKstLocal(p.publish_at) : '';
       editingId = p?.id||null; editingSlug = p?.slug||null;
       el('editTitle').textContent = p ? '글 편집' : '새 글';
       const published = p?.status==='published';
@@ -195,6 +219,7 @@
         cover: el('f-cover').value.trim(),
         summary: el('f-summary').value,
         body_md: el('f-body').value,
+        publish_at: kstLocalToTzIso(el('f-publishat').value),  // 비우면 null(예약 해제)
       };
     }
 
