@@ -131,6 +131,12 @@ class Settings(BaseSettings):
     # === Rate Limiting ===
     AI_ANALYSIS_FREE_LIMIT: int = 1  # Free tier: 1 AI analysis per day
 
+    # === 블로그 자동발행 ===
+    # 데이터스토리 자동 초안에 부여할 유예 시간(시간). 이 시간이 지나도록 사람이
+    # 발행/삭제하지 않으면 스케줄러가 자동 발행한다. 0 이하면 유예 부여 안 함
+    # (=현행 draft 유지, 킬스위치). 상록수 예약 드립은 admin 이 publish_at 을 직접 지정.
+    BLOG_AUTOPUBLISH_GRACE_HOURS: int = 48
+
     # === Firebase (FCM Push Notifications) ===
     FIREBASE_CREDENTIALS_JSON: str = ""  # Path to service account JSON file
 

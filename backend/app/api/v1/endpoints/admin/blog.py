@@ -78,6 +78,7 @@ def create_blog_post(payload: BlogPostCreate, db: Session = Depends(get_db), _ad
         status=status,
         source=payload.source if payload.source in ("admin", "auto") else "admin",
         date=date,
+        publish_at=payload.publish_at,
     )
     db.add(post)
     db.commit()
@@ -112,6 +113,14 @@ def update_blog_post(post_id: int, payload: BlogPostUpdate, db: Session = Depend
         post.status = data["status"]
         if post.status == "published" and not post.date:
             post.date = date_cls.today().isoformat()
+        # 발행 취소(→draft) 시 예약을 비워 스케줄러 재발행 방지(unpublish 와 일관).
+        # 단, 같은 요청에 publish_at 이 명시되면 아래에서 그 값이 우선한다.
+        if post.status == "draft" and "publish_at" not in data:
+            post.publish_at = None
+    # publish_at: 예약 시각 지정 또는 null 로 보류(유예 자동발행 취소). exclude_unset 이라
+    # 키가 왔을 때만 반영 → 다른 필드 수정 시 예약이 의도치 않게 지워지지 않음.
+    if "publish_at" in data:
+        post.publish_at = data["publish_at"]
     if data.get("body_md") is not None:
         post.body_md = data["body_md"]
         post.body_html, post.reading_time = blog_svc.render(data["body_md"])
@@ -133,9 +142,10 @@ def publish_blog_post(post_id: int, db: Session = Depends(get_db), _admin=Depend
 
 @router.post("/blog/{post_id}/unpublish", response_model=BlogPostOut)
 def unpublish_blog_post(post_id: int, db: Session = Depends(get_db), _admin=Depends(require_admin)):
-    """발행 → 초안 (게시 취소)."""
+    """발행 → 초안 (게시 취소). 예약(publish_at)도 함께 해제해 스케줄러 재발행을 막는다."""
     post = _get_or_404(post_id, db)
     post.status = "draft"
+    post.publish_at = None
     db.commit()
     db.refresh(post)
     return post

@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from app.core.config import settings
@@ -196,6 +196,14 @@ def create_weekly_draft(db, ref_date: Optional[date] = None):
         existing = db.query(models.BlogPost).filter(models.BlogPost.slug == story["slug"]).first()
         return existing, "exists"
     html, rt = blog_svc.render(story["body_md"])
+    # 유예 자동발행: grace 시간 뒤 자동 발행되도록 publish_at 예약.
+    # 사람이 그 전에 발행/삭제하면 그대로 반영(스케줄러는 status=draft 만 발행).
+    # grace<=0 이면 미설정 → 현행처럼 draft 로 남아 사람 발행 대기(킬스위치).
+    grace = getattr(settings, "BLOG_AUTOPUBLISH_GRACE_HOURS", 0) or 0
+    publish_at = (
+        datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=grace)
+        if grace > 0 else None
+    )
     post = models.BlogPost(
         slug=story["slug"],
         title=story["title"],
@@ -208,6 +216,7 @@ def create_weekly_draft(db, ref_date: Optional[date] = None):
         status="draft",
         source="auto",
         date="",
+        publish_at=publish_at,
     )
     db.add(post)
     db.commit()
