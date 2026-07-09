@@ -88,9 +88,14 @@ celery_app.conf.beat_schedule = {
         "task": "notices.backfill_avalue",
         "schedule": crontab(hour=6, minute=30),
     },
-    # 11) 매주 월요일 08:00 — Track B 데이터스토리 주간 초안 생성(draft → 사람 1클릭 발행)
+    # 11) 매주 월요일 08:00 — Track B 데이터스토리 주간 초안 생성(유예 publish_at 부여)
     "weekly-data-story-draft": {
         "task": "content.weekly_data_story",
         "schedule": crontab(hour=8, minute=0, day_of_week=1),
+    },
+    # 12) 매시 05분 — 예약/유예 자동발행(publish_at 도래한 draft 발행)
+    "publish-scheduled-posts": {
+        "task": "content.publish_scheduled",
+        "schedule": crontab(minute=5),
     },
 }
