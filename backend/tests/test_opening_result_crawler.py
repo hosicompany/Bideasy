@@ -1,4 +1,5 @@
 from datetime import datetime
+import time
 
 import pytest
 
@@ -9,11 +10,13 @@ from app.tasks import verification_tasks
 class _FakeDB:
     def __init__(self):
         self.committed = False
+        self.commit_count = 0
         self.rolled_back = False
         self.closed = False
 
     def commit(self):
         self.committed = True
+        self.commit_count += 1
 
     def rollback(self):
         self.rolled_back = True
@@ -111,6 +114,92 @@ def test_fetch_page_uses_largest_supported_page_size(monkeypatch):
     crawler._fetch_page("202607090000", "202607092359")
 
     assert request_params["numOfRows"] == 999
+
+
+def test_fetch_page_retries_transient_http_error(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    responses = iter([
+        FakeResponse(502, {}),
+        FakeResponse(200, {"response": {"body": {"items": [{"ok": True}]}}}),
+    ])
+
+    def fake_get(*args, **kwargs):
+        calls.append(kwargs)
+        return next(responses)
+
+    monkeypatch.setattr(crawler.requests, "get", fake_get)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    items = crawler._fetch_page("202607090000", "202607092359")
+
+    assert items == [{"ok": True}]
+    assert len(calls) == 2
+
+
+def test_crawl_commits_each_completed_day_before_later_failure(monkeypatch):
+    db = _FakeDB()
+    calls = []
+
+    def fake_fetch(start_dt, end_dt, page=1, num_rows=999):
+        calls.append((start_dt, end_dt))
+        if start_dt == "202607100000":
+            raise RuntimeError("HTTP 502")
+        return []
+
+    monkeypatch.setattr(crawler, "datetime", _FrozenDateTime)
+    monkeypatch.setattr(crawler, "SessionLocal", lambda: db)
+    monkeypatch.setattr(crawler, "_fetch_page", fake_fetch)
+
+    result = crawler.crawl_recent_openings(days_back=2, max_pages=1)
+
+    assert result["ok"] is False
+    assert calls == [
+        ("202607081416", "202607082359"),
+        ("202607090000", "202607092359"),
+        ("202607100000", "202607101416"),
+    ]
+    assert db.commit_count == 2
+    assert db.rolled_back is True
+    assert db.closed is True
+
+
+def test_failure_counts_only_rows_from_committed_days(monkeypatch):
+    db = _FakeDB()
+
+    def fake_fetch(start_dt, end_dt, page=1, num_rows=999):
+        if start_dt != "202607100000":
+            return []
+        if page == 1:
+            return [{"bidNtceNo": f"ROLLBACK-{i}"} for i in range(999)]
+        raise RuntimeError("HTTP 502")
+
+    monkeypatch.setattr(crawler, "datetime", _FrozenDateTime)
+    monkeypatch.setattr(crawler, "SessionLocal", lambda: db)
+    monkeypatch.setattr(crawler, "_fetch_page", fake_fetch)
+    monkeypatch.setattr(
+        crawler,
+        "_parse_item_to_kwargs",
+        lambda item: {"bid_no": item["bidNtceNo"]},
+    )
+    monkeypatch.setattr(crawler, "_upsert_opening_result", lambda *args, **kwargs: True)
+
+    result = crawler.crawl_recent_openings(days_back=2, max_pages=2)
+
+    assert result["ok"] is False
+    assert result["inserted"] == 0
+    assert result["updated"] == 0
+    assert result["skipped"] == 0
+    assert db.commit_count == 2
+    assert db.rolled_back is True
 
 
 def test_crawl_fails_instead_of_committing_when_page_cap_is_full(monkeypatch):
