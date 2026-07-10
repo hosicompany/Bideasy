@@ -92,9 +92,30 @@ def test_fetch_page_verifies_tls_certificate(monkeypatch):
     assert request_kwargs.get("verify", True) is True
 
 
+def test_fetch_page_uses_largest_supported_page_size(monkeypatch):
+    request_params = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"response": {"body": {"items": []}}}
+
+    def fake_get(*args, **kwargs):
+        request_params.update(kwargs["params"])
+        return FakeResponse()
+
+    monkeypatch.setattr(crawler.requests, "get", fake_get)
+
+    crawler._fetch_page("202607090000", "202607092359")
+
+    assert request_params["numOfRows"] == 999
+
+
 def test_crawl_fails_instead_of_committing_when_page_cap_is_full(monkeypatch):
     db = _FakeDB()
-    full_page = [{"bidNtceNo": str(i)} for i in range(100)]
+    full_page = [{"bidNtceNo": str(i)} for i in range(999)]
 
     monkeypatch.setattr(crawler, "datetime", _FrozenDateTime)
     monkeypatch.setattr(crawler, "SessionLocal", lambda: db)
