@@ -17,6 +17,7 @@ API 특성:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -49,21 +50,36 @@ def _fetch_page(
         "opengBgnDt": start_dt,
         "opengEndDt": end_dt,
     }
-    try:
-        resp = requests.get(_BASE_URL, params=params, timeout=60)
-        if resp.status_code != 200:
-            raise RuntimeError(f"HTTP {resp.status_code}")
-        data = resp.json()
-        err = data.get("nkoneps.com.response.ResponseError", {})
-        if err:
-            message = err.get("header", {}).get("resultMsg", "unknown API error")
-            raise RuntimeError(f"API error: {message}")
-        items = data.get("response", {}).get("body", {}).get("items", []) or []
-        return [items] if isinstance(items, dict) else items
-    except RuntimeError:
-        raise
-    except Exception as e:  # noqa: BLE001
-        raise RuntimeError(f"{type(e).__name__}: {e}") from e
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            resp = requests.get(_BASE_URL, params=params, timeout=60)
+            if 500 <= resp.status_code < 600:
+                last_error = RuntimeError(f"HTTP {resp.status_code}")
+                if attempt < 3:
+                    time.sleep(2 ** (attempt - 1))
+                    continue
+                raise last_error
+            if resp.status_code != 200:
+                raise RuntimeError(f"HTTP {resp.status_code}")
+            data = resp.json()
+            err = data.get("nkoneps.com.response.ResponseError", {})
+            if err:
+                message = err.get("header", {}).get("resultMsg", "unknown API error")
+                raise RuntimeError(f"API error: {message}")
+            items = data.get("response", {}).get("body", {}).get("items", []) or []
+            return [items] if isinstance(items, dict) else items
+        except requests.RequestException as e:
+            last_error = RuntimeError(f"{type(e).__name__}: {e}")
+            if attempt < 3:
+                time.sleep(2 ** (attempt - 1))
+                continue
+            raise last_error from e
+        except RuntimeError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"{type(e).__name__}: {e}") from e
+    raise last_error or RuntimeError("public API request failed")
 
 
 def _daily_windows(start_dt: datetime, end_dt: datetime):
@@ -225,6 +241,9 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
         for window_start, window_end in _daily_windows(start_dt, end_dt):
             start_str = window_start.strftime("%Y%m%d%H%M")
             end_str = window_end.strftime("%Y%m%d%H%M")
+            window_inserted = 0
+            window_updated = 0
+            window_skipped = 0
             logger.info(f"opening_crawler: window {start_str} ~ {end_str}")
             for page in range(1, max_pages + 1):
                 items = _fetch_page(start_str, end_str, page=page)
@@ -234,12 +253,12 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                 for item in items:
                     kwargs = _parse_item_to_kwargs(item)
                     if kwargs is None:
-                        skipped += 1
+                        window_skipped += 1
                         continue
                     if _upsert_opening_result(db, kwargs, seen):
-                        inserted += 1
+                        window_inserted += 1
                     else:
-                        updated += 1
+                        window_updated += 1
                 # 요청 건수 미만 = 마지막 페이지
                 if len(items) < _PAGE_SIZE:
                     break
@@ -248,7 +267,10 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                     f"page limit reached with a full page: {start_str}~{end_str} "
                     f"(max_pages={max_pages})"
                 )
-        db.commit()
+            db.commit()
+            inserted += window_inserted
+            updated += window_updated
+            skipped += window_skipped
     except Exception as e:  # noqa: BLE001
         db.rollback()
         logger.error(f"opening_crawler: commit fail {type(e).__name__}: {e}")
@@ -257,6 +279,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             "error": f"{type(e).__name__}: {e}",
             "inserted": inserted,
             "updated": updated,
+            "skipped": skipped,
         }
     finally:
         db.close()
