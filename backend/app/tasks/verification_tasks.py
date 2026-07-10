@@ -29,6 +29,8 @@ def daily_crawl_opening_results(days_back: int = 2) -> dict:
 
     result = crawl_recent_openings(days_back=days_back)
     logger.info(f"[daily_crawl] {result}")
+    if not result.get("ok"):
+        raise RuntimeError(result.get("error", "opening result crawl failed"))
     return result
 
 

@@ -44,20 +44,32 @@ def _fetch_page(start_dt: str, end_dt: str, page: int = 1, num_rows: int = 100) 
         "opengEndDt": end_dt,
     }
     try:
-        resp = requests.get(_BASE_URL, params=params, timeout=60, verify=False)
+        resp = requests.get(_BASE_URL, params=params, timeout=60)
         if resp.status_code != 200:
-            logger.warning(f"opening_crawler: HTTP {resp.status_code}")
-            return []
+            raise RuntimeError(f"HTTP {resp.status_code}")
         data = resp.json()
         err = data.get("nkoneps.com.response.ResponseError", {})
         if err:
-            logger.warning(f"opening_crawler: API error {err.get('header', {}).get('resultMsg', '')}")
-            return []
+            message = err.get("header", {}).get("resultMsg", "unknown API error")
+            raise RuntimeError(f"API error: {message}")
         items = data.get("response", {}).get("body", {}).get("items", []) or []
         return [items] if isinstance(items, dict) else items
+    except RuntimeError:
+        raise
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"opening_crawler: {type(e).__name__}: {e}")
-        return []
+        raise RuntimeError(f"{type(e).__name__}: {e}") from e
+
+
+def _daily_windows(start_dt: datetime, end_dt: datetime):
+    """Split a range into calendar-day windows accepted by the public API."""
+    cursor = start_dt
+    while cursor <= end_dt:
+        day_end = cursor.replace(hour=23, minute=59, second=0, microsecond=0)
+        window_end = min(day_end, end_dt)
+        yield cursor, window_end
+        cursor = (cursor + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
 
 
 def _parse_item_to_kwargs(item: dict) -> dict | None:
@@ -191,10 +203,10 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 20) -> dict:
     """
     end_dt = datetime.now()
     start_dt = end_dt - timedelta(days=days_back)
-    start_str = start_dt.strftime("%Y%m%d%H%M")
-    end_str = end_dt.strftime("%Y%m%d%H%M")
+    overall_start = start_dt.strftime("%Y%m%d%H%M")
+    overall_end = end_dt.strftime("%Y%m%d%H%M")
 
-    logger.info(f"opening_crawler: range {start_str} ~ {end_str}")
+    logger.info(f"opening_crawler: range {overall_start} ~ {overall_end}")
 
     db = SessionLocal()
     inserted = 0
@@ -204,23 +216,32 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 20) -> dict:
     seen: set[str] = set()  # 이번 세션 dedupe (API 가 동일 bid_no 를 여러 row 로 반환)
 
     try:
-        for page in range(1, max_pages + 1):
-            items = _fetch_page(start_str, end_str, page=page)
-            pages_fetched = page
-            if not items:
-                break
-            for item in items:
-                kwargs = _parse_item_to_kwargs(item)
-                if kwargs is None:
-                    skipped += 1
-                    continue
-                if _upsert_opening_result(db, kwargs, seen):
-                    inserted += 1
-                else:
-                    updated += 1
-            # 100개 미만 = 마지막 페이지
-            if len(items) < 100:
-                break
+        for window_start, window_end in _daily_windows(start_dt, end_dt):
+            start_str = window_start.strftime("%Y%m%d%H%M")
+            end_str = window_end.strftime("%Y%m%d%H%M")
+            logger.info(f"opening_crawler: window {start_str} ~ {end_str}")
+            for page in range(1, max_pages + 1):
+                items = _fetch_page(start_str, end_str, page=page)
+                pages_fetched += 1
+                if not items:
+                    break
+                for item in items:
+                    kwargs = _parse_item_to_kwargs(item)
+                    if kwargs is None:
+                        skipped += 1
+                        continue
+                    if _upsert_opening_result(db, kwargs, seen):
+                        inserted += 1
+                    else:
+                        updated += 1
+                # 100개 미만 = 마지막 페이지
+                if len(items) < 100:
+                    break
+            else:
+                raise RuntimeError(
+                    f"page limit reached with a full page: {start_str}~{end_str} "
+                    f"(max_pages={max_pages})"
+                )
         db.commit()
     except Exception as e:  # noqa: BLE001
         db.rollback()
@@ -236,7 +257,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 20) -> dict:
 
     summary = {
         "ok": True,
-        "range": f"{start_str}~{end_str}",
+        "range": f"{overall_start}~{overall_end}",
         "pages_fetched": pages_fetched,
         "inserted": inserted,
         "updated": updated,
