@@ -30,9 +30,15 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdScsbidInfo"
 _BSNS_DIV_CONSTRUCTION = "3"  # 공사
+_PAGE_SIZE = 999  # API accepts at most 999; 1000 falls back to 10 rows.
 
 
-def _fetch_page(start_dt: str, end_dt: str, page: int = 1, num_rows: int = 100) -> list[dict]:
+def _fetch_page(
+    start_dt: str,
+    end_dt: str,
+    page: int = 1,
+    num_rows: int = _PAGE_SIZE,
+) -> list[dict]:
     """1 페이지 조회. params 는 crawl_opening_results.py 의 검증된 조합 사용."""
     params = {
         "serviceKey": settings.PUBLIC_DATA_KEY,
@@ -196,7 +202,7 @@ def _upsert_opening_result(db: Session, kwargs: dict, seen: set[str]) -> bool:
     return True
 
 
-def crawl_recent_openings(days_back: int = 2, max_pages: int = 20) -> dict:
+def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     """최근 N일 (기본 2일) 동안 개찰된 공사 결과 일괄 크롤 → DB upsert.
 
     매일 Celery beat 가 호출. days_back=2 로 안전마진(하루 누락 방지).
@@ -234,8 +240,8 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 20) -> dict:
                         inserted += 1
                     else:
                         updated += 1
-                # 100개 미만 = 마지막 페이지
-                if len(items) < 100:
+                # 요청 건수 미만 = 마지막 페이지
+                if len(items) < _PAGE_SIZE:
                     break
             else:
                 raise RuntimeError(
