@@ -2,7 +2,7 @@
 
 > **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
-> 최종 갱신: 2026-07-08 (랜딩 전환 개편 + 런칭 기념가 Pro 19,900/Pro+ 39,900 + checkout 익스텐션 호환 — 전부 prod 배포 / 다음 = 익스텐션 재제출·랜딩 효과 측정)
+> 최종 갱신: 2026-07-10 (진단 **콜드-DB 워밍** 구현[코드·테스트 완료 · **미커밋·미배포**, 브랜치 `fix/lead-diagnose-cold-db-warm`] + 백필 검증 **probe 확정**·census/진단 스크립트 준비 / 직전 07-09 = 리드 마그넷·블로그 자동발행·콘텐츠 엔진 설계 / 다음 = 콜드-DB 워밍 커밋·배포 → 콘텐츠 엔진 Phase1 → 리드→가입 전환 훅)
 
 ---
 
@@ -36,6 +36,12 @@
 - **랜딩 전환 최적화 개편 (2026-07-08 배포)** — `index.html`: 인터랙티브 미니 계산기(+Pro 지표 blur 잠금)·익스텐션 사용 장면 목업·유스케이스 페르소나(가짜 후기 아님, 상황 기반)·창업자 스토리·경쟁 비교표(A예측형/B알림형/C수기 익명 유형, ✓/△/✕·"특정 업체 아님" 캡션)·FAQ(+FAQPage 스키마, 첫 질문=비예측)·CTA GA4 이벤트(`cta_*`·`calc_demo_use`). 정직·비예측 포지션 유지.
 - **런칭 기념가 개편 (2026-07-08 배포)** — Pro 24,900→19,900, Pro+ 49,900→39,900 (연 191,000/383,000, 윈백 첫 달 Pro 9,950/Pro+ 19,950). §12 반영. 결정 근거·경쟁사 앵커 → 메모리 `pricing-launch-2026-07`·`competitor-dimatools`.
 - **checkout 익스텐션 호환 픽스 (2026-07-08 배포)** — 웹 `checkout.html`이 익스텐션발 파라미터 수용: `plan=`→`tier=` 별칭(Pro+가 Pro로 가던 버그)·`#token=` fragment 수용(비로그인 이탈 방지)·`type=points`→`/account`. 익스텐션 코드 미변경(웹이 흡수 → 웹스토어 재심사 불필요).
+- **무료 자격 진단 리드 마그넷 (2026-07-09 배포·라이브)** — 비로그인 방문자 업종·지역 입력 → `QualificationChecker`로 활성 공고 자격 필터 → 매칭 수·상위 3건 미리보기 → 연락처 캡처(`Lead` 저장+전체 잠금해제). `Lead` 모델+마이그 `d9f3a1b7c204`, `POST /leads/diagnose|capture`(공개·IP 레이트리밋, XFF 마지막 홉), 웹 `/diagnose`+랜딩 hero CTA(`cta_hero_diagnose`)·UTM/GA4(`lead_diagnose`·`lead_capture`). 육성(카카오 알림톡+SES 병행 pluggable)·익스텐션 오버레이 진단 CTA는 **설계만**(`docs/LEAD_ACQUISITION.md`). ⚠️→✅ 콜드-DB 이슈는 07-10 워밍으로 후속 해소(아래 줄) — **단 미배포**.
+- **블로그 예약·유예 자동발행 (2026-07-09 배포)** — 발행이 사람 1클릭 의존이라 26일째 신규 0편이던 문제 해결. `content.publish_scheduled`(매시 :05)가 `publish_at` 도래한 draft 자동발행. 데이터스토리 자동초안엔 `publish_at=생성+48h` 유예 부여(`BLOG_AUTOPUBLISH_GRACE_HOURS`=48, 0=킬스위치). 상록수·입찰상식은 어드민 `/admin-blog` **예약 입력(신설)**으로 드립. unpublish·PUT→draft 시 예약 해제(재발행 방지), tz-aware→naive UTC 정규화. **마이그 불필요**(`publish_at` 기존 `e1a4c7b2f039`). ⚠️ 배포 시 `celery_beat` 수동 force-recreate 필수(안 하면 새 스케줄 미등록).
+- **콘텐츠 엔진 설계 확정 (2026-07-09, 문서)** — `docs/CONTENT_ENGINE.md`: 1 주제→1 구조화 정본(훅·요약·핵심·데이터·CTA)→N 채널(블로그·인스타·유튜브·**네이버블로그 요약형**) OSMU. **입찰상식(Track K) 시드 24개**(정직·비예측·안전 프레임). 자동화 경계=텍스트 자동/시각물 반자동(/cardmaker)/업로드 사람. SEO=네이버·구글 이원화·스팸정책 방어·FAQPage/HowTo/VideoObject·유튜브 자막. **구현 전(설계).**
+- **진단 콜드-DB 워밍 (2026-07-10 · 코드·테스트 완료 · ⚠️미커밋·미배포)** — `/leads/diagnose`가 DB만 읽어 일일 크롤 전 콜드 스타트면 실방문자에게 "매칭 0건" 오인. `_match_notices` 진입점에서 `_warm_db_if_cold`: 활성(마감 전·non-Mock) 공고 0건이면 1회 크롤 워밍(fetch→save). **운영 전용 가드**(`APP_ENV=production`만 — dev/test는 시딩), **스탬피드/DoS 락**(Redis `SET NX` TTL 600s → Redis 미가용 시 프로세스 로컬 타임스탬프 폴백), 크롤 실패 비치명적. 테스트 `TestColdDbWarm` 3종(운영 워밍/비운영 미크롤/락 반복차단) 통과. 브랜치 `fix/lead-diagnose-cold-db-warm` — **PR·배포 대기(사용자 확인 후)**. `backend/app/api/v1/endpoints/leads.py`.
+- **백필 검증 probe 확정 (2026-07-10, 문서·스크립트)** — `docs/BACKFILL_VALIDATION_DESIGN.md` §3: 개찰 카테고리 코드 **공사3/용역5/물품1**, 응답 스키마 3종 동일(38필드 → `_parse_item_to_kwargs` 재사용), **API 조회범위 ≤24h**(하루 창·start·end 실제시각), 하한율은 API 레코드별 제공(`sucsfLwstlmtRt`), 물품은 최저가라 안전 무효율 N/A. 스크립트: `census_construction.py`(표본 vs 전수 ground truth), `diag_crawl.py`·`diag_hist.py`(API 진단), `probe_bsns_div.py`(30일→1일 창 수정). **실행은 서버(`PUBLIC_DATA_KEY`)에서 후속.**
+- **운영 위임 런북·광고 검증 문서 (커밋 정리 대기)** — `docs/AGENT_OPS_RUNBOOK.md`(Hermes 에이전트 권한 3등급 계약 🟢AUTO/🟡APPROVE/🔴HUMAN), `docs/AD_CAMPAIGN_VALIDATION.md`(네이버 검색광고 A/B 캠페인 패키지 — 집행 보류 중, SERP 정찰·소재 A안전/B자격필터). 둘 다 untracked → 커밋 정리 필요.
 
 ### ⏳ 대기 중인 외부 작업 (코드 아님, 사용자/제3자 처리)
 | 항목 | 상태 |
@@ -53,8 +59,12 @@
 - 남은 검증 코드: 가입 직후 1문항 마이크로 설문(업종·월 투찰수) + 커뮤니티 질문글.
 
 ### 다음 주제 (후보)
-- **익스텐션 재제출** — `plan→tier` 정리 + 포인트 버튼 + 툴바 아이콘 빌드 → Chrome 웹스토어 재제출 (listing 가격 문구도 19,900 갱신).
-- **랜딩 개편 효과 측정** — GA4에서 `cta_*`·`calc_demo_use` 전환율 관찰(배포 2026-07-08). 데이터 보고 개선 반영.
+- **콘텐츠 엔진 Phase 1** (`docs/CONTENT_ENGINE.md`) — 구조화 정본 생성 엔진(주제 큐 소비→AI 초안→검수→`publish_at` 드립) + **입찰상식 24개를 `docs/CONTENT_CALENDAR.md`에 Track K로 이관**. `BlogPost`에 `blocks_json`/`channel_assets_json` 컬럼 검토(가벼운 마이그). 이후 Phase2=채널 텍스트 파생, Phase3=시각물 반자동.
+- **콜드-DB 워밍 PR·배포 (최우선)** — 브랜치 `fix/lead-diagnose-cold-db-warm`(코드·테스트 완료) 커밋→PR→**사용자 확인 후 머지·배포**. 배포 후 실방문자 진단 0건 오인 해소 확인. 워킹트리에 함께 있는 백필 문서·census/진단 스크립트·런북(untracked)도 커밋 정리.
+- **리드→가입 전환 훅** — 가입 시 동일 이메일 `Lead.converted_user_id`·`nurture_status="converted"` 기록 + 어드민 리드 대시보드(attribution 패턴 재사용). 전환 측정의 전제.
+- **육성 발송 인프라** — 카카오 알림톡 템플릿 심사 + AWS SES 도메인 인증(외부 리드타임) → `services/nurture.py` 어댑터. 리드 쌓이기 시작하면 병행 신청.
+- **익스텐션 재제출** — `plan→tier` 정리 + 포인트 버튼 + 툴바 아이콘 빌드 + **오버레이 진단 CTA**(리드 마그넷 연동) → Chrome 웹스토어 재제출 (listing 가격 문구도 19,900 갱신).
+- **랜딩 개편 효과 측정** — GA4에서 `cta_*`·`calc_demo_use`·`lead_diagnose`·`lead_capture` 전환율 관찰. 데이터 보고 개선 반영.
 - **랜딩 A/B 훅 실험** — 안전 vs 자격필터 훅 A/B는 **미착수**(광고 검증 캠페인과 연동, 현재 집행 보류). 이번 랜딩 개편은 전환 구조까지만 완료.
 - **CI green 복구** — `lint`(ruff 25개 기존 오류)·`flutter` 상시 red 정리 (2026-07-08 별도 세션 task 진행 중).
 
@@ -105,7 +115,7 @@ Bideasy/
 │   │   ├── schemas/           # subscription.py(가격·티어·체험), bid.py, payment.py ...
 │   │   ├── services/          # 도메인 로직 (아래 §5)
 │   │   └── tasks/             # Celery 태스크 (아래 §5)
-│   ├── alembic/versions/      # 마이그레이션 (head: c4f1a9e63b27)
+│   ├── alembic/versions/      # 마이그레이션 (head: d9f3a1b7c204 — leads 테이블)
 │   ├── templates/             # bid_detail.html (SSR)
 │   ├── tests/                 # pytest (239건)
 │   └── main.py                # 앱 진입점 (+ /bid/{no}, /sitemap.xml 마운트)
@@ -169,6 +179,8 @@ Bideasy/
 | 19:00 | `verification.daily_crawl_opening_results` | 개찰결과 누적 |
 | 20:00 | `verification.daily_verify_predictions` | 예측 검증 |
 | 月 04:00 | `autocalibrate.recalibrate_strategy` | 전략 재보정 |
+| 月 08:00 | `content.weekly_data_story` | 데이터스토리 주간 초안(유예 `publish_at` 부여) |
+| 매시 05분 | `content.publish_scheduled` | 예약·유예 도래 draft 자동 발행 |
 | 1일 05:00 | `notices.purge_old` | 오래된 공고 정리 |
 
 ---
@@ -200,7 +212,7 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 `deploy.sh`가 자동 수행: `git pull origin master` → `dc build app celery_worker` → 롤링 재시작 → 헬스체크 → **`dc exec app alembic upgrade head`**.
 - 기타: `./deploy.sh {status|logs|backup|rollback|ssl-init}`. 프로젝트명 `-p infra` 고정.
 - 마이그레이션만 수동: `docker compose -f docker-compose.prod.yml --env-file .env.production -p infra exec app alembic upgrade head`
-- **현재 마이그레이션 head**: `a3c7e1f9b204` (widen billing_key — at-rest 암호화 대비). 직전 `f2d9a1c84b56`(token_version) → `e1a4c7b2f039`.
+- **현재 마이그레이션 head**: `d9f3a1b7c204` (leads 테이블 — 무료 자격 진단 리드). 직전 `c4f8a1e7d602`(signup attribution) → `a3c7e1f9b204`(widen billing_key). *(이전 문서의 `c4f1a9e63b27`/`a3c7e1f9b204` 표기는 구버전 — 정정됨.)*
 
 ---
 
