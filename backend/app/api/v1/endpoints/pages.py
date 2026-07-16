@@ -4,7 +4,7 @@
 `/robots.txt` 를 bideasy_api 로 proxy. 공고 1건=고유 URL = 롱테일 SEO 엔진.
 서버에서 title/OG/JSON-LD 를 렌더해 크롤러가 JS 없이 본문 인식.
 """
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
@@ -35,6 +35,15 @@ API_BASE = "https://api.bideasy.kr/api/v1"
 
 _CT_LABEL = {"CONSTRUCTION": "공사", "SERVICE": "용역", "GOODS": "물품"}
 _LOWER_LIMIT = {"CONSTRUCTION": 87.745, "SERVICE": 60.0, "GOODS": 0.0}
+_KST = timezone(timedelta(hours=9))
+
+
+def _current_naive_kst(instant: datetime | None = None) -> datetime:
+    """Return an instant as naive KST, matching naive G2B API datetimes in the DB."""
+    aware_instant = instant or datetime.now(timezone.utc)
+    if aware_instant.tzinfo is None or aware_instant.utcoffset() is None:
+        raise ValueError("instant must be timezone-aware")
+    return aware_instant.astimezone(_KST).replace(tzinfo=None)
 
 
 def _resolve_notice(db: Session, bid_no: str):
@@ -105,13 +114,20 @@ def robots():
 
 @router.get("/sitemap.xml")
 def sitemap(db: Session = Depends(get_db)):
-    """진행중 공고 상세 URL 나열 (크롤러 발견용). 최대 5000건."""
-    now = datetime.now()
+    """정적·발행 블로그와 최신 진행중 공고 최대 50건을 나열한다."""
+    now = _current_naive_kst()
     notices = (
         db.query(models.Notice)
-        .filter(models.Notice.end_date > now)
-        .order_by(models.Notice.end_date.asc())
-        .limit(5000)
+        .filter(
+            models.Notice.start_date.isnot(None),
+            models.Notice.end_date.isnot(None),
+            models.Notice.end_date > now,
+        )
+        # start_date is crawler collection time and is biased by category/page order.
+        # Fixed-format G2B notice numbers are the best available category-neutral
+        # recency proxy, so bid_no DESC is also the deterministic sitemap order.
+        .order_by(models.Notice.bid_no.desc())
+        .limit(50)
         .all()
     )
     static_paths = ["", "/search", "/calculator", "/guide", "/pricing", "/blog"]
@@ -121,6 +137,7 @@ def sitemap(db: Session = Depends(get_db)):
         _lmtag = f"<lastmod>{xml_escape(str(_lm))}</lastmod>" if _lm else ""
         locs.append(f"  <url><loc>{SITE_URL}/blog/{xml_escape(str(p['slug']))}</loc>{_lmtag}</url>")
     for n in notices:
+        # No trustworthy notice modification timestamp exists; collection time is not lastmod.
         locs.append(f"  <url><loc>{SITE_URL}/bid/{xml_escape(str(n.bid_no))}</loc></url>")
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -128,4 +145,10 @@ def sitemap(db: Session = Depends(get_db)):
         + "\n".join(locs)
         + "\n</urlset>\n"
     )
-    return Response(content=xml, media_type="application/xml")
+    return Response(
+        content=xml,
+        media_type="application/xml",
+        headers={
+            "Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600"
+        },
+    )
