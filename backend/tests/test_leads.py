@@ -92,6 +92,96 @@ class TestDiagnose:
         assert data["locked_count"] == 3
 
 
+class TestColdDbWarm:
+    """콜드-DB(활성 공고 0건) 워밍 — 실방문자 '0건' 오인 방지."""
+
+    def _warm_notice_dict(self):
+        return {
+            "bid_no": "WARM-E1",
+            "title": "부산 워밍초등학교 전기공사",
+            "basic_price": 100000000,
+            "contract_type": "CONSTRUCTION",
+            "organization": "테스트기관",
+            "region": "부산광역시",
+            "start_date": datetime.now(),
+            "end_date": datetime.now() + timedelta(days=5),
+        }
+
+    def test_cold_db_warms_and_matches_in_production(self, client, db_session, monkeypatch):
+        """운영 환경 + 콜드 DB → 1회 크롤 워밍 후 매칭이 채워진다."""
+        import app.api.v1.endpoints.leads as leads_mod
+        from app.services.crawler import CrawlerService
+
+        _clear_notices(db_session)  # 콜드 상태로 만든다
+
+        calls = {"n": 0}
+
+        def _fake_fetch(**kwargs):
+            calls["n"] += 1
+            return [self._warm_notice_dict()]
+
+        monkeypatch.setattr(leads_mod.settings, "APP_ENV", "production")
+        monkeypatch.setattr(leads_mod, "_get_redis", lambda: None)      # 폴백 락 경로(결정적)
+        monkeypatch.setattr(leads_mod, "_last_warm_crawl_ts", 0.0)      # 락 획득 가능하게 리셋
+        monkeypatch.setattr(CrawlerService, "fetch_notices", staticmethod(_fake_fetch))
+
+        resp = client.post(
+            "/api/v1/leads/diagnose",
+            json={"industry": "전기공사", "region": "부산광역시"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert calls["n"] == 1                        # 콜드라서 워밍 크롤 1회 발생
+        assert data["matched_count"] == 1             # 워밍된 공고가 매칭됨
+        assert data["preview"][0]["bid_no"] == "WARM-E1"
+
+    def test_non_production_does_not_crawl(self, client, db_session, monkeypatch):
+        """비운영(개발·테스트) 환경에서는 콜드여도 크롤하지 않는다(네트워크·mock 오염 방지)."""
+        import app.api.v1.endpoints.leads as leads_mod
+        from app.services.crawler import CrawlerService
+
+        _clear_notices(db_session)
+
+        calls = {"n": 0}
+
+        def _fake_fetch(**kwargs):
+            calls["n"] += 1
+            return [self._warm_notice_dict()]
+
+        monkeypatch.setattr(leads_mod.settings, "APP_ENV", "development")
+        monkeypatch.setattr(CrawlerService, "fetch_notices", staticmethod(_fake_fetch))
+
+        resp = client.post(
+            "/api/v1/leads/diagnose",
+            json={"industry": "전기공사", "region": "부산광역시"},
+        )
+        assert resp.status_code == 200
+        assert calls["n"] == 0                         # 크롤 미발생
+        assert resp.json()["matched_count"] == 0
+
+    def test_warm_lock_blocks_second_crawl(self, client, db_session, monkeypatch):
+        """워밍 락 TTL 내 재요청은 크롤을 반복하지 않는다(스탬피드/DoS 가드)."""
+        import app.api.v1.endpoints.leads as leads_mod
+        from app.services.crawler import CrawlerService
+
+        calls = {"n": 0}
+
+        def _fake_fetch(**kwargs):
+            calls["n"] += 1
+            return []  # 저장 없음 → DB 계속 콜드 유지(락만으로 반복 차단되는지 검증)
+
+        monkeypatch.setattr(leads_mod.settings, "APP_ENV", "production")
+        monkeypatch.setattr(leads_mod, "_get_redis", lambda: None)
+        monkeypatch.setattr(leads_mod, "_last_warm_crawl_ts", 0.0)
+        monkeypatch.setattr(CrawlerService, "fetch_notices", staticmethod(_fake_fetch))
+
+        _clear_notices(db_session)
+        body = {"industry": "전기공사", "region": "부산광역시"}
+        client.post("/api/v1/leads/diagnose", json=body)
+        client.post("/api/v1/leads/diagnose", json=body)
+        assert calls["n"] == 1   # TTL 내 2번째 요청은 락에 막혀 크롤 안 함
+
+
 class TestCapture:
     def test_requires_valid_contact(self, client, busan_electric_notices):
         resp = client.post(

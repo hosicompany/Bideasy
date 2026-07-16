@@ -94,9 +94,9 @@ def main() -> None:
         sys.exit(1)
 
     end = datetime.now()
-    start = end - timedelta(days=30)  # 최근 30일 = 카테고리별 표본 확보 충분
-    start_dt = start.strftime("%Y%m%d0000")
-    end_dt = end.strftime("%Y%m%d2359")
+    start = end - timedelta(days=1)  # 1일 — API 조회범위 ≤24h. 시작도 실제시각(0000 아님)
+    start_dt = start.strftime("%Y%m%d%H%M")
+    end_dt = end.strftime("%Y%m%d%H%M")
 
     print(f"endpoint : {BASE}")
     print(f"window   : {start_dt} ~ {end_dt}\n")
