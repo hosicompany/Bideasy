@@ -25,7 +25,7 @@ def calculate_bid(request: schemas.BidCalculationRequest):
         
         final_price = CalculatorService.calculate_safe_bid(request.basic_price, request.rate)
         
-        lower_limit_rate = CalculatorService.get_lower_limit_rate(contract_type)
+        lower_limit_rate = CalculatorService.get_lower_limit_rate(contract_type, request.basic_price)
         limit_price = request.basic_price * (lower_limit_rate / 100)
         
         is_safe = final_price >= limit_price

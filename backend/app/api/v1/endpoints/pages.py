@@ -19,6 +19,7 @@ from app.core.logging import get_logger
 from app.core.config import settings
 from app.api.v1.endpoints.bids import _lookup_notice, get_bid_context
 from app.services import blog as blog_svc
+from app.services.lower_limits import get_lower_limit_rate
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -34,7 +35,6 @@ SITE_URL = "https://bideasy.kr"
 API_BASE = "https://api.bideasy.kr/api/v1"
 
 _CT_LABEL = {"CONSTRUCTION": "공사", "SERVICE": "용역", "GOODS": "물품"}
-_LOWER_LIMIT = {"CONSTRUCTION": 87.745, "SERVICE": 60.0, "GOODS": 0.0}
 _KST = timezone(timedelta(hours=9))
 
 
@@ -82,7 +82,8 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
         "deadline_iso": deadline_iso,
         "detail_url": getattr(notice, "content", None) if notice else None,
         "a_value": int(getattr(notice, "a_value", 0) or 0) if notice else 0,
-        "lower_limit_pct": _LOWER_LIMIT.get(ct, 0.0),
+        # 공사는 금액대·시행일 티어드 (단일 소스: lower_limits) — notice 없으면 legacy 폴백
+        "lower_limit_pct": get_lower_limit_rate(ct, float(notice.basic_price or 0) if notice else None),
         "site_url": SITE_URL,
         "api_base": API_BASE,
     }

@@ -42,16 +42,9 @@ class SimulationConfig:
 class BidSimulationService:
     """투찰 시뮬레이션 서비스"""
     
-    # 2026년 낙찰하한율 (2026.1.30 시행)
+    # 시설공사 하한율은 app.services.lower_limits 로 이관(2026-07-17 단일 소스 통합).
+    # 물품·용역은 이 서비스 고유 세분(중기간 경쟁·단순노무)이 있어 여기 유지.
     LOWER_LIMITS_2026 = {
-        # 시설공사
-        "construction": {
-            "100억 이상": 0.87495,
-            "50억 이상 100억 미만": 0.87495,
-            "10억 이상 50억 미만": 0.88745,
-            "3억 이상 10억 미만": 0.89745,
-            "3억 미만": 0.89745,
-        },
         # 물품
         "goods": {
             "2.1억 이상": 0.80495,
@@ -64,16 +57,9 @@ class BidSimulationService:
             "단순노무": 0.87745,
         }
     }
-    
+
     # 기존 낙찰하한율 (~2026.1.29)
     LOWER_LIMITS_OLD = {
-        "construction": {
-            "100억 이상": 0.85495,
-            "50억 이상 100억 미만": 0.85495,
-            "10억 이상 50억 미만": 0.86745,
-            "3억 이상 10억 미만": 0.87745,
-            "3억 미만": 0.87745,
-        },
         "goods": {
             "2.1억 이상": 0.80495,
             "2.1억 미만": 0.84245,
@@ -219,19 +205,12 @@ class BidSimulationService:
         # 2026.1.30 이후 신규 하한율 적용
         cutoff_date = date(2026, 1, 30)
         limits = self.LOWER_LIMITS_2026 if bid_date >= cutoff_date else self.LOWER_LIMITS_OLD
-        
+
         if bid_type == "construction":
-            if estimated_amount >= 10_000_000_000:
-                return limits["construction"]["100억 이상"]
-            elif estimated_amount >= 5_000_000_000:
-                return limits["construction"]["50억 이상 100억 미만"]
-            elif estimated_amount >= 1_000_000_000:
-                return limits["construction"]["10억 이상 50억 미만"]
-            elif estimated_amount >= 300_000_000:
-                return limits["construction"]["3억 이상 10억 미만"]
-            else:
-                return limits["construction"]["3억 미만"]
-        
+            # 시설공사는 단일 소스(app.services.lower_limits)로 위임
+            from app.services.lower_limits import get_lower_limit_fraction
+            return get_lower_limit_fraction("CONSTRUCTION", estimated_amount, bid_date)
+
         elif bid_type == "goods":
             if is_sme_competition:
                 return limits["goods"]["중소기업간 경쟁"]

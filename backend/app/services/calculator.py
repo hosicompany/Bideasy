@@ -6,6 +6,8 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
+from app.services.lower_limits import LEGACY_RATES, get_lower_limit_rate as _shared_lower_limit
+
 
 class SafetyLevel(str, Enum):
     SAFE = "SAFE"           # 안전한 투찰 구간
@@ -42,12 +44,10 @@ class BidCalculationResult:
     warning_message: str = None
 
 
-# 법정 낙찰하한선 (국가계약법 기준)
-LOWER_LIMIT_RATES = {
-    "CONSTRUCTION": 87.745,   # 공사
-    "SERVICE": 60.0,          # 용역 (협상에 의한 계약 등은 다름)
-    "GOODS": 0.0,             # 물품 (최저가 방식, 하한선 없음)
-}
+# 법정 낙찰하한선 — 정본은 app.services.lower_limits (2026-07-17 통합).
+# 이 별칭은 하위 호환용. 공사는 금액대·시행일 티어드라 상수 참조 대신
+# CalculatorService.get_lower_limit_rate(contract_type, basic_price) 를 쓸 것.
+LOWER_LIMIT_RATES = LEGACY_RATES
 
 # 예정가격 산정 범위
 ESTIMATED_PRICE_VARIANCE = 0.03  # ±3%
@@ -130,9 +130,17 @@ def reload_strategy_cache() -> None:
 class CalculatorService:
     
     @staticmethod
-    def get_lower_limit_rate(contract_type: str) -> float:
-        """법정 낙찰하한율 조회"""
-        return LOWER_LIMIT_RATES.get(contract_type, 87.745)
+    def get_lower_limit_rate(
+        contract_type: str,
+        basic_price: float | None = None,
+        bid_date=None,
+    ) -> float:
+        """법정 낙찰하한율 조회 (정본: app.services.lower_limits).
+
+        공사는 금액대·시행일(2026-01-30 개정)별 티어드 — basic_price 를
+        전달해야 정확하다. 미전달 시 legacy 상수 폴백(하위 호환).
+        """
+        return _shared_lower_limit(contract_type, basic_price, bid_date)
     
     @staticmethod
     def truncate_to_10_won(price: float) -> int:
@@ -187,8 +195,8 @@ class CalculatorService:
         est_min = basic_price * (1 - ESTIMATED_PRICE_VARIANCE)
         est_max = basic_price * (1 + ESTIMATED_PRICE_VARIANCE)
         
-        # 3. 낙찰하한선 계산 (A값 반영)
-        lower_rate = CalculatorService.get_lower_limit_rate(contract_type)
+        # 3. 낙찰하한선 계산 (A값 반영) — 공사는 금액대·시행일 티어드
+        lower_rate = CalculatorService.get_lower_limit_rate(contract_type, basic_price)
         
         # 기초금액 기준 하한선 (A값 적용 공식: (기초금액 - A) * 하한율 + A)
         if a_value > 0:
@@ -266,7 +274,7 @@ class CalculatorService:
         Returns:
             (최소 사정률, 최대 사정률)
         """
-        lower_rate = CalculatorService.get_lower_limit_rate(contract_type)
+        lower_rate = CalculatorService.get_lower_limit_rate(contract_type, basic_price)
 
         # 하한선 기준 최소 사정률
         min_rate = lower_rate - 100  # 예: 87.745 - 100 = -12.255%
@@ -303,7 +311,7 @@ class CalculatorService:
         Returns:
             dict with recommended_price, bid_rate, margin, strategy_desc
         """
-        lower_rate = CalculatorService.get_lower_limit_rate(contract_type)
+        lower_rate = CalculatorService.get_lower_limit_rate(contract_type, basic_price)
         bracket = _get_price_bracket(basic_price)
 
         # 입찰방법 + 금액대별 최적 파라미터 조회 (동적 또는 주입)
