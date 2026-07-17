@@ -1,0 +1,1154 @@
+{
+  "generated_at": "2026-07-17T23:31:48",
+  "quick": false,
+  "n_records": 4848,
+  "audit": {
+    "raw_json_items": 4965,
+    "loaded_records": 4848,
+    "deduped_records": 4848,
+    "duplicate_bid_no": 0,
+    "by_year_counts": {
+      "2021": 2115,
+      "2022": 821,
+      "2023": 734,
+      "2024": 695,
+      "2025": 483
+    },
+    "llr_missing_in_raw_json": 165,
+    "llr_missing_pct": 3.32,
+    "llr_top_values": [
+      [
+        87.745,
+        4662
+      ],
+      [
+        86.745,
+        157
+      ],
+      [
+        85.495,
+        18
+      ],
+      [
+        79.995,
+        4
+      ],
+      [
+        85.0,
+        3
+      ]
+    ],
+    "winner_rate_field_check": {
+      "n": 4848,
+      "diff_gt_0.05pct": 4581,
+      "diff_gt_0.5pct": 2234,
+      "max_diff_pct": 2.01
+    },
+    "inverted_intervals": 55,
+    "baseline_reproduction": {
+      "active_version": "v20260527_152034_bc77aa",
+      "stored": {
+        "total": 4848,
+        "win_rate": 13.861,
+        "pass_rate": 94.719,
+        "dropout_rate": 5.281
+      },
+      "reproduced": {
+        "total": 4848,
+        "win_rate": 13.861,
+        "pass_rate": 94.719,
+        "dropout_rate": 5.281
+      },
+      "abs_deltas_pp": {
+        "win_rate": 0.0,
+        "pass_rate": 0.0,
+        "dropout_rate": 0.0
+      },
+      "tolerance_pp": 0.5,
+      "ok": true
+    }
+  },
+  "policies": {
+    "standard_-2.5": {
+      "overall": {
+        "n": 4848,
+        "win_rate": 0.516,
+        "dropout_rate": 0.0,
+        "lost_rate": 99.484,
+        "win_ci95": [
+          0.35,
+          0.76
+        ]
+      },
+      "by_year": {
+        "2021": {
+          "n": 2115,
+          "win_rate": 0.615,
+          "dropout_rate": 0.0,
+          "lost_rate": 99.385,
+          "win_ci95": [
+            0.36,
+            1.049
+          ]
+        },
+        "2022": {
+          "n": 821,
+          "win_rate": 0.365,
+          "dropout_rate": 0.0,
+          "lost_rate": 99.635,
+          "win_ci95": [
+            0.124,
+            1.069
+          ]
+        },
+        "2023": {
+          "n": 734,
+          "win_rate": 0.681,
+          "dropout_rate": 0.0,
+          "lost_rate": 99.319,
+          "win_ci95": [
+            0.291,
+            1.585
+          ]
+        },
+        "2024": {
+          "n": 695,
+          "win_rate": 0.576,
+          "dropout_rate": 0.0,
+          "lost_rate": 99.424,
+          "win_ci95": [
+            0.224,
+            1.47
+          ]
+        },
+        "2025": {
+          "n": 483,
+          "win_rate": 0.0,
+          "dropout_rate": 0.0,
+          "lost_rate": 100.0,
+          "win_ci95": [
+            0.0,
+            0.789
+          ]
+        }
+      },
+      "by_segment": {
+        "소액수의견적/medium": {
+          "n": 1096,
+          "win_rate": 0.912,
+          "dropout_rate": 0.0,
+          "lost_rate": 99.088,
+          "win_ci95": [
+            0.496,
+            1.671
+          ]
+        },
+        "소액수의견적/small": {
+          "n": 2575,
+          "win_rate": 0.544,
+          "dropout_rate": 0.0,
+          "lost_rate": 99.456,
+          "win_ci95": [
+            0.324,
+            0.911
+          ]
+        },
+        "적격심사제/large": {
+          "n": 204,
+          "win_rate": 0.0,
+          "dropout_rate": 0.0,
+          "lost_rate": 100.0,
+          "win_ci95": [
+            0.0,
+            1.848
+          ]
+        },
+        "적격심사제/medium": {
+          "n": 619,
+          "win_rate": 0.0,
+          "dropout_rate": 0.0,
+          "lost_rate": 100.0,
+          "win_ci95": [
+            0.0,
+            0.617
+          ]
+        },
+        "적격심사제/small": {
+          "n": 54,
+          "win_rate": 0.0,
+          "dropout_rate": 0.0,
+          "lost_rate": 100.0,
+          "win_ci95": [
+            0.0,
+            6.642
+          ]
+        },
+        "적격심사제/xlarge": {
+          "n": 189,
+          "win_rate": 0.0,
+          "dropout_rate": 0.0,
+          "lost_rate": 100.0,
+          "win_ci95": [
+            0.0,
+            1.992
+          ]
+        },
+        "적격심사제/xxlarge": {
+          "n": 51,
+          "win_rate": 0.0,
+          "dropout_rate": 0.0,
+          "lost_rate": 100.0,
+          "win_ci95": [
+            0.0,
+            7.005
+          ]
+        },
+        "제한적최저가(낙찰하한율)/medium": {
+          "n": 23,
+          "win_rate": 0.0,
+          "dropout_rate": 0.0,
+          "lost_rate": 100.0,
+          "win_ci95": [
+            0.0,
+            14.312
+          ]
+        },
+        "제한적최저가(낙찰하한율)/small": {
+          "n": 30,
+          "win_rate": 0.0,
+          "dropout_rate": 0.0,
+          "lost_rate": 100.0,
+          "win_ci95": [
+            0.0,
+            11.352
+          ]
+        }
+      }
+    },
+    "active_v20260527": {
+      "overall": {
+        "n": 4848,
+        "win_rate": 13.861,
+        "dropout_rate": 5.281,
+        "lost_rate": 80.858,
+        "win_ci95": [
+          12.917,
+          14.863
+        ]
+      },
+      "by_year": {
+        "2021": {
+          "n": 2115,
+          "win_rate": 9.693,
+          "dropout_rate": 5.343,
+          "lost_rate": 84.965,
+          "win_ci95": [
+            8.504,
+            11.028
+          ]
+        },
+        "2022": {
+          "n": 821,
+          "win_rate": 9.988,
+          "dropout_rate": 4.872,
+          "lost_rate": 85.14,
+          "win_ci95": [
+            8.119,
+            12.229
+          ]
+        },
+        "2023": {
+          "n": 734,
+          "win_rate": 9.537,
+          "dropout_rate": 5.586,
+          "lost_rate": 84.877,
+          "win_ci95": [
+            7.618,
+            11.877
+          ]
+        },
+        "2024": {
+          "n": 695,
+          "win_rate": 24.892,
+          "dropout_rate": 4.46,
+          "lost_rate": 70.647,
+          "win_ci95": [
+            21.821,
+            28.239
+          ]
+        },
+        "2025": {
+          "n": 483,
+          "win_rate": 29.4,
+          "dropout_rate": 6.418,
+          "lost_rate": 64.182,
+          "win_ci95": [
+            25.512,
+            33.612
+          ]
+        }
+      },
+      "by_segment": {
+        "소액수의견적/medium": {
+          "n": 1096,
+          "win_rate": 9.672,
+          "dropout_rate": 5.292,
+          "lost_rate": 85.036,
+          "win_ci95": [
+            8.06,
+            11.565
+          ]
+        },
+        "소액수의견적/small": {
+          "n": 2575,
+          "win_rate": 7.806,
+          "dropout_rate": 5.243,
+          "lost_rate": 86.951,
+          "win_ci95": [
+            6.831,
+            8.906
+          ]
+        },
+        "적격심사제/large": {
+          "n": 204,
+          "win_rate": 27.451,
+          "dropout_rate": 3.922,
+          "lost_rate": 68.627,
+          "win_ci95": [
+            21.786,
+            33.949
+          ]
+        },
+        "적격심사제/medium": {
+          "n": 619,
+          "win_rate": 30.372,
+          "dropout_rate": 6.3,
+          "lost_rate": 63.328,
+          "win_ci95": [
+            26.879,
+            34.106
+          ]
+        },
+        "적격심사제/small": {
+          "n": 54,
+          "win_rate": 50.0,
+          "dropout_rate": 7.407,
+          "lost_rate": 42.593,
+          "win_ci95": [
+            37.114,
+            62.886
+          ]
+        },
+        "적격심사제/xlarge": {
+          "n": 189,
+          "win_rate": 38.095,
+          "dropout_rate": 4.233,
+          "lost_rate": 57.672,
+          "win_ci95": [
+            31.474,
+            45.191
+          ]
+        },
+        "적격심사제/xxlarge": {
+          "n": 51,
+          "win_rate": 31.373,
+          "dropout_rate": 5.882,
+          "lost_rate": 62.745,
+          "win_ci95": [
+            20.328,
+            45.027
+          ]
+        },
+        "제한적최저가(낙찰하한율)/medium": {
+          "n": 23,
+          "win_rate": 8.696,
+          "dropout_rate": 0.0,
+          "lost_rate": 91.304,
+          "win_ci95": [
+            2.418,
+            26.796
+          ]
+        },
+        "제한적최저가(낙찰하한율)/small": {
+          "n": 30,
+          "win_rate": 10.0,
+          "dropout_rate": 0.0,
+          "lost_rate": 90.0,
+          "win_ci95": [
+            3.46,
+            25.621
+          ]
+        }
+      }
+    },
+    "aggressive_-12": {
+      "overall": {
+        "n": 4848,
+        "win_rate": 16.089,
+        "dropout_rate": 27.64,
+        "lost_rate": 56.271,
+        "win_ci95": [
+          15.082,
+          17.15
+        ]
+      },
+      "by_year": {
+        "2021": {
+          "n": 2115,
+          "win_rate": 10.686,
+          "dropout_rate": 28.322,
+          "lost_rate": 60.993,
+          "win_ci95": [
+            9.44,
+            12.074
+          ]
+        },
+        "2022": {
+          "n": 821,
+          "win_rate": 8.404,
+          "dropout_rate": 26.066,
+          "lost_rate": 65.53,
+          "win_ci95": [
+            6.695,
+            10.501
+          ]
+        },
+        "2023": {
+          "n": 734,
+          "win_rate": 9.809,
+          "dropout_rate": 27.52,
+          "lost_rate": 62.67,
+          "win_ci95": [
+            7.862,
+            12.175
+          ]
+        },
+        "2024": {
+          "n": 695,
+          "win_rate": 34.82,
+          "dropout_rate": 26.043,
+          "lost_rate": 39.137,
+          "win_ci95": [
+            31.37,
+            38.437
+          ]
+        },
+        "2025": {
+          "n": 483,
+          "win_rate": 35.404,
+          "dropout_rate": 29.814,
+          "lost_rate": 34.783,
+          "win_ci95": [
+            31.269,
+            39.769
+          ]
+        }
+      },
+      "by_segment": {
+        "소액수의견적/medium": {
+          "n": 1096,
+          "win_rate": 13.595,
+          "dropout_rate": 28.65,
+          "lost_rate": 57.755,
+          "win_ci95": [
+            11.692,
+            15.752
+          ]
+        },
+        "소액수의견적/small": {
+          "n": 2575,
+          "win_rate": 10.175,
+          "dropout_rate": 28.854,
+          "lost_rate": 60.971,
+          "win_ci95": [
+            9.066,
+            11.402
+          ]
+        },
+        "적격심사제/large": {
+          "n": 204,
+          "win_rate": 35.294,
+          "dropout_rate": 28.922,
+          "lost_rate": 35.784,
+          "win_ci95": [
+            29.063,
+            42.069
+          ]
+        },
+        "적격심사제/medium": {
+          "n": 619,
+          "win_rate": 35.218,
+          "dropout_rate": 31.018,
+          "lost_rate": 33.764,
+          "win_ci95": [
+            31.557,
+            39.062
+          ]
+        },
+        "적격심사제/small": {
+          "n": 54,
+          "win_rate": 53.704,
+          "dropout_rate": 18.519,
+          "lost_rate": 27.778,
+          "win_ci95": [
+            40.605,
+            66.31
+          ]
+        },
+        "적격심사제/xlarge": {
+          "n": 189,
+          "win_rate": 22.222,
+          "dropout_rate": 4.762,
+          "lost_rate": 73.016,
+          "win_ci95": [
+            16.882,
+            28.669
+          ]
+        },
+        "적격심사제/xxlarge": {
+          "n": 51,
+          "win_rate": 5.882,
+          "dropout_rate": 5.882,
+          "lost_rate": 88.235,
+          "win_ci95": [
+            2.021,
+            15.925
+          ]
+        },
+        "제한적최저가(낙찰하한율)/medium": {
+          "n": 23,
+          "win_rate": 4.348,
+          "dropout_rate": 13.043,
+          "lost_rate": 82.609,
+          "win_ci95": [
+            0.772,
+            20.992
+          ]
+        },
+        "제한적최저가(낙찰하한율)/small": {
+          "n": 30,
+          "win_rate": 3.333,
+          "dropout_rate": 20.0,
+          "lost_rate": 76.667,
+          "win_ci95": [
+            0.591,
+            16.671
+          ]
+        }
+      }
+    }
+  },
+  "oracle": {
+    "overall": {
+      "t_star": 87.7402,
+      "win_rate": 17.265,
+      "win_ci95": [
+        16.227,
+        18.355
+      ],
+      "dropout_rate": 41.811,
+      "n": 4848
+    },
+    "by_segment": {
+      "소액수의견적/medium": {
+        "t_star": 87.7428,
+        "win_rate": 14.599,
+        "win_ci95": [
+          12.632,
+          16.813
+        ],
+        "dropout_rate": 43.066,
+        "n": 1096
+      },
+      "소액수의견적/small": {
+        "t_star": 87.8409,
+        "win_rate": 11.456,
+        "win_ci95": [
+          10.283,
+          12.744
+        ],
+        "dropout_rate": 37.709,
+        "n": 2575
+      },
+      "적격심사제/large": {
+        "t_star": 87.8192,
+        "win_rate": 38.235,
+        "win_ci95": [
+          31.842,
+          45.063
+        ],
+        "dropout_rate": 36.765,
+        "n": 204
+      },
+      "적격심사제/medium": {
+        "t_star": 87.8591,
+        "win_rate": 37.803,
+        "win_ci95": [
+          34.069,
+          41.687
+        ],
+        "dropout_rate": 37.48,
+        "n": 619
+      },
+      "적격심사제/small": {
+        "t_star": 87.9896,
+        "win_rate": 53.704,
+        "win_ci95": [
+          40.605,
+          66.31
+        ],
+        "dropout_rate": 18.519,
+        "n": 54
+      },
+      "적격심사제/xlarge": {
+        "t_star": 87.3633,
+        "win_rate": 42.857,
+        "win_ci95": [
+          36.013,
+          49.986
+        ],
+        "dropout_rate": 22.751,
+        "n": 189
+      },
+      "적격심사제/xxlarge": {
+        "t_star": 86.5203,
+        "win_rate": 25.49,
+        "win_ci95": [
+          15.546,
+          38.869
+        ],
+        "dropout_rate": 49.02,
+        "n": 51
+      },
+      "제한적최저가(낙찰하한율)/medium": {
+        "t_star": 87.8154,
+        "win_rate": 13.043,
+        "win_ci95": [
+          4.538,
+          32.128
+        ],
+        "dropout_rate": 21.739,
+        "n": 23
+      },
+      "제한적최저가(낙찰하한율)/small": {
+        "t_star": 88.15,
+        "win_rate": 13.333,
+        "win_ci95": [
+          5.31,
+          29.682
+        ],
+        "dropout_rate": 6.667,
+        "n": 30
+      }
+    },
+    "by_year": {
+      "2021": {
+        "t_star": 87.7121,
+        "win_rate": 11.915,
+        "win_ci95": [
+          10.603,
+          13.365
+        ],
+        "dropout_rate": 44.208,
+        "n": 2115
+      },
+      "2022": {
+        "t_star": 87.3405,
+        "win_rate": 9.866,
+        "win_ci95": [
+          8.009,
+          12.097
+        ],
+        "dropout_rate": 63.703,
+        "n": 821
+      },
+      "2023": {
+        "t_star": 87.6755,
+        "win_rate": 13.896,
+        "win_ci95": [
+          11.581,
+          16.587
+        ],
+        "dropout_rate": 45.095,
+        "n": 734
+      },
+      "2024": {
+        "t_star": 87.8025,
+        "win_rate": 37.266,
+        "win_ci95": [
+          33.751,
+          40.922
+        ],
+        "dropout_rate": 35.108,
+        "n": 695
+      },
+      "2025": {
+        "t_star": 88.0977,
+        "win_rate": 37.267,
+        "win_ci95": [
+          33.071,
+          41.664
+        ],
+        "dropout_rate": 22.981,
+        "n": 483
+      }
+    },
+    "by_method_year": {
+      "소액수의견적": {
+        "2021": {
+          "t_star": 87.1106,
+          "win_rate": 5.58,
+          "win_ci95": [
+            4.556,
+            6.817
+          ],
+          "dropout_rate": 79.06,
+          "n": 1595
+        },
+        "2022": {
+          "t_star": 87.3405,
+          "win_rate": 5.486,
+          "win_ci95": [
+            3.971,
+            7.534
+          ],
+          "dropout_rate": 64.89,
+          "n": 638
+        },
+        "2023": {
+          "t_star": 87.2893,
+          "win_rate": 5.626,
+          "win_ci95": [
+            3.992,
+            7.875
+          ],
+          "dropout_rate": 68.421,
+          "n": 551
+        },
+        "2024": {
+          "t_star": 87.9155,
+          "win_rate": 36.822,
+          "win_ci95": [
+            32.772,
+            41.066
+          ],
+          "dropout_rate": 31.589,
+          "n": 516
+        },
+        "2025": {
+          "t_star": 87.9304,
+          "win_rate": 36.388,
+          "win_ci95": [
+            31.655,
+            41.4
+          ],
+          "dropout_rate": 35.31,
+          "n": 371
+        }
+      },
+      "적격심사제": {
+        "2021": {
+          "t_star": 87.6994,
+          "win_rate": 34.077,
+          "win_ci95": [
+            30.031,
+            38.37
+          ],
+          "dropout_rate": 38.134,
+          "n": 493
+        },
+        "2022": {
+          "t_star": 87.5974,
+          "win_rate": 31.138,
+          "win_ci95": [
+            24.605,
+            38.519
+          ],
+          "dropout_rate": 47.904,
+          "n": 167
+        },
+        "2023": {
+          "t_star": 87.6632,
+          "win_rate": 40.805,
+          "win_ci95": [
+            33.777,
+            48.229
+          ],
+          "dropout_rate": 37.931,
+          "n": 174
+        },
+        "2024": {
+          "t_star": 87.8025,
+          "win_rate": 41.808,
+          "win_ci95": [
+            34.791,
+            49.173
+          ],
+          "dropout_rate": 26.554,
+          "n": 177
+        },
+        "2025": {
+          "t_star": 87.6669,
+          "win_rate": 45.283,
+          "win_ci95": [
+            36.138,
+            54.758
+          ],
+          "dropout_rate": 34.906,
+          "n": 106
+        }
+      }
+    },
+    "walk_forward": [
+      {
+        "year": 2021,
+        "n": 2115,
+        "insample_oracle": 11.915,
+        "applied_t_star_from_other_years": 87.7438,
+        "applied_win_rate": 11.348,
+        "overfit_gap_pp": 0.567
+      },
+      {
+        "year": 2022,
+        "n": 821,
+        "insample_oracle": 9.866,
+        "applied_t_star_from_other_years": 87.7402,
+        "applied_win_rate": 8.404,
+        "overfit_gap_pp": 1.462
+      },
+      {
+        "year": 2023,
+        "n": 734,
+        "insample_oracle": 13.896,
+        "applied_t_star_from_other_years": 87.8409,
+        "applied_win_rate": 11.58,
+        "overfit_gap_pp": 2.316
+      },
+      {
+        "year": 2024,
+        "n": 695,
+        "insample_oracle": 37.266,
+        "applied_t_star_from_other_years": 87.6792,
+        "applied_win_rate": 34.82,
+        "overfit_gap_pp": 2.446
+      },
+      {
+        "year": 2025,
+        "n": 483,
+        "insample_oracle": 37.267,
+        "applied_t_star_from_other_years": 87.6792,
+        "applied_win_rate": 34.783,
+        "overfit_gap_pp": 2.484
+      }
+    ],
+    "year_oracle_mean": 22.042,
+    "year_oracle_std": 12.496,
+    "model_prior_ceiling": {
+      "t": 87.8,
+      "win_rate": 33.221,
+      "note": "floor·winner 독립 가정 근사 — 참고용"
+    }
+  },
+  "frontier": {
+    "grid": "standard",
+    "holdout_years": [
+      2025
+    ],
+    "holdout_oracle": {
+      "t_star": 88.0977,
+      "win_rate": 37.267,
+      "win_ci95": [
+        33.071,
+        41.664
+      ],
+      "dropout_rate": 22.981,
+      "n": 483
+    },
+    "points": [
+      {
+        "dropout_cap_pp": 2.0,
+        "train": {
+          "win_rate": 8.912,
+          "pass_rate": 98.167,
+          "dropout_rate": 1.833
+        },
+        "holdout": {
+          "win_rate": 20.704,
+          "pass_rate": 96.687,
+          "dropout_rate": 3.313
+        },
+        "holdout_win_ci95": [
+          17.328,
+          24.542
+        ],
+        "holdout_oracle_attainment_pct": 55.6
+      },
+      {
+        "dropout_cap_pp": 3.0,
+        "train": {
+          "win_rate": 9.966,
+          "pass_rate": 97.342,
+          "dropout_rate": 2.658
+        },
+        "holdout": {
+          "win_rate": 24.224,
+          "pass_rate": 96.066,
+          "dropout_rate": 3.934
+        },
+        "holdout_win_ci95": [
+          20.616,
+          28.238
+        ],
+        "holdout_oracle_attainment_pct": 65.0
+      },
+      {
+        "dropout_cap_pp": 4.0,
+        "train": {
+          "win_rate": 10.699,
+          "pass_rate": 96.632,
+          "dropout_rate": 3.368
+        },
+        "holdout": {
+          "win_rate": 25.466,
+          "pass_rate": 95.031,
+          "dropout_rate": 4.969
+        },
+        "holdout_win_ci95": [
+          21.785,
+          29.534
+        ],
+        "holdout_oracle_attainment_pct": 68.3
+      },
+      {
+        "dropout_cap_pp": 5.0,
+        "train": {
+          "win_rate": 11.73,
+          "pass_rate": 95.143,
+          "dropout_rate": 4.857
+        },
+        "holdout": {
+          "win_rate": 28.364,
+          "pass_rate": 93.789,
+          "dropout_rate": 6.211
+        },
+        "holdout_win_ci95": [
+          24.527,
+          32.543
+        ],
+        "holdout_oracle_attainment_pct": 76.1
+      },
+      {
+        "dropout_cap_pp": 7.0,
+        "train": {
+          "win_rate": 12.554,
+          "pass_rate": 93.379,
+          "dropout_rate": 6.621
+        },
+        "holdout": {
+          "win_rate": 29.814,
+          "pass_rate": 91.511,
+          "dropout_rate": 8.489
+        },
+        "holdout_win_ci95": [
+          25.906,
+          34.04
+        ],
+        "holdout_oracle_attainment_pct": 80.0
+      },
+      {
+        "dropout_cap_pp": 10.0,
+        "train": {
+          "win_rate": 13.356,
+          "pass_rate": 91.065,
+          "dropout_rate": 8.935
+        },
+        "holdout": {
+          "win_rate": 32.091,
+          "pass_rate": 89.234,
+          "dropout_rate": 10.766
+        },
+        "holdout_win_ci95": [
+          28.083,
+          36.382
+        ],
+        "holdout_oracle_attainment_pct": 86.1
+      },
+      {
+        "dropout_cap_pp": 15.0,
+        "train": {
+          "win_rate": 14.593,
+          "pass_rate": 85.819,
+          "dropout_rate": 14.181
+        },
+        "holdout": {
+          "win_rate": 35.818,
+          "pass_rate": 83.437,
+          "dropout_rate": 16.563
+        },
+        "holdout_win_ci95": [
+          31.669,
+          40.19
+        ],
+        "holdout_oracle_attainment_pct": 96.1
+      },
+      {
+        "dropout_cap_pp": 20.0,
+        "train": {
+          "win_rate": 15.304,
+          "pass_rate": 84.467,
+          "dropout_rate": 15.533
+        },
+        "holdout": {
+          "win_rate": 36.232,
+          "pass_rate": 81.781,
+          "dropout_rate": 18.219
+        },
+        "holdout_win_ci95": [
+          32.069,
+          40.612
+        ],
+        "holdout_oracle_attainment_pct": 97.2
+      },
+      {
+        "dropout_cap_pp": 30.0,
+        "train": {
+          "win_rate": 15.945,
+          "pass_rate": 74.456,
+          "dropout_rate": 25.544
+        },
+        "holdout": {
+          "win_rate": 35.404,
+          "pass_rate": 69.772,
+          "dropout_rate": 30.228
+        },
+        "holdout_win_ci95": [
+          31.269,
+          39.769
+        ],
+        "holdout_oracle_attainment_pct": 95.0
+      },
+      {
+        "dropout_cap_pp": null,
+        "train": {
+          "win_rate": 16.472,
+          "pass_rate": 68.614,
+          "dropout_rate": 31.386
+        },
+        "holdout": {
+          "win_rate": 34.99,
+          "pass_rate": 64.389,
+          "dropout_rate": 35.611
+        },
+        "holdout_win_ci95": [
+          30.87,
+          39.346
+        ],
+        "holdout_oracle_attainment_pct": 93.9
+      }
+    ],
+    "best_params_at_cap10": {
+      "소액수의견적": {
+        "medium": [
+          0.4,
+          0.4
+        ],
+        "small": [
+          0.6,
+          0.2
+        ],
+        "large": [
+          0.6,
+          0.3
+        ],
+        "xlarge": [
+          0.6,
+          0.3
+        ],
+        "xxlarge": [
+          0.6,
+          0.3
+        ]
+      },
+      "수의시담(2인 이상)": {
+        "medium": [
+          0.5,
+          0.3
+        ],
+        "small": [
+          -0.3,
+          1.0
+        ]
+      },
+      "실시설계기술제안입찰": {
+        "xxlarge": [
+          -0.5,
+          1.2
+        ]
+      },
+      "적격심사제": {
+        "large": [
+          -0.3,
+          1.0
+        ],
+        "medium": [
+          -0.5,
+          1.3
+        ],
+        "small": [
+          -1.0,
+          1.4
+        ],
+        "xlarge": [
+          -1.0,
+          1.5
+        ],
+        "xxlarge": [
+          0.5,
+          0.4
+        ]
+      },
+      "제한적최저가(낙찰하한율)": {
+        "large": [
+          -0.3,
+          1.0
+        ],
+        "medium": [
+          -0.3,
+          0.8
+        ],
+        "small": [
+          -1.0,
+          1.3
+        ]
+      },
+      "최저가낙찰제": {
+        "medium": [
+          0.5,
+          0.3
+        ]
+      },
+      "DEFAULT": {
+        "small": [
+          -0.3,
+          1.0
+        ],
+        "medium": [
+          0.5,
+          0.3
+        ],
+        "large": [
+          -0.3,
+          1.0
+        ],
+        "xlarge": [
+          -0.2,
+          0.9
+        ],
+        "xxlarge": [
+          -0.5,
+          1.2
+        ]
+      }
+    }
+  }
+}
