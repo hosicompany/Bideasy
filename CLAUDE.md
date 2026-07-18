@@ -2,7 +2,7 @@
 
 > **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
-> 최종 갱신: 2026-07-10 (진단 **콜드-DB 워밍** 구현[코드·테스트 완료 · **미커밋·미배포**, 브랜치 `fix/lead-diagnose-cold-db-warm`] + 백필 검증 **probe 확정**·census/진단 스크립트 준비 / 직전 07-09 = 리드 마그넷·블로그 자동발행·콘텐츠 엔진 설계 / 다음 = 콜드-DB 워밍 커밋·배포 → 콘텐츠 엔진 Phase1 → 리드→가입 전환 훅)
+> 최종 갱신: 2026-07-18 (경쟁 전략 정본 + **낙찰 도달 벤치마크**(판정 G3·적격 상한 92% 기달성) + 정직성 수습 3건[합성데이터 제거·하한율 2026 티어·smart-bid ML 대체] — **PR #26 머지·prod 배포·라이브 검증 완료** / 직전 07-10 = 콜드-DB 워밍[여전히 미커밋·미배포, 브랜치 `fix/lead-diagnose-cold-db-warm`] / 다음 = 콜드-DB 워밍 PR → 리드→가입 전환 훅 → 콘텐츠 엔진 Phase1)
 
 ---
 
@@ -42,6 +42,11 @@
 - **진단 콜드-DB 워밍 (2026-07-10 · 코드·테스트 완료 · ⚠️미커밋·미배포)** — `/leads/diagnose`가 DB만 읽어 일일 크롤 전 콜드 스타트면 실방문자에게 "매칭 0건" 오인. `_match_notices` 진입점에서 `_warm_db_if_cold`: 활성(마감 전·non-Mock) 공고 0건이면 1회 크롤 워밍(fetch→save). **운영 전용 가드**(`APP_ENV=production`만 — dev/test는 시딩), **스탬피드/DoS 락**(Redis `SET NX` TTL 600s → Redis 미가용 시 프로세스 로컬 타임스탬프 폴백), 크롤 실패 비치명적. 테스트 `TestColdDbWarm` 3종(운영 워밍/비운영 미크롤/락 반복차단) 통과. 브랜치 `fix/lead-diagnose-cold-db-warm` — **PR·배포 대기(사용자 확인 후)**. `backend/app/api/v1/endpoints/leads.py`.
 - **백필 검증 probe 확정 (2026-07-10, 문서·스크립트)** — `docs/BACKFILL_VALIDATION_DESIGN.md` §3: 개찰 카테고리 코드 **공사3/용역5/물품1**, 응답 스키마 3종 동일(38필드 → `_parse_item_to_kwargs` 재사용), **API 조회범위 ≤24h**(하루 창·start·end 실제시각), 하한율은 API 레코드별 제공(`sucsfLwstlmtRt`), 물품은 최저가라 안전 무효율 N/A. 스크립트: `census_construction.py`(표본 vs 전수 ground truth), `diag_crawl.py`·`diag_hist.py`(API 진단), `probe_bsns_div.py`(30일→1일 창 수정). **실행은 서버(`PUBLIC_DATA_KEY`)에서 후속.**
 - **운영 위임 런북·광고 검증 문서 (커밋 정리 대기)** — `docs/AGENT_OPS_RUNBOOK.md`(Hermes 에이전트 권한 3등급 계약 🟢AUTO/🟡APPROVE/🔴HUMAN), `docs/AD_CAMPAIGN_VALIDATION.md`(네이버 검색광고 A/B 캠페인 패키지 — 집행 보류 중, SERP 정찰·소재 A안전/B자격필터). 둘 다 untracked → 커밋 정리 필요.
+- **경쟁 전략 정본 + 낙찰 도달 벤치마크 + 정직성 수습 3건 (2026-07-17~18 · PR #26 머지·배포·라이브 검증 완료)** —
+  ① **전략 정본** `docs/COMPETITIVE_STRATEGY.md`: 3사(디마툴즈·지투비플러스·비드프로) 딥리서치 검증 → 가격 인하 대신 **"입찰 안전망" 4레이어**(투찰 안전 게이트/안전 밴드/자격 처방/반복낙찰 경보)로 value 심화·가격 유지. 해자 3종(익스텐션 유통·비예측 정직·데이터 플라이휠). 기능 결정은 이 문서 통과 필수.
+  ② **벤치마크** `docs/BENCHMARK_WIN_REACH.md` + `backend/scripts/benchmark_win_reach.py`: 게이트 **사전 등록** 후 실측. **판정 G3(포지션 유지)** — 단 **적격심사제에서 현 active 전략이 이미 이론 상한의 92%**(2025 win 41.5% vs oracle 45.3%). 격차는 모델이 아니라 노출(`recommend_bid_price` API 미노출이었음). 소액수의견적 2024 레짐 변화(oracle 5.6%→36.8%) 발견 — 과적합 아님(walk-forward ≤2.5%p). **"25% 상한" 마케팅 주장 금지**(레짐 분해로 거짓). 디마 반박: 우리 표본 상한 37~45% — 63~65%는 모수가 다름. **전략투찰(Pro+) 제품화는 2026 개찰 400건+ 누적 후 G2 재판정 조건부**.
+  ③ **수습 3건**: 합성데이터 공개 엔드포인트 제거(`winning_rate.py` — "Demo Mode" 가짜 통계 → insufficient_data 명시) · 낙찰하한율 단일 소스 `lower_limits.py`(2026-01-30 개정 금액대 티어 — 10억 미만 공사 89.745%, **소액 공사 DANGER 판정이 정확해짐**, 라이브 검증 완료) · smart-bid 죽은 ML 스택 수습(`/recommend`를 autocalibrate 룰기반 대체[공사만, 물품·용역 503], 나머지 ML 엔드포인트 500+에러누출 → 정직한 503). 신규 테스트 19건, 총 359건 통과.
+  ⚠️ 잔여: ML 재구축은 벤치마크상 룰기반 우위라 보류. Pro+ 기능 목록/가격표에서 "공사 전용" 표기 정합성 별도 검토.
 
 ### ⏳ 대기 중인 외부 작업 (코드 아님, 사용자/제3자 처리)
 | 항목 | 상태 |
@@ -117,7 +122,7 @@ Bideasy/
 │   │   └── tasks/             # Celery 태스크 (아래 §5)
 │   ├── alembic/versions/      # 마이그레이션 (head: d9f3a1b7c204 — leads 테이블)
 │   ├── templates/             # bid_detail.html (SSR)
-│   ├── tests/                 # pytest (239건)
+│   ├── tests/                 # pytest (359건)
 │   └── main.py                # 앱 진입점 (+ /bid/{no}, /sitemap.xml 마운트)
 ├── infra/
 │   ├── docker-compose.prod.yml
@@ -219,7 +224,7 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 ## 8. 테스트 — 검증 명령 (코드 변경 후 반드시 실행)
 
 ```bash
-cd backend && pytest          # 305건 통과 기준 (6/22. SQLite in-memory/파일)
+cd backend && pytest          # 359건 통과 기준 (2026-07-18. SQLite in-memory/파일)
 ```
 - **모든 코드 변경 후 위 명령을 실행하고, 완료 보고(Gate Check)에 결과와 신뢰도(🟢🟡🔴)를 기재한다.** 실패 상태로 커밋·배포 금지. 실패 수정은 2회까지, 이후 에스컬레이션.
 - 결제: `tests/test_billing.py`(토스), `tests/test_payple.py`(페이플 9건 — provider/prepare/callback/서비스청구/Celery갱신, HTTP 모킹).
