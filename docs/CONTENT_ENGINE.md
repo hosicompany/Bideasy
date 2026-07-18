@@ -105,7 +105,7 @@
 | K23 | 최저가 vs 적격심사 — 왜 무작정 싸게 쓰면 지나 | 전략 오해 | "적격심사 최저가" | P3 |
 | K24 | 연말 예산 소진철, 공고가 쏟아지는 이유 | 시즌 인사이트 | "연말 관급공사" | P3 |
 
-> 확정 시 이 표를 `CONTENT_CALENDAR.md`에 "Track K — 입찰상식" 섹션으로 이관, 통합 주제 큐의 재료로 사용.
+> ✅ **이관 완료 (2026-07-19)** — `CONTENT_CALENDAR.md` §Track K가 사람용 정본, 코드 실체는 `backend/app/services/content_engine.py TOPIC_SEEDS`. 어드민 `POST /admin/blog/generate-from-topic/{code}` 가 소비.
 
 ---
 

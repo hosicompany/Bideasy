@@ -52,6 +52,16 @@ def list_blog_posts(db: Session = Depends(get_db), _admin=Depends(require_admin)
     return db.query(models.BlogPost).order_by(models.BlogPost.updated_at.desc()).all()
 
 
+@router.get("/blog/topics")
+def list_content_topics(db: Session = Depends(get_db), _admin=Depends(require_admin)):
+    """콘텐츠 엔진 주제 큐 (Track K 시드 + 초안 존재 여부) — CONTENT_ENGINE Phase 1.
+
+    주의: /blog/{post_id}(int) 보다 먼저 등록해야 'topics' 가 422 로 잡히지 않는다.
+    """
+    from app.services import content_engine
+    return {"topics": content_engine.list_topics(db)}
+
+
 @router.get("/blog/{post_id}", response_model=BlogPostOut)
 def get_blog_post(post_id: int, db: Session = Depends(get_db), _admin=Depends(require_admin)):
     return _get_or_404(post_id, db)
@@ -83,6 +93,21 @@ def create_blog_post(payload: BlogPostCreate, db: Session = Depends(get_db), _ad
     db.add(post)
     db.commit()
     db.refresh(post)
+    return post
+
+
+@router.post("/blog/generate-from-topic/{topic_code}", response_model=BlogPostOut)
+def generate_from_topic(topic_code: str, db: Session = Depends(get_db), _admin=Depends(require_admin)):
+    """주제 코드로 구조화 정본 초안 생성 (검수 게이트 — publish_at 없이 draft).
+
+    멱등: 같은 주제 초안이 있으면 그걸 반환. LLM 키 미설정이면 503(가짜 초안 금지).
+    """
+    from app.services import content_engine
+    post, status = content_engine.create_draft_from_topic(db, topic_code.upper())
+    if status == "unknown_topic":
+        raise HTTPException(404, f"주제 코드 '{topic_code}' 를 찾을 수 없어요.")
+    if status == "llm_unavailable":
+        raise HTTPException(503, "AI 초안 생성을 지금 사용할 수 없어요 (LLM 키 미설정 또는 생성 실패).")
     return post
 
 

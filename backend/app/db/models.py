@@ -380,6 +380,10 @@ class BlogPost(Base):
     source = Column(String(20), nullable=False, default="admin", server_default="admin")  # admin | auto
     date = Column(String(10), default="")          # YYYY-MM-DD 발행일 (정렬·sitemap 용, 발행 시 세팅)
     publish_at = Column(DateTime, nullable=True)   # 예약 발행(옵션)
+    # 콘텐츠 엔진 Phase 1 (docs/CONTENT_ENGINE.md §2) — 구조화 정본 블록.
+    # 블록이 원본, body_md 는 블록에서 렌더된 파생(채널 간 메시지 정합의 근원).
+    blocks_json = Column(JSON, nullable=True)          # ContentSource 블록 (훅·요약·핵심·데이터·CTA)
+    channel_assets_json = Column(JSON, nullable=True)  # 채널 파생 캐시 (Phase 2 — 카드/릴스/유튜브)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
