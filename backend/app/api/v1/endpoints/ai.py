@@ -122,9 +122,18 @@ def _apply_qualification(result: dict, title: str, region: str, bid_no: str, use
     out["qualification"] = qual
     tips = list(out.get("tips", []))
     if qual.get("status") == "FAIL":
+        # 사유 + 처방(있으면)을 함께 — "왜 안 되는지"에서 "어떻게 하면 되는지"로.
+        content = qual["details"][0] if qual.get("details") else "자격 요건을 확인해주세요."
+        pres = qual.get("prescriptions") or []
+        if pres:
+            content = f"{content} → {pres[0].get('action', '')}"
         tips.insert(0, {"category": "eligibility", "icon": "⛔", "title": "입찰 불가: 자격 요건 미달",
-                        "content": qual["details"][0] if qual.get("details") else "자격 요건을 확인해주세요.",
-                        "source": "자격분석엔진", "importance": "HIGH"})
+                        "content": content, "source": "자격분석엔진", "importance": "HIGH"})
+    elif qual.get("status") == "UNKNOWN":
+        pres = qual.get("prescriptions") or []
+        content = pres[0].get("action") if pres else "프로필에서 소재지·보유 면허를 등록해 주세요."
+        tips.insert(0, {"category": "eligibility", "icon": "ℹ️", "title": "자격 판정 불가: 프로필 정보 부족",
+                        "content": content, "source": "자격분석엔진", "importance": "MEDIUM"})
     elif qual.get("status") == "PASS":
         tips.insert(0, {"category": "eligibility", "icon": "✅", "title": "입찰 가능: 자격 요건 충족",
                         "content": "지역 및 면허 요건을 만족합니다.", "source": "자격분석엔진", "importance": "LOW"})
