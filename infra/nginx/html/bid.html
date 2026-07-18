@@ -82,7 +82,12 @@
         var rows = (q.details && q.details.length) ? '<div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px;">' + q.details.map(function (d) {
           return '<div style="display:flex;align-items:center;gap:9px;"><span style="width:18px;height:18px;border-radius:5px;display:grid;place-items:center;background:var(--' + (pass ? 'safe' : 'danger') + '-soft);color:var(--' + (pass ? 'safe' : 'danger') + ');">' + BD.icon(pass ? 'check' : 'alert', 11, 2) + '</span><span style="font-size:13.5px;color:var(--ink-2);">' + BD.esc(d) + '</span></div>';
         }).join('') + '</div>' : '';
-        el.innerHTML = head + rows;
+        // 처방 블록 — FAIL/UNKNOWN 시 "어떻게 하면 참여할 수 있는지" (2026-07-18 안전망 레이어 ③)
+        var rx = (!pass && q.prescriptions && q.prescriptions.length) ? '<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;"><div style="font-size:12.5px;font-weight:700;color:var(--accent);margin-bottom:8px;">💡 이렇게 하면 참여할 수 있어요</div>' + q.prescriptions.map(function (p) {
+          var conf = p.confidence === '추정' ? ' <span class="chip chip-neutral" style="font-size:10.5px;padding:1px 7px;">공고명 기준 추정</span>' : '';
+          return '<div style="display:flex;flex-direction:column;gap:3px;padding:8px 0;"><span style="font-size:13px;color:var(--ink-2);font-weight:600;">' + BD.esc(p.issue || '') + conf + '</span><span style="font-size:13px;color:var(--muted);line-height:1.5;">' + BD.esc(p.action || '') + '</span></div>';
+        }).join('') + '</div>' : '';
+        el.innerHTML = head + rows + rx;
       }).catch(function () { el.innerHTML = '<div style="font-size:13.5px;color:var(--muted);">자격 판정 오류.</div>'; });
     }
 
