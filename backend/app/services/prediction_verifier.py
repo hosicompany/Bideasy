@@ -29,8 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.services.calculator import CalculatorService
-
-_LOWER_LIMIT_RATE = 87.745  # 공사 기준
+from app.services.lower_limits import get_lower_limit_rate
 
 
 @dataclass
@@ -109,7 +108,7 @@ def evaluate_against_actual(
     """notice 에 대해 우리 추천 3가지 정책 vs 실 결과 비교 → 결과 dict.
 
     OpeningResult 의 winner_price/winner_rate 를 진실값으로 사용.
-    하한선 가격은 단순 추정 (basic_price × 87.745%).
+    하한율은 공사 금액대·시행일 티어드(단일 소스: lower_limits) 적용.
     실제 하한선은 reserved_price × lower_rate / 100 인데, reserved_price 가
     DB 에 있으면 그것 우선 사용.
     """
@@ -123,11 +122,14 @@ def evaluate_against_actual(
     wp = float(actual.winner_price)
     wr = float(actual.winner_rate or 0) or (wp / bp * 100)
 
+    # 하한율 — 공사 금액대·시행일 티어드 (검증 대상은 최근 30일 공고라 오늘 기준 적용)
+    lower_rate = get_lower_limit_rate(notice.contract_type or "CONSTRUCTION", bp)
+
     # 하한선 가격 — reserved_price 가 있으면 정확 계산, 없으면 기초금액 기준 추정
     if actual.reserved_price and actual.reserved_price > 0:
-        ll_price = float(actual.reserved_price) * _LOWER_LIMIT_RATE / 100.0
+        ll_price = float(actual.reserved_price) * lower_rate / 100.0
     else:
-        ll_price = bp * _LOWER_LIMIT_RATE / 100.0
+        ll_price = bp * lower_rate / 100.0
 
     recs = compute_recommendations(notice)
     if not recs:

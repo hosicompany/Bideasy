@@ -16,38 +16,31 @@ async def get_scientific_recommendation(
     current_user: Optional[models.User] = Depends(get_current_user_optional),
 ) -> Any:
     """
-    Get Scientific Bidding Recommendations (Phase 3).
-    Returns 3 strategies:
-    1. Agency Stats (Safe)
-    2. Monte Carlo (Probabilistic)
-    3. Blue Ocean (Strategy)
+    기관 개찰 데이터 팩트 분석 (예측 아님).
+
+    2026-07-17 정직성 수습: 과거 합성(Demo Mode) 데이터 생성 경로를 제거했다.
+    실측 OpeningResult 가 충분하면 기술통계를, 부족하면 status=insufficient_data 를
+    명시적으로 반환한다. 응답 골격(키 구성)은 기존 클라이언트와 호환 유지.
     """
-    
-    # 1. Get Bid Info to find Agency
-    # Note: frontend might pass agency_name directly if bid_no is temporary?
-    # For now, look up by bid_no.
+
     notice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
-    
+
     if not notice:
-        # Fallback or Error
-        # If user is in Calculator for a bid not in DB yet (e.g. just viewed), it should be in DB due to crawler.
-        # But for robustness, we can accept query params or return default.
         return {
             "strategies": [],
             "message": "공고 정보를 찾을 수 없습니다."
         }
-        
+
     agency_name = notice.organization
     basic_price = notice.basic_price
-    
-    # 2. Run Algo 1, 2, 3 (Existing)
-    # Algo 1: Agency Stats
+
+    # 1. 기관 역대 낙찰률 기술통계 (팩트 — 데이터 부족 시 insufficient_data)
     agency_stats = WinningRateService.get_agency_stats(db, agency_name)
-    
-    # Algo 2: Monte Carlo
+
+    # 2. 낙찰률 분포 분위수 요약 (결정적 — 데이터 없으면 빈 리스트)
     mc_results = WinningRateService.run_monte_carlo_simulation(basic_price, agency_stats)
-    
-    # Algo 3: Blue Ocean
+
+    # 3. (구) 블루오션 — 랜덤 생성이라 제거됨. 실측 분석 준비 전까지 빈 리스트.
     blue_ocean = WinningRateService.get_blue_ocean_strategy(db, bid_no)
 
     # 4. Phase 4: Qualification Check (로그인 사용자에 한해 본인 자격 검사)
@@ -63,19 +56,18 @@ async def get_scientific_recommendation(
         }
         qualification = QualificationChecker.check_qualification(notice_dict, current_user)
         
-    # 5. Algo 4: Competition Prediction
-    competition = WinningRateService.predict_competition_rate(notice)
-    
-    # 3. Format Response
+    # 5. 역대 평균 참가 수 (팩트 — 하드코딩 배수·랜덤 노이즈 제거)
+    competition = WinningRateService.predict_competition_rate(db, notice)
+
     return {
         "agency_profile": agency_stats,
         "monte_carlo": {
             "top_rates": mc_results,
-            "description": "가상 투찰 1,000회 시뮬레이션 중 가장 많이 당첨된 구간"
+            "description": "이 기관 역대 낙찰률 분포의 분위수 요약 (p10~p90, 실측 기반)"
         },
         "blue_ocean": {
             "strategies": blue_ocean,
-            "description": "경쟁사 분포 분석 기반 틈새 시장"
+            "description": "실측 경쟁 밀도 분석 준비 중"
         },
         "competition": competition,
         "qualification": qualification

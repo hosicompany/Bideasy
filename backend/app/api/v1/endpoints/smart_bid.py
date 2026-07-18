@@ -20,6 +20,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# ML 스택(numpy/joblib) 부재·모델 미탑재 시 발생하는 예외 — 500 대신 정직한 503 으로.
+# (2026-07-18: 죽은 ML 서비스가 500 + 내부 에러 문자열을 노출하던 문제 수습)
+import sqlite3 as _sqlite
+
+_UNAVAILABLE_ERRORS = (
+    ImportError,
+    ModuleNotFoundError,
+    FileNotFoundError,
+    _sqlite.OperationalError,
+    RuntimeError,
+)
+_UNAVAILABLE_MSG = "이 기능은 현재 준비 중이에요. 잠시 후 다시 시도해 주세요."
+_GENERIC_ERROR_MSG = "요청 처리 중 오류가 발생했어요."
+
+
 # ============================================================
 # Request/Response Models
 # ============================================================
@@ -83,11 +98,11 @@ async def predict_competition(req: CompetitionPredictRequest, _user=Depends(requ
         )
         return {"status": "success", "data": result}
 
-    except FileNotFoundError:
-        raise HTTPException(status_code=503, detail="참여수 예측 모델이 아직 준비되지 않았습니다.")
-    except Exception as e:
-        logger.error(f"참여수 예측 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except _UNAVAILABLE_ERRORS:
+        raise HTTPException(status_code=503, detail="참여수 예측 기능은 현재 준비 중이에요.")
+    except Exception:
+        logger.exception("참여수 예측 실패")
+        raise HTTPException(status_code=500, detail=_GENERIC_ERROR_MSG)
 
 
 # ============================================================
@@ -97,41 +112,74 @@ async def predict_competition(req: CompetitionPredictRequest, _user=Depends(requ
 @router.post("/recommend")
 async def get_smart_recommendation(req: SmartBidRequest, _user=Depends(require_tier("pro_plus"))) -> Dict[str, Any]:
     """
-    참여수 적응형 최적 투찰가 추천
+    안전 투찰가 추천 (autocalibrate 룰기반)
 
-    - 참여수 예측 → 동적 마진 결정 → 최적 투찰가 계산
-    - margin_pct를 직접 지정하면 수동 모드
+    2026-07-18: 죽은 ML 시뮬레이션(numpy 의존, 생산 500)을 검증된 자가보정
+    룰기반(`recommend_bid_price`, 순수 Python)으로 대체. 낙찰가를 예측하지 않고,
+    과거 개찰 데이터로 보정한 "무효·적자를 피하는 안전선"을 제시한다.
+    검증 표본이 공사(적격심사)에 한정되므로 물품·용역은 미지원(503).
     """
+    bid_type = (req.bid_type or "construction").lower()
+    if bid_type != "construction":
+        raise HTTPException(
+            status_code=503,
+            detail="안전 투찰 추천은 현재 공사 공고만 지원해요. 물품·용역은 준비 중이에요.",
+        )
+
     try:
-        from app.services.simulation_service import (
-            get_simulation_service, AgencyType
+        from app.services.calculator import CalculatorService
+
+        rec = CalculatorService.recommend_bid_price(
+            basic_price=req.base_amount,
+            bid_method="DEFAULT",
+            contract_type="CONSTRUCTION",
+            a_value=req.a_value or 0,
         )
-        service = get_simulation_service()
 
-        bid_date = date.fromisoformat(req.bid_date) if req.bid_date else date.today()
+        lower_rate = rec["lower_limit_rate"]          # 예: 89.745 (%)
+        adjustment = rec["adjustment"]
+        margin = rec["margin"]
+        predicted_reserved = req.base_amount * (1 + adjustment / 100.0)
+        # 실제 하한선(예상 예정가 기준) — 이 밑으로 쓰면 무효
+        danger_zone = predicted_reserved * lower_rate / 100.0
 
-        agency_type_map = {
-            "national": AgencyType.NATIONAL,
-            "local": AgencyType.LOCAL,
-            "public_corp": AgencyType.PUBLIC_CORP,
+        data = {
+            "optimal_bid": float(rec["recommended_price"]),
+            "lower_limit": round(lower_rate / 100.0, 5),
+            "lower_limit_pct": f"{lower_rate:.3f}%",
+            "applied_margin_pct": margin,
+            "effective_rate": rec["target_rate_pct"],
+            "expected_planned_price": {
+                "mean": round(predicted_reserved),
+                "range": {
+                    "low": round(predicted_reserved * 0.97),   # 예정가 규정 변동 ±3%
+                    "high": round(predicted_reserved * 1.03),
+                },
+            },
+            "bid_rate": {"at_mean": rec["bid_rate"]},
+            "tie_risk": "high" if margin <= 0.05 else "medium",
+            "danger_zone": round(danger_zone),
+            "recommendation": (
+                f"과거 개찰 데이터로 보정한 규칙 기반 안전선이에요. "
+                f"기초금액의 {rec['bid_rate']:.2f}% 지점은 낙찰하한선({lower_rate:.3f}%) 위라 "
+                f"무효·적자 위험이 낮은 구간이에요. 낙찰가를 예측하는 게 아니라, "
+                f"'잃지 않는 선'을 알려드리는 거예요."
+            ),
+            "competition": None,        # 참여수 예측 ML 미탑재 — 정직하게 생략
+            "basis": "autocalibrate_rule_based",
+            "input": {
+                "base_amount": req.base_amount,
+                "a_value": req.a_value,
+                "bid_type": bid_type,
+            },
         }
-        agency_type = agency_type_map.get(req.agency_type, AgencyType.NATIONAL)
+        return {"status": "success", "data": data}
 
-        result = service.calculate_optimal_bid(
-            base_amount=req.base_amount,
-            a_value=req.a_value,
-            bid_type=req.bid_type,
-            estimated_amount=req.estimated_amount,
-            bid_date=bid_date,
-            agency_type=agency_type,
-            margin_pct=req.margin_pct,
-            agency_name=req.agency_name,
-        )
-        return {"status": "success", "data": result}
-
-    except Exception as e:
-        logger.error(f"스마트 투찰 추천 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except _UNAVAILABLE_ERRORS:
+        raise HTTPException(status_code=503, detail=_UNAVAILABLE_MSG)
+    except Exception:
+        logger.exception("스마트 투찰 추천 실패")
+        raise HTTPException(status_code=500, detail=_GENERIC_ERROR_MSG)
 
 
 # ============================================================
@@ -161,13 +209,13 @@ async def predict_bid_rate(req: BidRatePredictRequest, _user=Depends(require_tie
         )
         return {"status": "success", "data": result}
 
-    except FileNotFoundError:
-        raise HTTPException(status_code=503, detail="낙찰률 예측 모델이 아직 준비되지 않았습니다.")
+    except _UNAVAILABLE_ERRORS:
+        raise HTTPException(status_code=503, detail="낙찰률 예측 기능은 현재 준비 중이에요.")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"낙찰률 예측 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("낙찰률 예측 실패")
+        raise HTTPException(status_code=500, detail=_GENERIC_ERROR_MSG)
 
 
 # ============================================================
@@ -199,9 +247,11 @@ async def get_agency_bid_stats(
         )
         return {"status": "success", "data": result}
 
-    except Exception as e:
-        logger.error(f"기관 통계 조회 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except _UNAVAILABLE_ERRORS:
+        raise HTTPException(status_code=503, detail="기관 통계 기능은 현재 준비 중이에요.")
+    except Exception:
+        logger.exception("기관 통계 조회 실패")
+        raise HTTPException(status_code=500, detail=_GENERIC_ERROR_MSG)
 
 
 @router.get("/agency/search")
@@ -217,9 +267,11 @@ async def search_agencies(
         results = service.search_agencies(keyword=keyword, limit=limit)
         return {"status": "success", "data": results}
 
-    except Exception as e:
-        logger.error(f"기관 검색 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except _UNAVAILABLE_ERRORS:
+        raise HTTPException(status_code=503, detail="기관 검색 기능은 현재 준비 중이에요.")
+    except Exception:
+        logger.exception("기관 검색 실패")
+        raise HTTPException(status_code=500, detail=_GENERIC_ERROR_MSG)
 
 
 @router.get("/agency/insights")
@@ -239,9 +291,11 @@ async def get_agency_insights_endpoint(
         result = get_agency_insights(agency_name, bid_type)
         return {"status": "success", "data": result}
 
-    except Exception as e:
-        logger.error(f"발주처 인사이트 조회 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except _UNAVAILABLE_ERRORS:
+        raise HTTPException(status_code=503, detail="발주처 인사이트 기능은 현재 준비 중이에요.")
+    except Exception:
+        logger.exception("발주처 인사이트 조회 실패")
+        raise HTTPException(status_code=500, detail=_GENERIC_ERROR_MSG)
 
 
 # ============================================================
@@ -267,9 +321,11 @@ async def verify_bid_result(req: BidVerifyRequest, _user=Depends(require_tier("p
         )
         return {"status": "success", "data": result}
 
-    except Exception as e:
-        logger.error(f"투찰 역검증 실패: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except _UNAVAILABLE_ERRORS:
+        raise HTTPException(status_code=503, detail="투찰 역검증 기능은 현재 준비 중이에요.")
+    except Exception:
+        logger.exception("투찰 역검증 실패")
+        raise HTTPException(status_code=500, detail=_GENERIC_ERROR_MSG)
 
 
 @router.get("/summary")

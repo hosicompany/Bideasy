@@ -171,7 +171,12 @@ class TipsGenerator:
         
         try:
             basic = self._safe_float(basic_price)
-            lower_rate = LOWER_LIMIT_RATES.get(contract_type, 87.745)
+            # 공사는 금액대·시행일 티어드(단일 소스), 용역·물품은 팁 정책상 0 유지
+            if contract_type == "CONSTRUCTION":
+                from app.services.lower_limits import get_lower_limit_rate
+                lower_rate = get_lower_limit_rate(contract_type, basic)
+            else:
+                lower_rate = LOWER_LIMIT_RATES.get(contract_type, 87.745)
             
             # 예정가격 범위 (±3%)
             est_min = basic * (1 - ESTIMATED_PRICE_RANGE)
@@ -331,7 +336,7 @@ class TipsGenerator:
                     content=f"이 공고의 낙찰하한선은 예정가격의 {lower_limit.get('rate')}%입니다.\n이 금액 미만 투찰 시 자동 탈락합니다.",
                     source="법률 기반 (국가계약법)",
                     importance="HIGH",
-                    for_beginners="낙찰하한선이란 투찰할 수 있는 최저 금액입니다. 공사 입찰의 경우 예정가격의 87.745% 미만으로 투찰하면 자동으로 탈락합니다. 이는 덤핑(저가 투찰)을 방지하기 위한 제도입니다."
+                    for_beginners="낙찰하한선이란 투찰할 수 있는 최저 금액입니다. 공사 입찰은 금액 구간별 법정 하한율(2026년 기준 87.495~89.745%) 미만으로 투찰하면 자동으로 탈락합니다. 이는 덤핑(저가 투찰)을 방지하기 위한 제도입니다."
                 ))
     
     def _generate_restriction_tips(self):
@@ -401,7 +406,7 @@ class TipsGenerator:
                 category="strategy",
                 icon="🎯",
                 title="공사 입찰 투찰 전략",
-                content="공사 입찰은 예정가격에 가장 가까운 금액을 제시한 업체가 낙찰됩니다.\n• 통상 예정가격의 90~95% 범위가 많이 사용됩니다.\n• 하한선(87.745%) 바로 위는 경쟁이 치열할 수 있습니다.",
+                content="공사 입찰은 예정가격에 가장 가까운 금액을 제시한 업체가 낙찰됩니다.\n• 통상 예정가격의 90~95% 범위가 많이 사용됩니다.\n• 법정 하한선(금액 구간별 상이) 바로 위는 경쟁이 치열할 수 있습니다.",
                 source="법률 기반 + 일반 가이드",
                 importance="MEDIUM",
                 for_beginners="공사 입찰에서 '사정률'이란 예정가격 대비 투찰 금액의 비율입니다. 예를 들어 사정률 90%는 예정가격의 90%로 투찰한다는 의미입니다."
