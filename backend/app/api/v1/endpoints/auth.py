@@ -10,6 +10,7 @@ from app.db import models
 from app.schemas import user as user_schemas
 from app.schemas.point import SIGNUP_BONUS
 from app.schemas.subscription import activate_trial
+from app.services.lead_conversion import link_leads_to_user
 from app.core.security import (
     verify_password,
     get_password_hash,
@@ -56,9 +57,11 @@ def _find_or_create_social_user(
                 existing.profile_image_url = profile_image
             user = existing
 
+    created = False
     if not user:
         # 새 계정 생성. 단, 미검증 이메일이 기존 계정과 충돌하면 이메일 없이 생성
         # (미검증 이메일로 기존 계정과 같은 이메일을 차지해 혼동/탈취되는 것 방지).
+        created = True
         email_for_new = email
         if email and not email_verified:
             conflict = db.query(models.User).filter(models.User.email == email).first()
@@ -88,6 +91,13 @@ def _find_or_create_social_user(
 
     db.commit()
     db.refresh(user)
+    # 신규 소셜 가입만 리드 전환 링크 (기존 계정 로그인은 스킵). best-effort 백스톱 —
+    # 링크가 어떤 이유로든 터져도 가입은 이미 커밋됐으므로 절대 실패시키지 않는다.
+    if created:
+        try:
+            link_leads_to_user(db, user)
+        except Exception:
+            logger.exception("lead linking backstop (social) user_id=%s", user.id)
     return user
 
 
@@ -136,6 +146,11 @@ def register(request: Request, user_in: user_schemas.UserCreate, db: Session = D
 
     db.commit()
     db.refresh(user)
+    # 리드 전환 링크 — 동일 이메일 진단 리드가 있으면 converted 기록. best-effort 백스톱.
+    try:
+        link_leads_to_user(db, user)
+    except Exception:
+        logger.exception("lead linking backstop (register) user_id=%s", user.id)
     return user
 
 

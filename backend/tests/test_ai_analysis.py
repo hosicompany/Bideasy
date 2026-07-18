@@ -6,10 +6,14 @@ from app.core.rate_limit import limiter
 
 @pytest.fixture(autouse=True)
 def _disable_rate_limiter():
-    """Disable slowapi rate limiter during AI analysis tests."""
+    """Disable slowapi rate limiter during AI analysis tests.
+
+    teardown 은 conftest 전역 기본값(False)으로 복구한다. True 로 두면 알파벳순
+    뒤 테스트(register 등)가 리미터에 걸려 429 로 깨진다(2026-07-18 수정).
+    """
     limiter.enabled = False
     yield
-    limiter.enabled = True
+    limiter.enabled = False
 
 
 class TestAiAnalysis:
