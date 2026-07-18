@@ -1,0 +1,12 @@
+{
+  "n_records": 4959,
+  "kill_threshold_pct": 5.0,
+  "A_repeat_notices": 49,
+  "A_repeat_pct": 0.99,
+  "B_alertable_notices": 0,
+  "B_alertable_pct": 0.0,
+  "B_monopoly_pct": 0.0,
+  "C_frequent_pair_pct": 0.06,
+  "verdict": "KILL",
+  "top_cases": []
+}
