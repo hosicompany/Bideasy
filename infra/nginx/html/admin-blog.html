@@ -65,6 +65,8 @@
         <h2 style="margin:0">글 목록</h2>
         <div class="row" style="gap:6px">
           <button class="btn ghost" onclick="genDataStory(this)" title="지난주 개찰 데이터로 초안 자동 생성">⚡ 데이터스토리</button>
+          <select id="topicSel" onfocus="loadTopics()" title="입찰상식 주제 큐 (콘텐츠 엔진)" style="max-width:220px"><option value="">📚 입찰상식 주제…</option></select>
+          <button class="btn ghost" onclick="genFromTopic(this)" title="선택한 주제로 AI 구조화 초안 생성 (검수 후 발행)">⚡ 초안 생성</button>
           <button class="btn" onclick="newPost()">+ 새 글</button>
         </div>
       </div>
@@ -195,6 +197,30 @@
 
     function newPost(){ fillForm(null); window.scrollTo({top:0,behavior:'smooth'}); }
 
+    let _topicsLoaded = false;
+    async function loadTopics(){ // 주제 큐 lazy-load (콘텐츠 엔진 Phase 1)
+      if(_topicsLoaded) return; _topicsLoaded = true;
+      try{
+        const d = await api('/admin/blog/topics', {headers:authHeaders()});
+        const sel = el('topicSel');
+        (d.topics||[]).forEach(t=>{
+          const o = document.createElement('option');
+          o.value = t.code;
+          o.textContent = (t.draft_exists?'✅ ':'') + t.code + ' [' + t.priority + '] ' + t.title;
+          sel.appendChild(o);
+        });
+      }catch(e){ toast('주제 큐 로드 실패', false); _topicsLoaded = false; }
+    }
+    async function genFromTopic(btn){
+      const code = el('topicSel').value;
+      if(!code){ toast('주제를 먼저 선택하세요', false); return; }
+      btn.disabled = true; const t0 = btn.textContent; btn.textContent = '생성 중… (수십 초)';
+      try{
+        const p = await api('/admin/blog/generate-from-topic/'+encodeURIComponent(code), {method:'POST', headers:authHeaders()});
+        fillForm(p); loadPosts(); toast('구조화 초안 생성됨 — 법·숫자 검수 후 발행/예약하세요');
+      }catch(e){ toast(e.message||'초안 생성 실패', false); }
+      finally{ btn.disabled = false; btn.textContent = t0; }
+    }
     async function genDataStory(btn){
       if(btn) btn.disabled=true;
       try{

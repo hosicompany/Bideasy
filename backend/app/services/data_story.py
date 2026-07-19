@@ -172,6 +172,31 @@ def build_weekly_story(db, ref_date: Optional[date] = None) -> Optional[dict]:
           "보고 있는 공고가 있다면 [공고 검색](/search)에서 기초금액·A값까지 확인하고, "
           "[투찰가 계산기](/calculator)로 안전 투찰가를 1원 단위까지 계산해보세요. 회원가입 없이 무료입니다."]
 
+    # 콘텐츠 엔진 정본 스키마 정합 (CONTENT_ENGINE §2) — 숫자는 전부 DB 결정적.
+    blocks = {
+        "track": "data_story",
+        "title": f"지난주 입찰 결산 — 치열했던 TOP10 & 단독·저경쟁 기회 ({period})",
+        "target_keyword": "개찰결과",
+        "hook": (
+            f"지난주 최다 경쟁 공고엔 {hottest['participants']}개사가 몰렸어요."
+            if hottest else f"지난주 개찰 {n}건을 데이터로 정리했어요."
+        ),
+        "summary_30s": (
+            f"지난주 개찰 {n}건. 최다 경쟁 "
+            f"{(str(hottest['participants']) + '개사') if hottest else '—'}, "
+            f"단독·저경쟁 기회 {len(opps)}건."
+        ),
+        "key_points": [{"heading": "이번 주 인사이트", "body": narr["insight"]}],
+        "data_blocks": [
+            {"caption": "가장 치열했던 공고 TOP10",
+             "numbers": [{"title": r["title"], "org": r["org"], "participants": r["participants"]} for r in top]},
+            {"caption": "단독·저경쟁 기회 공고",
+             "numbers": [{"title": r["title"], "org": r["org"], "participants": r["participants"]} for r in opps]},
+        ],
+        "internal_links": ["/search", "/calculator"],
+        "cta": "공고 검색에서 기초금액·A값까지 확인하고, 투찰가 계산기로 안전 투찰가를 계산해보세요.",
+    }
+
     return {
         "slug": iso_week_slug(mon),
         "title": f"지난주 입찰 결산 — 치열했던 TOP10 & 단독·저경쟁 기회 ({period})",
@@ -179,6 +204,7 @@ def build_weekly_story(db, ref_date: Optional[date] = None) -> Optional[dict]:
         "category": "데이터 스토리",
         "tags": "데이터스토리, 개찰결과, 경쟁률, 단독응찰",
         "body_md": "\n".join(L),
+        "blocks": blocks,
         "period": {"start": mon.isoformat(), "end": sun.isoformat(), "count": n, "opportunities": len(opps)},
     }
 
@@ -217,6 +243,7 @@ def create_weekly_draft(db, ref_date: Optional[date] = None):
         source="auto",
         date="",
         publish_at=publish_at,
+        blocks_json=story.get("blocks"),
     )
     db.add(post)
     db.commit()
