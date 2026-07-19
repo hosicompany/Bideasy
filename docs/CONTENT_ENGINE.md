@@ -156,7 +156,11 @@
   - 데이터 모델: `BlogPost`에 `blocks_json`(구조화 소스)·`channel_assets_json`(파생 캐시) 컬럼 추가 검토, 또는 `ContentSource` 형제 테이블. (가벼운 추가 마이그레이션)
 - **Phase 2** — 채널 텍스트 파생 자동화. ✅ **구현 완료 (2026-07-19)**:
   `content_engine.derive_channel_assets`(blocks→카드 카피[cardmaker PRESETS 규격·줄당 글자 제한]·릴스·유튜브·네이버 요약, `channel_assets_json` 캐시 멱등) — **발행 시점 자동 파생**(publish_scheduled + admin publish, best-effort) + 수동 `POST /admin/blog/{id}/derive-assets`. **주간 루프**: 수 07:00 `content.weekly_knowledge_draft`가 K-큐 미소비 최우선 1개 자동 초안(검수 게이트 유지·LLM 불가 시 정직 알림). **cardmaker 연결 = localStorage 브릿지**(admin-blog "🎴 카드메이커" → 슬라이드 네비 프리필, 렌더·눈검수·다운로드는 기존 수동 유지). 사람 개입 = 주 1회 검수 + 채널 업로드로 압축.
-- **Phase 3** — 시각물 반자동: **도식·히어로 = 힉스필드 `nano_banana_pro`(§5.1 실측 확정)**, 카드뉴스 = `/cardmaker`, 숏폼 = 영상 도구 + 업로드 검수 흐름.
+- **Phase 3** — 시각물 반자동. ✅ **구현 완료 (2026-07-19) — 로드맵 100%**:
+  ① **도식·히어로**: Phase 1이 초안마다 §5.1 규칙(브랜드 hex·한글 라벨 정확 명시·명시 라벨 외 텍스트 금지) 내장 프롬프트를 `blocks_json.image_prompts`로 생성 → admin-blog **"🖼 이미지 프롬프트"** 버튼이 프롬프트+파일명+배치 절차 4단계를 클립보드로 제공 → 힉스필드 생성(도식=`nano_banana_pro`, 시안 2회 실증) → **사람 눈검수**(글자·숫자) → `assets/blog/{slug}/` 배치(디렉토리 실체화됨) → 본문 이미지 주석 해제. 세션에서 요청 시 에이전트가 생성 대행 가능.
+  ② **카드뉴스**: `/cardmaker` localStorage 브릿지(Phase 2) — 슬라이드 네비 프리필 → 렌더 눈검수 → PNG 다운로드.
+  ③ **숏폼**: "📋 카피 복사"(릴스 3초 훅 대본·유튜브 대본/챕터/설명란·네이버 요약) → 외부 영상 도구 → 사람 업로드.
+  자동화 경계(§5)는 설계 그대로 — 생성·카피는 자동/반자동, **게시·눈검수는 사람**. 이로써 §7 로드맵 Phase 0~3 전체 완료.
 
 ---
 
