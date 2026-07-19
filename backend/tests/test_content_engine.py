@@ -63,6 +63,22 @@ class TestRender:
         assert "## 사정률 추첨의 원리" in md1
         assert "계산기로 안전 투찰가" in md1
 
+    def test_image_placeholders_commented_out(self):
+        """이미지 자리는 주석 처리 — 파일 배치·눈검수 전엔 렌더에 안 나온다(§5.1)."""
+        blocks = dict(SAMPLE_BLOCKS)
+        blocks["image_prompts"] = [
+            {"slot": "hero", "caption": "사정률 추첨 개념", "prompt": "deep blue abstract, no text"},
+            {"slot": "diagram", "caption": "예정가격 추첨 흐름", "prompt": "Render the Korean text labels EXACTLY: ..."},
+        ]
+        md = ce.render_blocks_to_md(blocks, slug="knowledge-k1")
+        assert "<!-- 이미지 자리(hero)" in md
+        assert "/assets/blog/knowledge-k1/hero.png" in md
+        assert "/assets/blog/knowledge-k1/fig1.png" in md
+        # 이미지 마크다운은 전부 주석 블록 안 — 주석 열림/닫힘 쌍이 이미지 수만큼
+        assert md.count("<!--") == 2 and md.count("-->") == 2
+        # slug 없으면(구 호출 호환) 자리 미직조
+        assert "이미지 자리" not in ce.render_blocks_to_md(blocks)
+
 
 class TestCreateDraft:
     @pytest.fixture

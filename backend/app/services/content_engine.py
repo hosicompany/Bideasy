@@ -103,7 +103,15 @@ _SYSTEM_PROMPT = (
     "JSON 으로만 응답한다:\n"
     '{"hook": "1~2문장 호기심 훅", "summary_30s": "2~3문장 30초 요약", '
     '"key_points": [{"heading": "소제목", "body": "2~4문장"}] (3~5개), '
-    '"seo_summary": "검색결과용 1문장 메타 요약"}'
+    '"seo_summary": "검색결과용 1문장 메타 요약", '
+    '"image_prompts": [{"slot": "hero"|"diagram", "caption": "한글 캡션(figcaption/alt용)", '
+    '"prompt": "영어 이미지 생성 프롬프트"}] (hero 1개 + diagram 1개)}\n'
+    "image_prompts 규칙(힉스필드 생성용, CONTENT_ENGINE §5.1):\n"
+    "- hero: 텍스트 미포함 개념·은유 이미지. deep blue #3182F6 브랜드 톤, flat vector, no text.\n"
+    "- diagram: 본문 핵심 하나를 도식화. 렌더할 한글 라벨을 프롬프트 안에 따옴표로 정확히 명시"
+    '("Render the Korean text labels EXACTLY: ..."). 라벨 속 숫자·통계도 지어내지 말 것.\n'
+    "- 공통: brand colors #3182F6/#F2F4F6/#191F28/#34C759, flat vector, rounded 20px cards, "
+    "no photorealism, no watermark, Korean fintech (Toss) aesthetic."
 )
 
 
@@ -145,6 +153,8 @@ def generate_blocks(topic: dict) -> Optional[dict]:
             "internal_links": _DEFAULT_LINKS,
             "cta": _DEFAULT_CTA,
             "seo_summary": data.get("seo_summary", ""),
+            # 시각물 반자동(§5.1): 프롬프트만 생성 — 이미지 생성·검수·배치는 사람/세션이 수행
+            "image_prompts": (data.get("image_prompts") or [])[:3],
         }
     except Exception:
         logger.exception("content engine LLM block generation failed: %s", topic.get("code"))
@@ -153,13 +163,33 @@ def generate_blocks(topic: dict) -> Optional[dict]:
 
 # ─── 블록 → body_md 결정적 렌더 ────────────────────────────────
 
-def render_blocks_to_md(blocks: dict) -> str:
+def _image_placeholder(slot: str, caption: str, slug: str, idx: int) -> str:
+    """이미지 자리 — 주석 처리로 직조. 파일 배치·눈검수 후 주석을 해제해야 노출된다.
+
+    (§5.1 반자동 원칙: 파일이 없는 채 발행돼 깨진 이미지가 나가는 사고 방지)
+    """
+    fname = "hero.png" if slot == "hero" else f"fig{idx}.png"
+    return (
+        f"<!-- 이미지 자리({slot}): 힉스필드 생성 → /assets/blog/{slug}/{fname} 배치 "
+        f"→ 눈검수 후 아래 주석 해제\n![{caption}](/assets/blog/{slug}/{fname})\n-->"
+    )
+
+
+def render_blocks_to_md(blocks: dict, slug: str = "") -> str:
     """구조화 블록 → 마크다운 본문 (결정적 — 같은 블록이면 같은 본문)."""
+    prompts = blocks.get("image_prompts") or []
+    heroes = [p for p in prompts if p.get("slot") == "hero"]
+    diagrams = [p for p in prompts if p.get("slot") == "diagram"]
+
     L: list[str] = [blocks.get("hook", ""), ""]
+    if slug and heroes:
+        L += [_image_placeholder("hero", heroes[0].get("caption", ""), slug, 0), ""]
     if blocks.get("summary_30s"):
         L += [f"> **30초 요약** — {blocks['summary_30s']}", ""]
-    for kp in blocks.get("key_points", []):
+    for i, kp in enumerate(blocks.get("key_points", [])):
         L += [f"## {kp.get('heading', '')}", "", kp.get("body", ""), ""]
+        if slug and i == 0 and diagrams:  # 첫 핵심 뒤에 도식 자리
+            L += [_image_placeholder("diagram", diagrams[0].get("caption", ""), slug, 1), ""]
     for db_block in blocks.get("data_blocks", []):
         if db_block.get("caption"):
             L += [f"**{db_block['caption']}**", ""]
@@ -191,7 +221,7 @@ def create_draft_from_topic(db, code: str):
     if blocks is None:
         return None, "llm_unavailable"
 
-    body_md = render_blocks_to_md(blocks)
+    body_md = render_blocks_to_md(blocks, slug=slug)
     html, rt = blog_svc.render(body_md)
     post = models.BlogPost(
         slug=slug,
