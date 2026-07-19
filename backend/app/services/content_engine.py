@@ -111,7 +111,10 @@ _SYSTEM_PROMPT = (
     "- diagram: 본문 핵심 하나를 도식화. 렌더할 한글 라벨을 프롬프트 안에 따옴표로 정확히 명시"
     '("Render the Korean text labels EXACTLY: ..."). 라벨 속 숫자·통계도 지어내지 말 것.\n'
     "- 공통: brand colors #3182F6/#F2F4F6/#191F28/#34C759, flat vector, rounded 20px cards, "
-    "no photorealism, no watermark, Korean fintech (Toss) aesthetic."
+    "no photorealism, no watermark, Korean fintech (Toss) aesthetic. "
+    '반드시 "Render ONLY these Korean text labels ... and NO other text anywhere '
+    '(no title, no header, no watermark)" 를 포함할 것 — 맥락 설명이 제목 텍스트로 '
+    "왜곡 렌더되는 사고 방지(2026-07-19 실측)."
 )
 
 
