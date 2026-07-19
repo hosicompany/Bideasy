@@ -113,6 +113,7 @@
         <button class="btn ghost" id="btnDerive" onclick="deriveAssets(this)" style="display:none" title="발행 전에도 미리 채널 카피 생성 가능">⚙ 채널 자산 생성</button>
         <button class="btn ghost" id="btnCards" onclick="sendToCardmaker()" style="display:none" title="카드 카피를 카드메이커로 전달">🎴 카드메이커</button>
         <button class="btn ghost" id="btnCopyScripts" onclick="copyScripts()" style="display:none" title="릴스·유튜브·네이버 카피 클립보드 복사">📋 카피 복사</button>
+        <button class="btn ghost" id="btnImgPrompts" onclick="copyImagePrompts()" style="display:none" title="힉스필드 이미지 프롬프트 + 배치 절차 복사">🖼 이미지 프롬프트</button>
       </div>
     </div>
   </div>
@@ -201,6 +202,20 @@
       el('btnCards').style.display = (p && p.channel_assets_json && p.channel_assets_json.instagram_cards) ? '' : 'none';
       el('btnCopyScripts').style.display = (p && p.channel_assets_json) ? '' : 'none';
       el('btnDerive').style.display = (p && p.blocks_json && !p.channel_assets_json) ? '' : 'none';
+      el('btnImgPrompts').style.display = (p && p.blocks_json && (p.blocks_json.image_prompts||[]).length) ? '' : 'none';
+    }
+
+    async function copyImagePrompts(){ // Phase 3 — 힉스필드 프롬프트 + 배치 절차 복사
+      const prompts = _curPost?.blocks_json?.image_prompts || [];
+      if(!prompts.length){ return; }
+      const slug = _curPost.slug;
+      const parts = prompts.map(function(p,i){
+        const fname = p.slot==='hero' ? 'hero.png' : ('fig'+(i)+'.png');
+        return '◆ ['+p.slot+'] '+(p.caption||'')+'\n파일명: /assets/blog/'+slug+'/'+fname+'\n프롬프트:\n'+(p.prompt||'');
+      });
+      parts.push('◆ 배치 절차 (CONTENT_ENGINE §5.1)\n1) 힉스필드에서 위 프롬프트로 생성 (도식=nano_banana_pro)\n2) 한글 글자·숫자 눈검수 — 하나라도 틀리면 재생성\n3) 다운로드 → 레포 infra/nginx/html/assets/blog/'+slug+'/ 에 배치 → 커밋·배포\n4) 본문 이미지 주석(<!-- 이미지 자리 -->) 해제 후 저장');
+      try{ await navigator.clipboard.writeText(parts.join('\n\n────────\n\n')); toast('이미지 프롬프트+배치 절차 복사됨'); }
+      catch(e){ toast('복사 실패 — 브라우저 권한 확인', false); }
     }
 
     let _curPost = null;
