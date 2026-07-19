@@ -62,6 +62,56 @@ def generate_weekly_data_story() -> dict:
         db.close()
 
 
+@celery_app.task(name="content.weekly_knowledge_draft")
+def weekly_knowledge_draft() -> dict:
+    """수요일 아침 — K-큐(입찰상식) 미소비 최우선 주제 1개 자동 초안 (Phase 2 주간 루프).
+
+    검수 게이트 유지: publish_at 없이 draft 만 생성, 관리자 알림 → 사람이 검수·발행/예약.
+    멱등: 미소비 주제 없으면 no-op. LLM 키 미설정이면 알림으로 정직 보고(가짜 초안 금지).
+    """
+    db = SessionLocal()
+    try:
+        from app.services import content_engine
+
+        topic = content_engine.next_unconsumed_topic(db)
+        if topic is None:
+            logger.info("[content.weekly_knowledge_draft] K-큐 전부 소비됨 — no-op")
+            return {"ok": True, "status": "queue_empty"}
+
+        post, status = content_engine.create_draft_from_topic(db, topic["code"])
+        admins = db.query(models.User).filter(models.User.is_admin == True).all()  # noqa: E712
+        if status == "created":
+            for a in admins:
+                db.add(models.Notification(
+                    user_id=a.id,
+                    title="✍️ 입찰상식 초안 생성됨",
+                    body=f"[{topic['code']}] {post.title} — /admin-blog 에서 검수 후 발행/예약하세요.",
+                    noti_type="BLOG_DRAFT_READY",
+                    data_json={"slug": post.slug, "post_id": post.id},
+                    is_read=0,
+                ))
+            db.commit()
+        elif status == "llm_unavailable":
+            for a in admins:
+                db.add(models.Notification(
+                    user_id=a.id,
+                    title="⚠️ 입찰상식 초안 생성 실패",
+                    body=f"[{topic['code']}] LLM 키 미설정 또는 생성 실패 — 이번 주 초안이 만들어지지 않았어요.",
+                    noti_type="BLOG_DRAFT_FAILED",
+                    data_json={"topic_code": topic["code"]},
+                    is_read=0,
+                ))
+            db.commit()
+        logger.info(f"[content.weekly_knowledge_draft] {topic['code']} → {status}")
+        return {"ok": status == "created", "status": status, "topic": topic["code"]}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[content.weekly_knowledge_draft] error: {e}", exc_info=True)
+        return {"ok": False, "error": str(e)}
+    finally:
+        db.close()
+
+
 @celery_app.task(name="content.publish_scheduled")
 def publish_scheduled_posts() -> dict:
     """publish_at 이 도래한 draft 를 자동 발행(매시).
@@ -112,6 +162,25 @@ def publish_scheduled_posts() -> dict:
             ))
         db.commit()
         logger.info(f"[content.publish_scheduled] 자동 발행 {len(published)}건: {published}")
+
+        # Phase 2: 발행된 글의 채널 자산 자동 파생 (best-effort — 발행은 이미 완료)
+        try:
+            from app.services import content_engine
+            derived = [p.slug for p in due if content_engine.ensure_channel_assets(db, p)]
+            if derived:
+                for a in admins:
+                    db.add(models.Notification(
+                        user_id=a.id,
+                        title="🎴 채널 자산 준비됨",
+                        body=f"{len(derived)}건의 카드/릴스/유튜브 카피가 생성됐어요 — /admin-blog 에서 복사하세요.",
+                        noti_type="CHANNEL_ASSETS_READY",
+                        data_json={"slugs": derived},
+                        is_read=0,
+                    ))
+                db.commit()
+        except Exception:
+            logger.exception("[content.publish_scheduled] channel assets derivation skipped")
+
         return {"ok": True, "published": published}
     except Exception as e:
         db.rollback()

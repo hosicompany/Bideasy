@@ -149,6 +149,79 @@ class TestAdminEndpoints:
         assert client.get("/api/v1/admin/blog/topics").status_code in (401, 403)
 
 
+SAMPLE_ASSETS = {
+    "instagram_cards": [
+        {"kind": "cover", "badge": "입찰상식", "headline": "낙찰은\n실력이 아니에요", "body": "사정률 추첨", "fl": "", "fr": ""},
+        {"kind": "cta", "badge": "BidEasy", "headline": "안전 투찰가", "body": "무료", "fl": "", "fr": ""},
+    ],
+    "reels_script": {"hook_3s": "훅", "points": ["p1"], "cta": "cta"},
+    "youtube": {"script_md": "대본", "chapters": ["00:00 인트로"], "description": "설명"},
+    "naver_summary_md": "요약",
+}
+
+
+class TestChannelAssets:
+    """Phase 2 — 파생 하네스·발행 훅·주간 루프."""
+
+    def _mk_engine_post(self, db, code="K1"):
+        db.query(models.BlogPost).filter(models.BlogPost.slug == ce.slug_for(code)).delete()
+        db.commit()
+        post = models.BlogPost(
+            slug=ce.slug_for(code), title="t", body_md="b", body_html="<p>b</p>",
+            status="draft", source="auto", blocks_json=dict(SAMPLE_BLOCKS),
+        )
+        db.add(post); db.commit(); db.refresh(post)
+        return post
+
+    def test_ensure_assets_idempotent_and_fr_normalized(self, db_session, monkeypatch):
+        post = self._mk_engine_post(db_session)
+        monkeypatch.setattr(ce, "derive_channel_assets", lambda b: dict(SAMPLE_ASSETS))
+        assert ce.ensure_channel_assets(db_session, post) is True
+        db_session.refresh(post)
+        assert post.channel_assets_json["reels_script"]["hook_3s"] == "훅"
+        # 멱등 — 이미 있으면 재파생 안 함
+        assert ce.ensure_channel_assets(db_session, post) is False
+
+    def test_ensure_assets_no_llm_is_noop_not_error(self, db_session, monkeypatch):
+        post = self._mk_engine_post(db_session, "K2")
+        monkeypatch.setattr(ce.settings, "OPENAI_API_KEY", "")
+        assert ce.ensure_channel_assets(db_session, post) is False  # 예외 없이 False
+        db_session.refresh(post)
+        assert post.channel_assets_json is None
+
+    def test_next_unconsumed_topic_priority_order(self, db_session):
+        db_session.query(models.BlogPost).filter(
+            models.BlogPost.slug.in_([ce.slug_for(t["code"]) for t in ce.TOPIC_SEEDS])
+        ).delete(synchronize_session=False)
+        db_session.commit()
+        t = ce.next_unconsumed_topic(db_session)
+        assert t["code"] == "K1"  # P1 최우선·코드순
+        # K1 소비 후엔 K2
+        db_session.add(models.BlogPost(slug=ce.slug_for("K1"), title="t", body_md="b", body_html="h"))
+        db_session.commit()
+        assert ce.next_unconsumed_topic(db_session)["code"] == "K2"
+
+    def test_admin_publish_triggers_derivation(self, admin_client, db_session, monkeypatch):
+        post = self._mk_engine_post(db_session, "K3")
+        monkeypatch.setattr(ce, "derive_channel_assets", lambda b: dict(SAMPLE_ASSETS))
+        res = admin_client.post(f"/api/v1/admin/blog/{post.id}/publish")
+        assert res.status_code == 200
+        assert res.json()["status"] == "published"
+        assert res.json()["channel_assets_json"]["instagram_cards"]
+
+    def test_derive_endpoint_400_without_blocks(self, admin_client, db_session):
+        db_session.query(models.BlogPost).filter(models.BlogPost.slug == "no-blocks-post").delete()
+        db_session.commit()
+        p = models.BlogPost(slug="no-blocks-post", title="t", body_md="b", body_html="h")
+        db_session.add(p); db_session.commit(); db_session.refresh(p)
+        assert admin_client.post(f"/api/v1/admin/blog/{p.id}/derive-assets").status_code == 400
+
+    def test_derive_endpoint_503_without_llm(self, admin_client, db_session, monkeypatch):
+        post = self._mk_engine_post(db_session, "K4")
+        monkeypatch.setattr(ce.settings, "OPENAI_API_KEY", "")
+        assert admin_client.post(f"/api/v1/admin/blog/{post.id}/derive-assets").status_code == 503
+
+
 class TestDataStoryBlocksAlignment:
     def test_weekly_story_carries_blocks(self, db_session):
         """데이터스토리 초안에 blocks_json 정합 (숫자 결정적)."""

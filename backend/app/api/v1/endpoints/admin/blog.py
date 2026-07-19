@@ -156,12 +156,33 @@ def update_blog_post(post_id: int, payload: BlogPostUpdate, db: Session = Depend
 
 @router.post("/blog/{post_id}/publish", response_model=BlogPostOut)
 def publish_blog_post(post_id: int, db: Session = Depends(get_db), _admin=Depends(require_admin)):
-    """초안 → 발행 (1클릭 승인)."""
+    """초안 → 발행 (1클릭 승인). 발행 후 채널 자산 자동 파생(best-effort)."""
     post = _get_or_404(post_id, db)
     post.status = "published"
     post.date = post.date or date_cls.today().isoformat()
     db.commit()
     db.refresh(post)
+    # Phase 2 — 검수된 정본에서만 파생. 실패해도 발행은 유지.
+    from app.services import content_engine
+    content_engine.ensure_channel_assets(db, post)
+    db.refresh(post)
+    return post
+
+
+@router.post("/blog/{post_id}/derive-assets", response_model=BlogPostOut)
+def derive_assets_now(post_id: int, force: bool = False, db: Session = Depends(get_db), _admin=Depends(require_admin)):
+    """채널 자산 수동 (재)생성 — force=true 면 기존 자산 무시하고 재파생."""
+    from app.services import content_engine
+    post = _get_or_404(post_id, db)
+    if not post.blocks_json:
+        raise HTTPException(400, "구조화 블록(blocks_json)이 없는 글이에요 — 엔진 초안만 파생할 수 있어요.")
+    if force:
+        post.channel_assets_json = None
+        db.commit()
+    ok = content_engine.ensure_channel_assets(db, post)
+    db.refresh(post)
+    if not ok and not post.channel_assets_json:
+        raise HTTPException(503, "채널 자산 생성을 지금 사용할 수 없어요 (LLM 키 미설정 또는 생성 실패).")
     return post
 
 

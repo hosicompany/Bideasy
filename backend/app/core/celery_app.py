@@ -94,6 +94,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=8, minute=0, day_of_week=1),
     },
     # 12) 매시 05분 — 예약/유예 자동발행(publish_at 도래한 draft 발행)
+    # 수요일 07:00 KST — K-큐(입찰상식) 자동 초안 (Phase 2 주간 루프, 검수 게이트 유지)
+    "weekly-knowledge-draft": {
+        "task": "content.weekly_knowledge_draft",
+        "schedule": crontab(hour=7, minute=0, day_of_week=3),
+    },
     "publish-scheduled-posts": {
         "task": "content.publish_scheduled",
         "schedule": crontab(minute=5),

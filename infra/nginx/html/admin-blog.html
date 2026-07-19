@@ -110,6 +110,9 @@
         <button class="btn ghost" id="btnPreview" onclick="preview()" style="display:none">미리보기 ↗</button>
         <span class="sp" style="flex:1"></span>
         <button class="btn danger" id="btnDelete" onclick="del()" style="display:none">삭제</button>
+        <button class="btn ghost" id="btnDerive" onclick="deriveAssets(this)" style="display:none" title="발행 전에도 미리 채널 카피 생성 가능">⚙ 채널 자산 생성</button>
+        <button class="btn ghost" id="btnCards" onclick="sendToCardmaker()" style="display:none" title="카드 카피를 카드메이커로 전달">🎴 카드메이커</button>
+        <button class="btn ghost" id="btnCopyScripts" onclick="copyScripts()" style="display:none" title="릴스·유튜브·네이버 카피 클립보드 복사">📋 카피 복사</button>
       </div>
     </div>
   </div>
@@ -193,6 +196,37 @@
       el('btnUnpublish').style.display = (p && published) ? '' : 'none';
       el('btnPreview').style.display = p ? '' : 'none';
       el('btnDelete').style.display = p ? '' : 'none';
+      // Phase 2 — 채널 자산 버튼 (엔진 글: blocks 있으면 파생 가능)
+      _curPost = p || null;
+      el('btnCards').style.display = (p && p.channel_assets_json && p.channel_assets_json.instagram_cards) ? '' : 'none';
+      el('btnCopyScripts').style.display = (p && p.channel_assets_json) ? '' : 'none';
+      el('btnDerive').style.display = (p && p.blocks_json && !p.channel_assets_json) ? '' : 'none';
+    }
+
+    let _curPost = null;
+    function sendToCardmaker(){ // 카드 카피 → localStorage 브릿지 → /cardmaker 슬라이드 네비
+      const cards = _curPost?.channel_assets_json?.instagram_cards;
+      if(!cards || !cards.length){ toast('카드 자산이 없어요', false); return; }
+      try{ localStorage.setItem('bd_cardmaker_slides', JSON.stringify(cards)); }catch(e){}
+      window.open('/cardmaker.html?from=engine', '_blank');
+    }
+    async function copyScripts(){ // 릴스·유튜브·네이버 카피 클립보드 복사
+      const a = _curPost?.channel_assets_json; if(!a){ return; }
+      const parts = [];
+      if(a.reels_script) parts.push('◆ 릴스 대본\n훅(3초): '+(a.reels_script.hook_3s||'')+'\n'+(a.reels_script.points||[]).map((s,i)=>(i+1)+'. '+s).join('\n')+'\nCTA: '+(a.reels_script.cta||''));
+      if(a.youtube) parts.push('◆ 유튜브 대본\n'+(a.youtube.script_md||'')+'\n\n챕터\n'+(a.youtube.chapters||[]).join('\n')+'\n\n설명란\n'+(a.youtube.description||''));
+      if(a.naver_summary_md) parts.push('◆ 네이버 요약\n'+a.naver_summary_md);
+      try{ await navigator.clipboard.writeText(parts.join('\n\n────────\n\n')); toast('릴스·유튜브·네이버 카피 복사됨'); }
+      catch(e){ toast('복사 실패 — 브라우저 권한 확인', false); }
+    }
+    async function deriveAssets(btn){
+      if(!_curPost){ return; }
+      btn.disabled = true; const t0 = btn.textContent; btn.textContent = '생성 중…';
+      try{
+        const p = await api('/admin/blog/'+_curPost.id+'/derive-assets', {method:'POST', headers:authHeaders()});
+        fillForm(p); toast('채널 자산 생성됨 — 🎴 카드메이커/📋 복사 사용 가능');
+      }catch(e){ toast(e.message||'자산 생성 실패', false); }
+      finally{ btn.disabled = false; btn.textContent = t0; }
     }
 
     function newPost(){ fillForm(null); window.scrollTo({top:0,behavior:'smooth'}); }
