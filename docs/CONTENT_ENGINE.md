@@ -154,7 +154,8 @@
 - **Phase 0 (이 문서)** — 아키텍처·정본 스키마·입찰상식 시드 확정. ✅
 - **Phase 1** — 소스 엔진: 통합 주제 큐 소비 → **구조화 정본 생성** → 검수 → 드립. 입찰상식 시드를 캘린더에 이관. 데이터스토리를 스키마로 정합.
   - 데이터 모델: `BlogPost`에 `blocks_json`(구조화 소스)·`channel_assets_json`(파생 캐시) 컬럼 추가 검토, 또는 `ContentSource` 형제 테이블. (가벼운 추가 마이그레이션)
-- **Phase 2** — 채널 텍스트 파생 자동화: 카드 카피 JSON·릴스 대본·유튜브 대본/챕터/설명란. `/cardmaker` 입력 규격 연결.
+- **Phase 2** — 채널 텍스트 파생 자동화. ✅ **구현 완료 (2026-07-19)**:
+  `content_engine.derive_channel_assets`(blocks→카드 카피[cardmaker PRESETS 규격·줄당 글자 제한]·릴스·유튜브·네이버 요약, `channel_assets_json` 캐시 멱등) — **발행 시점 자동 파생**(publish_scheduled + admin publish, best-effort) + 수동 `POST /admin/blog/{id}/derive-assets`. **주간 루프**: 수 07:00 `content.weekly_knowledge_draft`가 K-큐 미소비 최우선 1개 자동 초안(검수 게이트 유지·LLM 불가 시 정직 알림). **cardmaker 연결 = localStorage 브릿지**(admin-blog "🎴 카드메이커" → 슬라이드 네비 프리필, 렌더·눈검수·다운로드는 기존 수동 유지). 사람 개입 = 주 1회 검수 + 채널 업로드로 압축.
 - **Phase 3** — 시각물 반자동: **도식·히어로 = 힉스필드 `nano_banana_pro`(§5.1 실측 확정)**, 카드뉴스 = `/cardmaker`, 숏폼 = 영상 도구 + 업로드 검수 흐름.
 
 ---

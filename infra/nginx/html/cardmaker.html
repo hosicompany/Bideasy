@@ -188,6 +188,34 @@ $('dl').addEventListener('click', ()=>{
 
 if(document.fonts && document.fonts.ready){ document.fonts.load("800 80px Pretendard").then(()=>document.fonts.ready).then(render); }
 render();
+
+// ── 콘텐츠 엔진 브릿지 (Phase 2) — admin-blog "🎴 카드메이커" 버튼이 localStorage 로 전달한
+//    카드 카피(slides 배열)를 슬라이드 네비로 프리필. 렌더·다운로드는 기존 로직 그대로(눈검수 유지).
+(function(){
+  let slides = null;
+  try{ slides = JSON.parse(localStorage.getItem('bd_cardmaker_slides')||'null'); }catch(e){}
+  if(!Array.isArray(slides) || !slides.length) return;
+  let idx = 0;
+  const nav = document.createElement('div');
+  nav.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:12px;padding:10px;background:#161E3C;border-radius:10px;';
+  nav.innerHTML = '<button class="ghost" id="engPrev" style="height:36px;">◀ 이전</button>'
+    + '<span id="engPos" style="color:#7E8BC0;font-size:13px;flex:1;text-align:center;">엔진 카드 1 / '+slides.length+'</span>'
+    + '<button class="ghost" id="engNext" style="height:36px;">다음 ▶</button>';
+  const presetEl = $('preset');
+  presetEl.parentNode.insertBefore(nav, presetEl.previousElementSibling);
+  function applySlide(i){
+    idx = (i + slides.length) % slides.length;
+    const s = slides[idx] || {};
+    $('kind').value = ['cover','content','highlight','cta'].includes(s.kind) ? s.kind : 'content';
+    $('badge').value = s.badge || ''; $('headline').value = s.headline || '';
+    $('body').value = s.body || ''; $('fl').value = s.fl || 'bideasy.kr'; $('fr').value = s.fr || '';
+    $('engPos').textContent = '엔진 카드 ' + (idx+1) + ' / ' + slides.length;
+    render();
+  }
+  $('engPrev').addEventListener('click', ()=>applySlide(idx-1));
+  $('engNext').addEventListener('click', ()=>applySlide(idx+1));
+  applySlide(0);
+})();
 </script>
 </body>
 </html>

@@ -245,3 +245,90 @@ def create_draft_from_topic(db, code: str):
     db.commit()
     db.refresh(post)
     return post, "created"
+
+
+# ─── Phase 2: 채널 파생 하네스 (blocks → channel_assets_json) ──
+
+_DERIVE_SYSTEM_PROMPT = (
+    "너는 BidEasy(한국 공공입찰 SaaS)의 채널 콘텐츠 에디터다. 검수 완료된 블로그 정본 블록을 "
+    "받아 채널별 파생 카피를 만든다. 브랜드 원칙: 낙찰가 예측·적중률 약속 금지, '낙찰률' 표현 금지, "
+    "숫자·통계 지어내기 금지(블록에 있는 것만 사용), 해요체, 과장 금지.\n"
+    "JSON 으로만 응답한다:\n"
+    '{"instagram_cards": [카드뉴스 5~6장 — cardmaker 규격: '
+    '{"kind": "cover"|"content"|"highlight"|"cta", "badge": "상단 라벨(≤10자)", '
+    '"headline": "헤드라인 — 줄당 최대 12자, 최대 2줄, 줄바꿈은 \\n 으로 직접 삽입", '
+    '"body": "본문 — 줄당 최대 22자, 최대 4줄, \\n 직접 삽입", '
+    '"fl": "bideasy.kr", "fr": "n / N"}] — 1장=cover, 마지막=cta, 중간=content(핵심 1개씩),\n'
+    '"reels_script": {"hook_3s": "3초 훅 한 문장", "points": ["핵심 문장"] (2~3개), "cta": "마무리 한 문장"},\n'
+    '"youtube": {"script_md": "1~2분 말하기체 대본(마크다운)", "chapters": ["00:00 제목"...], '
+    '"description": "설명란(마지막 줄에 bideasy.kr 링크)"},\n'
+    '"naver_summary_md": "네이버 블로그용 요약 본문(마크다운, 핵심만 짧게 + 마지막에 원문 안내 문구)"}'
+)
+
+
+def derive_channel_assets(blocks: dict) -> Optional[dict]:
+    """정본 블록 → 채널 파생 자산. 키 미설정/실패 시 None (가짜 자산 금지)."""
+    if not settings.OPENAI_API_KEY:
+        return None
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _DERIVE_SYSTEM_PROMPT},
+                {"role": "user", "content": "정본 블록:\n" + json.dumps(blocks, ensure_ascii=False)},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.4,
+            max_tokens=2500,
+        )
+        data = json.loads(resp.choices[0].message.content)
+        if not data.get("instagram_cards"):
+            return None
+        # fr 페이지 표기 결정적 보정 (n / N)
+        cards = data["instagram_cards"][:6]
+        total = len(cards)
+        for i, c in enumerate(cards, 1):
+            c["fl"] = c.get("fl") or "bideasy.kr"
+            c["fr"] = f"{i} / {total}"
+        data["instagram_cards"] = cards
+        return data
+    except Exception:
+        logger.exception("channel assets derivation failed")
+        return None
+
+
+def ensure_channel_assets(db, post) -> bool:
+    """발행 훅용 — blocks 있고 자산 없으면 파생 생성·저장. 성공 시 True.
+
+    best-effort: 실패해도 예외를 밖으로 던지지 않는다(발행을 막지 않음).
+    """
+    try:
+        if not getattr(post, "blocks_json", None) or getattr(post, "channel_assets_json", None):
+            return False
+        assets = derive_channel_assets(post.blocks_json)
+        if assets is None:
+            return False
+        post.channel_assets_json = assets
+        db.commit()
+        return True
+    except Exception:
+        logger.exception("ensure_channel_assets failed for post %s", getattr(post, "id", "?"))
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def next_unconsumed_topic(db) -> Optional[dict]:
+    """주간 루프용 — 아직 초안이 없는 최우선(P1→P2→P3, 코드순) 주제."""
+    for t in sorted(TOPIC_SEEDS, key=lambda x: (x["priority"], int(x["code"][1:]))):
+        exists = db.query(models.BlogPost).filter(
+            models.BlogPost.slug == slug_for(t["code"])
+        ).first()
+        if exists is None:
+            return t
+    return None
