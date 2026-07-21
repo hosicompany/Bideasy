@@ -222,6 +222,49 @@ class TestChannelAssets:
         assert admin_client.post(f"/api/v1/admin/blog/{post.id}/derive-assets").status_code == 503
 
 
+class TestQueueSustainability:
+    """큐 소진이 조용히 지나가지 않는다 — 잔여 카운트·경보·AI 후보 제안."""
+
+    def _clear_topic_posts(self, db):
+        db.query(models.BlogPost).filter(
+            models.BlogPost.slug.in_([ce.slug_for(t["code"]) for t in ce.TOPIC_SEEDS])
+        ).delete(synchronize_session=False)
+        db.commit()
+
+    def test_remaining_topics_counts(self, db_session):
+        self._clear_topic_posts(db_session)
+        assert ce.remaining_topics(db_session) == 24
+        db_session.add(models.BlogPost(slug=ce.slug_for("K1"), title="t", body_md="b", body_html="h"))
+        db_session.commit()
+        assert ce.remaining_topics(db_session) == 23
+
+    def test_propose_returns_none_without_llm(self, monkeypatch):
+        monkeypatch.setattr(ce.settings, "OPENAI_API_KEY", "")
+        assert ce.propose_topic_candidates(5) is None
+
+    def test_propose_endpoint_503_without_llm(self, admin_client, monkeypatch):
+        monkeypatch.setattr(ce.settings, "OPENAI_API_KEY", "")
+        res = admin_client.get("/api/v1/admin/blog/topics/propose")
+        assert res.status_code == 503
+
+    def test_propose_endpoint_success_with_mock(self, admin_client, monkeypatch):
+        monkeypatch.setattr(
+            ce, "propose_topic_candidates",
+            lambda n=8: [{"title": "새 주제", "angle": "앵글", "keyword": "kw", "priority": "P2"}],
+        )
+        res = admin_client.get("/api/v1/admin/blog/topics/propose?n=3")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["candidates"][0]["title"] == "새 주제"
+        assert "remaining" in data
+        assert "자동 편입되지 않아요" in data["note"]
+
+    def test_topics_endpoint_includes_remaining(self, admin_client):
+        res = admin_client.get("/api/v1/admin/blog/topics")
+        assert res.status_code == 200
+        assert isinstance(res.json()["remaining"], int)
+
+
 class TestDataStoryBlocksAlignment:
     def test_weekly_story_carries_blocks(self, db_session):
         """데이터스토리 초안에 blocks_json 정합 (숫자 결정적)."""

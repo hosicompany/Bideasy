@@ -323,6 +323,65 @@ def ensure_channel_assets(db, post) -> bool:
         return False
 
 
+# 큐 잔여가 이 이하로 떨어지면 관리자에게 보충 경보 (약 1개월 분량)
+LOW_QUEUE_WATERMARK = 4
+
+
+def remaining_topics(db) -> int:
+    """아직 초안이 생성되지 않은(미소비) 주제 수."""
+    slugs = [slug_for(t["code"]) for t in TOPIC_SEEDS]
+    consumed = (
+        db.query(models.BlogPost.slug)
+        .filter(models.BlogPost.slug.in_(slugs))
+        .count()
+    )
+    return len(TOPIC_SEEDS) - consumed
+
+
+_PROPOSE_SYSTEM_PROMPT = (
+    "너는 BidEasy(한국 공공입찰 안전 비서 SaaS) 블로그의 편집장이다. "
+    "'입찰상식' 트랙의 신규 주제 후보를 제안한다.\n"
+    "브랜드 원칙(위반 금지): 낙찰가 예측·적중률 소재 금지, '낙찰률' 표현 금지, "
+    "안전·자격·정밀·정직 프레임 유지. 소규모 전문건설업(1~10인) 사장님 대상.\n"
+    "각 후보는 검색 수요가 있을 법한 실무 주제여야 하고, 기존 주제와 겹치면 안 된다.\n"
+    'JSON 으로만 응답: {"candidates": [{"title": "주제(가제)", "angle": "앵글 한 줄", '
+    '"keyword": "SEO 타겟 검색어", "priority": "P1|P2|P3"}]}'
+)
+
+
+def propose_topic_candidates(n: int = 8) -> Optional[list]:
+    """신규 주제 후보 n개 제안 (자동 편입 아님 — 사람 검토 후 시드 추가).
+
+    키 미설정/실패 시 None. 큐 보충의 편집 결정권은 사람에게 남긴다.
+    """
+    if not settings.OPENAI_API_KEY:
+        return None
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        existing = "\n".join(f"- {t['title']} ({t['angle']})" for t in TOPIC_SEEDS)
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _PROPOSE_SYSTEM_PROMPT},
+                {"role": "user", "content": f"기존 주제 목록(중복 금지):\n{existing}\n\n신규 후보 {n}개를 제안하라."},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.7,
+            max_tokens=1500,
+        )
+        data = json.loads(resp.choices[0].message.content)
+        cands = [
+            c for c in (data.get("candidates") or [])
+            if c.get("title") and "낙찰률" not in c["title"] and "낙찰률" not in c.get("angle", "")
+        ]
+        return cands[:n] or None
+    except Exception:
+        logger.exception("topic candidate proposal failed")
+        return None
+
+
 def next_unconsumed_topic(db) -> Optional[dict]:
     """주간 루프용 — 아직 초안이 없는 최우선(P1→P2→P3, 코드순) 주제."""
     for t in sorted(TOPIC_SEEDS, key=lambda x: (x["priority"], int(x["code"][1:]))):
