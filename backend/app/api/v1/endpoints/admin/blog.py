@@ -115,17 +115,20 @@ def create_blog_post(payload: BlogPostCreate, db: Session = Depends(get_db), _ad
 
 
 @router.post("/blog/generate-from-topic/{topic_code}", response_model=BlogPostOut)
-def generate_from_topic(topic_code: str, db: Session = Depends(get_db), _admin=Depends(require_admin)):
+def generate_from_topic(topic_code: str, force: bool = False, db: Session = Depends(get_db), _admin=Depends(require_admin)):
     """주제 코드로 구조화 정본 초안 생성 (검수 게이트 — publish_at 없이 draft).
 
-    멱등: 같은 주제 초안이 있으면 그걸 반환. LLM 키 미설정이면 503(가짜 초안 금지).
+    멱등: 같은 주제 초안이 있으면 그걸 반환. force=true 면 draft 재생성(발행본은 거부).
+    LLM 키 미설정이면 503(가짜 초안 금지).
     """
     from app.services import content_engine
-    post, status = content_engine.create_draft_from_topic(db, topic_code.upper())
+    post, status = content_engine.create_draft_from_topic(db, topic_code.upper(), force=force)
     if status == "unknown_topic":
         raise HTTPException(404, f"주제 코드 '{topic_code}' 를 찾을 수 없어요.")
     if status == "llm_unavailable":
         raise HTTPException(503, "AI 초안 생성을 지금 사용할 수 없어요 (LLM 키 미설정 또는 생성 실패).")
+    if status == "published_locked":
+        raise HTTPException(409, "이미 발행된 글이라 재생성할 수 없어요 — 게시취소 후 시도하세요.")
     return post
 
 

@@ -93,16 +93,36 @@ def list_topics(db) -> list[dict]:
 
 # ─── LLM 블록 생성 ─────────────────────────────────────────────
 
+# 검증된 제도 팩트 시트 — "숫자 지어내기 금지" 가드에서 제외되는 법정·제도 사실.
+# (2026-07-19 품질 개편: 이 시트가 없으면 LLM 이 제도 수치까지 회피해 내용이 얕아짐)
+_DOMAIN_FACTS = (
+    "[검증된 제도 팩트 — 이 수치는 정확히 사용 가능]\n"
+    "- 예정가격 결정: 발주기관이 기초금액 기준 복수예비가격 15개 작성 → 입찰참가자 추첨으로 4개 선택 → 그 산술평균이 예정가격. 개찰 전까지 비공개, 누구도 미리 알 수 없음.\n"
+    "- 예비가격 변동폭: 통상 국가기관 ±2%, 지방자치단체 ±3% (기관·공고별 상이 — 공고문 확인).\n"
+    "- 낙찰하한선 = 예정가격 × 낙찰하한율. 이 미만 투찰은 무효(자동 탈락). 공사 하한율은 금액 구간별 상이(2026-01-30 시행 기준 87.495~89.745%, 예: 추정가격 10억 미만 공사 89.745%).\n"
+    "- 적격심사: 낙찰하한선 위 최저가 순으로 심사. 실적·경영상태·신인도 등 점수 통과 필요.\n"
+    "- A값: 국민연금·건강보험·산재·고용·노인장기요양 보험료 합계. 사후정산 비목이라 투찰률이 적용되지 않음 → 분리 계산하지 않으면 견적 왜곡.\n"
+    "- 지역제한 입찰: 공고 지역에 주된 영업소(본사)가 있어야 참여 가능. 공동수급(컨소시엄) 허용 여부는 공고별 상이.\n"
+    "- 소액수의견적: 소액 공사 등에서 2인 이상 견적 제출로 계약상대자 결정. 사정률 추첨 구조는 동일하게 랜덤.\n"
+    "- 입찰무효 흔한 사유: 하한선 미만 투찰, 마감시각 경과, 인증서 문제, 필수서류 누락, 참가자격 미달.\n"
+    "[금지] 위 시트에 없는 통계·승률·사례 수치·업체명은 절대 지어내지 말 것. 필요하면 수치 없이 원리로 서술."
+)
+
 _SYSTEM_PROMPT = (
-    "너는 한국 공공입찰(나라장터) 도메인 콘텐츠 에디터다. BidEasy 블로그의 구조화 정본을 만든다.\n"
+    "너는 한국 공공입찰(나라장터) 도메인의 전문 콘텐츠 에디터다. BidEasy 블로그의 구조화 정본을 만든다.\n"
     "브랜드 원칙(위반 금지):\n"
     "- 낙찰가 예측·적중률을 약속하거나 암시하지 않는다. '낙찰률'이라는 표현을 쓰지 않는다.\n"
-    "- 통계·숫자·사례 수치를 지어내지 않는다. 구체 숫자가 필요한 자리는 일반 원리로 서술한다.\n"
-    "- 톤은 해요체, 친근하고 실무적으로. 과장·공포 조장 금지.\n"
-    "- 법·제도 서술은 보수적으로: 단정 대신 '공고문 확인'을 안내한다.\n"
+    "- 톤은 해요체, 친근하고 실무적으로. 과장·공포 조장 금지. 법·제도 단정 대신 '공고문 확인' 안내.\n"
+    + _DOMAIN_FACTS + "\n"
+    "품질 기준(중요 — 얕은 글 금지):\n"
+    "- 본문 섹션 합계 2,800자 이상(읽는 시간 5분+). 섹션마다 반드시 새로운 정보 — 같은 말 반복 금지.\n"
+    "- 각 섹션 body 는 400~700자 마크다운(불릿·**굵게** 활용 가능). 제도 메커니즘을 팩트 시트 수치로 구체적으로 설명.\n"
+    "- 초보 사장님이 '오늘 바로 써먹을' 실무 디테일 포함(무엇을 확인하고, 무엇을 조심하는지).\n"
     "JSON 으로만 응답한다:\n"
     '{"hook": "1~2문장 호기심 훅", "summary_30s": "2~3문장 30초 요약", '
-    '"key_points": [{"heading": "소제목", "body": "2~4문장"}] (3~5개), '
+    '"sections": [{"heading": "소제목", "body": "400~700자 마크다운"}] (5~7개), '
+    '"checklist": ["실무 체크 문장"] (3~5개), '
+    '"faq": [{"q": "질문", "a": "2~3문장 답"}] (2~3개), '
     '"seo_summary": "검색결과용 1문장 메타 요약", '
     '"image_prompts": [{"slot": "hero"|"diagram", "caption": "한글 캡션(figcaption/alt용)", '
     '"prompt": "영어 이미지 생성 프롬프트"}] (hero 1개 + diagram 1개)}\n'
@@ -131,18 +151,30 @@ def generate_blocks(topic: dict) -> Optional[dict]:
             f"SEO 타겟 검색어: {topic.get('keyword') or '(없음)'}\n"
             "위 주제로 구조화 정본 블록을 만들어라."
         )
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.4,
-            max_tokens=1200,
-        )
-        data = json.loads(resp.choices[0].message.content)
-        if not data.get("hook") or not data.get("key_points"):
+        def _call(extra: str = "") -> dict:
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt + extra},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.5,
+                max_tokens=4000,
+            )
+            return json.loads(resp.choices[0].message.content)
+
+        data = _call()
+        sections = data.get("sections") or data.get("key_points") or []
+        total_chars = sum(len(s.get("body", "")) for s in sections)
+        if total_chars < 2000:
+            # 분량 미달 1회 재시도 — 5분 이상 읽을거리(≈2,800자+)가 품질 기준
+            data = _call(
+                f"\n\n[재시도] 방금 생성분은 본문 {total_chars}자로 분량 미달이었다. "
+                "섹션 6~7개, 각 500~700자로 훨씬 깊고 길게 다시 써라. 반복 금지."
+            )
+            sections = data.get("sections") or data.get("key_points") or []
+        if not data.get("hook") or not sections:
             return None
         return {
             "track": "knowledge",
@@ -151,7 +183,9 @@ def generate_blocks(topic: dict) -> Optional[dict]:
             "target_keyword": topic.get("keyword") or "",
             "hook": data["hook"],
             "summary_30s": data.get("summary_30s", ""),
-            "key_points": data["key_points"][:5],
+            "key_points": sections[:7],
+            "checklist": (data.get("checklist") or [])[:5],
+            "faq": (data.get("faq") or [])[:3],
             "data_blocks": [],            # K 트랙 기본 생성은 비움 — 숫자 지어내기 금지
             "internal_links": _DEFAULT_LINKS,
             "cta": _DEFAULT_CTA,
@@ -193,6 +227,13 @@ def render_blocks_to_md(blocks: dict, slug: str = "") -> str:
         L += [f"## {kp.get('heading', '')}", "", kp.get("body", ""), ""]
         if slug and i == 0 and diagrams:  # 첫 핵심 뒤에 도식 자리
             L += [_image_placeholder("diagram", diagrams[0].get("caption", ""), slug, 1), ""]
+    if blocks.get("checklist"):
+        L += ["## ✅ 오늘 바로 쓰는 체크리스트", ""]
+        L += [f"- {item}" for item in blocks["checklist"]] + [""]
+    if blocks.get("faq"):
+        L += ["## 자주 묻는 질문", ""]
+        for f in blocks["faq"]:
+            L += [f"**Q. {f.get('q', '')}**", "", f.get("a", ""), ""]
     for db_block in blocks.get("data_blocks", []):
         if db_block.get("caption"):
             L += [f"**{db_block['caption']}**", ""]
@@ -205,11 +246,12 @@ def render_blocks_to_md(blocks: dict, slug: str = "") -> str:
 
 # ─── 초안 생성 (검수 게이트: publish_at 없음) ──────────────────
 
-def create_draft_from_topic(db, code: str):
+def create_draft_from_topic(db, code: str, force: bool = False):
     """주제 코드 → 구조화 정본 초안 저장. 반환 (post|None, status).
 
-    status: created | exists | unknown_topic | llm_unavailable
+    status: created | exists | unknown_topic | llm_unavailable | published_locked
     멱등 — 같은 주제 slug 초안이 있으면 재생성 안 함.
+    force=True 면 기존 draft 를 재생성(덮어쓰기) — 발행본은 보호(published_locked).
     """
     topic = get_topic(code)
     if topic is None:
@@ -218,7 +260,25 @@ def create_draft_from_topic(db, code: str):
     slug = slug_for(code)
     existing = db.query(models.BlogPost).filter(models.BlogPost.slug == slug).first()
     if existing is not None:
-        return existing, "exists"
+        if not force:
+            return existing, "exists"
+        if existing.status == "published":
+            return existing, "published_locked"
+        blocks = generate_blocks(topic)
+        if blocks is None:
+            return None, "llm_unavailable"
+        body_md = render_blocks_to_md(blocks, slug=slug)
+        html, rt = blog_svc.render(body_md)
+        existing.title = topic["title"]
+        existing.summary = blocks.get("seo_summary") or blocks.get("summary_30s", "")
+        existing.body_md = body_md
+        existing.body_html = html
+        existing.reading_time = rt
+        existing.blocks_json = blocks
+        existing.channel_assets_json = None  # 정본이 바뀌었으니 파생 캐시 무효화
+        db.commit()
+        db.refresh(existing)
+        return existing, "created"
 
     blocks = generate_blocks(topic)
     if blocks is None:

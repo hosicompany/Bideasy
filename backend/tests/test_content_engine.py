@@ -222,6 +222,55 @@ class TestChannelAssets:
         assert admin_client.post(f"/api/v1/admin/blog/{post.id}/derive-assets").status_code == 503
 
 
+class TestQualityUpgrade:
+    """2026-07-19 품질 개편 — 5분+ 분량 스키마(sections·checklist·faq)와 force 재생성."""
+
+    def test_render_checklist_and_faq(self):
+        blocks = dict(SAMPLE_BLOCKS)
+        blocks["checklist"] = ["공고문에서 하한율 확인", "A값 분리 계산"]
+        blocks["faq"] = [{"q": "예정가격은 언제 공개되나요?", "a": "개찰 때 공개돼요."}]
+        md = ce.render_blocks_to_md(blocks)
+        assert "## ✅ 오늘 바로 쓰는 체크리스트" in md
+        assert "- 공고문에서 하한율 확인" in md
+        assert "## 자주 묻는 질문" in md
+        assert "**Q. 예정가격은 언제 공개되나요?**" in md
+
+    def test_force_regenerates_draft_and_invalidates_assets(self, db_session, monkeypatch):
+        slug = ce.slug_for("K1")
+        db_session.query(models.BlogPost).filter(models.BlogPost.slug == slug).delete()
+        db_session.add(models.BlogPost(
+            slug=slug, title="구버전", body_md="짧은 글", body_html="<p>짧은 글</p>",
+            status="draft", source="auto", blocks_json={"old": True},
+            channel_assets_json={"stale": True},
+        ))
+        db_session.commit()
+        new_blocks = dict(SAMPLE_BLOCKS)
+        monkeypatch.setattr(ce, "generate_blocks", lambda t: new_blocks)
+        post, status = ce.create_draft_from_topic(db_session, "K1", force=True)
+        assert status == "created"
+        assert "30초 요약" in post.body_md          # 새 본문으로 교체됨
+        assert post.blocks_json.get("old") is None
+        assert post.channel_assets_json is None      # 파생 캐시 무효화
+
+    def test_force_refuses_published(self, db_session, monkeypatch):
+        slug = ce.slug_for("K2")
+        db_session.query(models.BlogPost).filter(models.BlogPost.slug == slug).delete()
+        db_session.add(models.BlogPost(
+            slug=slug, title="발행본", body_md="b", body_html="h", status="published",
+        ))
+        db_session.commit()
+        monkeypatch.setattr(ce, "generate_blocks", lambda t: dict(SAMPLE_BLOCKS))
+        post, status = ce.create_draft_from_topic(db_session, "K2", force=True)
+        assert status == "published_locked"
+        assert post.title == "발행본"  # 불변
+
+    def test_domain_facts_in_prompt(self):
+        """제도 팩트 시트가 프롬프트에 포함 — 얕은 글의 근본 원인 방지."""
+        assert "복수예비가격 15개" in ce._SYSTEM_PROMPT
+        assert "2,800자 이상" in ce._SYSTEM_PROMPT
+        assert "지어내지 말 것" in ce._SYSTEM_PROMPT
+
+
 class TestQueueSustainability:
     """큐 소진이 조용히 지나가지 않는다 — 잔여 카운트·경보·AI 후보 제안."""
 
