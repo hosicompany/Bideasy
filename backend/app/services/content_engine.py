@@ -118,6 +118,8 @@ _SYSTEM_PROMPT = (
     "- 본문 섹션 합계 2,800자 이상(읽는 시간 5분+). 섹션마다 반드시 새로운 정보 — 같은 말 반복 금지.\n"
     "- 각 섹션 body 는 400~700자 마크다운(불릿·**굵게** 활용 가능). 제도 메커니즘을 팩트 시트 수치로 구체적으로 설명.\n"
     "- 초보 사장님이 '오늘 바로 써먹을' 실무 디테일 포함(무엇을 확인하고, 무엇을 조심하는지).\n"
+    "- 깊이: 각 섹션은 '무엇을'에서 멈추지 말고 '왜 그런지'(제도적 이유·설계 의도)까지 설명하고, "
+    "수치 없는 서사형 실수 시나리오(예: '하한선을 옛 기준으로 계산한 사장님이…')를 1개 이상 녹일 것.\n"
     "JSON 으로만 응답한다:\n"
     '{"hook": "1~2문장 호기심 훅", "summary_30s": "2~3문장 30초 요약", '
     '"sections": [{"heading": "소제목", "body": "400~700자 마크다운"}] (5~7개), '
@@ -140,29 +142,48 @@ _SYSTEM_PROMPT = (
 
 def generate_blocks(topic: dict) -> Optional[dict]:
     """주제 → 구조화 정본 블록. 키 미설정/실패 시 None (지어낸 폴백 초안 금지)."""
-    if not settings.OPENAI_API_KEY:
+    primary_key = settings.CONTENT_LLM_API_KEY or settings.OPENAI_API_KEY
+    if not primary_key:
         return None
     try:
         from openai import OpenAI
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        # 정본 작성 모델은 OpenAI 호환 엔드포인트(OpenRouter 등)로 교체 가능 —
+        # 폴백(gpt-4o-mini)은 항상 OpenAI 직결이라 프로바이더 장애와 독립적이다.
+        base_url = settings.CONTENT_LLM_BASE_URL or None
+        primary_client = OpenAI(api_key=primary_key, base_url=base_url)
         user_prompt = (
             f"주제: {topic['title']}\n앵글: {topic['angle']}\n"
             f"SEO 타겟 검색어: {topic.get('keyword') or '(없음)'}\n"
             "위 주제로 구조화 정본 블록을 만들어라."
         )
-        def _call(extra: str = "") -> dict:
-            resp = client.chat.completions.create(
-                model="gpt-4o-mini",
+        def _chat(client, model: str, extra: str = "") -> dict:
+            kwargs = dict(
+                model=model,
                 messages=[
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt + extra},
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.5,
                 max_tokens=4000,
             )
+            # Claude 계열(Sonnet 5 등)은 temperature 등 샘플링 파라미터를 거부(400)
+            if "claude" not in model.lower():
+                kwargs["temperature"] = 0.5
+            resp = client.chat.completions.create(**kwargs)
             return json.loads(resp.choices[0].message.content)
+
+        def _call(extra: str = "") -> dict:
+            # 상위 모델 우선(깊이), 실패(미지원 모델·프로바이더 장애 등) 시 4o-mini 폴백
+            primary = getattr(settings, "CONTENT_LLM_MODEL", "gpt-4o-mini")
+            try:
+                return _chat(primary_client, primary, extra)
+            except Exception:
+                if not settings.OPENAI_API_KEY:
+                    raise  # 폴백 경로(OpenAI 직결) 불가 — 정직하게 실패
+                logger.warning("content model %s failed — fallback to gpt-4o-mini", primary)
+                fallback_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+                return _chat(fallback_client, "gpt-4o-mini", extra)
 
         data = _call()
         sections = data.get("sections") or data.get("key_points") or []

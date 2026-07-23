@@ -72,6 +72,15 @@ class Settings(BaseSettings):
 
     # === External APIs ===
     OPENAI_API_KEY: str = ""
+    # 콘텐츠 엔진(블로그 정본) 작성 모델 — 브랜드 얼굴이라 상위 모델 기본.
+    # 주 1편 생성이라 비용 미미. 실패 시 gpt-4o-mini(OpenAI 직결) 자동 폴백.
+    # OpenAI 외 프로바이더는 아래 BASE_URL/API_KEY 로 교체 — 예: OpenRouter 경유 Claude
+    #   CONTENT_LLM_MODEL=anthropic/claude-sonnet-5
+    #   CONTENT_LLM_BASE_URL=https://openrouter.ai/api/v1
+    #   CONTENT_LLM_API_KEY=<OpenRouter 키; 서버 .env.production 에만>
+    CONTENT_LLM_MODEL: str = "gpt-4o"
+    CONTENT_LLM_BASE_URL: str = ""   # 비면 OpenAI 기본 엔드포인트
+    CONTENT_LLM_API_KEY: str = ""    # 비면 OPENAI_API_KEY 재사용
     PUBLIC_DATA_KEY: str = ""
 
     # === OAuth (Social Login) ===
