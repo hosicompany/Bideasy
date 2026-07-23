@@ -270,6 +270,14 @@ class TestQualityUpgrade:
         assert "2,800자 이상" in ce._SYSTEM_PROMPT
         assert "지어내지 말 것" in ce._SYSTEM_PROMPT
 
+    def test_immersion_persona_in_prompt(self):
+        """몰입 페르소나 지시 포함 — '내 이야기 같은' 현실 예시 (2026-07-23 사용자 피드백).
+
+        정직 가드도 함께: 가짜 후기 금지(실존 업체명·실적 수치 창작 금지)가 유지돼야 한다.
+        """
+        assert "페르소나" in ce._SYSTEM_PROMPT
+        assert "가짜 후기 금지" in ce._SYSTEM_PROMPT
+
 
 class TestQueueSustainability:
     """큐 소진이 조용히 지나가지 않는다 — 잔여 카운트·경보·AI 후보 제안."""
