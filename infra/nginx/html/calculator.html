@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>투찰가·낙찰하한율 계산기 (무료) — 나라장터 입찰 | BidEasy</title>
-  <meta name="description" content="기초금액·사정률·A값만 넣으면 낙찰하한가와 안전 투찰가를 즉시 계산. 공사 87.745%·용역 60% 낙찰하한율 자동 적용, 하한선 미달 시 경고. 회원가입 없이 무료.">
+  <meta name="description" content="기초금액·사정률·A값만 넣으면 낙찰하한가와 안전 투찰가를 즉시 계산. 공사 낙찰하한율 금액대별 자동 적용(87.495~89.745%, 2026 개정), 하한선 미달 시 경고. 회원가입 없이 무료.">
   <link rel="canonical" href="https://bideasy.kr/calculator">
   <meta property="og:type" content="website">
   <meta property="og:title" content="투찰가·낙찰하한율 계산기 (무료) — BidEasy">
@@ -19,7 +19,7 @@
       {
         "@type": "Question",
         "name": "낙찰하한율이 뭔가요?",
-        "acceptedAnswer": { "@type": "Answer", "text": "예정가격 대비 이 비율 미만으로 투찰하면 낙찰받을 수 없는 하한선이에요. 적격심사 공사는 보통 87.745%, 일반용역은 60%가 적용돼요. 하한선 바로 위 구간에 투찰이 몰리기 때문에 1원 단위 계산이 중요해요." }
+        "acceptedAnswer": { "@type": "Answer", "text": "예정가격 대비 이 비율 미만으로 투찰하면 낙찰받을 수 없는 하한선이에요. 적격심사 공사는 금액대별로 달라요 — 2026년 개정 기준 10억 미만 89.745%, 10억~50억 88.745%, 50억 이상 87.495% (공고문 확인 필수). 하한선 바로 위 구간에 투찰이 몰리기 때문에 1원 단위 계산이 중요해요." }
       },
       {
         "@type": "Question",
@@ -40,6 +40,7 @@
   <link rel="stylesheet" href="/assets/theme.css">
   <style>html,body{margin:0;}</style>
   <script src="/assets/app.js"></script>
+  <script src="/assets/lower-limits.js"></script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-V4ERRL0NH0"></script>
   <script>
@@ -80,11 +81,11 @@
         </div>
 
         <div style="margin-top:18px;">
-          <label class="field-label" id="tcl-label">투찰률 — 현재 88.20%</label>
+          <label class="field-label" id="tcl-label">투찰률 — 현재 90.30%</label>
           <div style="display:flex;align-items:center;gap:14px;">
-            <span class="num" style="font-size:12px;color:var(--faint);width:34px;">86%</span>
-            <input class="slider" id="tcl" type="range" min="86" max="90" step="0.01" value="88.2" style="accent-color:var(--accent);">
-            <span class="num" style="font-size:12px;color:var(--faint);width:34px;text-align:right;">90%</span>
+            <span class="num" style="font-size:12px;color:var(--faint);width:34px;">85%</span>
+            <input class="slider" id="tcl" type="range" min="85" max="92" step="0.01" value="90.3" style="accent-color:var(--accent);">
+            <span class="num" style="font-size:12px;color:var(--faint);width:34px;text-align:right;">92%</span>
           </div>
           <div id="presets" style="display:flex;gap:6px;margin-top:12px;"></div>
           <div class="hint" id="tcl-hint" style="font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5;"></div>
@@ -107,18 +108,22 @@
     var API_BASE = BD.API_BASE;
     document.getElementById('from-bid-link').querySelector('span').insertAdjacentHTML('afterbegin', BD.icon('search', 14));
 
-    var LOWER = { CONSTRUCTION: 87.745, SERVICE: 87.995, GOODS: 87.995 };
+    // 공사는 금액대별 티어(assets/lower-limits.js — 정본: backend lower_limits.py 미러).
+    // 용역·물품은 기존 정책 유지(계약유형별 상이 — 도메인 재검토 전 변경 금지).
+    var LOWER = { SERVICE: 87.995, GOODS: 87.995 };
     var CT_KO = { CONSTRUCTION: '공사', SERVICE: '용역', GOODS: '물품' };
 
-    var st = { ct: 'CONSTRUCTION', basic: 500000000, tcl: 88.2, aval: 12400000, copied: false };
+    // 기본 5억 공사 하한율 89.745% 위에서 시작 — 첫 화면이 '위반' 상태로 열리지 않게
+    var st = { ct: 'CONSTRUCTION', basic: 500000000, tcl: 90.3, aval: 12400000, copied: false };
 
     function num(el) { return Number(document.getElementById(el).value.replace(/[^\d]/g, '')) || 0; }
 
     function render() {
       var a = st.ct === 'GOODS' ? 0 : st.aval;
-      var rate = LOWER[st.ct];
+      var rate = st.ct === 'CONSTRUCTION' ? window.BD_LOWER.construction(st.basic) : LOWER[st.ct];
       var predicted = Math.floor(((st.basic - a) * (st.tcl / 100) + a) / 10) * 10;
-      var lower = Math.round(st.basic * rate / 100);
+      // 하한선도 A값 보정 — 백엔드 calculator.py 와 동일 공식: (기초 − A) × 하한율 + A
+      var lower = Math.round(a > 0 ? (st.basic - a) * rate / 100 + a : st.basic * rate / 100);
       var diff = st.basic ? ((predicted - lower) / st.basic) * 100 : 0;
       var level = predicted < lower ? 'DANGER' : (diff < 0.5 ? 'WARN' : 'SAFE');
       var danger = level === 'DANGER';
