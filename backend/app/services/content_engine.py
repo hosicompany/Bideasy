@@ -142,38 +142,48 @@ _SYSTEM_PROMPT = (
 
 def generate_blocks(topic: dict) -> Optional[dict]:
     """주제 → 구조화 정본 블록. 키 미설정/실패 시 None (지어낸 폴백 초안 금지)."""
-    if not settings.OPENAI_API_KEY:
+    primary_key = settings.CONTENT_LLM_API_KEY or settings.OPENAI_API_KEY
+    if not primary_key:
         return None
     try:
         from openai import OpenAI
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        # 정본 작성 모델은 OpenAI 호환 엔드포인트(OpenRouter 등)로 교체 가능 —
+        # 폴백(gpt-4o-mini)은 항상 OpenAI 직결이라 프로바이더 장애와 독립적이다.
+        base_url = settings.CONTENT_LLM_BASE_URL or None
+        primary_client = OpenAI(api_key=primary_key, base_url=base_url)
         user_prompt = (
             f"주제: {topic['title']}\n앵글: {topic['angle']}\n"
             f"SEO 타겟 검색어: {topic.get('keyword') or '(없음)'}\n"
             "위 주제로 구조화 정본 블록을 만들어라."
         )
-        def _chat(model: str, extra: str = "") -> dict:
-            resp = client.chat.completions.create(
+        def _chat(client, model: str, extra: str = "") -> dict:
+            kwargs = dict(
                 model=model,
                 messages=[
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt + extra},
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.5,
                 max_tokens=4000,
             )
+            # Claude 계열(Sonnet 5 등)은 temperature 등 샘플링 파라미터를 거부(400)
+            if "claude" not in model.lower():
+                kwargs["temperature"] = 0.5
+            resp = client.chat.completions.create(**kwargs)
             return json.loads(resp.choices[0].message.content)
 
         def _call(extra: str = "") -> dict:
-            # 상위 모델 우선(깊이), 실패(미지원 모델 등) 시 4o-mini 폴백 — ai_analyzer 관행
+            # 상위 모델 우선(깊이), 실패(미지원 모델·프로바이더 장애 등) 시 4o-mini 폴백
             primary = getattr(settings, "CONTENT_LLM_MODEL", "gpt-4o-mini")
             try:
-                return _chat(primary, extra)
+                return _chat(primary_client, primary, extra)
             except Exception:
+                if not settings.OPENAI_API_KEY:
+                    raise  # 폴백 경로(OpenAI 직결) 불가 — 정직하게 실패
                 logger.warning("content model %s failed — fallback to gpt-4o-mini", primary)
-                return _chat("gpt-4o-mini", extra)
+                fallback_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+                return _chat(fallback_client, "gpt-4o-mini", extra)
 
         data = _call()
         sections = data.get("sections") or data.get("key_points") or []
