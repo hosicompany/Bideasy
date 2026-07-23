@@ -59,7 +59,25 @@ def list_content_topics(db: Session = Depends(get_db), _admin=Depends(require_ad
     주의: /blog/{post_id}(int) 보다 먼저 등록해야 'topics' 가 422 로 잡히지 않는다.
     """
     from app.services import content_engine
-    return {"topics": content_engine.list_topics(db)}
+    return {"topics": content_engine.list_topics(db), "remaining": content_engine.remaining_topics(db)}
+
+
+@router.get("/blog/topics/propose")
+def propose_topics(n: int = 8, db: Session = Depends(get_db), _admin=Depends(require_admin)):
+    """신규 주제 후보 AI 제안 (자동 편입 아님 — 검토 후 세션/PR 로 시드 추가).
+
+    큐 지속가능성 루프: 소진 경보 → 이 엔드포인트로 후보 수령 → 사람 검토 → 시드 반영.
+    """
+    from app.services import content_engine
+    n = max(1, min(n, 20))
+    cands = content_engine.propose_topic_candidates(n)
+    if cands is None:
+        raise HTTPException(503, "주제 후보 제안을 지금 사용할 수 없어요 (LLM 키 미설정 또는 생성 실패).")
+    return {
+        "candidates": cands,
+        "note": "자동 편입되지 않아요 — 검토 후 채택할 후보를 세션에 전달하면 시드(코드)로 추가됩니다.",
+        "remaining": content_engine.remaining_topics(db),
+    }
 
 
 @router.get("/blog/{post_id}", response_model=BlogPostOut)
@@ -97,17 +115,20 @@ def create_blog_post(payload: BlogPostCreate, db: Session = Depends(get_db), _ad
 
 
 @router.post("/blog/generate-from-topic/{topic_code}", response_model=BlogPostOut)
-def generate_from_topic(topic_code: str, db: Session = Depends(get_db), _admin=Depends(require_admin)):
+def generate_from_topic(topic_code: str, force: bool = False, db: Session = Depends(get_db), _admin=Depends(require_admin)):
     """주제 코드로 구조화 정본 초안 생성 (검수 게이트 — publish_at 없이 draft).
 
-    멱등: 같은 주제 초안이 있으면 그걸 반환. LLM 키 미설정이면 503(가짜 초안 금지).
+    멱등: 같은 주제 초안이 있으면 그걸 반환. force=true 면 draft 재생성(발행본은 거부).
+    LLM 키 미설정이면 503(가짜 초안 금지).
     """
     from app.services import content_engine
-    post, status = content_engine.create_draft_from_topic(db, topic_code.upper())
+    post, status = content_engine.create_draft_from_topic(db, topic_code.upper(), force=force)
     if status == "unknown_topic":
         raise HTTPException(404, f"주제 코드 '{topic_code}' 를 찾을 수 없어요.")
     if status == "llm_unavailable":
         raise HTTPException(503, "AI 초안 생성을 지금 사용할 수 없어요 (LLM 키 미설정 또는 생성 실패).")
+    if status == "published_locked":
+        raise HTTPException(409, "이미 발행된 글이라 재생성할 수 없어요 — 게시취소 후 시도하세요.")
     return post
 
 

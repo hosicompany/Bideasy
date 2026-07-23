@@ -75,7 +75,19 @@ def weekly_knowledge_draft() -> dict:
 
         topic = content_engine.next_unconsumed_topic(db)
         if topic is None:
-            logger.info("[content.weekly_knowledge_draft] K-큐 전부 소비됨 — no-op")
+            # 조용한 소진 금지 — 블로그가 소리 없이 멈추는 것을 막는다 (지속가능성 경보)
+            admins = db.query(models.User).filter(models.User.is_admin == True).all()  # noqa: E712
+            for a in admins:
+                db.add(models.Notification(
+                    user_id=a.id,
+                    title="🪫 입찰상식 주제 큐 소진",
+                    body="K-큐가 전부 소비됐어요. 이번 주 자동 초안이 없습니다 — 세션에서 '주제 큐 보충'을 요청해 신규 시드를 추가하세요.",
+                    noti_type="TOPIC_QUEUE_EMPTY",
+                    data_json={"remaining": 0},
+                    is_read=0,
+                ))
+            db.commit()
+            logger.warning("[content.weekly_knowledge_draft] K-큐 소진 — 관리자 경보 발송")
             return {"ok": True, "status": "queue_empty"}
 
         post, status = content_engine.create_draft_from_topic(db, topic["code"])
@@ -102,8 +114,22 @@ def weekly_knowledge_draft() -> dict:
                     is_read=0,
                 ))
             db.commit()
-        logger.info(f"[content.weekly_knowledge_draft] {topic['code']} → {status}")
-        return {"ok": status == "created", "status": status, "topic": topic["code"]}
+        # 소진 임박 경보 — 잔여 ≤ 워터마크(약 1개월분)면 보충을 미리 요청
+        remaining = content_engine.remaining_topics(db)
+        if remaining <= content_engine.LOW_QUEUE_WATERMARK:
+            for a in admins:
+                db.add(models.Notification(
+                    user_id=a.id,
+                    title=f"🔋 주제 큐 잔여 {remaining}개 — 보충 필요",
+                    body="약 한 달 안에 소진돼요. /admin/blog/topics/propose 로 AI 후보를 받아 검토하거나, 세션에서 '주제 큐 보충'을 요청하세요.",
+                    noti_type="TOPIC_QUEUE_LOW",
+                    data_json={"remaining": remaining},
+                    is_read=0,
+                ))
+            db.commit()
+
+        logger.info(f"[content.weekly_knowledge_draft] {topic['code']} → {status} (잔여 {remaining})")
+        return {"ok": status == "created", "status": status, "topic": topic["code"], "remaining": remaining}
     except Exception as e:
         db.rollback()
         logger.error(f"[content.weekly_knowledge_draft] error: {e}", exc_info=True)
