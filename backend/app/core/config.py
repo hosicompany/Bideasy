@@ -72,6 +72,9 @@ class Settings(BaseSettings):
 
     # === External APIs ===
     OPENAI_API_KEY: str = ""
+    # 콘텐츠 엔진(블로그 정본) 작성 모델 — 브랜드 얼굴이라 상위 모델 기본.
+    # 주 1편 생성이라 비용 미미. 실패 시 gpt-4o-mini 자동 폴백(.env 로 교체 가능).
+    CONTENT_LLM_MODEL: str = "gpt-4o"
     PUBLIC_DATA_KEY: str = ""
 
     # === OAuth (Social Login) ===
