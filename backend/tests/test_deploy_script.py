@@ -25,6 +25,14 @@ def test_deploy_rebuilds_and_recreates_celery_beat_after_migrations():
     assert migration_index < worker_index < nginx_index < beat_index
 
 
+def test_deploy_reexecutes_when_git_pull_updates_the_script():
+    block = deploy_block(DEPLOY_SCRIPT.read_text())
+
+    assert "DEPLOY_SCRIPT_PATH=" in block
+    assert 'git diff --quiet "$previous_head" HEAD -- infra/deploy.sh' in block
+    assert 'exec "$DEPLOY_SCRIPT_PATH" deploy' in block
+
+
 def test_rollback_rebuilds_celery_beat():
     script = DEPLOY_SCRIPT.read_text()
 

@@ -90,9 +90,16 @@ case "${1:-deploy}" in
   deploy)
     echo "=== Deploying BidEasy ==="
 
-    # Pull latest code
+    # Pull latest code. If this script itself changes, restart with the pulled
+    # copy so the current deployment applies its new behavior immediately.
+    DEPLOY_SCRIPT_PATH="$(pwd)/deploy.sh"
+    previous_head=$(git rev-parse HEAD)
     cd ..
     git pull origin master
+    if ! git diff --quiet "$previous_head" HEAD -- infra/deploy.sh; then
+      echo "deploy.sh changed; restarting deployment with the updated script."
+      exec "$DEPLOY_SCRIPT_PATH" deploy
+    fi
     cd infra
 
     # Build new images
