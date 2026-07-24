@@ -4,6 +4,17 @@ from datetime import datetime, timedelta
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_lead_rate_limit(monkeypatch):
+    """리드 테스트는 로컬 Redis 및 이전 테스트 실행의 IP 카운터를 공유하지 않는다."""
+    import app.api.v1.endpoints.leads as leads_mod
+
+    leads_mod._ip_call_log.clear()
+    monkeypatch.setattr(leads_mod, "_get_redis", lambda: None)
+    yield
+    leads_mod._ip_call_log.clear()
+
+
 def _mk_notice(db, bid_no, title, region, days=5):
     from app.db import models
 
