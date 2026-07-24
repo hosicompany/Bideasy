@@ -67,6 +67,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/theme.css">
   <script src="/assets/app.js"></script>
+  <script src="/assets/lower-limits.js"></script>
   <style>
     html { scroll-behavior: smooth; }
     body { margin: 0; }
@@ -203,19 +204,19 @@
               <input id="demo-basic" class="input" style="padding:9px 12px;font-size:14.5px;" value="500,000,000" inputmode="numeric" autocomplete="off">
             </div>
             <div style="margin-top:12px;">
-              <label class="field-label" id="demo-tcl-label" for="demo-tcl" style="margin-bottom:7px;font-size:12px;">투찰률 — 현재 88.20%</label>
-              <input id="demo-tcl" class="slider" type="range" min="86.5" max="90.5" step="0.01" value="88.20" aria-label="투찰률">
+              <label class="field-label" id="demo-tcl-label" for="demo-tcl" style="margin-bottom:7px;font-size:12px;">투찰률 — 현재 90.20%</label>
+              <input id="demo-tcl" class="slider" type="range" min="86.5" max="90.5" step="0.01" value="90.20" aria-label="투찰률">
             </div>
             <div class="micro" style="margin-top:14px;font-size:10px;">예상 투찰가</div>
-            <div class="num" id="demo-bid" style="font-size:26px;font-weight:600;margin-top:3px;">441,000,000</div>
+            <div class="num" id="demo-bid" style="font-size:26px;font-weight:600;margin-top:3px;">451,000,000</div>
             <div style="margin-top:15px;">
-              <div style="position:relative;height:8px;border-radius:4px;overflow:hidden;background:linear-gradient(90deg,var(--danger-soft) 0 31.1%,var(--safe-soft) 31.1% 100%);"></div>
+              <div id="demo-gauge-bg" style="position:relative;height:8px;border-radius:4px;overflow:hidden;background:linear-gradient(90deg,var(--danger-soft) 0 81.1%,var(--safe-soft) 81.1% 100%);"></div>
               <div style="position:relative;height:0;">
-                <div style="position:absolute;left:31.1%;top:-14px;width:2px;height:16px;background:var(--ink);border-radius:1px;"></div>
+                <div id="demo-gauge-mark" style="position:absolute;left:81.1%;top:-14px;width:2px;height:16px;background:var(--ink);border-radius:1px;"></div>
                 <div id="demo-thumb" style="position:absolute;left:42.5%;top:-13px;transform:translateX(-50%);width:14px;height:14px;border-radius:50%;background:var(--surface);border:3px solid var(--safe);box-shadow:var(--shadow-sm);transition:left .08s linear;"></div>
               </div>
               <div style="display:flex;justify-content:space-between;margin-top:9px;">
-                <span class="micro" style="font-size:9.5px;letter-spacing:1px;">낙찰하한선 87.745%</span>
+                <span class="micro" id="demo-rate-label" style="font-size:9.5px;letter-spacing:1px;">낙찰하한선 89.745%</span>
                 <span class="micro" style="font-size:9.5px;letter-spacing:1px;color:var(--safe);">내 투찰가</span>
               </div>
             </div>
@@ -613,10 +614,18 @@
     }).join('');
 
     // ── 히어로 미니 계산기 (데모: A값 제외 단순 계산 — 정밀 계산은 /calculator) ──
-    var DEMO_RATE = 87.745, DEMO_MIN = 86.5, DEMO_MAX = 90.5;
-    var demo = { basic: 500000000, tcl: 88.20, used: false };
+    // 하한율은 금액대별 티어(assets/lower-limits.js — 정본: backend lower_limits.py 미러)
+    var DEMO_MIN = 86.5, DEMO_MAX = 90.5;
+    // 기본 5억 공사의 하한율이 89.745% 라 초기 투찰률은 그 위(90.20)에서 시작 — 첫인상은 '안전' 상태
+    var demo = { basic: 500000000, tcl: 90.20, used: false };
     var $ = function (id) { return document.getElementById(id); };
     function renderDemo() {
+      var DEMO_RATE = window.BD_LOWER.construction(demo.basic);
+      $('demo-rate-label').textContent = '낙찰하한선 ' + DEMO_RATE + '%';
+      // 하한선 마커·게이지 배경도 금액대별 하한율 위치로 이동
+      var markPos = Math.max(2, Math.min(98, (DEMO_RATE - DEMO_MIN) / (DEMO_MAX - DEMO_MIN) * 100));
+      $('demo-gauge-bg').style.background = 'linear-gradient(90deg,var(--danger-soft) 0 ' + markPos + '%,var(--safe-soft) ' + markPos + '% 100%)';
+      $('demo-gauge-mark').style.left = markPos + '%';
       var bid = Math.floor(demo.basic * (demo.tcl / 100) / 10) * 10;
       var diff = demo.tcl - DEMO_RATE;
       var level = diff < 0 ? 'danger' : diff < 0.25 ? 'warn' : 'safe';

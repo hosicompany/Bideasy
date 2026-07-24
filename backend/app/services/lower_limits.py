@@ -24,6 +24,8 @@ CUTOFF_2026 = date(2026, 1, 30)
 
 # 시설공사 — (추정가격 하한 경계(원), 하한율 %) 내림차순.
 # 값은 기존 simulation_service.LOWER_LIMITS_2026/OLD 와 동일 (이관·통합).
+# ★ KEEP IN SYNC: infra/nginx/html/assets/lower-limits.js (웹 계산기·랜딩 미러) —
+#   이 테이블 변경 시 JS 도 함께 수정. tests/test_lower_limits_sync.py 가 드리프트 감시.
 _CONSTRUCTION_2026 = [
     (10_000_000_000, 87.495),  # 100억 이상
     (5_000_000_000, 87.495),   # 50억 이상 100억 미만
