@@ -83,6 +83,16 @@ class Settings(BaseSettings):
     CONTENT_LLM_API_KEY: str = ""    # 비면 OPENAI_API_KEY 재사용
     PUBLIC_DATA_KEY: str = ""
 
+    # === IndexNow (색인 통보 — 네이버·Bing 등) ===
+    # ⚠️ 이 키는 **비밀이 아니다.** 프로토콜상 https://bideasy.kr/{KEY}.txt 로 공개해야
+    # 소유 증명이 성립한다. 값을 바꾸면 infra/nginx/html/{KEY}.txt 도 함께 바꿔야 한다.
+    # 발송은 APP_ENV=production 에서만(services/indexnow.is_enabled).
+    INDEXNOW_KEY: str = "1ba9903f6def627dc5124779539223ee"
+    INDEXNOW_ENDPOINTS: list[str] = [
+        "https://searchadvisor.naver.com/indexnow",  # 네이버 직접(비치헤드 주 채널)
+        "https://api.indexnow.org/indexnow",          # 참여 검색엔진 공유(Bing 등)
+    ]
+
     # === OAuth (Social Login) ===
     KAKAO_REST_API_KEY: str = ""
     KAKAO_CLIENT_SECRET: str = ""

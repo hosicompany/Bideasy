@@ -41,6 +41,12 @@ case "$action" in
     log "done deploy"
     ;;
 
+  indexnow-backfill)
+    # 지금 살아있는 URL 을 검색엔진에 일괄 통보(일회성). 평소엔 발행·수집 훅이 자동 처리.
+    log "indexnow-backfill"
+    dc exec -T app python scripts/indexnow_backfill.py
+    ;;
+
   status)
     log "status"
     ./deploy.sh status
@@ -53,7 +59,7 @@ case "$action" in
 
   *)
     log "DENIED"
-    echo "denied: 이 키는 배포 전용입니다. 허용 액션: deploy | status | health" >&2
+    echo "denied: 이 키는 배포 전용입니다. 허용 액션: deploy | indexnow-backfill | status | health" >&2
     exit 1
     ;;
 esac
