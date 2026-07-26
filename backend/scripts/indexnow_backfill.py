@@ -60,7 +60,9 @@ def main() -> int:
     db = SessionLocal()
     try:
         urls = collect(db, args.limit)
-        print(f"대상 URL {len(urls)}건 (서비스 상한 {indexnow.MAX_PER_RUN}건까지 발송)")
+        # 일회성 일괄 통보는 "전량 발송"이 목적이므로 자동 훅용 상한(MAX_PER_RUN)을
+        # 명시적으로 올린다. 프로토콜 상한(10,000/POST)은 submit 이 알아서 분할한다.
+        print(f"대상 URL {len(urls)}건 — 전량 발송")
         print("  예시:", *urls[:3], sep="\n    ")
         if args.dry_run:
             print("dry-run — 발송하지 않음")
@@ -68,7 +70,7 @@ def main() -> int:
         if not indexnow.is_enabled():
             print("발송 비활성(APP_ENV != production 이거나 INDEXNOW_KEY 미설정) — 중단")
             return 1
-        result = indexnow.submit(urls, reason="backfill")
+        result = indexnow.submit(urls, reason="backfill", max_urls=len(urls))
         print("결과:", result)
         return 0
     finally:

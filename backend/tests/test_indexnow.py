@@ -80,6 +80,27 @@ def test_caps_total_urls_per_run(enabled, captured, monkeypatch):
     assert len(captured[0]["json"]["urlList"]) == 3
 
 
+def test_max_urls_override_bypasses_default_cap(enabled, captured, monkeypatch):
+    """일회성 일괄 통보는 전량 발송이 목적 — 자동 훅용 상한에 잘리면 안 된다."""
+    monkeypatch.setattr(indexnow, "MAX_PER_RUN", 3)
+    urls = indexnow.notice_urls([f"BID-{i}" for i in range(10)])
+
+    result = indexnow.submit(urls, max_urls=len(urls))
+
+    assert result["count"] == 10
+    assert len(captured[0]["json"]["urlList"]) == 10
+
+
+def test_chunks_at_protocol_limit(enabled, captured, monkeypatch):
+    monkeypatch.setattr(indexnow, "CHUNK_SIZE", 4)
+    urls = indexnow.notice_urls([f"BID-{i}" for i in range(9)])
+
+    indexnow.submit(urls, max_urls=len(urls))
+
+    # 엔드포인트 1개 × 3청크(4+4+1)
+    assert [len(c["json"]["urlList"]) for c in captured] == [4, 4, 1]
+
+
 def test_no_urls_is_not_an_error(enabled, captured):
     assert indexnow.submit([])["skipped"] == "no_urls"
     assert captured == []
