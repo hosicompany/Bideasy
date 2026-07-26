@@ -45,7 +45,7 @@ def test_publish_appears_public_and_sitemap(admin_client, client):
     detail = client.get("/blog/db-pub-1")
     assert detail.status_code == 200
     assert "발행글 제목" in detail.text
-    assert "/blog/db-pub-1" in client.get("/sitemap.xml").text
+    assert "/blog/db-pub-1" in client.get("/sitemap-blog.xml").text
 
 
 def test_render_pipeline_applied(admin_client):
