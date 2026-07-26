@@ -49,9 +49,12 @@ def _clean(urls, cap: int) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for u in urls:
-        if not u or not str(u).startswith(SITE_URL + "/"):
+        u = str(u or "")
+        # 루트("https://bideasy.kr")는 접두사 검사에 걸리므로 먼저 정규화한다.
+        if u == SITE_URL:
+            u = SITE_URL + "/"
+        if not u.startswith(SITE_URL + "/"):
             continue
-        u = str(u)
         if u in seen:
             continue
         seen.add(u)

@@ -71,6 +71,17 @@ def test_drops_foreign_hosts_and_duplicates(enabled, captured):
     assert captured[0]["json"]["urlList"] == ["https://bideasy.kr/bid/A-1"]
 
 
+def test_site_root_is_submitted_not_filtered_out(enabled, captured):
+    """루트 URL 이 접두사 검사에 걸려 조용히 누락되던 회귀."""
+    result = indexnow.submit([indexnow.SITE_URL, f"{indexnow.SITE_URL}/search"])
+
+    assert result["count"] == 2
+    assert captured[0]["json"]["urlList"] == [
+        "https://bideasy.kr/",
+        "https://bideasy.kr/search",
+    ]
+
+
 def test_caps_total_urls_per_run(enabled, captured, monkeypatch):
     monkeypatch.setattr(indexnow, "MAX_PER_RUN", 3)
 
