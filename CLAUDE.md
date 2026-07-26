@@ -89,7 +89,7 @@
 
 1. **`BILLING_ENC_KEY` 변경·재생성 절대 금지** — 변경/분실 시 암호화된 빌링키 전부 복호화 불가(고객 전원 재카드등록). `infra/.env.production`에만 존재, 안전 백업 필수.
 2. **KPI·마케팅에 '낙찰률' 사용 금지** — 개찰데이터 검증 결과 승률 지표는 과적합(8%→23%) + 사정률 추첨은 랜덤. 핵심 지표 = 유효율 95% + 입찰당 재사용률.
-3. **`deploy.sh`가 안 하는 것**: `celery_beat` 재생성 안 함 → 새 코드 반영은 수동 `docker compose -f docker-compose.prod.yml --env-file .env.production -p infra up -d --force-recreate celery_beat`.
+3. ~~**`deploy.sh`가 안 하는 것**: `celery_beat` 재생성 안 함~~ → **해소됨(PR #39·#40)**. 이제 `./deploy.sh deploy` 가 `celery_beat` 를 force-recreate 하고 기동 실패 시 배포를 실패로 종료한다. 또 `deploy.sh` 자신이 바뀌면 pull 된 새 스크립트로 `exec` 재시작한다. **수동 재생성 안내는 폐기** — 다른 문서에 남아 있으면 정정할 것.
 4. **config fail-fast**: `APP_ENV=production`에서 `JWT_SECRET_KEY` 미설정 또는 `POSTGRES_PASSWORD=bideasy_pass`(기본값)면 앱 기동 실패.
 5. **비-root 컨테이너(uid 10001)**: named 볼륨(`infra_strategy_data`·`infra_celerybeat_data`)이 root 소유면 백그라운드 워커 쓰기 실패. 최초 1회 `docker run --rm -v <볼륨>:/d alpine chown -R 10001:10001 /d`.
 6. **헬스체크 10초 오탐**: deploy.sh는 app 재생성 10초 뒤 체크 → `WARNING: Health check failed`는 대개 오탐. 진짜 상태는 `https://api.bideasy.kr/health`(200 + `database:connected`).
