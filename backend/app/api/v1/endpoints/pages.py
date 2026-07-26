@@ -37,6 +37,17 @@ API_BASE = "https://api.bideasy.kr/api/v1"
 _CT_LABEL = {"CONSTRUCTION": "공사", "SERVICE": "용역", "GOODS": "물품"}
 _KST = timezone(timedelta(hours=9))
 
+# sitemap 프로토콜 상한은 50,000 URL / 50MB. 5,000 으로 잡아 파일당 크기·재생성
+# 비용을 낮춘다(공고는 매일 갱신되므로 작은 파일이 크롤 효율에 유리).
+SITEMAP_CHUNK = 5000
+_SITEMAP_STATIC_PATHS = ["", "/search", "/calculator", "/guide", "/pricing", "/blog"]
+_SITEMAP_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600"
+}
+# SSR 검색 페이지 초기 목록 — 크롤러가 JS 없이 /bid/* 로 갈 경로. 사용자에겐 JS 가
+# 즉시 같은 자리를 최신 피드로 덮어쓴다(loadFeed).
+SEARCH_SSR_LIMIT = 40
+
 
 def _current_naive_kst(instant: datetime | None = None) -> datetime:
     """Return an instant as naive KST, matching naive G2B API datetimes in the DB."""
@@ -63,6 +74,9 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
     notice = _resolve_notice(db, bid_no)
     ct = (getattr(notice, "contract_type", None) or "CONSTRUCTION") if notice else "CONSTRUCTION"
     deadline_iso = notice.end_date.isoformat() if (notice and notice.end_date) else None
+    # 마감 90일 후 purge(notice_crawl_tasks) 되므로 색인된 URL 이 사라질 수 있다.
+    # 200 + noindex 는 soft-404 로 취급되므로 실제 404 를 준다.
+    is_closed = bool(notice and notice.end_date and notice.end_date <= _current_naive_kst())
 
     ctx = {
         "request": request,
@@ -84,10 +98,43 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
         "a_value": int(getattr(notice, "a_value", 0) or 0) if notice else 0,
         # 공사는 금액대·시행일 티어드 (단일 소스: lower_limits) — notice 없으면 legacy 폴백
         "lower_limit_pct": get_lower_limit_rate(ct, float(notice.basic_price or 0) if notice else None),
+        "is_closed": is_closed,
         "site_url": SITE_URL,
         "api_base": API_BASE,
     }
-    return templates.TemplateResponse("bid_detail.html", ctx)
+    return templates.TemplateResponse("bid_detail.html", ctx, status_code=200 if notice else 404)
+
+
+@router.get("/search", response_class=HTMLResponse)
+def search_page(request: Request, db: Session = Depends(get_db)):
+    """공고 검색 — SSR 초기 목록 + 기존 클라이언트 검색 UI.
+
+    정적 셸이던 시절엔 라이브 HTML 에 /bid/* 링크가 하나도 없어 크롤러가 공고
+    페이지로 갈 내부 경로가 없었다. 서버가 마감 임박 순 초기 목록을 렌더하고,
+    JS 는 기존대로 같은 컨테이너를 최신 피드로 교체한다(사용자 경험 무변경).
+    """
+    now = _current_naive_kst()
+    notices = (
+        _active_notice_query(db, now)
+        .order_by(models.Notice.end_date.asc())
+        .limit(SEARCH_SSR_LIMIT)
+        .all()
+    )
+    items = [
+        {
+            "bid_no": n.bid_no,
+            "title": n.title or n.bid_no,
+            "organization": n.organization or "",
+            "region": n.region or "",
+            "contract_type_label": _CT_LABEL.get(n.contract_type or "CONSTRUCTION", "공고"),
+            "basic_price": int(n.basic_price or 0),
+            "dday": (n.end_date - now).days if n.end_date else None,
+        }
+        for n in notices
+    ]
+    return templates.TemplateResponse(
+        "search.html", {"request": request, "items": items, "site_url": SITE_URL}
+    )
 
 
 @router.get("/blog", response_class=HTMLResponse)
@@ -113,43 +160,90 @@ def robots():
     return f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}/sitemap.xml\n"
 
 
-@router.get("/sitemap.xml")
-def sitemap(db: Session = Depends(get_db)):
-    """정적·발행 블로그와 최신 진행중 공고 최대 50건을 나열한다."""
-    now = _current_naive_kst()
-    notices = (
-        db.query(models.Notice)
-        .filter(
-            models.Notice.start_date.isnot(None),
-            models.Notice.end_date.isnot(None),
-            models.Notice.end_date > now,
-        )
-        # start_date is crawler collection time and is biased by category/page order.
-        # Fixed-format G2B notice numbers are the best available category-neutral
-        # recency proxy, so bid_no DESC is also the deterministic sitemap order.
-        .order_by(models.Notice.bid_no.desc())
-        .limit(50)
-        .all()
+def _active_notice_query(db: Session, now: datetime):
+    """진행중(마감 전) 공고 쿼리 — sitemap·SSR 목록의 단일 소스."""
+    return db.query(models.Notice).filter(
+        models.Notice.start_date.isnot(None),
+        models.Notice.end_date.isnot(None),
+        models.Notice.end_date > now,
     )
-    static_paths = ["", "/search", "/calculator", "/guide", "/pricing", "/blog"]
-    locs = [f"  <url><loc>{SITE_URL}{p}</loc></url>" for p in static_paths]
-    for p in blog_svc.list_posts(db):
-        _lm = p.get("updated") or p.get("date") or ""
-        _lmtag = f"<lastmod>{xml_escape(str(_lm))}</lastmod>" if _lm else ""
-        locs.append(f"  <url><loc>{SITE_URL}/blog/{xml_escape(str(p['slug']))}</loc>{_lmtag}</url>")
-    for n in notices:
-        # No trustworthy notice modification timestamp exists; collection time is not lastmod.
-        locs.append(f"  <url><loc>{SITE_URL}/bid/{xml_escape(str(n.bid_no))}</loc></url>")
-    xml = (
+
+
+def _xml_response(body: str) -> Response:
+    return Response(content=body, media_type="application/xml", headers=_SITEMAP_CACHE_HEADERS)
+
+
+def _urlset(locs: list[str]) -> Response:
+    return _xml_response(
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         + "\n".join(locs)
         + "\n</urlset>\n"
     )
-    return Response(
-        content=xml,
-        media_type="application/xml",
-        headers={
-            "Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600"
-        },
+
+
+def _notice_page_count(db: Session, now: datetime) -> int:
+    """공고 sitemap 파일 수 — 공고가 0건이어도 빈 파일 1개는 유지한다."""
+    total = _active_notice_query(db, now).count()
+    return max(1, -(-total // SITEMAP_CHUNK))  # ceil
+
+
+@router.get("/sitemap.xml")
+def sitemap_index(db: Session = Depends(get_db)):
+    """sitemap 인덱스 — 정적·블로그·공고(5,000건 단위 분할) 파일을 가리킨다.
+
+    이전 구현은 단일 urlset 에 진행중 공고 50건만 실었다(문서상 기대치는 5,000건).
+    진행중 공고 전량을 색인 대상으로 노출하기 위해 인덱스 구조로 전환한다.
+    """
+    children = ["/sitemap-static.xml", "/sitemap-blog.xml"]
+    children += [
+        f"/sitemap-notices-{page}.xml"
+        for page in range(1, _notice_page_count(db, _current_naive_kst()) + 1)
+    ]
+    entries = "\n".join(f"  <sitemap><loc>{SITE_URL}{c}</loc></sitemap>" for c in children)
+    return _xml_response(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + entries
+        + "\n</sitemapindex>\n"
+    )
+
+
+@router.get("/sitemap-static.xml")
+def sitemap_static():
+    return _urlset([f"  <url><loc>{SITE_URL}{p}</loc></url>" for p in _SITEMAP_STATIC_PATHS])
+
+
+@router.get("/sitemap-blog.xml")
+def sitemap_blog(db: Session = Depends(get_db)):
+    locs = []
+    for p in blog_svc.list_posts(db):
+        _lm = p.get("updated") or p.get("date") or ""
+        _lmtag = f"<lastmod>{xml_escape(str(_lm))}</lastmod>" if _lm else ""
+        locs.append(f"  <url><loc>{SITE_URL}/blog/{xml_escape(str(p['slug']))}</loc>{_lmtag}</url>")
+    return _urlset(locs)
+
+
+@router.get("/sitemap-notices-{page}.xml")
+def sitemap_notices(page: int, db: Session = Depends(get_db)):
+    """진행중 공고 1페이지(최대 SITEMAP_CHUNK 건).
+
+    범위를 벗어난 page 는 빈 urlset 을 준다(404 로 크롤 에러를 만들지 않는다 —
+    공고 수는 매일 변하므로 인덱스와 실제 파일 수 사이에 시차가 생길 수 있다).
+    """
+    now = _current_naive_kst()
+    offset = max(0, (page - 1)) * SITEMAP_CHUNK
+    notices = (
+        _active_notice_query(db, now)
+        # start_date is crawler collection time and is biased by category/page order.
+        # Fixed-format G2B notice numbers are the best available category-neutral
+        # recency proxy, so bid_no DESC is also the deterministic sitemap order.
+        .order_by(models.Notice.bid_no.desc())
+        .offset(offset)
+        .limit(SITEMAP_CHUNK)
+        .all()
+    )
+    # No trustworthy notice modification timestamp exists; collection time is not lastmod.
+    return _urlset(
+        [f"  <url><loc>{SITE_URL}/bid/{xml_escape(str(n.bid_no))}</loc></url>" for n in notices]
     )

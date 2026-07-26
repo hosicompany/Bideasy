@@ -23,14 +23,20 @@ def test_blog_detail_404_for_missing(client):
     assert "noindex" in r.text
 
 
-def test_sitemap_includes_blog(client):
+def test_sitemap_index_points_at_blog_child(client):
     r = client.get("/sitemap.xml")
+    assert r.status_code == 200
+    assert "/sitemap-blog.xml" in r.text
+
+
+def test_sitemap_includes_blog(client):
+    r = client.get("/sitemap-blog.xml")
     assert r.status_code == 200
     assert "/blog/a-value-guide" in r.text
 
 
 def test_sitemap_has_lastmod(client):
-    r = client.get("/sitemap.xml")
+    r = client.get("/sitemap-blog.xml")
     assert "<lastmod>" in r.text
 
 
