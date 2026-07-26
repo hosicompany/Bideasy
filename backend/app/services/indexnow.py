@@ -44,7 +44,7 @@ def blog_urls(slugs) -> list[str]:
     return [f"{SITE_URL}/blog/{s}" for s in slugs if s]
 
 
-def _clean(urls) -> list[str]:
+def _clean(urls, cap: int) -> list[str]:
     """자기 호스트 URL 만, 순서 유지 중복 제거, 상한 적용."""
     seen: set[str] = set()
     out: list[str] = []
@@ -56,21 +56,25 @@ def _clean(urls) -> list[str]:
             continue
         seen.add(u)
         out.append(u)
-        if len(out) >= MAX_PER_RUN:
+        if len(out) >= cap:
             break
     return out
 
 
-def submit(urls, *, reason: str = "") -> dict:
+def submit(urls, *, reason: str = "", max_urls: int | None = None) -> dict:
     """URL 목록을 참여 검색엔진에 통보. **절대 예외를 올리지 않는다**(best-effort).
 
     호출부(발행·수집)는 이미 성공한 작업이므로, 통보 실패가 그 작업을 되돌리게
     해서는 안 된다. 실패는 로그로만 남긴다.
+
+    max_urls: 회당 상한 override. 기본(None)은 MAX_PER_RUN — 자동 훅이 폭주해도
+    도배하지 않게 하는 안전장치다. 의도적인 일회성 일괄 통보(backfill)처럼
+    "전량을 보내는 게 목적"인 호출만 명시적으로 올린다.
     """
     if not is_enabled():
         return {"skipped": "disabled", "count": 0}
 
-    targets = _clean(urls)
+    targets = _clean(urls, max_urls if max_urls is not None else MAX_PER_RUN)
     if not targets:
         return {"skipped": "no_urls", "count": 0}
 
