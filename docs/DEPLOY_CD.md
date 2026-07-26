@@ -14,7 +14,7 @@
    │  ③ 배포 전용 키로 SSH
    ▼
 [Lightsail]  ~/deploy-agent.sh   ← forced command (이 키로는 이것만 실행 가능)
-   │  deploy | status | health  중 하나만 허용
+   │  deploy | indexnow-backfill | status | health  중 하나만 허용
    ▼
   ./deploy.sh deploy   (git pull → build → app·celery_worker 재생성 → alembic
                         → nginx -t & reload → celery_beat 재생성·기동 확인)
@@ -52,6 +52,11 @@ cd ~/Bideasy && git pull origin master
 cp infra/deploy-agent.sh ~/deploy-agent.sh
 chmod 755 ~/deploy-agent.sh
 ```
+> **에이전트를 고쳤을 때는 서버에서 위 `cp` 를 다시 실행해야 한다**(배포는 에이전트를 갱신하지 않는다 — 그게 이 설계의 요점). 저장소 상태와 무관하게 받으려면:
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/hosicompany/Bideasy/master/infra/deploy-agent.sh -o ~/deploy-agent.sh && chmod 755 ~/deploy-agent.sh && sha256sum ~/deploy-agent.sh
+> ```
+>
 > **레포 안 경로를 직접 forced command 로 걸지 말 것.** 배포가 곧 `git pull` 이므로, 레포 안을 가리키면 코드 변경이 화이트리스트 자체를 바꿀 수 있다. 레포 밖(`~/deploy-agent.sh`)에 복사해서 고정한다. 에이전트를 수정하고 싶을 때만 위 `cp` 를 다시 실행.
 
 ### 2-3. 공개키를 forced command 로 등록 (서버에서)

@@ -59,6 +59,25 @@ https://register.search.daum.net/index.daum → 사이트 등록만 해두기. 5
 
 ---
 
+## C-2. 색인 통보 (IndexNow) — 2026-07-27 추가
+
+**구글 sitemap ping 은 죽었다.** `https://www.google.com/ping?sitemap=` 은 2023-06 폐지 예고 후 현재 404 (인증 없는 제출의 대부분이 스팸이라는 이유). 구글의 공식 경로는 **robots.txt 선언 + 서치콘솔** 둘뿐이며, 우리는 robots.txt 에 이미 선언돼 있어 **재제출은 가속용이지 필수가 아니다**(sitemap URL 이 안 바뀌었으므로 구글이 알아서 다시 읽는다).
+
+**네이버는 IndexNow 로 자동화했다.** 네이버는 2023-07 부터 IndexNow 를 지원하며 **서치어드바이저 로그인 없이** 키만 공개하면 URL 통보가 가능하다.
+
+| 항목 | 값 |
+|---|---|
+| 키 | `INDEXNOW_KEY` (config.py) — **비밀 아님**, 공개가 프로토콜 요구사항 |
+| 키 파일 | `https://bideasy.kr/{KEY}.txt` (`infra/nginx/html/{KEY}.txt`) |
+| 발송 대상 | 네이버 직접 + `api.indexnow.org`(Bing 등 참여 엔진 공유) |
+| 자동 발송 시점 | 블로그 발행(수동·예약) · 일일 공고 수집 후 신규 URL |
+| 일괄 통보(일회성) | `scripts/indexnow_backfill.py` — 배포 에이전트 `indexnow-backfill` 액션 |
+| 안전장치 | `APP_ENV=production` + 키 설정 시에만 발송, 회당 상한 `MAX_PER_RUN`, 실패는 비치명적(호출부 안 되돌림) |
+
+⚠️ **IndexNow 는 통보이지 색인 보장이 아니다.** 반영 여부·시점은 검색엔진이 정한다. 효과 판정은 서치어드바이저 **수집 현황**으로 2주 뒤 확인한다.
+
+---
+
 ## D. 다음 단계 (2층 — 콘텐츠)
 
 블로그 4편을 깔았으니, 이걸 네이버 블로그/카페로 확산하는 게 2층입니다. 준비되면 말씀 주세요.

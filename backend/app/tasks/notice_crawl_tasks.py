@@ -32,6 +32,7 @@ def crawl_daily_notices(pages: int = 5) -> dict:
     """
     db = SessionLocal()
     result = {"fetched": 0, "saved": 0, "by_cat": {}}
+    new_bid_nos: list[str] = []
     try:
         for cat in CRAWL_CATEGORIES:
             cat_fetched = cat_saved = 0
@@ -40,11 +41,28 @@ def crawl_daily_notices(pages: int = 5) -> dict:
                 if not items:
                     break  # 더 없음 → 다음 카테고리
                 cat_fetched += len(items)
+                # 적재 전 기존 bid_no 를 확인해 "이번에 새로 생긴 것"만 추린다.
+                # (save_notices 는 건수만 돌려주고, 반환형을 바꾸면 호출처 5곳이 깨진다)
+                incoming = [d.get("bid_no") for d in items if d.get("bid_no")]
+                existing = {
+                    row[0]
+                    for row in db.query(models.Notice.bid_no)
+                    .filter(models.Notice.bid_no.in_(incoming))
+                    .all()
+                } if incoming else set()
                 cat_saved += CrawlerService.save_notices(db, items)
+                new_bid_nos.extend(b for b in incoming if b not in existing)
             result["by_cat"][cat] = {"fetched": cat_fetched, "saved": cat_saved}
             result["fetched"] += cat_fetched
             result["saved"] += cat_saved
         logger.info(f"[notices.crawl_daily] {result}")
+
+        # 색인 통보(best-effort) — 신규 공고 URL 을 네이버·Bing 에 알린다.
+        # 수집은 이미 커밋됐으므로 통보 실패가 수집을 되돌리지 않는다.
+        from app.services import indexnow
+        result["indexnow"] = indexnow.submit(
+            indexnow.notice_urls(new_bid_nos), reason="crawl_daily"
+        )
         return result
     except Exception as e:
         db.rollback()
