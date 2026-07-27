@@ -22,6 +22,27 @@
 
 ---
 
+## 0-1. 진행 현황 (2026-07-27 갱신)
+
+| 단계 | 상태 |
+|---|---|
+| DNS: SPF (`v=spf1 include:_spf.google.com include:amazonses.com ~all`) | ✅ 등록·확인 |
+| DNS: DMARC (`p=none`, rua=hosicompany@gmail.com) | ✅ 등록·확인 |
+| SES 도메인 자격증명 `bideasy.kr` (서울 ap-northeast-2) | ✅ 생성 |
+| DNS: DKIM CNAME 3개 | ✅ 등록·권위 NS 확인 |
+| SES 도메인 인증 | ✅ **Verified** (DKIM SUCCESS) |
+| SES 프로덕션 액세스 | ⏳ **심사 중**(PENDING) — 승인 전까지 일 200통·인증 주소만 |
+| 발송용 IAM 키(앱) | ⬜ 승인 후 |
+| 카카오톡 채널 / 중계사 / 템플릿 | ⬜ 미착수 |
+
+**도메인 DNS 는 카페24**(`ns1.cafe24.com`)에서 관리한다. API 가 없어 레코드 추가는 수동이다.
+
+⚠️ **와일드카드 주의**: `*.bideasy.kr → bideasy.kr` 와일드카드 CNAME 이 존재한다. 명시적으로 등록한 레코드가 우선하므로 DKIM 은 정상 동작하지만, **레코드를 지우면 조용히 와일드카드 응답으로 되돌아가** 인증이 깨진 걸 눈치채기 어렵다. DKIM CNAME 3개는 삭제 금지.
+
+⚠️ **SPF 는 도메인당 1개만** — 나중에 다른 발송 서비스를 붙일 때 새 TXT 를 추가하지 말고 기존 줄에 `include:` 를 덧붙일 것(2개면 permerror).
+
+---
+
 ## 1. AWS SES (이메일) — 먼저 시작할 것
 
 리드타임이 길고 우리 쪽 작업이 대부분이라 먼저 건다.
