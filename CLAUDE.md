@@ -2,7 +2,8 @@
 
 > **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
-> 최종 갱신: 2026-07-19 (**반복낙찰 스파이크 실측 0.00% → 안전망 ④ 폐기**(PR #29, 게이트 작동) + **콘텐츠 엔진 Phase 1**(PR #30 — 주제 큐 24개→AI 구조화 초안→검수 게이트 + 이미지 프롬프트 반자동[힉스필드 시안 2회 실증: '명시 라벨 외 텍스트 금지' 규칙 확정], 마이그 `b7e2c4f9a801`) — **머지·배포·라이브 검증 완료**(health 200·topics 가드 401·admin UI 마커 OK). **+ Phase 2 채널 파생·주간 루프**(PR #31 — `derive_channel_assets`[카드 cardmaker 규격·릴스·유튜브·네이버], 발행 시 자동 파생 best-effort, 수 07:00 `weekly_knowledge_draft` K-큐 자동 초안, cardmaker localStorage 브릿지 — **머지·배포·라이브 검증 완료**, ⚠️celery_beat force-recreate 안내됨). **+ Phase 3 시각물 반자동 완결**(PR #32 — 🖼 이미지 프롬프트 소비 UI + assets/blog 배치 경로, **CONTENT_ENGINE §7 로드맵 Phase 0~3 전체 100% 머지 완료** · ⚠️#32 배포 대기[정적 파일뿐, beat·마이그 불필요]). **+ 큐 지속가능성·초안 품질 개편**(PR #34 — 소진/잔여≤4 경보·AI 주제 후보 제안[`GET /admin/blog/topics/propose`, 자동 편입 아님]·**5분+ 분량 스키마**[sections 5~7×400~700자+체크리스트+FAQ, 제도 팩트 시트 주입, 미달 시 재시도]·`generate-from-topic?force=true` draft 재생성[발행본 409 보호] — **머지 완료·⚠️배포 대기**. 배경: K1 첫 실전 생성이 1분짜리 얕은 글[사용자 검수]). **+ 정본 작성 모델 = Claude Sonnet 5 채택**(PR #35, 2026-07-23 — 사용자 깊이 피드백→4개 후보[Sonnet 5/GPT-5.6 Terra/Kimi K3/DeepSeek V4] 비용 분석[전부 월 $1.1 미만]→한국어 문체 기준 Sonnet 5 승인. **OpenRouter 경유**[사용자 키 보유]: `CONTENT_LLM_MODEL/BASE_URL/API_KEY` 설정 신설, 폴백 gpt-4o-mini 는 OpenAI 직결, Claude 계열 temperature 미전송[400 거부] — **머지 완료·⚠️배포 대기**. 배포 후 서버 `.env.production`에 `CONTENT_LLM_MODEL=anthropic/claude-sonnet-5`·`CONTENT_LLM_BASE_URL=https://openrouter.ai/api/v1`·`CONTENT_LLM_API_KEY=<OpenRouter 키>` 추가 필요[사용자 작업] — **#34+#35 배포·라이브 검증 완료**[health 200·신규 라우트 401 가드 확인], K1 Sonnet 5 재생성 1회 실검수: 분량 5분 내외 적정 판정). **+ 몰입 페르소나 지시**(PR #36, 2026-07-23 — 사용자 피드백 "현실적 예시로 내 이야기 같은 몰입": 글 관통 가상 페르소나 1명[비치헤드 프로필 = 전문건설 1~10인 사장님], hook 구체 장면, 섹션 2~3곳 스토리라인. 정직 가드 병행[가상 예시 명시 서술 강제·실존 업체명/실적 수치 창작 금지 = 가짜 후기 금지] — **머지 완료·⚠️배포 대기**[프롬프트만, beat·마이그 불필요]). 직전 07-18 = PR #26·27·28 배포 완료 / 다음 = **#36 배포 → K1 force 재생성**(몰입감 재검수)→발행→파생→카드→이미지 → 전환율·GA4 관찰)
+> 최종 갱신: 2026-07-30 (**성장 전략 정본 + 유입 인프라 4종 완결** — ① `docs/GROWTH_STRATEGY.md` 정본(NSM=주간 활성 투찰자 WAB, 유입 T1~T9·전환 C1~C6, 7단 퍼널 측정축, **킬 기준 사전등록**, 거절 목록) ② **색인 표면 50→2,188건**(PR #41 — `/sitemap.xml` 을 사이트맵 인덱스로 전환[static/blog/notices-N, 5,000 URL/파일]·`/search` SSR 로 크롤 경로 개통·미해결 공고 soft-404→진짜 404) ③ **GitHub Actions CD**(PR #42·#43 — `workflow_dispatch` 수동 버튼, `test`+`build` check-run green 강제[우회 불가], SSH forced-command 화이트리스트 `infra/deploy-agent.sh` → **로컬에서 SSH 접속·명령 불필요**) ④ **IndexNow 자동 통보**(PR #43·#44·#45 — 네이버+Bing, 수집·발행 훅에서 best-effort 자동, 운영 전용 가드·회당 상한, 일괄 2,199건 통보 완료[양쪽 200]) ⑤ **AWS SES 프로덕션 승인**(도메인 인증+DKIM 3종+SPF+DMARC, 샌드박스 해제 GRANTED 50,000통/일 — 발송 코드는 아직 없음) — **①~④ 전부 머지·배포·라이브 검증 완료**. 다음 = **SES 발송 파이프라인**(발송 전용 IAM 키 → `ses_mailer`·`nurture` → 반송·불만 억제 → 수신거부 → 체험 시퀀스 6통) + 카카오 알림톡 채널 개설(리드타임 2~3주, 사용자 대기). ⚠️ PR #46(아웃바운드 문서)·#37(계산기 하한율 티어) 머지 대기)
+> 직전 갱신: 2026-07-19 (**반복낙찰 스파이크 실측 0.00% → 안전망 ④ 폐기**(PR #29, 게이트 작동) + **콘텐츠 엔진 Phase 1**(PR #30 — 주제 큐 24개→AI 구조화 초안→검수 게이트 + 이미지 프롬프트 반자동[힉스필드 시안 2회 실증: '명시 라벨 외 텍스트 금지' 규칙 확정], 마이그 `b7e2c4f9a801`) — **머지·배포·라이브 검증 완료**(health 200·topics 가드 401·admin UI 마커 OK). **+ Phase 2 채널 파생·주간 루프**(PR #31 — `derive_channel_assets`[카드 cardmaker 규격·릴스·유튜브·네이버], 발행 시 자동 파생 best-effort, 수 07:00 `weekly_knowledge_draft` K-큐 자동 초안, cardmaker localStorage 브릿지 — **머지·배포·라이브 검증 완료**, ⚠️celery_beat force-recreate 안내됨). **+ Phase 3 시각물 반자동 완결**(PR #32 — 🖼 이미지 프롬프트 소비 UI + assets/blog 배치 경로, **CONTENT_ENGINE §7 로드맵 Phase 0~3 전체 100% 머지 완료** · ⚠️#32 배포 대기[정적 파일뿐, beat·마이그 불필요]). **+ 큐 지속가능성·초안 품질 개편**(PR #34 — 소진/잔여≤4 경보·AI 주제 후보 제안[`GET /admin/blog/topics/propose`, 자동 편입 아님]·**5분+ 분량 스키마**[sections 5~7×400~700자+체크리스트+FAQ, 제도 팩트 시트 주입, 미달 시 재시도]·`generate-from-topic?force=true` draft 재생성[발행본 409 보호] — **머지 완료·⚠️배포 대기**. 배경: K1 첫 실전 생성이 1분짜리 얕은 글[사용자 검수]). **+ 정본 작성 모델 = Claude Sonnet 5 채택**(PR #35, 2026-07-23 — 사용자 깊이 피드백→4개 후보[Sonnet 5/GPT-5.6 Terra/Kimi K3/DeepSeek V4] 비용 분석[전부 월 $1.1 미만]→한국어 문체 기준 Sonnet 5 승인. **OpenRouter 경유**[사용자 키 보유]: `CONTENT_LLM_MODEL/BASE_URL/API_KEY` 설정 신설, 폴백 gpt-4o-mini 는 OpenAI 직결, Claude 계열 temperature 미전송[400 거부] — **머지 완료·⚠️배포 대기**. 배포 후 서버 `.env.production`에 `CONTENT_LLM_MODEL=anthropic/claude-sonnet-5`·`CONTENT_LLM_BASE_URL=https://openrouter.ai/api/v1`·`CONTENT_LLM_API_KEY=<OpenRouter 키>` 추가 필요[사용자 작업] — **#34+#35 배포·라이브 검증 완료**[health 200·신규 라우트 401 가드 확인], K1 Sonnet 5 재생성 1회 실검수: 분량 5분 내외 적정 판정). **+ 몰입 페르소나 지시**(PR #36, 2026-07-23 — 사용자 피드백 "현실적 예시로 내 이야기 같은 몰입": 글 관통 가상 페르소나 1명[비치헤드 프로필 = 전문건설 1~10인 사장님], hook 구체 장면, 섹션 2~3곳 스토리라인. 정직 가드 병행[가상 예시 명시 서술 강제·실존 업체명/실적 수치 창작 금지 = 가짜 후기 금지] — **머지 완료·⚠️배포 대기**[프롬프트만, beat·마이그 불필요]). 직전 07-18 = PR #26·27·28 배포 완료 / 다음 = **#36 배포 → K1 force 재생성**(몰입감 재검수)→발행→파생→카드→이미지 → 전환율·GA4 관찰)
 
 ---
 
@@ -51,9 +52,18 @@
   ① **전환 훅**(#27): `services/lead_conversion.py` `link_leads_to_user` — 가입(이메일·소셜 신규) 시 동일 이메일 Lead 를 `converted_user_id`+`nurture_status='converted'` 기록. 이메일 정규화(소문자·trim) 조회 시점 매칭(양쪽 저장 정규화 없음), 동일 이메일 다건 전부 전환(사용자 승인), best-effort 이중 가드(가입 절대 안 막음). 어드민 `GET /admin/leads/stats`(총/전환율/업종/일별/최근). 스키마 변경 없음(컬럼 기존 마이그에 존재). 부수: `test_ai_analysis` 리미터 teardown 누수(enabled=True 복구 → 뒤 테스트 429) 수정.
   ② **자격 처방**(#28, 안전망 ③): `QualificationChecker`에 `prescriptions`(requirement/issue/action/confidence) 추가 — **데이터 있는 요건만**(지역 확정·면허 "공고명 추정" 명시·프로필), 실적·시공능력은 공고 기준액 부재로 처방 안 함(후속 파이프라인). **프로필 미기재 = FAIL→UNKNOWN(판정 불가) 정직화**(사용자 승인, 추천배치·진단은 PASS만 봐서 행동 불변). `details` 문자열·뱃지 하위 호환 유지(5개 호출처 무변경). ai.py tip 처방 연동+ℹ️ UNKNOWN, bid.html "이렇게 하면 참여할 수 있어요" 블록. 디마 연 99만원 적격진단의 기본 제공 언더컷. 총 378건 통과.
 
+- **성장 전략 정본 + 유입 인프라 (2026-07-26~30 · PR #41~#45 머지·배포·라이브 검증 완료)** — 상세 문서: `docs/GROWTH_STRATEGY.md`(정본)·`docs/DEPLOY_CD.md`(CD)·`docs/SEO_CHECKLIST.md` §C-2(IndexNow)·`docs/OUTBOUND_SETUP.md`(SES·알림톡).
+  ① **색인 표면 개통**(#41): `/sitemap.xml` 이 정적 6개 + 블로그만 담아 **공고 URL 이 사실상 0**이던 문제 → 사이트맵 **인덱스**로 전환(`/sitemap-static.xml`·`/sitemap-blog.xml`·`/sitemap-notices-{N}.xml`, `SITEMAP_CHUNK=5000`). `/search` 를 **SSR**(마감순 40건 `<a href="/bid/...">`)로 만들어 크롤러 진입 경로 개통 — JS 가 로드되면 교체하므로 사용자 UX 불변. 미해결 공고 상세는 200 대신 **404** 반환(soft-404 제거). nginx `/search`·`/sitemap-*.xml` 프록시 추가, `search.html` → `backend/templates/search.html` 이동(git rename). 실측 **2,188건**.
+  ② **GitHub Actions CD**(#42·#43): `.github/workflows/deploy.yml` — `workflow_dispatch` 전용(자동 배포 아님), master SHA 의 `test`+`build` check-run 이 `completed:success` 여야 진행(**우회 플래그 없음**), known_hosts 핀 고정, 배포 후 `/health`(`status:ok`·`database:connected`)·`bideasy.kr`·`sitemap.xml` 검증. 서버는 `~/deploy-agent.sh` **forced command**(레포 밖 경로 — 배포가 화이트리스트 자체를 바꾸지 못하게)로 `deploy|indexnow-backfill|status|health` 만 허용, 그 외·인자·`;` 혼입 전부 거부. **`.env.production` 열람·임의 셸 차단 라이브 검증 완료.**
+  ③ **IndexNow 통보**(#43·#44·#45): `services/indexnow.py` — 네이버 서치어드바이저 + api.indexnow.org. **운영 전용**(`APP_ENV=production` + 키 설정 시에만 — dev/test 가 실제 엔진에 쏘지 않게), 회당 상한 `MAX_PER_RUN=2000`(자동 훅 폭주 방어) + 일괄 통보만 `max_urls` 로 override, 자기 호스트 필터·중복 제거, **예외 절대 미전파**(통보 실패가 발행·수집을 되돌리지 않음). 훅: `crawl_daily` 신규 공고·블로그 발행(태스크·어드민). 키는 **비밀이 아님**(프로토콜상 `/{key}.txt` 공개 필수) — config 기본값과 키 파일 일치를 테스트가 강제. 일괄 2,199건 통보 완료.
+  ⚠️ 정직: 이건 **통보이지 색인 보장이 아니다.** 효과는 서치콘솔·서치어드바이저 수집 현황으로 2주 뒤 사후 판정. 킬 기준은 `GROWTH_STRATEGY.md` §7 에 사전 등록됨.
+
 ### ⏳ 대기 중인 외부 작업 (코드 아님, 사용자/제3자 처리)
 | 항목 | 상태 |
 |---|---|
+| **AWS SES** | ✅ **프로덕션 승인 완료**(2026-07-30 확인, `ReviewDetails.Status=GRANTED`, 50,000통/일·14통/초, ap-northeast-2). 도메인 `bideasy.kr` Verified + DKIM 3종 SUCCESS + SPF·DMARC 등록. **다음은 코드 작업**(§ 다음 주제) |
+| **카카오 알림톡** | ❌ 채널 없음(2026-07-29 확인) → 개설 필요. **리드타임 2~3주**(일반 채널 즉시 → 비즈니스 채널 전환 3~5일 → 발신프로필 심사 영업일 최대 10일 → 템플릿 심사 2~3일). 그래서 **이메일이 먼저**, 알림톡은 마감·매칭 알림용 후행 |
+| **Google Search Console** | 사이트맵 재제출(30초, 선택 — robots.txt 로도 발견됨) |
 | **토스 MID 심사** | 진행 중 — 페이플 운영 라이브(6/17)로 긴급성 낮음, 병행 가능 |
 | **Chrome 웹스토어** | ASO 개정판 검토 제출(6/20). ⚠️ **listing 가격 문구 24,900→19,900 갱신 필요**(런칭 기념가). 툴바 아이콘 `npm run build` + 재제출 대기 |
 | **익스텐션 코드 정리** | `plan→tier` 파라미터 정리 + 포인트 버튼 처리 → 다음 재제출에 포함. **지금은 웹 checkout이 흡수해 급하지 않음** |
@@ -66,11 +76,11 @@
 - **census 전수조사 = 하지 않음** — 공사 개찰 169k행/일이라 전수는 함정. sample≈census는 통계로 보장. (개찰 API: window ≤24h·시작도 실제시각·num_rows 작게. 코드 `3/5/1`=공사/용역/물품.)
 - 남은 검증 코드: 가입 직후 1문항 마이크로 설문(업종·월 투찰수) + 커뮤니티 질문글.
 
-### 다음 주제 (후보)
-- **콘텐츠 엔진 Phase 1** (`docs/CONTENT_ENGINE.md`) — 구조화 정본 생성 엔진(주제 큐 소비→AI 초안→검수→`publish_at` 드립) + **입찰상식 24개를 `docs/CONTENT_CALENDAR.md`에 Track K로 이관**. `BlogPost`에 `blocks_json`/`channel_assets_json` 컬럼 검토(가벼운 마이그). 이후 Phase2=채널 텍스트 파생, Phase3=시각물 반자동.
-- **콜드-DB 워밍 PR·배포 (최우선)** — 브랜치 `fix/lead-diagnose-cold-db-warm`(코드·테스트 완료) 커밋→PR→**사용자 확인 후 머지·배포**. 배포 후 실방문자 진단 0건 오인 해소 확인. 워킹트리에 함께 있는 백필 문서·census/진단 스크립트·런북(untracked)도 커밋 정리.
-- **리드→가입 전환 훅** — 가입 시 동일 이메일 `Lead.converted_user_id`·`nurture_status="converted"` 기록 + 어드민 리드 대시보드(attribution 패턴 재사용). 전환 측정의 전제.
-- **육성 발송 인프라** — 카카오 알림톡 템플릿 심사 + AWS SES 도메인 인증(외부 리드타임) → `services/nurture.py` 어댑터. 리드 쌓이기 시작하면 병행 신청.
+### 다음 주제
+- **SES 발송 파이프라인 (최우선 — 외부 대기 해소됨)** — 순서를 지킬 것: ① **동의 증적 UI·DB**(아래 🔴) → ② **발송 전용 IAM 키**(권한 `ses:SendEmail` 만. 현재 `~/.aws/credentials` 프로필 `bideasy` 키는 권한이 넓어 **서버에 두면 안 됨**) → ③ `services/ses_mailer.py` + `services/nurture.py` 어댑터(알림톡 병행 대비 pluggable — 설계는 `docs/LEAD_ACQUISITION.md`) → ④ **반송·불만 자동 억제**(SES 이벤트 SNS 구독→재발송 차단) → ⑤ 서명 토큰 1클릭 수신거부 + **처리 결과 통지**(정보통신망법) → ⑥ 체험 시퀀스 6통(D0/D1/D3/D7/D11/D13, 주간 발송).
+  🔴 **①이 없으면 발송 자체를 시작하면 안 된다** — 현재 `/diagnose` 는 목적을 안내하지만 **광고성 수신 명시 동의와 그 증적(`consented_at`·동의 문구 버전·채널·철회 시각)을 저장하지 않는다.** 따라서 **기존 진단 리드에게 체험 전환·윈백 메일 자동 발송 금지**, 소급 동의 처리 금지. 미선택 기본값 동의 UI 를 배포한 뒤 **동의한 대상부터** 육성을 시작한다. 근거·1차 자료: `docs/OUTBOUND_SETUP.md` §3·§6.
+  ⚠️ **④를 시퀀스보다 먼저 넣는다** — 반송률 5%·불만율 0.1% 초과 시 AWS 가 계정을 정지시킨다. 리드가 적은 지금 깔아두는 게 싸다.
+- **유입 효과 판정 (2주 뒤 = 2026-08-13 경)** — 서치콘솔 색인 페이지 수·서치어드바이저 수집 현황·GA4 오가닉 세션. 판정 기준·킬 기준은 `docs/GROWTH_STRATEGY.md` §7 에 **사전 등록**돼 있음(사후 합리화 금지).
 - **익스텐션 재제출** — `plan→tier` 정리 + 포인트 버튼 + 툴바 아이콘 빌드 + **오버레이 진단 CTA**(리드 마그넷 연동) → Chrome 웹스토어 재제출 (listing 가격 문구도 19,900 갱신).
 - **랜딩 개편 효과 측정** — GA4에서 `cta_*`·`calc_demo_use`·`lead_diagnose`·`lead_capture` 전환율 관찰. 데이터 보고 개선 반영.
 - **랜딩 A/B 훅 실험** — 안전 vs 자격필터 훅 A/B는 **미착수**(광고 검증 캠페인과 연동, 현재 집행 보류). 이번 랜딩 개편은 전환 구조까지만 완료.
@@ -209,8 +219,33 @@ Bideasy/
 
 ---
 
-## 7. 배포 (Docker)
+## 6-1. 새 컴퓨터 세팅 (개발 환경 재구성)
 
+레포만 clone 하면 **코드·문서·배포 권한 전부** 따라온다. 다음 3개만 추가로 필요:
+
+```bash
+git clone https://github.com/hosicompany/Bideasy.git && cd Bideasy
+gh auth login                                    # PR·머지·배포 버튼용 (scope: repo, workflow)
+pip install -r backend/requirements.txt          # Python 3.12
+cd backend && pytest                             # 통과 확인 (기준 §8)
+```
+
+- **서버 SSH 키는 필요 없다** — 배포는 GitHub Actions 버튼(§7). 로컬에서 서버에 붙지 않는다.
+- **AWS 키**(`~/.aws/credentials` 프로필 `bideasy`)는 SES 관리 작업에만 필요. 새 PC 로 옮기지 말고, 필요할 때 IAM 콘솔에서 새로 발급하는 게 안전하다(구 키는 폐기).
+- `backend/bideasy.db`(로컬 SQLite)·`.env` 는 git 에 없다 — 테스트는 in-memory 라 없어도 통과한다.
+- ⚠️ 옮기지 말 것: `infra/.env.production`(서버에만), `PATENT.md`·`MORNING_CHECKLIST.md`·`OVERNIGHT_REPORT.md`(§9).
+
+---
+
+## 7. 배포
+
+### 기본 경로 — GitHub Actions 버튼 (SSH 불필요) ★
+GitHub → **Actions → Deploy to production → Run workflow**. 또는 세션에서 "배포해줘"라고 하면 대신 눌러준다.
+- master 의 `test`+`build` check-run 이 **green 이어야만** 진행(우회 플래그 없음).
+- 배포 후 `/health`·`bideasy.kr`·`sitemap.xml` 을 워크플로가 직접 검증 → 실패 시 job red.
+- 서버는 `~/deploy-agent.sh` forced command 로 `deploy|indexnow-backfill|status|health` 만 허용. 상세·시크릿·실패 대응표: `docs/DEPLOY_CD.md`.
+
+### 수동 경로 (서버 직접 접속 시)
 서버(Lightsail)에서 **백엔드는 Docker 컨테이너**로 구동 → `alembic`은 호스트 PATH에 없음(컨테이너 내부에만).
 
 ```bash
