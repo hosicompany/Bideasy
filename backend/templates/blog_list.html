@@ -71,7 +71,9 @@
     <div class="list">
       {% for p in posts %}
       <a class="post" href="/blog/{{ p.slug }}">
-        {% if p.cover %}<img class="thumb" src="{{ p.cover }}" alt="{{ p.title }}" loading="lazy">{% endif %}
+        {# 목록 썸네일: cover 우선, 없으면 hero 폴백 — 엔진 초안은 hero 만 채우는 경우가 흔함 #}
+        {% set thumb = p.cover or p.hero %}
+        {% if thumb %}<img class="thumb" src="{{ thumb }}" alt="{{ p.title }}" loading="lazy">{% endif %}
         {% if p.category %}<span class="cat">{{ p.category }}</span>{% endif %}
         <h2>{{ p.title }}</h2>
         {% if p.summary %}<p class="sum">{{ p.summary }}</p>{% endif %}
