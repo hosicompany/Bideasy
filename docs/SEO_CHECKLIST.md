@@ -51,9 +51,30 @@ https://register.search.daum.net/index.daum → 사이트 등록만 해두기. 5
 
 - 네이버 서치어드바이저 **수집 현황** — `/bid/*` 공고 페이지가 색인되기 시작하는지
 - 구글 서치콘솔 **실적** — 노출(impressions) 키워드 확인. "낙찰하한율", "투찰가 계산" 같은 단어가 뜨기 시작하면 1층이 작동하는 것
-- 색인된 공고 수 추이 (sitemap에 진행중 공고 최대 5,000건이 자동 노출됨)
+- 색인된 공고 수 추이
+
+> **2026-07-27 정정**: 이 문서는 오랫동안 "sitemap에 진행중 공고 최대 5,000건이 자동 노출됨"이라고 적혀 있었으나, **코드는 50건 상한이었다**(`pages.py` `.limit(50)`). 같은 날 sitemap 인덱스 구조로 전환해 **진행중 공고 전량**을 5,000건 단위로 분할 노출하도록 수정했다. 제출 대상은 여전히 `https://bideasy.kr/sitemap.xml`(이제 인덱스) 하나이며, 하위 파일은 `/sitemap-static.xml`·`/sitemap-blog.xml`·`/sitemap-notices-{N}.xml`. 함께 `/search`를 SSR로 바꿔 크롤러가 `/bid/*`로 들어갈 내부 링크 경로를 열었고, 없는 공고는 soft-404(200+noindex) 대신 실제 404를 반환한다. → 배경·후속은 `GROWTH_STRATEGY.md`.
 
 색인은 보통 등록 후 1~3주에 걸쳐 천천히 쌓입니다. 조급해하지 마세요.
+
+---
+
+## C-2. 색인 통보 (IndexNow) — 2026-07-27 추가
+
+**구글 sitemap ping 은 죽었다.** `https://www.google.com/ping?sitemap=` 은 2023-06 폐지 예고 후 현재 404 (인증 없는 제출의 대부분이 스팸이라는 이유). 구글의 공식 경로는 **robots.txt 선언 + 서치콘솔** 둘뿐이며, 우리는 robots.txt 에 이미 선언돼 있어 **재제출은 가속용이지 필수가 아니다**(sitemap URL 이 안 바뀌었으므로 구글이 알아서 다시 읽는다).
+
+**네이버는 IndexNow 로 자동화했다.** 네이버는 2023-07 부터 IndexNow 를 지원하며 **서치어드바이저 로그인 없이** 키만 공개하면 URL 통보가 가능하다.
+
+| 항목 | 값 |
+|---|---|
+| 키 | `INDEXNOW_KEY` (config.py) — **비밀 아님**, 공개가 프로토콜 요구사항 |
+| 키 파일 | `https://bideasy.kr/{KEY}.txt` (`infra/nginx/html/{KEY}.txt`) |
+| 발송 대상 | 네이버 직접 + `api.indexnow.org`(Bing 등 참여 엔진 공유) |
+| 자동 발송 시점 | 블로그 발행(수동·예약) · 일일 공고 수집 후 신규 URL |
+| 일괄 통보(일회성) | `scripts/indexnow_backfill.py` — 배포 에이전트 `indexnow-backfill` 액션 |
+| 안전장치 | `APP_ENV=production` + 키 설정 시에만 발송, 회당 상한 `MAX_PER_RUN`, 실패는 비치명적(호출부 안 되돌림) |
+
+⚠️ **IndexNow 는 통보이지 색인 보장이 아니다.** 반영 여부·시점은 검색엔진이 정한다. 효과 판정은 서치어드바이저 **수집 현황**으로 2주 뒤 확인한다.
 
 ---
 

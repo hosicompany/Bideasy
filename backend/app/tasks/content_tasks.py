@@ -207,6 +207,13 @@ def publish_scheduled_posts() -> dict:
         except Exception:
             logger.exception("[content.publish_scheduled] channel assets derivation skipped")
 
+        # 색인 통보(best-effort) — 발행은 이미 커밋됐으므로 실패해도 되돌리지 않는다.
+        from app.services import indexnow
+        indexnow.submit(
+            indexnow.blog_urls(published) + [f"{indexnow.SITE_URL}/blog"],
+            reason="publish_scheduled",
+        )
+
         return {"ok": True, "published": published}
     except Exception as e:
         db.rollback()

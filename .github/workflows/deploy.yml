@@ -1,0 +1,109 @@
+name: Deploy (production)
+
+# 수동 버튼 전용 배포. master 를 Lightsail 에 올린다.
+# - 서버 접속은 배포 전용 키 + forced command(infra/deploy-agent.sh)로 제한된다.
+#   그 키로는 임의 셸 명령을 못 돌린다. 자세한 설치 절차: docs/DEPLOY_CD.md
+# - CI(test/build)가 성공한 커밋만 배포한다(게이트, 우회 옵션 없음).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 리포지토리 Settings > Environments 에서 'production' 에 승인자를 걸면
+    # 이 잡이 사람 승인 전까지 대기한다(선택).
+    environment: production
+
+    steps:
+      - name: Resolve master commit
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/master" --jq .sha)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short=${sha:0:7}" >> "$GITHUB_OUTPUT"
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}" \
+            --jq '.commit.message | split("\n")[0]' > /tmp/subject.txt
+          echo "subject=$(cat /tmp/subject.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Require green CI on that commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # CI 워크플로의 핵심 잡만 본다(lint/flutter 는 게이트에서 제외 — 배포 안전성과 무관).
+          required="test build"
+          runs=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs" --paginate \
+                   --jq '.check_runs[] | "\(.name)=\(.status):\(.conclusion)"')
+          echo "$runs"
+          for job in $required; do
+            line=$(echo "$runs" | grep "^${job}=" | head -1 || true)
+            if [ -z "$line" ]; then
+              echo "::error::CI 잡 '${job}' 이 커밋 ${SHA} 에 없습니다. CI 완료 후 다시 실행하세요."
+              exit 1
+            fi
+            case "$line" in
+              *"=completed:success") echo "ok: $line" ;;
+              *) echo "::error::CI 잡 '${job}' 미통과 — ${line}"; exit 1 ;;
+            esac
+          done
+
+      - name: Set up deploy key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # 호스트키 고정(MITM 방지) — ssh-keyscan 런타임 수집은 쓰지 않는다.
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          # deploy.sh 가 app·celery_worker·celery_beat 재생성 + alembic + nginx reload 까지 수행.
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=20 \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" deploy
+
+      - name: Verify live
+        id: verify
+        run: |
+          set -euo pipefail
+          fail=0
+
+          health=$(curl -sS --max-time 20 https://api.bideasy.kr/health || echo '{}')
+          echo "health: $health"
+          echo "$health" | grep -q '"status":"ok"' || { echo "::error::health status != ok"; fail=1; }
+          echo "$health" | grep -q '"database":"connected"' || { echo "::error::database not connected"; fail=1; }
+
+          code=$(curl -sS -o /tmp/sitemap.xml -w '%{http_code}' --max-time 20 https://bideasy.kr/sitemap.xml)
+          echo "sitemap.xml: HTTP $code"
+          [ "$code" = "200" ] || { echo "::error::sitemap.xml HTTP $code"; fail=1; }
+
+          home=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 https://bideasy.kr/)
+          echo "home: HTTP $home"
+          [ "$home" = "200" ] || { echo "::error::home HTTP $home"; fail=1; }
+
+          {
+            echo "### 배포 완료"
+            echo ""
+            echo "- 커밋: \`${{ steps.target.outputs.short }}\` ${{ steps.target.outputs.subject }}"
+            echo "- health: \`$health\`"
+            echo "- bideasy.kr: HTTP $home / sitemap.xml: HTTP $code"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit $fail

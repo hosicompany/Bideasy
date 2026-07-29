@@ -74,7 +74,11 @@
     <a class="back" href="/search">← 공고 검색</a>
     <div class="head">
       <span class="badge {% if contract_type=='SERVICE' %}servc{% elif contract_type=='GOODS' %}thng{% endif %}">{{ contract_type_label }}</span>
+      {% if is_closed %}<span class="badge" style="background:#F2F4F6;color:#8B95A1;">마감된 공고</span>{% endif %}
       <h1>{{ title }}</h1>
+      {% if is_closed %}
+      <p class="muted" style="margin-top:8px;">투찰이 마감된 공고예요. 아래 정보는 참고용이며, 지금 넣을 수 있는 공고는 <a href="/search" style="color:#3182F6;text-decoration:none;font-weight:600;">공고 검색</a>에서 확인하세요.</p>
+      {% endif %}
       {% if found %}
       <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button id="fav-btn" style="display:none;background:#fff;border:1px solid #E5E8EB;color:#4E5968;border-radius:10px;font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;">☆ 관심</button>

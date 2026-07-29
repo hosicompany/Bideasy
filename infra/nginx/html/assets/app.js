@@ -65,7 +65,8 @@
     var authed = !!getToken();
     // 왼쪽 nav = 공개 기능(항상 동일) — 로그인 여부와 무관해 레이아웃이 흔들리지 않음.
     // 대시보드·계정은 오른쪽 "내 영역"으로 분리: [대시보드] 버튼 + 아바타 드롭다운(마이·관심·로그아웃).
-    var links = [['search.html', '공고 검색', 'search'], ['calculator.html', '계산기', 'calculator'], ['/blog', '블로그', 'blog'], ['pricing.html', '요금제', 'pricing']];
+    // /search 는 백엔드 SSR(정적 search.html 제거) — 절대경로로 둔다.
+    var links = [['/search', '공고 검색', 'search'], ['calculator.html', '계산기', 'calculator'], ['/blog', '블로그', 'blog'], ['pricing.html', '요금제', 'pricing']];
     var right = authed
       ? '<a class="btn btn-primary btn-sm"' + (active === 'dashboard' ? ' aria-current="page"' : '') + ' href="dashboard.html">대시보드</a>' +
         '<div class="navmenu">' +

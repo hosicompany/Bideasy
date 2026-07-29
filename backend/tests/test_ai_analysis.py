@@ -55,8 +55,8 @@ class TestAiAnalysis:
         from app.core.security import create_access_token
         db_session.add(models.Notice(bid_no="QUAL-RGN", title="부산 도로 공사",
                                      basic_price=100000000, region="부산광역시", contract_type="CONSTRUCTION"))
-        a = models.User(email="qual-a@test.com", hashed_password="x", location="서울특별시")
-        b = models.User(email="qual-b@test.com", hashed_password="x", location="부산광역시")
+        a = models.User(email="qual-a@test.com", hashed_password="x", location="서울특별시", tier="pro")
+        b = models.User(email="qual-b@test.com", hashed_password="x", location="부산광역시", tier="pro")
         db_session.add_all([a, b]); db_session.commit(); db_session.refresh(a); db_session.refresh(b)
         ta = create_access_token({"sub": str(a.id)})
         tb = create_access_token({"sub": str(b.id)})

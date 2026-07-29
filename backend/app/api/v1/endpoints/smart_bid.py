@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from datetime import date
 import logging
+import sqlite3 as _sqlite
 
 from app.core.security import require_tier
 
@@ -22,7 +23,6 @@ router = APIRouter()
 
 # ML 스택(numpy/joblib) 부재·모델 미탑재 시 발생하는 예외 — 500 대신 정직한 503 으로.
 # (2026-07-18: 죽은 ML 서비스가 500 + 내부 에러 문자열을 노출하던 문제 수습)
-import sqlite3 as _sqlite
 
 _UNAVAILABLE_ERRORS = (
     ImportError,

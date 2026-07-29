@@ -187,6 +187,12 @@ def publish_blog_post(post_id: int, db: Session = Depends(get_db), _admin=Depend
     from app.services import content_engine
     content_engine.ensure_channel_assets(db, post)
     db.refresh(post)
+    # 색인 통보(best-effort) — 네이버·Bing 에 새 글 URL 을 즉시 알린다.
+    from app.services import indexnow
+    indexnow.submit(
+        indexnow.blog_urls([post.slug]) + [f"{indexnow.SITE_URL}/blog"],
+        reason="blog_publish",
+    )
     return post
 
 

@@ -90,13 +90,20 @@ case "${1:-deploy}" in
   deploy)
     echo "=== Deploying BidEasy ==="
 
-    # Pull latest code
+    # Pull latest code. If this script itself changes, restart with the pulled
+    # copy so the current deployment applies its new behavior immediately.
+    DEPLOY_SCRIPT_PATH="$(pwd)/deploy.sh"
+    previous_head=$(git rev-parse HEAD)
     cd ..
     git pull origin master
+    if ! git diff --quiet "$previous_head" HEAD -- infra/deploy.sh; then
+      echo "deploy.sh changed; restarting deployment with the updated script."
+      exec "$DEPLOY_SCRIPT_PATH" deploy
+    fi
     cd infra
 
     # Build new images
-    dc build app celery_worker
+    dc build app celery_worker celery_beat
 
     # Rolling restart: app first, then celery.
     # --force-recreate: 코드/템플릿이 볼륨 마운트면 이미지 해시가 안 바뀌어 컨테이너가
@@ -113,22 +120,31 @@ case "${1:-deploy}" in
       echo "WARNING: Health check failed. Check logs with './deploy.sh logs app'"
     fi
 
-    # Update celery worker
-    dc up -d --no-deps --force-recreate celery_worker
-
-    # Run migrations
+    # Run migrations before asynchronous services load the new task code.
     dc \
       exec app alembic upgrade head
 
-    # Reload nginx to apply conf.d changes (routing/redirects).
-    # git pull 이 mount된 conf 를 갱신해도 nginx 는 reload 해야 적용됨.
-    # nginx -t 통과할 때만 reload (잘못된 설정으로 죽는 것 방지).
+    # Update celery worker.
+    dc up -d --no-deps --force-recreate celery_worker
+
+    # Reload nginx before validating background services so it targets the
+    # recreated app even if a later background-service check fails.
     echo "Reloading nginx config..."
     if dc exec -T nginx nginx -t; then
       dc exec -T nginx nginx -s reload
       echo "nginx reloaded."
     else
       echo "WARNING: nginx config test FAILED — reload 건너뜀. ./nginx/conf.d 확인 후 수동 reload 필요."
+    fi
+
+    # Update celery beat so newly added/changed periodic tasks are loaded.
+    dc up -d --no-deps --force-recreate celery_beat
+    sleep 5
+    if dc ps --status running --services | grep -qx "celery_beat"; then
+      echo "celery_beat is running."
+    else
+      echo "ERROR: celery_beat did not remain running after deployment."
+      exit 1
     fi
 
     echo "=== Deploy complete ==="
@@ -155,7 +171,7 @@ case "${1:-deploy}" in
     echo "Rolling back to: $PREV_COMMIT"
     git checkout "$PREV_COMMIT"
     cd infra
-    dc up -d --build app celery_worker
+    dc up -d --build app celery_worker celery_beat
     echo "=== Rollback complete. Run migrations manually if needed. ==="
     ;;
 
