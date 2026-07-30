@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>수신거부 — BidEasy</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="/brand/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>
+    html,body{margin:0;}
+    .un-wrap{max-width:520px;margin:0 auto;padding:64px 22px;}
+    .un-card{border:1px solid var(--line);border-radius:16px;padding:26px 22px;background:var(--surface);}
+    .un-msg{font-size:14.5px;color:var(--muted);line-height:1.7;margin:10px 0 0;}
+  </style>
+  <script src="/assets/app.js"></script>
+</head>
+<body class="bd" data-theme="light">
+  <div class="un-wrap">
+    <div class="un-card">
+      <h1 style="font-size:22px;font-weight:800;letter-spacing:-.5px;margin:0;">광고성 정보 수신거부</h1>
+      <p class="un-msg" id="un-desc">확인 중이에요…</p>
+      <div id="un-actions" style="margin-top:20px;display:none;">
+        <button id="un-go" class="btn btn-primary btn-block">수신거부하기</button>
+      </div>
+      <p class="un-msg" style="margin-top:18px;font-size:12.5px;">
+        거래 관련 안내(결제·체험 만료 등)는 수신거부와 무관하게 계속 발송됩니다.
+        문의: <a href="mailto:support@bideasy.kr" style="color:var(--muted);">support@bideasy.kr</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    // 참고: GET 으로는 상태를 바꾸지 않는다(메일 스캐너의 링크 프리페치로 인한 오해지 방지).
+    //       실제 해지는 이 페이지에서 사용자가 누른 POST 로만 일어난다.
+    var API = (window.BD && window.BD.API_BASE) || 'https://api.bideasy.kr/api/v1';
+    var params = new URLSearchParams(location.search);
+    var token = params.get('t') || params.get('token');
+    var desc = document.getElementById('un-desc');
+    var actions = document.getElementById('un-actions');
+    var btn = document.getElementById('un-go');
+
+    function done(email) {
+      actions.style.display = 'none';
+      desc.textContent = '수신거부 처리됐어요' + (email ? ' (' + email + ')' : '') + '. 앞으로 광고성 메일은 보내지 않습니다.';
+    }
+
+    if (!token) {
+      desc.textContent = '링크가 올바르지 않아요. 메일에 담긴 수신거부 링크를 다시 눌러 주세요.';
+      return;
+    }
+
+    fetch(API + '/unsubscribe/status?token=' + encodeURIComponent(token))
+      .then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); })
+      .then(function (d) {
+        if (d.unsubscribed) { done(d.email); return; }
+        desc.textContent = (d.email ? d.email + ' 으로 가는 ' : '') + '광고성 정보 수신을 해지할까요?';
+        actions.style.display = 'block';
+      })
+      .catch(function () {
+        desc.textContent = '링크가 만료됐거나 올바르지 않아요. support@bideasy.kr 로 알려주시면 바로 처리해 드릴게요.';
+      });
+
+    btn.addEventListener('click', function () {
+      btn.disabled = true; btn.textContent = '처리 중…';
+      fetch(API + '/unsubscribe?token=' + encodeURIComponent(token), { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); })
+        .then(function (d) { done(d.email); })
+        .catch(function () {
+          btn.disabled = false; btn.textContent = '수신거부하기';
+          desc.textContent = '처리에 실패했어요. 잠시 후 다시 시도하시거나 support@bideasy.kr 로 알려주세요.';
+        });
+    });
+  })();
+  </script>
+</body>
+</html>

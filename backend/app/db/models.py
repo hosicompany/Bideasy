@@ -495,3 +495,38 @@ class ConsentRecord(Base):
     note = Column(String(200), nullable=True)
 
     created_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class OutboundMessage(Base):
+    """아웃바운드 발송 기록 — "무엇을 누구에게 언제 보냈나"의 단일 원장.
+
+    세 가지를 동시에 해결한다:
+      1) **멱등성**: `dedupe_key` 유니크 — 재시도·중복 스케줄이 같은 메일을 두 번 보내지
+         않는다(사용자 체감상 스팸이자 신뢰 손실). 키 충돌은 skipped 로 남는다.
+      2) **사고 추적**: 민원("왜 보냈나")이 오면 이 원장 + consent_records 로 즉시 답한다.
+      3) **차단 사유 가시화**: 동의 없음·수신거부로 **보내지 않은 건도** status=skipped 로
+         남긴다. 조용히 사라지면 발송 게이트가 도는지 알 수 없다.
+    """
+    __tablename__ = "outbound_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    subject_type = Column(String(10), nullable=False, index=True)  # lead | user
+    subject_id = Column(Integer, nullable=True, index=True)
+    email = Column(String(255), nullable=True, index=True)
+
+    channel = Column(String(20), nullable=False, default="email")   # email | kakao
+    template = Column(String(60), nullable=False)                   # lead_welcome 등
+    category = Column(String(20), nullable=False)                   # marketing | transactional
+    subject = Column(String(200), nullable=True)                    # 발송된 제목
+
+    status = Column(String(20), nullable=False)   # sent | dry_run | skipped | failed
+    reason = Column(String(60), nullable=True)    # skipped/failed 사유 코드
+    provider = Column(String(20), nullable=True)  # ses
+    provider_message_id = Column(String(120), nullable=True)
+    error = Column(String(300), nullable=True)
+
+    # 멱등 키 — 예: "lead_welcome:lead:42". 같은 키는 한 번만 전송된다.
+    dedupe_key = Column(String(160), nullable=True, unique=True, index=True)
+
+    created_at = Column(DateTime, default=_utcnow, index=True)

@@ -8,6 +8,7 @@ anyio==4.12.1
 asyncpg==0.31.0
 attrs==25.4.0
 bcrypt==4.0.1
+boto3==1.35.99  # AWS SES (아웃바운드 이메일). OUTBOUND_EMAIL_ENABLED=False 면 미사용
 beautifulsoup4==4.14.3
 billiard==4.2.4
 celery==5.6.2

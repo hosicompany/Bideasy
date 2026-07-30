@@ -113,7 +113,18 @@ Lead.nurture_channel
 4. **기존 리드는 전부 미동의로 시작한다** — 마이그레이션 기본값 false. 2026-07-30 이전 캡처분(동의 UI 이전)은 광고성 발송 대상이 아니다. 접촉하려면 재동의를 받아야 한다.
 5. 구버전(캐시된) 페이지가 동의 필드 없이 제출하면 캡처는 되지만 증적이 없어 자동으로 발송 대상에서 빠진다.
 
-**다음 단계(이 위에 얹는다)**: 수신거부 서명 토큰 + `/unsubscribe` 엔드포인트·랜딩 → SES 어댑터(`services/nurture.py`) → 발송 시퀀스.
+### 3-2. 발송 파이프라인 — **구현 완료(2026-07-30, ⚠️배포 대기 · 전송 킬스위치 OFF)**
+
+동의 층 위에 발송 경로를 얹었다. 상세 런북(= AWS 준비·켜는 순서·함정) = **`docs/OUTBOUND_EMAIL.md`**.
+
+- `services/nurture.py` — **유일한 발송 진입점**. 게이트(동의) → 멱등 선점 → 렌더 → 전송 → 원장.
+- `services/mailer.py` — SES `send_raw_email`(원클릭 수신거부 헤더 때문에 raw 필수). `OUTBOUND_EMAIL_ENABLED=False` 면 dry-run.
+- `services/email_templates.py` — 템플릿이 법정 표기를 잊을 수 없게 공통 조립기가 "(광고)" 접두·발신자·수신거부를 강제. 현재 `lead_welcome`(광고) / `trial_expiry`(거래).
+- 수신거부 — 무기한 서명 토큰(`core/signed_token.py`) + `GET /unsubscribe/status`(조회) · `POST /unsubscribe`(처리, 원클릭 포함) + 정적 페이지 `/unsubscribe`.
+- 원장 `OutboundMessage`(마이그 `a9d3f5c17e42`) — 보낸 건과 **차단된 건**(`no_consent`·`no_email`·`duplicate`) 전부 기록. `dedupe_key` 유니크로 중복 발송 차단.
+- 운영 `GET /admin/outbound`(원장·집계·킬스위치 상태) · `GET /admin/outbound/preview` · `POST /admin/outbound/test-send`(본인 계정, 게이트 그대로).
+
+**다음 단계**: SES 도메인 인증·프로덕션 액세스 신청(외부 리드타임) → 리드 육성 시퀀스(진단 직후 웰컴 + 주기 매칭) → 체험 시퀀스(`GROWTH_STRATEGY.md` §C3) → 반송·불만 웹훅 → 알림톡 어댑터.
 
 ---
 
