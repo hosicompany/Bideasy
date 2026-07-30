@@ -2,8 +2,8 @@
 
 > **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
-> 최종 갱신: 2026-07-30 (**성장 전략 정본 + 유입 인프라 4종 완결** — ① `docs/GROWTH_STRATEGY.md` 정본(NSM=주간 활성 투찰자 WAB, 유입 T1~T9·전환 C1~C6, 7단 퍼널 측정축, **킬 기준 사전등록**, 거절 목록) ② **색인 표면 50→2,188건**(PR #41 — `/sitemap.xml` 을 사이트맵 인덱스로 전환[static/blog/notices-N, 5,000 URL/파일]·`/search` SSR 로 크롤 경로 개통·미해결 공고 soft-404→진짜 404) ③ **GitHub Actions CD**(PR #42·#43 — `workflow_dispatch` 수동 버튼, `test`+`build` check-run green 강제[우회 불가], SSH forced-command 화이트리스트 `infra/deploy-agent.sh` → **로컬에서 SSH 접속·명령 불필요**) ④ **IndexNow 자동 통보**(PR #43·#44·#45 — 네이버+Bing, 수집·발행 훅에서 best-effort 자동, 운영 전용 가드·회당 상한, 일괄 2,199건 통보 완료[양쪽 200]) ⑤ **AWS SES 프로덕션 승인**(도메인 인증+DKIM 3종+SPF+DMARC, 샌드박스 해제 GRANTED 50,000통/일 — 발송 코드는 아직 없음) — **①~④ 전부 머지·배포·라이브 검증 완료**. 다음 = **SES 발송 파이프라인**(발송 전용 IAM 키 → `ses_mailer`·`nurture` → 반송·불만 억제 → 수신거부 → 체험 시퀀스 6통) + 카카오 알림톡 채널 개설(리드타임 2~3주, 사용자 대기). **+ 🚨 계산기 거짓 안전 판정 수습**(PR #37 — 7/23 생성 후 일주일 방치돼 있던 **라이브 안전 버그**. 웹 계산기·랜딩 미니계산기가 구 하한율 `87.745` 하드코딩 + 하한선 A값 보정 누락 → 기초 5억·A 1,240만·투찰 88.20% 에서 실제 하한선 449,996,620원 대비 **753만원 부족한 무효 입찰을 "안전"으로 표시**. 원인 둘 다 위험한 방향으로 어긋남. `assets/lower-limits.js` 미러 신설[정본 `lower_limits.py` 와 KEEP IN SYNC] + `test_lower_limits_sync.py` **드리프트 가드**[백엔드만 고치고 웹을 잊으면 CI 실패, 87.745 재도입 감시] — **머지·배포·라이브 검증 완료**[하드코딩 소거·랜딩 라벨 89.745%·js 200]. 교훈: PR #26 이 백엔드를 통합할 때 정적 웹 클라이언트 하드코딩을 놓쳤고, CI red 가 방치돼[무관한 joblib·ruff 실패] 머지 신호가 묻혔다. ⚠️ 잔여: 랜딩 슬라이더 범위 `86.5~90.5%` 라 하한 89.745% 에서 안전 구간이 0.755%p 뿐 — 계산기 본페이지처럼 85~92% 로 넓히는 후속 필요. 용역 웹 87.995 vs 백엔드 60.0 불일치는 도메인 재검토 대기) · PR #46 머지 완료)
-> 직전 갱신: 2026-07-19 (**반복낙찰 스파이크 실측 0.00% → 안전망 ④ 폐기**(PR #29, 게이트 작동) + **콘텐츠 엔진 Phase 1**(PR #30 — 주제 큐 24개→AI 구조화 초안→검수 게이트 + 이미지 프롬프트 반자동[힉스필드 시안 2회 실증: '명시 라벨 외 텍스트 금지' 규칙 확정], 마이그 `b7e2c4f9a801`) — **머지·배포·라이브 검증 완료**(health 200·topics 가드 401·admin UI 마커 OK). **+ Phase 2 채널 파생·주간 루프**(PR #31 — `derive_channel_assets`[카드 cardmaker 규격·릴스·유튜브·네이버], 발행 시 자동 파생 best-effort, 수 07:00 `weekly_knowledge_draft` K-큐 자동 초안, cardmaker localStorage 브릿지 — **머지·배포·라이브 검증 완료**, ⚠️celery_beat force-recreate 안내됨). **+ Phase 3 시각물 반자동 완결**(PR #32 — 🖼 이미지 프롬프트 소비 UI + assets/blog 배치 경로, **CONTENT_ENGINE §7 로드맵 Phase 0~3 전체 100% 머지 완료** · ⚠️#32 배포 대기[정적 파일뿐, beat·마이그 불필요]). **+ 큐 지속가능성·초안 품질 개편**(PR #34 — 소진/잔여≤4 경보·AI 주제 후보 제안[`GET /admin/blog/topics/propose`, 자동 편입 아님]·**5분+ 분량 스키마**[sections 5~7×400~700자+체크리스트+FAQ, 제도 팩트 시트 주입, 미달 시 재시도]·`generate-from-topic?force=true` draft 재생성[발행본 409 보호] — **머지 완료·⚠️배포 대기**. 배경: K1 첫 실전 생성이 1분짜리 얕은 글[사용자 검수]). **+ 정본 작성 모델 = Claude Sonnet 5 채택**(PR #35, 2026-07-23 — 사용자 깊이 피드백→4개 후보[Sonnet 5/GPT-5.6 Terra/Kimi K3/DeepSeek V4] 비용 분석[전부 월 $1.1 미만]→한국어 문체 기준 Sonnet 5 승인. **OpenRouter 경유**[사용자 키 보유]: `CONTENT_LLM_MODEL/BASE_URL/API_KEY` 설정 신설, 폴백 gpt-4o-mini 는 OpenAI 직결, Claude 계열 temperature 미전송[400 거부] — **머지 완료·⚠️배포 대기**. 배포 후 서버 `.env.production`에 `CONTENT_LLM_MODEL=anthropic/claude-sonnet-5`·`CONTENT_LLM_BASE_URL=https://openrouter.ai/api/v1`·`CONTENT_LLM_API_KEY=<OpenRouter 키>` 추가 필요[사용자 작업] — **#34+#35 배포·라이브 검증 완료**[health 200·신규 라우트 401 가드 확인], K1 Sonnet 5 재생성 1회 실검수: 분량 5분 내외 적정 판정). **+ 몰입 페르소나 지시**(PR #36, 2026-07-23 — 사용자 피드백 "현실적 예시로 내 이야기 같은 몰입": 글 관통 가상 페르소나 1명[비치헤드 프로필 = 전문건설 1~10인 사장님], hook 구체 장면, 섹션 2~3곳 스토리라인. 정직 가드 병행[가상 예시 명시 서술 강제·실존 업체명/실적 수치 창작 금지 = 가짜 후기 금지] — **머지 완료·⚠️배포 대기**[프롬프트만, beat·마이그 불필요]). 직전 07-18 = PR #26·27·28 배포 완료 / 다음 = **#36 배포 → K1 force 재생성**(몰입감 재검수)→발행→파생→카드→이미지 → 전환율·GA4 관찰)
+> 최종 갱신: 2026-07-30 (**SES 발송 파이프라인 라이브** — PR #47 머지·배포·실발송 검증 완료. ① **수신동의 증적**(`consent_records` 추가 전용 로그[주체·연락처 스냅샷·목적·grant/withdraw·문구버전·본문 sha256·출처·IP·UA, FK 없음·수정삭제 API 없음] + `Lead`/`User` 상태 컬럼 + `services/consent.py` 의 `can_send_marketing`/`sendable_filter` **단일 발송판정**[동의·철회·2년 재확인 §50⑧] + `/diagnose`·`/signup` 사전체크 없는 동의 UI + `/admin/consents`·`/consents/summary`. 마이그 `f4c1e8a92b37`) ② **발송 파이프라인**(`services/nurture.py` **유일 진입점**[게이트→멱등 선점→렌더→전송→원장] · `mailer.py` SES `send_raw_email`[List-Unsubscribe 헤더 때문에 raw 필수] · `email_templates.py` 가 "(광고)" 접두·발신자·수신거부를 **강제** · `OutboundMessage` 원장[`dedupe_key` 유니크, 차단건도 skipped 로 기록] · 수신거부 무기한 서명토큰 + `GET /unsubscribe/status`(조회)/`POST /unsubscribe`(처리·RFC 8058 원클릭) + 정적 `/unsubscribe` · `/admin/outbound`(원장·킬스위치 상태)·`/preview`·`/test-send`. 마이그 `a9d3f5c17e42`) ③ **운영 가동**(발송 전용 IAM `bideasy-ses-sender`+`BideasySesSendOnly`[`ses:SendRawEmail`·`SendEmail`, 서울 한정] 신규 생성 → 서버 `.env.production` 에 `OUTBOUND_EMAIL_ENABLED=true`+키 2개 추가[백업 `~/env.production.bak-20260730-outbound`] → 재배포 → **실제 1통 발송 성공**[CloudWatch Send 1·Delivery 1·Bounce 0·Complaint 0] + 미동의 광고메일 `skipped/no_consent` 게이트 실증 + 서명토큰 정상 200/변조 400). 테스트 487건 통과(PR 시점 브랜치 기준 484 + master 병합분). ⚠️ **기존 리드·회원은 전부 미동의로 시작**(마이그 기본값 false) — 소급 발송 금지. 현재 `leads` 0건이라 광고 발송 모수는 0. 다음 = **반송·불만 자동 억제(SNS 구독)** → 리드 육성 시퀀스 → 체험 시퀀스 6통 → 알림톡 채널.)
+> 직전 갱신: 2026-07-30 (**성장 전략 정본 + 유입 인프라 4종** — `docs/GROWTH_STRATEGY.md` 정본(NSM=주간 활성 투찰자 WAB, 킬 기준 사전등록) · **색인 표면 50→2,188건**(PR #41 사이트맵 인덱스·`/search` SSR) · **GitHub Actions CD**(PR #42·#43, forced-command) · **IndexNow 자동 통보**(PR #43·#44·#45) · **AWS SES 프로덕션 승인**(GRANTED 50,000통/일) · **🚨 계산기 거짓 안전 판정 수습**(PR #37 — 구 하한율 87.745 하드코딩+A값 보정 누락으로 무효 입찰을 '안전' 표시. `assets/lower-limits.js` 미러 + `test_lower_limits_sync.py` 드리프트 가드). 그 이전 07-19 = 콘텐츠 엔진 Phase 1~3·큐 지속가능성·Sonnet 5 채택·몰입 페르소나(PR #29~#36).)
 
 ---
 
@@ -48,7 +48,7 @@
   ② **벤치마크** `docs/BENCHMARK_WIN_REACH.md` + `backend/scripts/benchmark_win_reach.py`: 게이트 **사전 등록** 후 실측. **판정 G3(포지션 유지)** — 단 **적격심사제에서 현 active 전략이 이미 이론 상한의 92%**(2025 win 41.5% vs oracle 45.3%). 격차는 모델이 아니라 노출(`recommend_bid_price` API 미노출이었음). 소액수의견적 2024 레짐 변화(oracle 5.6%→36.8%) 발견 — 과적합 아님(walk-forward ≤2.5%p). **"25% 상한" 마케팅 주장 금지**(레짐 분해로 거짓). 디마 반박: 우리 표본 상한 37~45% — 63~65%는 모수가 다름. **전략투찰(Pro+) 제품화는 2026 개찰 400건+ 누적 후 G2 재판정 조건부**.
   ③ **수습 3건**: 합성데이터 공개 엔드포인트 제거(`winning_rate.py` — "Demo Mode" 가짜 통계 → insufficient_data 명시) · 낙찰하한율 단일 소스 `lower_limits.py`(2026-01-30 개정 금액대 티어 — 10억 미만 공사 89.745%, **소액 공사 DANGER 판정이 정확해짐**, 라이브 검증 완료) · smart-bid 죽은 ML 스택 수습(`/recommend`를 autocalibrate 룰기반 대체[공사만, 물품·용역 503], 나머지 ML 엔드포인트 500+에러누출 → 정직한 503). 신규 테스트 19건, 총 359건 통과.
   ⚠️ 잔여: ML 재구축은 벤치마크상 룰기반 우위라 보류. Pro+ 기능 목록/가격표에서 "공사 전용" 표기 정합성 별도 검토.
-- **리드→가입 전환 훅 + 자격 처방 (2026-07-18 세션2 · PR #27·#28 머지 · ⚠️배포 대기)** —
+- **리드→가입 전환 훅 + 자격 처방 (2026-07-18 세션2 · PR #27·#28 머지 · 배포 완료 — 이후 7/26~30 다수 배포가 master 를 그대로 반영. 구 문서의 '배포 대기' 표기는 정정됨)** —
   ① **전환 훅**(#27): `services/lead_conversion.py` `link_leads_to_user` — 가입(이메일·소셜 신규) 시 동일 이메일 Lead 를 `converted_user_id`+`nurture_status='converted'` 기록. 이메일 정규화(소문자·trim) 조회 시점 매칭(양쪽 저장 정규화 없음), 동일 이메일 다건 전부 전환(사용자 승인), best-effort 이중 가드(가입 절대 안 막음). 어드민 `GET /admin/leads/stats`(총/전환율/업종/일별/최근). 스키마 변경 없음(컬럼 기존 마이그에 존재). 부수: `test_ai_analysis` 리미터 teardown 누수(enabled=True 복구 → 뒤 테스트 429) 수정.
   ② **자격 처방**(#28, 안전망 ③): `QualificationChecker`에 `prescriptions`(requirement/issue/action/confidence) 추가 — **데이터 있는 요건만**(지역 확정·면허 "공고명 추정" 명시·프로필), 실적·시공능력은 공고 기준액 부재로 처방 안 함(후속 파이프라인). **프로필 미기재 = FAIL→UNKNOWN(판정 불가) 정직화**(사용자 승인, 추천배치·진단은 PASS만 봐서 행동 불변). `details` 문자열·뱃지 하위 호환 유지(5개 호출처 무변경). ai.py tip 처방 연동+ℹ️ UNKNOWN, bid.html "이렇게 하면 참여할 수 있어요" 블록. 디마 연 99만원 적격진단의 기본 제공 언더컷. 총 378건 통과.
 
@@ -58,10 +58,20 @@
   ③ **IndexNow 통보**(#43·#44·#45): `services/indexnow.py` — 네이버 서치어드바이저 + api.indexnow.org. **운영 전용**(`APP_ENV=production` + 키 설정 시에만 — dev/test 가 실제 엔진에 쏘지 않게), 회당 상한 `MAX_PER_RUN=2000`(자동 훅 폭주 방어) + 일괄 통보만 `max_urls` 로 override, 자기 호스트 필터·중복 제거, **예외 절대 미전파**(통보 실패가 발행·수집을 되돌리지 않음). 훅: `crawl_daily` 신규 공고·블로그 발행(태스크·어드민). 키는 **비밀이 아님**(프로토콜상 `/{key}.txt` 공개 필수) — config 기본값과 키 파일 일치를 테스트가 강제. 일괄 2,199건 통보 완료.
   ⚠️ 정직: 이건 **통보이지 색인 보장이 아니다.** 효과는 서치콘솔·서치어드바이저 수집 현황으로 2주 뒤 사후 판정. 킬 기준은 `GROWTH_STRATEGY.md` §7 에 사전 등록됨.
 
+- **아웃바운드 이메일 — 동의 증적 + SES 발송 파이프라인 (2026-07-30 · PR #47 머지·배포·실발송 검증 완료)** — 운영 런북 `docs/OUTBOUND_EMAIL.md`, 퍼널 맥락 `docs/LEAD_ACQUISITION.md` §3-1·§3-2.
+  ① **동의 증적이 먼저**(마이그 `f4c1e8a92b37`): 정보통신망법 §50 은 수신동의 사실의 **증명책임을 전송자**에게 지운다 → 증적 없이 발송을 붙이면 SES 승인이 나도 못 쓴다. `consent_records`(추가 전용·수정삭제 API 없음·대상 삭제돼도 남도록 FK 없이 연락처 스냅샷) + `Lead`/`User` 상태 컬럼 + 문구 정본(버전별 영구 보존·본문 sha256). `/diagnose`·`/signup` 은 **사전 체크 없는** 명시 동의 UI, 캐시된 구버전 페이지 제출은 증적이 없어 자동 제외.
+  ② **발송 판정을 한 곳에 고정**: `services/consent.py` `can_send_marketing`(단건)/`sendable_filter`(쿼리) — 동의·철회·**2년 재확인**(§50⑧)을 함께 본다. 발송 코드가 `marketing_consent == True` 만 보고 자체 판단하면 사고.
+  ③ **발송 파이프라인**(마이그 `a9d3f5c17e42`): `services/nurture.py` **유일 진입점**(게이트→멱등 선점→렌더→전송→원장), `mailer.py`(SES `send_raw_email` — `SendEmail` 로는 `List-Unsubscribe` 헤더 불가), `email_templates.py`(공통 조립기가 "(광고)" 접두·발신자·수신거부를 **강제** → 새 템플릿이 법정 표기를 빠뜨릴 수 없음), `OutboundMessage` 원장(`dedupe_key` 유니크, **차단된 건도** `no_consent`·`no_email`·`duplicate` 로 기록).
+  ④ **수신거부**: 용도 한정 HMAC 서명 토큰(`core/signed_token.py`, **만료 없음** — 언제든 철회 가능이 법 취지, 노출돼도 가능한 일은 해지뿐). `GET /unsubscribe/status`(조회) / `POST /unsubscribe`(처리·RFC 8058 원클릭) 분리 = 메일 스캐너 프리페치로 인한 오해지 방지. 정적 페이지 `/unsubscribe`.
+  ⑤ **운영 가동**: 발송 전용 IAM `bideasy-ses-sender`(+인라인 정책 `BideasySesSendOnly` = `ses:SendRawEmail`·`SendEmail`, 서울 리전 한정) 신규 생성 → 서버 `.env.production` 에 `OUTBOUND_EMAIL_ENABLED=true`·`AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 3줄 추가(백업 `~/env.production.bak-20260730-outbound`) → 재배포. **라이브 실증**: 거래 템플릿 실제 1통 `sent`(CloudWatch Send 1·Delivery 1·Bounce 0·Complaint 0), 미동의 광고메일 `skipped/no_consent`, 서명 토큰 정상 200·변조 400. 어드민 `/admin/consents`·`/consents/summary`·`/admin/outbound`·`/preview`·`/test-send`.
+  ⚠️ **기존 리드·회원은 전부 미동의로 시작**(마이그 기본값 false) — 2026-07-30 이전 캡처분에 광고성 메일 **소급 발송 금지**. 현재 `leads` 테이블 0건이라 광고 발송 모수는 0에서 시작한다.
+
 ### ⏳ 대기 중인 외부 작업 (코드 아님, 사용자/제3자 처리)
 | 항목 | 상태 |
 |---|---|
-| **AWS SES** | ✅ **프로덕션 승인 완료**(2026-07-30 확인, `ReviewDetails.Status=GRANTED`, 50,000통/일·14통/초, ap-northeast-2). 도메인 `bideasy.kr` Verified + DKIM 3종 SUCCESS + SPF·DMARC 등록. **다음은 코드 작업**(§ 다음 주제) |
+| **AWS SES** | ✅ **완전 가동**(2026-07-30). 프로덕션 승인 GRANTED(50,000통/일·14통/초, ap-northeast-2) + 도메인 Verified·DKIM 3종 SUCCESS·SPF·DMARC + **발송 전용 IAM `bideasy-ses-sender`** + 서버 env 설정 + **실발송 1통 성공**(Delivery 1·Bounce 0). 남은 건 코드(반송 억제·시퀀스) |
+| **루트 액세스 키 폐기** | 🚨 **미완 — 우선 처리**. `~/.aws/credentials` `[default]` 가 **루트 계정 액세스 키**다(`arn:...:root`, 2026-07-30 확인). 유출 시 계정 전체 장악. IAM → 보안 자격 증명에서 삭제하고 필요 시 관리자용 IAM 사용자로 대체. 삭제 전 대체 키 준비 필요(SES 관리는 `bideasy-ses-admin` 으로 가능) |
+| **`CONTENT_LLM_*` 미설정** | ⚠️ 서버 `.env.production` 에 `CONTENT_LLM_MODEL/BASE_URL/API_KEY` 가 **없다**(2026-07-30 실측). 즉 블로그 정본이 Sonnet 5(OpenRouter)가 아니라 기본값 `gpt-4o`(OpenAI 직결)로 생성돼 왔을 가능성 — CLAUDE.md 구버전의 "적용 완료" 기술과 불일치. 다음 세션에서 확인·설정 |
 | **카카오 알림톡** | ❌ 채널 없음(2026-07-29 확인) → 개설 필요. **리드타임 2~3주**(일반 채널 즉시 → 비즈니스 채널 전환 3~5일 → 발신프로필 심사 영업일 최대 10일 → 템플릿 심사 2~3일). 그래서 **이메일이 먼저**, 알림톡은 마감·매칭 알림용 후행 |
 | **Google Search Console** | 사이트맵 재제출(30초, 선택 — robots.txt 로도 발견됨) |
 | **토스 MID 심사** | 진행 중 — 페이플 운영 라이브(6/17)로 긴급성 낮음, 병행 가능 |
@@ -77,15 +87,17 @@
 - 남은 검증 코드: 가입 직후 1문항 마이크로 설문(업종·월 투찰수) + 커뮤니티 질문글.
 
 ### 다음 주제
-- **SES 발송 파이프라인 (최우선 — 외부 대기 해소됨)** — 순서를 지킬 것: ① **동의 증적 UI·DB**(아래 🔴) → ② **발송 전용 IAM 키**(권한 `ses:SendEmail` 만. 현재 `~/.aws/credentials` 프로필 `bideasy` 키는 권한이 넓어 **서버에 두면 안 됨**) → ③ `services/ses_mailer.py` + `services/nurture.py` 어댑터(알림톡 병행 대비 pluggable — 설계는 `docs/LEAD_ACQUISITION.md`) → ④ **반송·불만 자동 억제**(SES 이벤트 SNS 구독→재발송 차단) → ⑤ 서명 토큰 1클릭 수신거부 + **처리 결과 통지**(정보통신망법) → ⑥ 체험 시퀀스 6통(D0/D1/D3/D7/D11/D13, 주간 발송).
-  🔴 **①이 없으면 발송 자체를 시작하면 안 된다** — 현재 `/diagnose` 는 목적을 안내하지만 **광고성 수신 명시 동의와 그 증적(`consented_at`·동의 문구 버전·채널·철회 시각)을 저장하지 않는다.** 따라서 **기존 진단 리드에게 체험 전환·윈백 메일 자동 발송 금지**, 소급 동의 처리 금지. 미선택 기본값 동의 UI 를 배포한 뒤 **동의한 대상부터** 육성을 시작한다. 근거·1차 자료: `docs/OUTBOUND_SETUP.md` §3·§6.
-  ⚠️ **④를 시퀀스보다 먼저 넣는다** — 반송률 5%·불만율 0.1% 초과 시 AWS 가 계정을 정지시킨다. 리드가 적은 지금 깔아두는 게 싸다.
+- **반송·불만 자동 억제 (최우선 — 발송이 켜졌으니 이게 다음)** — SES 이벤트를 SNS 로 구독해 bounce/complaint 를 받고, 해당 주소를 **재발송 차단 목록**에 넣는다(`OutboundMessage` 원장 + suppression). **반송률 5%·불만율 0.1% 초과 시 AWS 가 계정을 정지**시킨다. 리드가 적은 지금 깔아두는 게 싸다. 현재 상태: Bounce 0·Complaint 0.
+- **리드 육성 시퀀스** — 진단 직후 `lead_welcome` 1통 + 주기 `lead_new_matches`(Celery beat). **동의한 리드만** 대상(`sendable_filter`). `dedupe_key` 규칙 = `"{template}:{subject_type}:{id}[:{주기}]"`.
+- **체험 라이프사이클 시퀀스 6통** — D0/D1/D3/D7/D11/D13(`GROWTH_STRATEGY.md` §C3). **광고/거래 구분해 템플릿 배치**: 체험 만료 고지는 거래(동의 불요), 할인·권유는 광고(동의 필요). 섞으면 메일 전체가 광고물이 된다.
+- **수신거부 처리 결과 통지** — 정보통신망법상 철회 처리 결과를 통지해야 한다(현재 즉시 반영은 되나 통지 메일은 미구현).
+- **카카오 알림톡 채널 개설** — 리드타임 2~3주(사용자 대기). 게이트(`consent.py`)는 그대로 재사용하고 어댑터만 추가.
 - **랜딩 미니계산기 슬라이더 범위** (작음, PR #37 잔여) — `index.html` `DEMO_MIN/MAX = 86.5/90.5` → 계산기 본페이지처럼 `85/92` 로. 현재 하한 89.745% 에서 안전 구간이 0.755%p 뿐이라 게이지가 거의 빨강 = 첫인상 손해.
 - **유입 효과 판정 (2주 뒤 = 2026-08-13 경)** — 서치콘솔 색인 페이지 수·서치어드바이저 수집 현황·GA4 오가닉 세션. 판정 기준·킬 기준은 `docs/GROWTH_STRATEGY.md` §7 에 **사전 등록**돼 있음(사후 합리화 금지).
 - **익스텐션 재제출** — `plan→tier` 정리 + 포인트 버튼 + 툴바 아이콘 빌드 + **오버레이 진단 CTA**(리드 마그넷 연동) → Chrome 웹스토어 재제출 (listing 가격 문구도 19,900 갱신).
 - **랜딩 개편 효과 측정** — GA4에서 `cta_*`·`calc_demo_use`·`lead_diagnose`·`lead_capture` 전환율 관찰. 데이터 보고 개선 반영.
 - **랜딩 A/B 훅 실험** — 안전 vs 자격필터 훅 A/B는 **미착수**(광고 검증 캠페인과 연동, 현재 집행 보류). 이번 랜딩 개편은 전환 구조까지만 완료.
-- **CI green 복구** — `lint`(ruff 25개 기존 오류)·`flutter` 상시 red 정리 (2026-07-08 별도 세션 task 진행 중).
+- ~~**CI green 복구**~~ → **해소됨**(2026-07-30 실측: `test`·`build`·`lint`·`flutter` 4종 모두 green). 이전 문서의 "lint 25개 오류·상시 red" 기술은 더 이상 사실이 아니다.
 
 ### 이후 (고객 검증 통과 후, 선착수 금지)
 - 자가학습 안전비서 Phase1(`UserBid`↔`OpeningResult` 피드백 루프)
@@ -107,6 +119,10 @@
 7. **app 수동 재생성 시 nginx reload 필수** — 도커 IP가 바뀌어 nginx가 옛 IP로 502. `./deploy.sh deploy`는 자동 처리(수동 compose up 시 누락 주의).
 8. **페이플 콜백 리다이렉트는 303** (307이면 정적 `/account`에 POST 재전송 → nginx 405).
 9. **버전 표기**: 현재 v1.2 (2026-07-08 랜딩 개편 시 v1.1→v1.2) — 변경 성격(MAJOR/MINOR/PATCH)을 판단해 랜딩 푸터에 반영.
+10. **이메일 발송은 `services/nurture.py` 경유만** — `mailer.send()` 직접 호출 금지(동의 게이트·원장 우회). 광고성은 `send_marketing`, 거래 고지는 `send_transactional`. **거래 메일에 할인·권유 문구를 끼우면 그 메일 전체가 광고물**이 되어 동의 없이 보낸 위법 발송이 된다.
+11. **동의 없는 연락처에 광고 발송 금지 — 소급 동의도 금지.** 2026-07-30 이전 리드는 증적이 없다. 발송 대상은 반드시 `can_send_marketing`/`sendable_filter` 통과분만. 문구를 고칠 때는 **새 버전 키를 추가**(기존 삭제 금지)하고 화면 `data-consent-version` 도 함께 올린다(`tests/test_consent.py::TestConsentTextDrift` 가 감시).
+12. **`OUTBOUND_EMAIL_ENABLED` 를 임의로 끄지 말 것** — 현재 true(라이브). 끄면 모든 발송이 조용히 `dry_run` 이 되어 "보낸 줄 알았는데 안 감" 사고가 난다. 반대로 켠 채 대량 시퀀스를 돌리기 전에는 **반송·불만 억제**(§다음 주제)가 먼저다 — 반송률 5%·불만율 0.1% 초과 시 AWS 계정 정지.
+13. **`dedupe_key` 없이 주기 발송 금지** — 규칙 `"{template}:{subject_type}:{id}[:{주기}]"`. 키가 없으면 재시도·중복 스케줄이 같은 메일을 두 번 보낸다(체감상 스팸).
 
 ---
 
@@ -170,8 +186,10 @@ Bideasy/
 | `agency.py`·`smart_bid.py`·`prediction.py` | 기관 프로파일·ML(경쟁예측·사정률·추천) — Pro/Pro+ |
 | `pages.py` | **SSR** 공고상세 `/bid/{no}` + `/sitemap.xml` (SEO 핵심) |
 | `notifications.py` | 인앱 알림 |
+| `leads.py` | 무료 자격 진단 리드(`/leads/diagnose`·`/capture`·`/consent-texts`) — 공개·IP 레이트리밋, 캡처 시 **동의 증적 기록** |
+| `unsubscribe.py` | **수신거부**(공개·무인증) — `GET /unsubscribe/status`(조회) · `POST /unsubscribe`(처리·RFC 8058 원클릭). 서명 토큰 |
 | `health.py` | `/health` |
-| `admin/*` | 관리자 전용 (`require_admin` 가드) |
+| `admin/*` | 관리자 전용 (`require_admin` 가드). 아웃바운드 관련: `consents.py`(증적 검색·발송가능 규모)·`outbound.py`(발송 원장·미리보기·테스트 발송) |
 
 ---
 
@@ -182,6 +200,7 @@ Bideasy/
 - `billing.py`(토스) / **`payple.py`(페이플)** — 빌링키 발급·청구. `payments_refund.py` — 환불.
 - `qualification_checker.py` — 자격 판정(PASS/FAIL + 뱃지). `attachment_avalue.py` — A값 Tier2(첨부 HWP/PDF 파싱).
 - `bid_detail.py` — 단건조회(inqryDiv=2 + 멀티카테고리). `opening_result*.py` — 개찰결과 누적.
+- **아웃바운드**: `consent.py`(동의 문구 정본·증적·**발송 판정 단일 소스**) → `nurture.py`(**유일 발송 진입점**: 게이트→멱등→렌더→전송→원장) → `email_templates.py`(법정 표기 강제) → `mailer.py`(SES raw). 상세 런북 `docs/OUTBOUND_EMAIL.md`.
 - `llm_agent.py`·`ai_analyzer.py`·`document_parser.py`·`tips_generator.py` — AI 파이프라인.
 - ML: `prediction_service.py`·`bidrate_prediction_service.py`·`participant_prediction_service.py`·`agency_profiler.py`·`simulation_service.py`·`winning_rate.py`.
 
@@ -256,17 +275,18 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 `deploy.sh`가 자동 수행: `git pull origin master` → `dc build app celery_worker` → 롤링 재시작 → 헬스체크 → **`dc exec app alembic upgrade head`**.
 - 기타: `./deploy.sh {status|logs|backup|rollback|ssl-init}`. 프로젝트명 `-p infra` 고정.
 - 마이그레이션만 수동: `docker compose -f docker-compose.prod.yml --env-file .env.production -p infra exec app alembic upgrade head`
-- **현재 마이그레이션 head**: `d9f3a1b7c204` (leads 테이블 — 무료 자격 진단 리드). 직전 `c4f8a1e7d602`(signup attribution) → `a3c7e1f9b204`(widen billing_key). *(이전 문서의 `c4f1a9e63b27`/`a3c7e1f9b204` 표기는 구버전 — 정정됨.)*
+- **현재 마이그레이션 head**: `a9d3f5c17e42` (outbound_messages — 발송 원장). 직전 `f4c1e8a92b37`(수신동의 증적: consent_records + leads/users 컬럼) → `b7e2c4f9a801`(blog blocks) → `d9f3a1b7c204`(leads).
 
 ---
 
 ## 8. 테스트 — 검증 명령 (코드 변경 후 반드시 실행)
 
 ```bash
-cd backend && pytest          # 359건 통과 기준 (2026-07-18. SQLite in-memory/파일)
+cd backend && pytest          # 487건 통과 기준 (2026-07-30 master 실측. SQLite in-memory/파일)
 ```
 - **모든 코드 변경 후 위 명령을 실행하고, 완료 보고(Gate Check)에 결과와 신뢰도(🟢🟡🔴)를 기재한다.** 실패 상태로 커밋·배포 금지. 실패 수정은 2회까지, 이후 에스컬레이션.
 - 결제: `tests/test_billing.py`(토스), `tests/test_payple.py`(페이플 9건 — provider/prepare/callback/서비스청구/Celery갱신, HTTP 모킹).
+- 아웃바운드: `tests/test_consent.py`(20건 — 증적 기록·구버전 경로·2년 만료·SQL필터↔단건판정 일치·**화면↔서버 문구 드리프트 가드**), `tests/test_nurture.py`(26건 — 게이트 차단 시 실제 미발송·"(광고)" 표기·원클릭 헤더·멱등·실패 시 키 해제·토큰 위조/용도 전용).
 - 그 외 feed/calculator/qualification/favorites/deadline/ai 등.
 
 ---
@@ -279,6 +299,8 @@ cd backend && pytest          # 359건 통과 기준 (2026-07-18. SQLite in-memo
 2. **`PATENT.md` 절대 커밋·푸시 금지** (내부 IP). `.gitignore`에 `**/PATENT.md` 등록됨. `MORNING_CHECKLIST.md`·`OVERNIGHT_REPORT.md`도 동일.
 3. **git push는 매번 사용자 명시 승인 후** 실행.
 4. 관리자 계정: `hosicompany@gmail.com` (비번은 별도 보관).
+4-1. **AWS 자격증명 분리**: 서버(`.env.production`)에는 **발송 전용** `bideasy-ses-sender` 키만 둔다(`ses:SendRawEmail`·`SendEmail`, 서울 리전 한정). 콘솔 관리용 `bideasy-ses-admin`(`ses:*`)을 서버에 두지 말 것. 🚨 로컬 `~/.aws/credentials` `[default]` 는 **루트 계정 키**라 폐기 대상(§대기 항목).
+4-2. **서버 SSH**: Lightsail 기본 키페어 개인키를 `~/.ssh/lightsail_bideasy.pem`(600)에 보관(2026-07-30, `aws lightsail download-default-key-pair` 로 취득). 배포는 이 키가 아니라 **GitHub Actions 버튼**(forced command)을 기본 경로로 쓴다 — 이 키는 `.env.production` 편집처럼 자동화가 못 하는 작업용.
 5. 개인정보/자격결과 캐시 누수 주의 — `AIAnalysisLog` 캐시에 사용자별 자격 포함 금지(분리 처리됨).
 
 ---

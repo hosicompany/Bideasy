@@ -157,8 +157,8 @@ sitemap.xml 실측(2026-07-27): 총 61 URL
 - 코드는 `LEAD_ACQUISITION.md` §3 설계대로 `services/nurture.py` + 어댑터(결제 PG 다중화와 동일 패턴). **수신동의·opt-out은 법적 필수**(정보통신망법) — 캡처 폼 동의 문구·해지 링크 서명 토큰 포함.
 - **진행 (2026-07-30)**: 파이프라인 1단계 = **동의 증적 UI·DB 구현 완료(배포 대기)**. `consent_records`(추가 전용 증적) + `Lead`/`User` 동의 상태 + `/diagnose`·`/signup` 동의 UI + `can_send_marketing`/`sendable_filter` 발송 판정 + `/admin/consents`. 상세 = `LEAD_ACQUISITION.md` §3-1.
   ⚠️ **기존 리드는 전부 미동의**로 시작하므로, 배포 직후 발송 가능 모수는 0에서 다시 쌓인다(`/admin/consents/summary` 로 확인).
-- **진행 (2026-07-30, 2단계)**: **수신거부 + SES 발송 파이프라인 구현 완료(배포 대기 · 전송 킬스위치 OFF)**. `services/nurture.py`(유일 발송 진입점·동의 게이트·멱등)·`mailer.py`(SES raw)·`email_templates.py`(법정 표기 강제)·`/unsubscribe`(서명 토큰·원클릭)·`OutboundMessage` 원장·`/admin/outbound`. 런북 = **`docs/OUTBOUND_EMAIL.md`**.
-  → 이제 남은 것은 **코드가 아니라 승인**이다: SES 도메인 인증(DKIM) + 프로덕션 액세스 신청. 승인 후 `.env.production` 설정 + `OUTBOUND_EMAIL_ENABLED=true` 로 켜고, 그다음 시퀀스(C3·C4)를 얹는다.
+- **진행 (2026-07-30, 2단계)**: **수신거부 + SES 발송 파이프라인 가동 완료(배포·실발송 검증 완료 · 전송 ON)**. `services/nurture.py`(유일 발송 진입점·동의 게이트·멱등)·`mailer.py`(SES raw)·`email_templates.py`(법정 표기 강제)·`/unsubscribe`(서명 토큰·원클릭)·`OutboundMessage` 원장·`/admin/outbound`. 런북 = **`docs/OUTBOUND_EMAIL.md`**.
+  → SES 는 프로덕션 승인·도메인 인증·발송 전용 IAM·서버 설정까지 모두 끝났고 **실제 1통 발송·수신 확인**(Delivery 1·Bounce 0). 이제 남은 것은 **반송·불만 자동 억제 → 시퀀스(C3·C4)** 다. C1 은 '채널 0개' 상태에서 벗어났다.
 - **원칙**: 승인 나기 전엔 캡처 카피에서 "알림 보내드려요" 약속을 **지킬 수 있는 표현으로 조정**(예: "준비되는 대로 매칭 공고를 보내드려요")하거나, 초기 볼륨이 적을 때 수동 발송으로 약속을 이행한다.
 
 ### C2. 활성화 정의·계측

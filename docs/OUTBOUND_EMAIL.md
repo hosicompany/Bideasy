@@ -1,7 +1,8 @@
 # 아웃바운드 이메일 (AWS SES) — 설계·운영 런북
 
-> 최종 갱신: 2026-07-30 · 상태: **코드 완성·배포 대기 / 전송은 킬스위치 OFF**
+> 최종 갱신: 2026-07-30 · 상태: **배포·가동 완료 (전송 ON, 실발송 검증됨)**
 > 상위 맥락: `GROWTH_STRATEGY.md` §C1(전환 병목 = 도달률 0), 동의 층 = `LEAD_ACQUISITION.md` §3-1
+> 신청 절차(사람 작업)의 1차 기록은 `OUTBOUND_SETUP.md`. 이 문서는 **코드·운영 런북**이다.
 
 ---
 
@@ -10,8 +11,10 @@
 - **문제**: 체험 만료·마감·추천·리드 육성이 전부 인앱 알림 → 안 들어온 사람에겐 도달률 0.
 - **구조**: `동의 게이트 → 발송 어댑터 → 원장`. 발송 경로는 `services/nurture.py` **하나뿐**이고,
   게이트를 우회할 방법을 두지 않았다.
-- **현재 상태**: 코드·테스트 완성. `OUTBOUND_EMAIL_ENABLED=False` 라서 실제 전송은 0통이고
-  모든 발송은 `dry_run` 으로 원장에만 남는다. **SES 도메인 인증 + 프로덕션 액세스 승인 후** 켠다.
+- **현재 상태 (2026-07-30)**: 코드·테스트 완성 + 배포 + **`OUTBOUND_EMAIL_ENABLED=true` 로 가동 중**.
+  거래 템플릿 실제 1통 발송 성공(CloudWatch Send 1·Delivery 1·Bounce 0·Complaint 0), 미동의 광고메일은
+  `skipped/no_consent` 로 차단됨을 라이브에서 실증.
+- **아직 안 한 것**: 반송·불만 자동 억제(SNS 구독), 육성·체험 시퀀스, 수신거부 처리 결과 통지, 알림톡 어댑터.
 
 ---
 
@@ -52,47 +55,51 @@
 
 ---
 
-## 3. 켜는 순서 (외부 리드타임이 먼저다)
+## 3. 가동 현황 (2026-07-30 완료 — 아래는 실제로 설정된 값)
 
-### 3-1. AWS 준비 (사람 작업)
-1. **도메인 인증**: SES 콘솔 → Verified identities → `bideasy.kr` 도메인 추가 → **DKIM(CNAME 3건)**
-   DNS 등록. SPF(`v=spf1 include:amazonses.com ~all`), DMARC(`v=DMARC1; p=none; rua=...`) 권장.
-2. **프로덕션 액세스 신청**: 기본은 샌드박스(검증된 주소로만 발송). 신청 시 유스케이스·수신동의
-   수집 방식·수신거부 처리 방식을 묻는다 → **`/diagnose` 동의 UI + `/unsubscribe` 원클릭**을 그대로
-   기술하면 된다(이미 구현됨).
-3. (선택) **Configuration Set** 생성 — 반송·불만(complaint) 이벤트 추적.
+### 3-1. AWS — ✅ 완료
+| 항목 | 실제 값 |
+|---|---|
+| 프로덕션 액세스 | ✅ GRANTED · 50,000통/일 · 14통/초 · `EnforcementStatus: HEALTHY` |
+| 도메인 `bideasy.kr` | ✅ Verified · DKIM SUCCESS · SPF·DMARC 등록됨 (DNS 는 카페24 수동 관리) |
+| 발송 전용 IAM | ✅ `bideasy-ses-sender` + 인라인 정책 `BideasySesSendOnly` (`ses:SendRawEmail`·`ses:SendEmail`, `aws:RequestedRegion=ap-northeast-2` 조건) |
+| 관리용 IAM | `bideasy-ses-admin`(`ses:*`) — **콘솔 작업 전용, 서버에 두지 않는다** |
+| Configuration Set | ⬜ 미생성 — 반송·불만 이벤트 추적 붙일 때 만든다 |
 
-### 3-2. 서버 설정 (`infra/.env.production`)
+> ⚠️ 로컬 `~/.aws/credentials` `[default]` 는 **루트 계정 액세스 키**다. 폐기 대상(CLAUDE.md 대기 항목).
+
+### 3-2. 서버 (`infra/.env.production`) — ✅ 적용됨
+실제로 추가한 것은 **3줄뿐**이다. 나머지(`AWS_REGION`·`SES_FROM_EMAIL`·`SES_FROM_NAME`·`SES_REPLY_TO`·
+`PUBLIC_WEB_URL`·`PUBLIC_API_URL`)는 `config.py` 기본값이 이미 운영값과 같아 넣지 않았다.
 ```bash
-OUTBOUND_EMAIL_ENABLED=true          # ← 승인 완료 전에는 절대 true 로 두지 않는다
-AWS_REGION=ap-northeast-2
-AWS_ACCESS_KEY_ID=...                # IAM 사용자(ses:SendRawEmail 최소 권한)
-AWS_SECRET_ACCESS_KEY=...
-SES_FROM_EMAIL=no-reply@bideasy.kr
-SES_FROM_NAME=BidEasy
-SES_REPLY_TO=support@bideasy.kr
-SES_CONFIGURATION_SET=              # 만들었다면 이름
-PUBLIC_WEB_URL=https://bideasy.kr
-PUBLIC_API_URL=https://api.bideasy.kr
+OUTBOUND_EMAIL_ENABLED=true
+AWS_ACCESS_KEY_ID=AKIA…            # bideasy-ses-sender
+AWS_SECRET_ACCESS_KEY=…
 ```
-그리고 `cd ~/Bideasy/infra && ./deploy.sh deploy` (마이그레이션 자동).
+백업: `~/env.production.bak-20260730-outbound`. 값을 바꾼 뒤에는 **배포(컨테이너 재생성)** 를 해야 반영된다.
+`.env.production` 편집은 배포 자동화(forced command)로 불가 — SSH 로 직접 하거나 Lightsail 브라우저 SSH 를 쓴다.
 
-### 3-3. 가동 확인 (순서대로)
+### 3-3. 가동 확인 절차 (재검증할 때 그대로 재사용)
 ```
 1) GET  /api/v1/admin/outbound/preview?template=lead_welcome   → 문구·(광고) 표기·수신거부 링크 확인
 2) POST /api/v1/admin/outbound/test-send?template=trial_expiry → 거래 템플릿으로 실제 경로 1통
-3) GET  /api/v1/admin/outbound                                  → status=sent 확인 (outbound_enabled=true 인지 함께 확인)
-4) 받은 메일에서 수신거부 링크 클릭 → /unsubscribe 페이지 → 해지 → /admin/consents 에 withdraw 증적 확인
+3) GET  /api/v1/admin/outbound                                  → status=sent · outbound_enabled=true 확인
+4) 받은 메일의 수신거부 링크 → /unsubscribe → 해지 → /admin/consents 에 withdraw 증적 확인
+5) CloudWatch(AWS/SES): Send·Delivery·Bounce·Complaint 확인 — SES 콘솔의 SentLast24Hours 는 반영이 늦다
 ```
 > 광고 템플릿으로 test-send 하면 관리자 본인이 미동의인 한 `skipped/no_consent` 가 나온다. **이게 정상**이며
 > 게이트가 살아 있다는 증거다.
+
+**2026-07-30 실측 결과**: 거래 템플릿 `sent`(MessageId 발급, CloudWatch Send 1·Delivery 1·Bounce 0·Complaint 0) ·
+미동의 광고 `skipped/no_consent` · 서명 토큰 정상 200 / 1글자 변조 400.
 
 ---
 
 ## 4. 함정·금지
 
-1. **`OUTBOUND_EMAIL_ENABLED` 기본값은 False.** 승인 전에 켜면 샌드박스 거절·미인증 도메인 발송으로
-   평판이 깎인다. 평판은 한 번 깎이면 거래 메일까지 안 들어간다.
+1. **`OUTBOUND_EMAIL_ENABLED`** — 코드 기본값은 False(신규 환경 보호), **운영은 현재 true**. 운영에서 이걸
+   끄면 모든 발송이 조용히 `dry_run` 이 되어 "보낸 줄 알았는데 안 감" 사고가 난다. 반대로 승인 없는 환경에서
+   켜면 미인증 도메인 발송으로 평판이 깎이고, 평판은 한 번 깎이면 거래 메일까지 안 들어간다.
 2. **`mailer.send()` 직접 호출 금지.** 반드시 `nurture.send_marketing/send_transactional` 경유
    (게이트·원장 우회 방지).
 3. **`dedupe_key` 규칙**: `"{template}:{subject_type}:{id}[:{주기}]"`. 주기성 메일은 날짜·주차를 키에 넣는다
@@ -110,8 +117,12 @@ PUBLIC_API_URL=https://api.bideasy.kr
 
 ## 5. 남은 작업 (다음 단계)
 
-- [ ] **SES 도메인 인증·프로덕션 액세스 신청** (외부 리드타임 — 가장 먼저)
-- [ ] 리드 육성 시퀀스: 진단 직후 `lead_welcome` 1통 + 주기 `lead_new_matches` (Celery beat)
+- [ ] **반송·불만 자동 억제** (최우선) — SES 이벤트를 SNS 로 구독 → bounce/complaint 주소를 재발송 차단.
+      **반송률 5%·불만율 0.1% 초과 시 AWS 계정 정지.** 시퀀스를 돌리기 전에 깔아야 한다.
+- [ ] 리드 육성 시퀀스: 진단 직후 `lead_welcome` 1통 + 주기 `lead_new_matches` (Celery beat, `sendable_filter` 대상만)
 - [ ] 체험 라이프사이클 시퀀스 D0/D1/D3/D7/D11/D13 (`GROWTH_STRATEGY.md` §C3) — 광고/거래 구분해 템플릿 배치
-- [ ] 반송·불만 웹훅(SNS) 수신 → 자동 suppression (`OutboundMessage` 에 반영)
+- [ ] 수신거부 **처리 결과 통지**(정보통신망법) — 현재 즉시 반영은 되나 통지 메일은 미구현
+- [ ] Configuration Set 생성(이벤트 추적 붙일 때)
+- [x] ~~SES 도메인 인증·프로덕션 액세스 신청~~ (2026-07-30 완료)
+- [x] ~~발송 전용 IAM 키 + 서버 설정 + 실발송 검증~~ (2026-07-30 완료)
 - [ ] 카카오 알림톡 어댑터(발신프로필·템플릿 심사 후) — 게이트는 그대로 재사용
