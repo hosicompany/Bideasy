@@ -46,6 +46,86 @@ class _SessionWrapper:
         return getattr(self._real, name)
 
 
+def _trial_user_expiring_at(db, email: str, expires_at: datetime) -> models.User:
+    user = models.User(
+        email=email,
+        hashed_password="x",
+        tier="free",
+        trial_started_at=expires_at - timedelta(days=14),
+        trial_expires_at=expires_at,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def test_send_reminders_matches_entire_kst_calendar_day_3d(db_session):
+    """10:00 KST 실행 시 3일 뒤 KST 날짜의 비동일 시각 만료를 모두 선택."""
+    now = datetime(2026, 7, 31, 1, 0, tzinfo=timezone.utc)
+    users = [
+        _trial_user_expiring_at(
+            db_session,
+            "calendar-3d-1225@test.com",
+            datetime(2026, 8, 3, 3, 25, tzinfo=timezone.utc),
+        ),
+        _trial_user_expiring_at(
+            db_session,
+            "calendar-3d-2325@test.com",
+            datetime(2026, 8, 3, 14, 25, tzinfo=timezone.utc),
+        ),
+    ]
+
+    with (
+        _patch_session(db_session),
+        patch("app.tasks.trial_tasks.datetime") as mock_datetime,
+    ):
+        mock_datetime.now.return_value = now
+        result = send_expiry_reminders()
+
+    assert result["3d"] == 2
+    for user in users:
+        notifications = (
+            db_session.query(models.Notification)
+            .filter(models.Notification.user_id == user.id)
+            .all()
+        )
+        assert [noti.noti_type for noti in notifications] == ["TRIAL_EXPIRING_3D"]
+
+
+def test_send_reminders_matches_entire_kst_calendar_day_1d(db_session):
+    """10:00 KST 실행 시 1일 뒤 KST 날짜의 비동일 시각 만료를 모두 선택."""
+    now = datetime(2026, 7, 30, 1, 0, tzinfo=timezone.utc)
+    users = [
+        _trial_user_expiring_at(
+            db_session,
+            "calendar-1d-1225@test.com",
+            datetime(2026, 7, 31, 3, 25, tzinfo=timezone.utc),
+        ),
+        _trial_user_expiring_at(
+            db_session,
+            "calendar-1d-2325@test.com",
+            datetime(2026, 7, 31, 14, 25, tzinfo=timezone.utc),
+        ),
+    ]
+
+    with (
+        _patch_session(db_session),
+        patch("app.tasks.trial_tasks.datetime") as mock_datetime,
+    ):
+        mock_datetime.now.return_value = now
+        result = send_expiry_reminders()
+
+    assert result["1d"] == 2
+    for user in users:
+        notifications = (
+            db_session.query(models.Notification)
+            .filter(models.Notification.user_id == user.id)
+            .all()
+        )
+        assert [noti.noti_type for noti in notifications] == ["TRIAL_EXPIRING_1D"]
+
+
 def test_send_reminders_creates_3d_notification(db_session):
     """3일 후 만료 사용자에게 TRIAL_EXPIRING_3D 생성."""
     user = _trial_user(db_session, "exp-3d@test.com", expires_in_days=3)
