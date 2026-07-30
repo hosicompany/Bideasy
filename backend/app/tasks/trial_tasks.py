@@ -24,6 +24,8 @@ from app.db.session import SessionLocal
 
 logger = get_logger(__name__)
 
+KST = timezone(timedelta(hours=9))
+
 
 # 알림 제목·본문 템플릿
 _TEMPLATES = {
@@ -86,20 +88,25 @@ def send_expiry_reminders() -> dict:
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
-        three_days_later = now + timedelta(days=3)
-        one_day_later = now + timedelta(days=1)
-        yesterday = now - timedelta(days=1)
+        today_start_kst = now.astimezone(KST).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        three_days_start = (today_start_kst + timedelta(days=3)).astimezone(timezone.utc)
+        three_days_end = three_days_start + timedelta(days=1)
+        one_day_start = (today_start_kst + timedelta(days=1)).astimezone(timezone.utc)
+        one_day_end = one_day_start + timedelta(days=1)
+        yesterday_start = (today_start_kst - timedelta(days=1)).astimezone(timezone.utc)
+        yesterday_end = yesterday_start + timedelta(days=1)
 
         results = {"3d": 0, "1d": 0, "expired": 0, "skipped": 0}
 
         # ── 3일 후 만료 사용자 ──────────────────────────────
-        # 윈도우: now+2.5d ~ now+3.5d (10시 실행이라 ±12h 여유)
         users_3d = (
             db.query(models.User)
             .filter(
                 models.User.trial_expires_at.isnot(None),
-                models.User.trial_expires_at >= three_days_later - timedelta(hours=12),
-                models.User.trial_expires_at < three_days_later + timedelta(hours=12),
+                models.User.trial_expires_at >= three_days_start,
+                models.User.trial_expires_at < three_days_end,
                 # 유료 구독자는 알림 제외
                 or_(
                     models.User.subscription_expires_at.is_(None),
@@ -120,8 +127,8 @@ def send_expiry_reminders() -> dict:
             db.query(models.User)
             .filter(
                 models.User.trial_expires_at.isnot(None),
-                models.User.trial_expires_at >= one_day_later - timedelta(hours=12),
-                models.User.trial_expires_at < one_day_later + timedelta(hours=12),
+                models.User.trial_expires_at >= one_day_start,
+                models.User.trial_expires_at < one_day_end,
                 or_(
                     models.User.subscription_expires_at.is_(None),
                     models.User.subscription_expires_at < now,
@@ -141,8 +148,8 @@ def send_expiry_reminders() -> dict:
             db.query(models.User)
             .filter(
                 models.User.trial_expires_at.isnot(None),
-                models.User.trial_expires_at >= yesterday - timedelta(hours=12),
-                models.User.trial_expires_at < yesterday + timedelta(hours=12),
+                models.User.trial_expires_at >= yesterday_start,
+                models.User.trial_expires_at < yesterday_end,
                 or_(
                     models.User.subscription_expires_at.is_(None),
                     models.User.subscription_expires_at < now,
