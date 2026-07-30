@@ -126,6 +126,105 @@ def test_send_reminders_matches_entire_kst_calendar_day_1d(db_session):
         assert [noti.noti_type for noti in notifications] == ["TRIAL_EXPIRING_1D"]
 
 
+def test_send_reminders_kst_calendar_boundaries(db_session):
+    """KST 날짜 윈도우는 자정 포함, 다음 날 자정 및 인접 날짜 제외."""
+    now = datetime(2026, 7, 31, 1, 0, tzinfo=timezone.utc)  # 10:00 KST
+    at_start = _trial_user_expiring_at(
+        db_session,
+        "calendar-boundary-start@test.com",
+        datetime(2026, 8, 2, 15, 0, tzinfo=timezone.utc),  # Aug 3 00:00 KST
+    )
+    excluded_users = [
+        _trial_user_expiring_at(
+            db_session,
+            "calendar-boundary-previous@test.com",
+            datetime(2026, 8, 2, 14, 59, 59, tzinfo=timezone.utc),
+        ),  # Aug 2 23:59:59 KST
+        _trial_user_expiring_at(
+            db_session,
+            "calendar-boundary-end@test.com",
+            datetime(2026, 8, 3, 15, 0, tzinfo=timezone.utc),
+        ),  # Aug 4 00:00 KST
+    ]
+
+    with (
+        _patch_session(db_session),
+        patch("app.tasks.trial_tasks.datetime") as mock_datetime,
+    ):
+        mock_datetime.now.return_value = now
+        result = send_expiry_reminders()
+
+    assert result["3d"] == 1
+    assert (
+        db_session.query(models.Notification)
+        .filter(
+            models.Notification.user_id == at_start.id,
+            models.Notification.noti_type == "TRIAL_EXPIRING_3D",
+        )
+        .count()
+        == 1
+    )
+    for user in excluded_users:
+        assert (
+            db_session.query(models.Notification)
+            .filter(models.Notification.user_id == user.id)
+            .count()
+            == 0
+        )
+
+
+def test_send_reminders_expired_matches_yesterday_kst_calendar_date(db_session):
+    """어제 KST 날짜 전체만 TRIAL_EXPIRED 대상으로 선택."""
+    now = datetime(2026, 7, 31, 1, 0, tzinfo=timezone.utc)  # 10:00 KST
+    expired_users = [
+        _trial_user_expiring_at(
+            db_session,
+            "expired-yesterday-start@test.com",
+            datetime(2026, 7, 29, 15, 0, tzinfo=timezone.utc),
+        ),  # Jul 30 00:00 KST
+        _trial_user_expiring_at(
+            db_session,
+            "expired-yesterday-end@test.com",
+            datetime(2026, 7, 30, 14, 59, 59, tzinfo=timezone.utc),
+        ),  # Jul 30 23:59:59 KST
+    ]
+    excluded_users = [
+        _trial_user_expiring_at(
+            db_session,
+            "expired-day-before@test.com",
+            datetime(2026, 7, 29, 14, 59, 59, tzinfo=timezone.utc),
+        ),  # Jul 29 23:59:59 KST
+        _trial_user_expiring_at(
+            db_session,
+            "expired-today@test.com",
+            datetime(2026, 7, 30, 15, 0, tzinfo=timezone.utc),
+        ),  # Jul 31 00:00 KST
+    ]
+
+    with (
+        _patch_session(db_session),
+        patch("app.tasks.trial_tasks.datetime") as mock_datetime,
+    ):
+        mock_datetime.now.return_value = now
+        result = send_expiry_reminders()
+
+    assert result["expired"] == 2
+    for user in expired_users:
+        notifications = (
+            db_session.query(models.Notification)
+            .filter(models.Notification.user_id == user.id)
+            .all()
+        )
+        assert [noti.noti_type for noti in notifications] == ["TRIAL_EXPIRED"]
+    for user in excluded_users:
+        assert (
+            db_session.query(models.Notification)
+            .filter(models.Notification.user_id == user.id)
+            .count()
+            == 0
+        )
+
+
 def test_send_reminders_creates_3d_notification(db_session):
     """3일 후 만료 사용자에게 TRIAL_EXPIRING_3D 생성."""
     user = _trial_user(db_session, "exp-3d@test.com", expires_in_days=3)
