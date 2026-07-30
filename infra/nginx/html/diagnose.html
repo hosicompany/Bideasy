@@ -38,6 +38,16 @@
     .dg-count{font-size:40px;font-weight:800;letter-spacing:-1.5px;color:var(--accent);line-height:1;}
     .dg-hidden{display:none;}
     .dg-err{color:var(--danger);font-size:13px;font-weight:600;margin-top:8px;}
+    /* 수신동의 — 사전 체크 금지(정보통신망법 제50조: 명시적 동의). 기본 해제 상태 유지. */
+    .dg-consent{margin-top:14px;text-align:left;}
+    .dg-consent label{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--text);
+      line-height:1.5;cursor:pointer;margin-top:10px;}
+    .dg-consent input{margin:2px 0 0;width:16px;height:16px;flex-shrink:0;accent-color:var(--accent);cursor:pointer;}
+    .dg-consent details{margin:5px 0 0 24px;}
+    .dg-consent summary{font-size:11.5px;color:var(--muted);cursor:pointer;}
+    .dg-consent pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:11.5px;
+      color:var(--muted);line-height:1.65;margin:6px 0 0;padding:10px 12px;border:1px solid var(--line);
+      border-radius:9px;background:var(--surface);}
     @media(max-width:520px){.dg-count{font-size:32px;}}
   </style>
   <script src="/assets/app.js"></script>
@@ -104,16 +114,47 @@
         <div class="dg-lockcard">
           <p style="font-size:16px;font-weight:800;margin:0 0 4px;">전체 목록 + 새 공고 알림 받기</p>
           <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 16px;">
-            연락처를 남기시면 나머지 공고 전체를 지금 보여드리고, 조건에 맞는 새 공고가 올라오면 알려드릴게요.
+            연락처를 남기시면 나머지 공고 전체를 지금 보여드려요. 알림 수신에 동의하시면 조건에 맞는 새 공고가 올라올 때 알려드릴게요.
           </p>
           <div style="display:flex;flex-direction:column;gap:10px;">
             <input type="email" id="dg-email" class="dg-input" placeholder="이메일 (예: boss@company.kr)">
             <input type="tel" id="dg-phone" class="dg-input" placeholder="휴대폰 (예: 010-1234-5678) — 알림톡 받기">
           </div>
+
+          <!-- 수신동의 — 문구 정본은 backend/app/services/consent.py(CONSENT_TEXTS).
+               문구를 고치면 반드시 서버 버전과 함께 올린다(tests/test_consent.py 가 드리프트 감시). -->
+          <div class="dg-consent" data-consent-version="2026-07-30.v1">
+            <label for="dg-consent-privacy">
+              <input type="checkbox" id="dg-consent-privacy">
+              <span><b>[필수]</b> 개인정보 수집·이용에 동의합니다.</span>
+            </label>
+            <details>
+              <summary>동의 내용 보기</summary>
+              <pre>[필수] 개인정보 수집·이용 동의
+· 수집 항목: 이메일 또는 휴대폰 번호, 업종·보유 면허·사업장 소재지·시공능력평가액(선택)
+· 이용 목적: 무료 자격 진단 결과 제공 및 문의 응대
+· 보유 기간: 수집일로부터 1년 또는 삭제 요청 시까지
+· 동의를 거부하실 수 있으며, 거부 시 진단 결과 전체 목록 제공이 제한됩니다.</pre>
+            </details>
+            <label for="dg-consent-marketing">
+              <input type="checkbox" id="dg-consent-marketing">
+              <span><b>[선택]</b> 새 공고 알림 등 광고성 정보 수신에 동의합니다.</span>
+            </label>
+            <details>
+              <summary>동의 내용 보기</summary>
+              <pre>[선택] 광고성 정보 수신 동의
+· 전송 내용: 조건에 맞는 신규 공고 알림, 입찰 정보·서비스 소식 등 광고성 정보
+· 전송 채널: 이메일(휴대폰을 남기신 경우 카카오 알림톡 포함)
+· 철회 방법: 각 메시지의 수신거부 링크 또는 support@bideasy.kr 로 언제든 철회할 수 있습니다.
+· 동의를 거부하셔도 진단 결과 확인에는 제한이 없습니다.</pre>
+            </details>
+          </div>
+
           <div id="dg-cap-err" class="dg-err dg-hidden"></div>
           <button id="dg-capture" class="btn btn-primary btn-lg btn-block" style="margin-top:14px;">전체 공고 보기 →</button>
           <p style="font-size:11.5px;color:var(--muted);text-align:center;margin:12px 0 0;line-height:1.5;">
-            입력하신 연락처는 공고 알림·서비스 안내에만 사용하며, 언제든 수신 거부할 수 있어요.
+            입력하신 연락처는 위 목적 범위에서만 사용하며, 언제든 수신 거부하실 수 있어요.
+            <a href="/privacy" target="_blank" rel="noopener" style="color:var(--muted);text-decoration:underline;">개인정보처리방침</a>
           </p>
         </div>
       </div>
@@ -264,6 +305,13 @@
         var okPhone = phone && (phone.replace(/\D/g, '').length >= 9);
         if (!okEmail && !okPhone) { err.textContent = '이메일 또는 휴대폰 번호를 정확히 입력해 주세요.'; err.classList.remove('dg-hidden'); return; }
 
+        // 동의 — 필수(개인정보 수집·이용) / 선택(광고성 정보 수신). 사전 체크 없음.
+        var consentBox = document.querySelector('.dg-consent');
+        var consentVersion = consentBox ? consentBox.getAttribute('data-consent-version') : null;
+        var privacyOk = document.getElementById('dg-consent-privacy').checked;
+        var marketingOk = document.getElementById('dg-consent-marketing').checked;
+        if (!privacyOk) { err.textContent = '개인정보 수집·이용에 동의해 주세요.'; err.classList.remove('dg-hidden'); return; }
+
         var btn = this; btn.disabled = true; btn.textContent = '불러오는 중…';
         var a = attr();
         try {
@@ -274,12 +322,17 @@
               region: state.region, capacity_cost: state.capacity_cost,
               email: email || null, phone: phone || null,
               nurture_channel: okPhone ? 'kakao' : 'email',
+              privacy_consent: privacyOk, marketing_consent: marketingOk, consent_version: consentVersion,
               utm_source: a.source || null, utm_medium: a.medium || null, utm_campaign: a.campaign || null, referrer: a.referrer || null
             })
           });
-          if (!resp.ok) throw new Error('capture 실패');
+          if (!resp.ok) {
+            // 서버가 사유를 준 경우(동의 누락·문구 갱신 등) 그대로 보여준다.
+            var detail = ''; try { detail = (await resp.json()).detail || ''; } catch (e2) {}
+            throw new Error(detail);
+          }
           var data = await resp.json();
-          try { gtag('event', 'lead_capture', { channel: okPhone ? 'kakao' : 'email', matched: data.matched_count }); } catch (e) {}
+          try { gtag('event', 'lead_capture', { channel: okPhone ? 'kakao' : 'email', matched: data.matched_count, marketing_consent: marketingOk ? 1 : 0 }); } catch (e) {}
 
           document.getElementById('dg-lock').classList.add('dg-hidden');
           var full = document.getElementById('dg-full');
@@ -288,7 +341,7 @@
           full.classList.remove('dg-hidden');
           document.getElementById('dg-next').classList.remove('dg-hidden');
         } catch (e) {
-          err.textContent = '전송에 실패했어요. 잠시 후 다시 시도하시거나 support@bideasy.kr 로 문의해 주세요.';
+          err.textContent = (e && e.message) || '전송에 실패했어요. 잠시 후 다시 시도하시거나 support@bideasy.kr 로 문의해 주세요.';
           err.classList.remove('dg-hidden'); btn.disabled = false; btn.textContent = '전체 공고 보기 →';
         }
       });

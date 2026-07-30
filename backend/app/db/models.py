@@ -89,6 +89,18 @@ class User(Base):
     signup_campaign = Column(String(160), nullable=True)
     signup_referrer = Column(String(300), nullable=True)
 
+    # === 광고성 정보 수신동의 (선택) ===
+    # 체험 시퀀스·신규 공고 알림 등 아웃바운드 발송의 전제. 거래 관련 안내(결제·영수증·
+    # 체험 만료 고지)는 광고가 아니므로 이 동의와 무관하게 발송한다. 발송 판정은
+    # services/consent.py can_send_marketing/sendable_filter 만 사용(2년 재확인 포함).
+    marketing_consent = Column(Boolean, nullable=False, default=False, server_default="false")
+    marketing_consent_at = Column(DateTime, nullable=True)
+    marketing_withdrawn_at = Column(DateTime, nullable=True)
+    marketing_confirmed_at = Column(DateTime, nullable=True)
+    consent_text_version = Column(String(30), nullable=True)
+    consent_ip = Column(String(45), nullable=True)
+    consent_user_agent = Column(String(300), nullable=True)
+
     bids = relationship("UserBid", back_populates="user")
     point_transactions = relationship("PointTransaction", back_populates="user")
 
@@ -430,6 +442,91 @@ class Lead(Base):
     # 전환 연결 — 가입 시 users.id (리드→유료 성과 측정)
     converted_user_id = Column(Integer, nullable=True)
 
+    # ── 수신동의 증적 (정보통신망법 제50조 / 개인정보보호법 제22조) ──
+    # 여기 컬럼은 "현재 상태"이고, 변경 이력·증명자료는 consent_records 에 append-only
+    # 로 쌓인다. 발송 대상 판정은 services/consent.py 의 can_send_marketing/
+    # sendable_filter 만 사용한다(2년 재확인·철회가 자동 반영됨).
+    privacy_consent = Column(Boolean, nullable=False, default=False, server_default="false")
+    privacy_consent_at = Column(DateTime, nullable=True)
+    marketing_consent = Column(Boolean, nullable=False, default=False, server_default="false")
+    marketing_consent_at = Column(DateTime, nullable=True)
+    marketing_withdrawn_at = Column(DateTime, nullable=True)  # 수신거부 시각(이후 발송 금지)
+    marketing_confirmed_at = Column(DateTime, nullable=True)  # 최근 동의 확인 시각(2년 주기)
+    consent_text_version = Column(String(30), nullable=True)  # 동의 당시 문구 버전
+    consent_ip = Column(String(45), nullable=True)            # IPv6 포함
+    consent_user_agent = Column(String(300), nullable=True)
+
     # 유입 지점 (web_diagnose | ext_diagnose 등)
     source = Column(String(40), nullable=False, default="web_diagnose", server_default="web_diagnose")
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class ConsentRecord(Base):
+    """동의·철회 증적 로그 (append-only) — 광고성 정보 전송의 증명책임 대응.
+
+    정보통신망법 제50조는 수신동의 사실의 증명책임을 전송자에게 지운다. Lead/User 의
+    상태 컬럼은 철회·재동의로 덮어써지므로, "언제·어디서·무슨 문구에 동의했는가"는
+    이 테이블에만 남는다. **어떤 경로로도 UPDATE/DELETE 하지 않는다**(대상 행이 삭제돼도
+    증적은 남아야 하므로 FK 를 걸지 않고 연락처를 스냅샷으로 복사해 둔다).
+
+    text_hash 는 동의 문구 본문의 sha256 — 나중에 문구를 고쳐도 그때 무엇에 동의했는지
+    지문으로 특정된다(services/consent.py CONSENT_TEXTS 가 버전별 본문을 보존).
+    """
+    __tablename__ = "consent_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 동의 주체 — FK 없음(대상 삭제 후에도 증적 보존)
+    subject_type = Column(String(10), nullable=False, index=True)  # lead | user
+    subject_id = Column(Integer, nullable=True, index=True)
+    email = Column(String(255), nullable=True, index=True)
+    phone = Column(String(30), nullable=True)
+
+    purpose = Column(String(20), nullable=False)   # privacy | marketing
+    action = Column(String(12), nullable=False)    # grant | withdraw | reconfirm
+    channel = Column(String(20), nullable=True)    # email | kakao | all
+
+    text_version = Column(String(30), nullable=False)
+    text_hash = Column(String(64), nullable=False)
+
+    source = Column(String(40), nullable=False)    # web_diagnose | web_signup | email_unsub | admin
+    ip = Column(String(45), nullable=True)
+    user_agent = Column(String(300), nullable=True)
+    note = Column(String(200), nullable=True)
+
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class OutboundMessage(Base):
+    """아웃바운드 발송 기록 — "무엇을 누구에게 언제 보냈나"의 단일 원장.
+
+    세 가지를 동시에 해결한다:
+      1) **멱등성**: `dedupe_key` 유니크 — 재시도·중복 스케줄이 같은 메일을 두 번 보내지
+         않는다(사용자 체감상 스팸이자 신뢰 손실). 키 충돌은 skipped 로 남는다.
+      2) **사고 추적**: 민원("왜 보냈나")이 오면 이 원장 + consent_records 로 즉시 답한다.
+      3) **차단 사유 가시화**: 동의 없음·수신거부로 **보내지 않은 건도** status=skipped 로
+         남긴다. 조용히 사라지면 발송 게이트가 도는지 알 수 없다.
+    """
+    __tablename__ = "outbound_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    subject_type = Column(String(10), nullable=False, index=True)  # lead | user
+    subject_id = Column(Integer, nullable=True, index=True)
+    email = Column(String(255), nullable=True, index=True)
+
+    channel = Column(String(20), nullable=False, default="email")   # email | kakao
+    template = Column(String(60), nullable=False)                   # lead_welcome 등
+    category = Column(String(20), nullable=False)                   # marketing | transactional
+    subject = Column(String(200), nullable=True)                    # 발송된 제목
+
+    status = Column(String(20), nullable=False)   # sent | dry_run | skipped | failed
+    reason = Column(String(60), nullable=True)    # skipped/failed 사유 코드
+    provider = Column(String(20), nullable=True)  # ses
+    provider_message_id = Column(String(120), nullable=True)
+    error = Column(String(300), nullable=True)
+
+    # 멱등 키 — 예: "lead_welcome:lead:42". 같은 키는 한 번만 전송된다.
+    dedupe_key = Column(String(160), nullable=True, unique=True, index=True)
+
     created_at = Column(DateTime, default=_utcnow, index=True)

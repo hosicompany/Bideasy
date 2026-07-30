@@ -18,10 +18,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.cache import _get_redis, cache_key
+from app.core.client_meta import client_ip as _client_ip
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db import models
 from app.db.session import get_db
+from app.services import consent as consent_service
 from app.services.qualification_checker import QualificationChecker
 
 logger = get_logger(__name__)
@@ -47,20 +49,6 @@ _last_warm_crawl_ts: float = 0.0  # Redis 미가용 시 프로세스 로컬 폴�
 # ─────────────────────────── 레이트리밋 (IP 기준) ───────────────────────────
 # Redis 미가용(dev/test) 시 폴백용 in-memory 롤링 카운터.
 _ip_call_log: dict[str, deque] = defaultdict(deque)
-
-
-def _client_ip(request: Request) -> str:
-    """프록시(nginx) 뒤 실 IP.
-
-    ⚠️ XFF 의 첫 요소는 클라이언트가 위조할 수 있다. nginx 는
-    `$proxy_add_x_forwarded_for` 로 실 IP 를 **맨 뒤**에 append 하므로,
-    신뢰 프록시(1단)가 붙인 마지막 요소를 실 클라이언트 IP 로 사용한다.
-    (첫 요소를 쓰면 XFF 스푸핑으로 레이트리밋이 통째로 우회됨)
-    """
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[-1].strip()
-    return request.client.host if request.client else "unknown"
 
 
 def _rate_limit(bucket: str, ip: str, limit: int, window_sec: int = 3600):
@@ -117,6 +105,12 @@ class CaptureRequest(DiagnoseRequest):
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None
     referrer: Optional[str] = None
+    # ── 동의 (정보통신망법 제50조 / 개인정보보호법 제22조) ──
+    # privacy_consent 가 None 이면 동의 UI 가 없던 **구버전(캐시된) 페이지**의 제출이다.
+    # 캡처 자체는 막지 않되(방문자 이탈 방지) 증적이 없으므로 광고성 발송 대상에서 제외한다.
+    privacy_consent: Optional[bool] = None
+    marketing_consent: bool = False
+    consent_version: Optional[str] = None   # 화면에 표시된 동의 문구 버전
 
 
 # ─────────────────────────── 매칭 로직 ───────────────────────────
@@ -263,11 +257,34 @@ def diagnose(req: DiagnoseRequest, request: Request, db: Session = Depends(get_d
     }
 
 
+@router.get("/consent-texts")
+def consent_texts():
+    """동의 문구 정본 — 화면 문구·증적의 단일 소스(공개, PII 없음).
+
+    프론트가 표시하는 문구와 서버가 해시로 남기는 문구가 갈라지면 증적이 무의미해진다.
+    이 엔드포인트는 감사·검증용 정본 공개 창구다(문구 변경 시 버전이 바뀐다).
+    """
+    return {
+        "privacy": {
+            "version": consent_service.CURRENT_VERSION[consent_service.PURPOSE_PRIVACY],
+            "text": consent_service.consent_text(consent_service.PURPOSE_PRIVACY),
+            "required": True,
+        },
+        "marketing": {
+            "version": consent_service.CURRENT_VERSION[consent_service.PURPOSE_MARKETING],
+            "text": consent_service.consent_text(consent_service.PURPOSE_MARKETING),
+            "required": False,
+        },
+    }
+
+
 @router.post("/capture")
 def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)):
     """리드 캡처 — 연락처 저장 + 전체 매칭 목록 잠금해제.
 
     이메일 또는 휴대폰 중 하나는 필수. 진단 입력(업종·지역)은 검증 마이크로설문으로 함께 저장.
+    동의(필수: 개인정보 수집·이용 / 선택: 광고성 정보 수신)는 증적과 함께 기록한다 —
+    광고성 발송은 `services/consent.can_send_marketing` 을 통과한 리드에게만 나간다.
     """
     _rate_limit("capture", _client_ip(request), limit=15, window_sec=3600)
 
@@ -277,6 +294,27 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="업종 또는 보유 면허를 알려주세요.")
     if not req.region:
         raise HTTPException(status_code=400, detail="사업장 소재지를 선택해 주세요.")
+
+    # 동의 문구 버전 검증 — 모르는 버전이면 화면 문구와 증적이 어긋난다(캐시된 구버전 페이지).
+    if req.consent_version:
+        try:
+            consent_service.resolve_version(consent_service.PURPOSE_PRIVACY, req.consent_version)
+            if req.marketing_consent:
+                consent_service.resolve_version(consent_service.PURPOSE_MARKETING, req.consent_version)
+        except consent_service.UnknownConsentVersion:
+            raise HTTPException(
+                status_code=400,
+                detail="동의 안내문이 갱신됐어요. 페이지를 새로고침한 뒤 다시 시도해 주세요.",
+            )
+
+    # 필수 동의를 명시적으로 거부(False)한 경우만 차단. None 은 구버전 페이지(아래에서 발송 제외).
+    if req.privacy_consent is False:
+        raise HTTPException(
+            status_code=400,
+            detail="개인정보 수집·이용에 동의해 주셔야 결과를 보내드릴 수 있어요.",
+        )
+    has_consent_ui = req.privacy_consent is True
+    marketing_ok = bool(req.marketing_consent) and has_consent_ui
 
     matched = _match_notices(db, req.industry, req.licenses, req.region)
 
@@ -296,6 +334,23 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
         source="web_diagnose",
     )
     db.add(lead)
+    db.flush()  # lead.id 확보 — 증적이 어느 리드의 동의인지 가리켜야 한다
+
+    if has_consent_ui:
+        consent_service.grant_privacy(
+            db, lead, subject_type="lead", source="web_diagnose",
+            version=req.consent_version, request=request,
+        )
+        if marketing_ok:
+            consent_service.grant_marketing(
+                db, lead, subject_type="lead", source="web_diagnose",
+                channel=(lead.nurture_channel or ("kakao" if req.phone else "email")),
+                version=req.consent_version, request=request,
+            )
+    else:
+        # 구버전 페이지 제출 — 동의 증적이 없으므로 광고성 발송 대상에서 자동 제외된다.
+        logger.warning("lead capture without consent fields (구버전 페이지 캐시 추정)")
+
     db.commit()
     db.refresh(lead)
 
@@ -303,5 +358,6 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
         "ok": True,
         "lead_id": lead.id,
         "matched_count": len(matched),
+        "marketing_consent": bool(lead.marketing_consent),
         "notices": [_notice_card(n) for n in matched],
     }

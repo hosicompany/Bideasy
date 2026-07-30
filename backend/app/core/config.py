@@ -167,6 +167,22 @@ class Settings(BaseSettings):
     GOOGLE_SITE_VERIFICATION: str = ""
     NAVER_SITE_VERIFICATION: str = ""
 
+    # === 아웃바운드 이메일 (AWS SES) ===
+    # 킬스위치: False 면 실제 전송 없이 dry-run 로그만 남긴다(기본값 — 오발송 방지).
+    # SES 프로덕션 액세스 승인 + 도메인 DKIM 인증이 끝난 뒤에만 True 로 켠다.
+    OUTBOUND_EMAIL_ENABLED: bool = False
+    AWS_REGION: str = "ap-northeast-2"
+    # 자격증명은 IAM 역할이 있으면 비워둔다(boto3 기본 체인). Lightsail 은 키 주입 필요.
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    SES_FROM_EMAIL: str = "no-reply@bideasy.kr"
+    SES_FROM_NAME: str = "BidEasy"
+    SES_REPLY_TO: str = "support@bideasy.kr"
+    SES_CONFIGURATION_SET: str = ""   # 반송·수신거부 이벤트 추적용(선택)
+    # 수신거부 링크·본문 링크의 공개 웹 기준 URL
+    PUBLIC_WEB_URL: str = "https://bideasy.kr"
+    PUBLIC_API_URL: str = "https://api.bideasy.kr"
+
     # === Logging ===
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "text"  # "json" | "text"

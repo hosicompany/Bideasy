@@ -20,6 +20,10 @@ class UserCreate(UserBase):
     signup_medium: Optional[str] = None
     signup_campaign: Optional[str] = None
     signup_referrer: Optional[str] = None
+    # 광고성 정보 수신 동의(선택). 미전송 = 미동의 — 거래 관련 안내는 이와 무관하게 발송된다.
+    # 동의 증적은 consent_records 에 남고, 발송 판정은 services/consent.py 가 단독 담당.
+    marketing_consent: bool = False
+    consent_version: Optional[str] = None
 
 class UserUpdate(UserBase):
     pass
