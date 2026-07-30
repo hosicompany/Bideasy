@@ -10,6 +10,7 @@ from app.db import models
 from app.schemas import user as user_schemas
 from app.schemas.point import SIGNUP_BONUS
 from app.schemas.subscription import activate_trial
+from app.services import consent as consent_service
 from app.services.lead_conversion import link_leads_to_user
 from app.core.security import (
     verify_password,
@@ -143,6 +144,20 @@ def register(request: Request, user_in: user_schemas.UserCreate, db: Session = D
     # 신규 가입자에게 14일 Pro 체험 자동 부여
     activate_trial(user)
     logger.info(f"Trial activated: user_id={user.id}, expires={user.trial_expires_at}")
+
+    # 광고성 정보 수신 동의(선택) — 동의한 경우에만 상태+증적 기록.
+    # 미동의는 정상 경로다(거래 관련 안내는 동의와 무관하게 나감).
+    if user_in.marketing_consent:
+        try:
+            consent_service.grant_marketing(
+                db, user, subject_type="user", source="web_signup",
+                channel="email",
+                version=(user_in.consent_version or consent_service.SIGNUP_MARKETING_VERSION),
+                request=request,
+            )
+        except consent_service.UnknownConsentVersion:
+            # 캐시된 구버전 폼 — 가입 자체는 막지 않고 미동의로 남긴다(임의 기록 금지).
+            logger.warning("signup marketing consent: unknown text version %s", user_in.consent_version)
 
     db.commit()
     db.refresh(user)

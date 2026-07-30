@@ -42,6 +42,19 @@
             <div style="margin-top:16px;"><label class="field-label">비밀번호</label><input id="password" class="input input-t" type="password" autocomplete="new-password" placeholder="8자 이상"></div>
             <div style="margin-top:16px;"><label class="field-label">상호 (회사명)</label><input id="company" class="input input-t" autocomplete="organization" placeholder="예: 호시건설(주)"></div>
             <label id="agree" style="display:flex;align-items:flex-start;gap:9px;margin-top:16px;cursor:pointer;"><span id="cb" style="width:20px;height:20px;border-radius:6px;flex-shrink:0;margin-top:1px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line-2);"></span><span style="font-size:12.5px;color:var(--muted);line-height:1.5;"><b style="color:var(--ink-2);">이용약관</b> 및 <b style="color:var(--ink-2);">개인정보처리방침</b>에 동의합니다.</span></label>
+            <!-- 광고성 정보 수신 동의(선택) — 사전 체크 금지(정보통신망법 제50조).
+                 문구 정본 = backend/app/services/consent.py CONSENT_TEXTS[marketing]["2026-07-30.signup.v1"] -->
+            <div id="mkt-consent" data-consent-version="2026-07-30.signup.v1" style="margin-top:11px;">
+              <label id="agree-mkt" style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;"><span id="cb-mkt" style="width:20px;height:20px;border-radius:6px;flex-shrink:0;margin-top:1px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line-2);"></span><span style="font-size:12.5px;color:var(--muted);line-height:1.5;"><b style="color:var(--ink-2);">[선택]</b> 자격에 맞는 새 공고 알림 등 광고성 정보 수신에 동의합니다.</span></label>
+              <details style="margin:6px 0 0 29px;">
+                <summary style="font-size:11.5px;color:var(--faint);cursor:pointer;">동의 내용 보기</summary>
+                <pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:11.5px;color:var(--muted);line-height:1.65;margin:6px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);">[선택] 광고성 정보 수신 동의
+· 전송 내용: 자격에 맞는 신규 공고 알림, 입찰 정보·서비스 소식 등 광고성 정보
+· 전송 채널: 이메일
+· 철회 방법: 각 메시지의 수신거부 링크 또는 support@bideasy.kr 로 언제든 철회할 수 있습니다.
+· 동의를 거부하셔도 서비스 이용에는 제한이 없습니다(체험·결제 안내 등 거래 관련 안내는 계속 발송됩니다).</pre>
+              </details>
+            </div>
             <button id="go" class="btn btn-primary btn-block" style="margin-top:18px;">14일 무료 체험 시작</button>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin:22px 0;"><span style="flex:1;height:1px;background:var(--line);"></span><span style="font-size:12px;color:var(--faint);">또는</span><span style="flex:1;height:1px;background:var(--line);"></span></div>
@@ -62,13 +75,25 @@
     sync(); b.addEventListener('click', function () { BD.setTheme(BD.getTheme() === 'dark' ? 'light' : 'dark'); sync(); });
     document.getElementById('bolt').innerHTML = BD.icon('bolt', 13);
 
-    var agreed = false; var cb = document.getElementById('cb');
-    document.getElementById('agree').addEventListener('click', function () {
-      agreed = !agreed;
-      cb.style.background = agreed ? 'var(--accent)' : 'var(--surface)';
-      cb.style.borderColor = agreed ? 'var(--accent)' : 'var(--line-2)';
-      cb.innerHTML = agreed ? '<span style="color:var(--on-accent);display:flex;">' + BD.icon('check', 12, 2.4) + '</span>' : '';
-    });
+    function toggler(boxId, onChange) {
+      var box = document.getElementById(boxId), on = false;
+      return function () {
+        on = !on;
+        box.style.background = on ? 'var(--accent)' : 'var(--surface)';
+        box.style.borderColor = on ? 'var(--accent)' : 'var(--line-2)';
+        box.innerHTML = on ? '<span style="color:var(--on-accent);display:flex;">' + BD.icon('check', 12, 2.4) + '</span>' : '';
+        onChange(on);
+      };
+    }
+
+    var agreed = false;
+    document.getElementById('agree').addEventListener('click', toggler('cb', function (v) { agreed = v; }));
+
+    // 광고성 정보 수신 동의(선택) — 기본 해제. 동의 시에만 서버에 증적이 남는다.
+    var marketingAgreed = false;
+    document.getElementById('agree-mkt').addEventListener('click', toggler('cb-mkt', function (v) { marketingAgreed = v; }));
+    var mktBox = document.getElementById('mkt-consent');
+    var mktConsentVersion = mktBox ? mktBox.getAttribute('data-consent-version') : null;
 
     // 토큰 저장 + 익스텐션 핸드오프(postMessage) — 보존 필수
     function saveToken(t) {
@@ -99,6 +124,7 @@
         var reg = await fetch(API_BASE + '/auth/register', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: email, password: pw, company_name: company || null, ceo_name: null,
+            marketing_consent: marketingAgreed, consent_version: mktConsentVersion,
             signup_source: _a.source || null, signup_medium: _a.medium || null, signup_campaign: _a.campaign || null, signup_referrer: _a.referrer || null }),
         });
         if (!reg.ok) {

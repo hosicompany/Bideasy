@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.security import require_admin
 from app.db import models
 from app.db.session import get_db
+from app.services import consent as consent_service
 
 router = APIRouter()
 
@@ -42,6 +43,21 @@ def lead_stats(
     )
     conversion_pct = (
         round(converted_leads / total_leads * 100, 1) if total_leads else 0.0
+    )
+
+    # ── 아웃바운드 가능 규모: 광고성 정보 수신동의 + 발송 가능(철회 없음·2년 내 확인) ──
+    # 총 리드 수와 발송 가능 수는 다르다. 육성 시퀀스의 실제 모수는 sendable 쪽이다.
+    consented_leads = (
+        db.query(func.count(models.Lead.id))
+        .filter(models.Lead.marketing_consent.is_(True))
+        .scalar()
+        or 0
+    )
+    sendable_leads = (
+        db.query(func.count(models.Lead.id))
+        .filter(consent_service.sendable_filter(models.Lead))
+        .scalar()
+        or 0
     )
 
     # ── nurture_status 분해 ──
@@ -130,6 +146,9 @@ def lead_stats(
         "total_leads": int(total_leads),
         "converted_leads": int(converted_leads),
         "conversion_pct": conversion_pct,
+        "consented_leads": int(consented_leads),
+        "sendable_leads": int(sendable_leads),
+        "consent_pct": round(consented_leads / total_leads * 100, 1) if total_leads else 0.0,
         "by_status": by_status,
         "by_industry": by_industry,
         "range_days": days,

@@ -91,6 +91,30 @@ Lead.nurture_channel
 - SES·알림톡 모두 **외부 승인 리드타임**(도메인 인증/템플릿 심사)이 있어 코드보다 신청이 먼저. Phase 1 배포로 **리드가 쌓이기 시작하면** 병행 신청 → 승인 나는 대로 발송 어댑터 연결.
 - 그전까지 캡처된 리드는 **인앱/수동**으로 접촉 가능(수는 적을 것이므로 초기엔 수동도 유효 — founder 저비용 원칙).
 
+### 3-1. 수신동의 증적 — **구현 완료(2026-07-30, ⚠️배포 대기)**
+
+발송 어댑터보다 **먼저** 지은 이유: 정보통신망법 제50조는 광고성 정보 전송의 수신동의 사실을
+**전송자가 증명**하도록 한다. 동의 없이 쌓인 연락처는 발송 순간 법적 리스크가 되므로, 증적
+구조가 없으면 SES 승인이 나도 보낼 수 없다.
+
+| 층 | 구현 | 위치 |
+|---|---|---|
+| 문구 정본 | 목적별·버전별 동의 문구 + sha256 지문. 과거 버전 영구 보존 | `backend/app/services/consent.py` (`CONSENT_TEXTS`) |
+| 증적 로그 | `consent_records` — **추가 전용**(수정·삭제 API 없음). 주체·연락처 스냅샷·목적·행위(grant/withdraw)·문구버전·해시·출처·IP·UA | `models.ConsentRecord`, 마이그 `f4c1e8a92b37` |
+| 현재 상태 | `Lead`/`User`: `marketing_consent`·`*_consent_at`·`*_withdrawn_at`·`marketing_confirmed_at`·`consent_text_version`·`consent_ip`·`consent_user_agent` | `models.py` |
+| 발송 판정 | `can_send_marketing()`(단건) / `sendable_filter()`(쿼리) — 동의 True · 철회 없음 · **2년 내 확인**(제50조 제8항) | `services/consent.py` |
+| 화면 | `/diagnose` 캡처 폼: [필수] 개인정보 수집·이용 + [선택] 광고성 정보 수신, **사전 체크 없음**·전문 토글. `/signup`: [선택] 수신동의 | `infra/nginx/html/diagnose.html`·`signup.html` |
+| 조회 | `GET /admin/consents`(연락처 검색) · `GET /admin/consents/summary`(발송 가능 규모) · `/admin/leads/stats` 에 `sendable_leads` 추가 | `endpoints/admin/consents.py` |
+
+**규칙 (발송 코드가 지켜야 할 계약)**
+1. 광고성 발송은 **반드시** `can_send_marketing`/`sendable_filter` 를 통과한 대상에게만. `marketing_consent == True` 만 보고 자체 판단하지 않는다(철회·2년 만료가 누락됨).
+2. 거래 관련 안내(결제·영수증·체험 만료 고지)는 광고가 아니므로 이 동의와 무관하게 발송한다.
+3. 문구 수정 시 **새 버전 키 추가**(기존 삭제 금지) + 화면 `data-consent-version` 동반 갱신. `tests/test_consent.py::TestConsentTextDrift` 가 화면↔서버 문구 드리프트를 깨뜨려 알려준다.
+4. **기존 리드는 전부 미동의로 시작한다** — 마이그레이션 기본값 false. 2026-07-30 이전 캡처분(동의 UI 이전)은 광고성 발송 대상이 아니다. 접촉하려면 재동의를 받아야 한다.
+5. 구버전(캐시된) 페이지가 동의 필드 없이 제출하면 캡처는 되지만 증적이 없어 자동으로 발송 대상에서 빠진다.
+
+**다음 단계(이 위에 얹는다)**: 수신거부 서명 토큰 + `/unsubscribe` 엔드포인트·랜딩 → SES 어댑터(`services/nurture.py`) → 발송 시퀀스.
+
 ---
 
 ## 4. 익스텐션 오버레이 진단 CTA (설계 — 별도 레포 `Bideasy-Extension/`)
