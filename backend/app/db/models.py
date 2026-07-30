@@ -530,3 +530,32 @@ class OutboundMessage(Base):
     dedupe_key = Column(String(160), nullable=True, unique=True, index=True)
 
     created_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class EmailSuppression(Base):
+    """발송 금지 주소 목록 — 반송·불만 자동 억제.
+
+    **왜 필요한가**: 하드 반송(없는 주소)에 계속 보내거나 스팸 신고(complaint)를 받은
+    주소에 또 보내면, AWS 가 반송률 5%·불만율 0.1% 초과 시 **계정 발송을 정지**시킨다.
+    한 번 평판이 깎이면 광고 메일뿐 아니라 결제·영수증 같은 거래 메일까지 안 들어간다.
+    그래서 억제는 광고/거래를 가리지 않고 **모든 발송 경로 앞단**에서 걸린다.
+
+    SES 계정 차원의 suppression list 와 별개로 우리 DB 에 두는 이유:
+      - 왜 막혔는지(이벤트 원문 일부)를 남겨 고객 문의에 답할 수 있어야 하고,
+      - 발송 판정을 외부 API 왕복 없이 로컬에서 끝내야 하며,
+      - 오탐(일시 반송을 영구로 오인 등)을 사람이 해제할 수 있어야 하기 때문이다.
+    """
+    __tablename__ = "email_suppressions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # 소문자·trim 정규화해서 저장한다(대소문자 다른 같은 주소가 뚫리지 않도록)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+
+    reason = Column(String(20), nullable=False)      # bounce | complaint | manual
+    subtype = Column(String(40), nullable=True)      # Permanent/General, abuse 등 원문 분류
+    source = Column(String(20), nullable=False)      # ses_sns | admin
+    detail = Column(String(300), nullable=True)      # 진단 코드·피드백 요약(원문 일부)
+
+    event_count = Column(Integer, nullable=False, default=1, server_default="1")
+    last_event_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)

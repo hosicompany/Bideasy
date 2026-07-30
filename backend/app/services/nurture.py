@@ -26,7 +26,7 @@ from app.core.logging import get_logger
 from app.core.signed_token import make_token
 from app.db import models
 from app.services import consent as consent_service
-from app.services import email_templates, mailer
+from app.services import email_templates, mailer, suppression
 
 logger = get_logger(__name__)
 
@@ -103,6 +103,11 @@ def _send(
 
     if not email:
         return skipped("no_email")
+
+    # 억제 목록은 **광고·거래를 가리지 않고** 먼저 걸린다. 하드 반송·불만 주소에 계속
+    # 보내면 반송률·불만율이 올라 계정 발송이 정지되고, 그러면 거래 메일까지 막힌다.
+    if suppression.is_suppressed(db, email):
+        return skipped("suppressed")
 
     # 광고성 정보는 동의 게이트 통과가 유일한 발송 조건이다.
     if category == "marketing" and not consent_service.can_send_marketing(subject_obj):

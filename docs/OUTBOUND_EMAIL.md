@@ -14,7 +14,8 @@
 - **현재 상태 (2026-07-30)**: 코드·테스트 완성 + 배포 + **`OUTBOUND_EMAIL_ENABLED=true` 로 가동 중**.
   거래 템플릿 실제 1통 발송 성공(CloudWatch Send 1·Delivery 1·Bounce 0·Complaint 0), 미동의 광고메일은
   `skipped/no_consent` 로 차단됨을 라이브에서 실증.
-- **아직 안 한 것**: 반송·불만 자동 억제(SNS 구독), 육성·체험 시퀀스, 수신거부 처리 결과 통지, 알림톡 어댑터.
+- **반송·불만 자동 억제**: 구현 완료(SNS 웹훅 → 영구 반송·불만 자동 등록 → 발송 앞단 차단).
+- **아직 안 한 것**: 육성·체험 시퀀스, 수신거부 처리 결과 통지, 알림톡 어댑터.
 
 ---
 
@@ -27,6 +28,8 @@
 | 문구 | `services/email_templates.py` | 템플릿 + 법정 표기 강제("(광고)" 접두·발신자·수신거부) |
 | 채널 어댑터 | `services/mailer.py` | MIME 조립 + SES `send_raw_email`. 킬스위치 OFF 면 dry-run |
 | 수신거부 | `core/signed_token.py`, `endpoints/unsubscribe.py`, `html/unsubscribe.html` | 무기한 서명 토큰 · GET 조회 / POST 처리 |
+| **억제** | `services/suppression.py`, `models.EmailSuppression` (마이그 `c8e5b1f37d94`) | 반송·불만 주소 발송 금지. **광고·거래 공통**으로 가장 먼저 걸린다 |
+| **이벤트 수신** | `services/sns_verify.py`, `endpoints/webhooks_ses.py` | SNS 서명·인증서 출처·TopicArn 검증 → 반송/불만 자동 등록 |
 | 원장 | `models.OutboundMessage` (마이그 `a9d3f5c17e42`) | 발송·차단 전건 기록, `dedupe_key` 유니크 |
 | 운영 창구 | `endpoints/admin/outbound.py` | 원장 조회·집계, 템플릿 미리보기, 본인 계정 테스트 발송 |
 
@@ -95,6 +98,42 @@ AWS_SECRET_ACCESS_KEY=…
 
 ---
 
+## 3-4. 반송·불만 자동 억제 (2026-07-30 추가)
+
+```
+SES 발송 → 반송/불만 발생 → SNS 토픽 → POST /api/v1/webhooks/ses
+   → 서명·인증서 출처·TopicArn 검증(실패 403)
+   → 영구 반송(Permanent) / 불만(complaint) → email_suppressions 등록
+   → 이후 모든 발송이 nurture 앞단에서 skipped(reason=suppressed)
+```
+
+- **일시 반송(Transient)은 억제하지 않는다** — 사서함 꽉 참·일시 장애까지 영구 차단하면
+  정상 고객을 잃는다. 기록만 남긴다.
+- **불만(스팸 신고)은 수신거부 의사로 취급** — 억제 + 해당 Lead/User 의 마케팅 동의를
+  즉시 철회하고 `consent_records` 에 `source=ses_complaint` 증적을 남긴다.
+- **억제는 광고·거래를 가리지 않는다** — 고객 보호가 아니라 **계정 평판 보호**이기 때문이다.
+  반송률 5%·불만율 0.1% 초과 시 AWS 가 계정 발송을 정지시키고, 그러면 결제·영수증도 못 나간다.
+- **서명 검증이 이 배관의 급소다** — 검증을 빼면 누구나 가짜 반송을 던져 임의 고객을 발송
+  금지로 만들 수 있다(조용한 서비스 거부). `SigningCertURL` 은 `sns.<region>.amazonaws.com`
+  으로 고정, `SES_SNS_TOPIC_ARN` 을 설정하면 토픽까지 화이트리스트.
+- 운영: `GET /admin/outbound/suppressions`(목록·사유별 집계) · `POST`(수동 등록) ·
+  `DELETE`(오탐 해제 — **해제해도 수신동의는 복구되지 않는다**).
+
+### AWS 배선 (1회)
+```bash
+# 1) 토픽 생성 → 2) 우리 웹훅 구독(구독 확인은 서버가 자동 처리) → 3) 도메인 알림 연결
+aws sns create-topic --name bideasy-ses-events --region ap-northeast-2
+aws sns subscribe --topic-arn <ARN> --protocol https \
+  --notification-endpoint https://api.bideasy.kr/api/v1/webhooks/ses --region ap-northeast-2
+aws ses set-identity-notification-topic --identity bideasy.kr --notification-type Bounce    --sns-topic <ARN> --region ap-northeast-2
+aws ses set-identity-notification-topic --identity bideasy.kr --notification-type Complaint --sns-topic <ARN> --region ap-northeast-2
+# 반송·불만은 SNS 로만 받고 이메일 피드백 전달은 끈다(중복 방지)
+aws ses set-identity-feedback-forwarding-enabled --identity bideasy.kr --no-forwarding-enabled --region ap-northeast-2
+```
+그리고 서버 `.env.production` 에 `SES_SNS_TOPIC_ARN=<ARN>` 추가 후 배포.
+
+---
+
 ## 4. 함정·금지
 
 1. **`OUTBOUND_EMAIL_ENABLED`** — 코드 기본값은 False(신규 환경 보호), **운영은 현재 true**. 운영에서 이걸
@@ -117,8 +156,7 @@ AWS_SECRET_ACCESS_KEY=…
 
 ## 5. 남은 작업 (다음 단계)
 
-- [ ] **반송·불만 자동 억제** (최우선) — SES 이벤트를 SNS 로 구독 → bounce/complaint 주소를 재발송 차단.
-      **반송률 5%·불만율 0.1% 초과 시 AWS 계정 정지.** 시퀀스를 돌리기 전에 깔아야 한다.
+- [x] ~~**반송·불만 자동 억제**~~ (2026-07-30 완료 — §3-4)
 - [ ] 리드 육성 시퀀스: 진단 직후 `lead_welcome` 1통 + 주기 `lead_new_matches` (Celery beat, `sendable_filter` 대상만)
 - [ ] 체험 라이프사이클 시퀀스 D0/D1/D3/D7/D11/D13 (`GROWTH_STRATEGY.md` §C3) — 광고/거래 구분해 템플릿 배치
 - [ ] 수신거부 **처리 결과 통지**(정보통신망법) — 현재 즉시 반영은 되나 통지 메일은 미구현
