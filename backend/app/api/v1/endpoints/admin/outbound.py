@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.core.security import require_admin
 from app.db import models
 from app.db.session import get_db
-from app.services import email_templates, nurture
+from app.services import email_templates, nurture, suppression
 
 router = APIRouter()
 
@@ -88,6 +88,83 @@ def outbound_log(
             for m in rows
         ],
     }
+
+
+@router.get("/outbound/suppressions")
+def list_suppressions(
+    q: Optional[str] = Query(None, description="이메일 부분일치"),
+    reason: Optional[str] = Query(None, description="bounce | complaint | manual"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """발송 금지 목록. 반송·불만이 쌓이는 속도가 도달성의 조기 경보다."""
+    query = db.query(models.EmailSuppression)
+    if q:
+        query = query.filter(models.EmailSuppression.email.ilike(f"%{q.strip().lower()}%"))
+    if reason:
+        query = query.filter(models.EmailSuppression.reason == reason)
+
+    total = query.count()
+    rows = (
+        query.order_by(models.EmailSuppression.created_at.desc(), models.EmailSuppression.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    reason_rows = (
+        db.query(models.EmailSuppression.reason, func.count(models.EmailSuppression.id))
+        .group_by(models.EmailSuppression.reason)
+        .all()
+    )
+    return {
+        "total": int(total),
+        "by_reason": [{"reason": r, "count": int(c)} for r, c in reason_rows],
+        "items": [
+            {
+                "id": s.id,
+                "email": s.email,
+                "reason": s.reason,
+                "subtype": s.subtype,
+                "source": s.source,
+                "detail": s.detail,
+                "event_count": s.event_count,
+                "last_event_at": s.last_event_at.isoformat() if s.last_event_at else None,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in rows
+        ],
+    }
+
+
+@router.post("/outbound/suppressions")
+def add_suppression(
+    email: str = Query(..., description="발송 금지할 주소"),
+    detail: Optional[str] = Query(None, description="사유 메모"),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """수동 억제(고객이 전화·카톡으로 거부 의사를 밝힌 경우 등)."""
+    row = suppression.suppress(
+        db, email, reason=suppression.REASON_MANUAL, source="admin", detail=detail
+    )
+    if row is None:
+        raise HTTPException(status_code=400, detail="이메일 형식이 올바르지 않습니다.")
+    return {"ok": True, "email": row.email, "reason": row.reason}
+
+
+@router.delete("/outbound/suppressions")
+def release_suppression(
+    email: str = Query(..., description="해제할 주소"),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """오탐 구제. **억제 해제가 수신동의를 복구하지는 않는다**(별개 판정)."""
+    released = suppression.release(db, email, source="admin")
+    if not released:
+        raise HTTPException(status_code=404, detail="억제 목록에 없는 주소입니다.")
+    return {"ok": True, "released": suppression.normalize(email)}
 
 
 @router.get("/outbound/preview")

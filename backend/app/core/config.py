@@ -179,6 +179,9 @@ class Settings(BaseSettings):
     SES_FROM_NAME: str = "BidEasy"
     SES_REPLY_TO: str = "support@bideasy.kr"
     SES_CONFIGURATION_SET: str = ""   # 반송·수신거부 이벤트 추적용(선택)
+    # 반송·불만 알림 SNS 토픽 ARN. 설정하면 이 토픽에서 온 메시지만 웹훅이 수용한다
+    # (다른 AWS 계정의 유효 서명 메시지까지 막는 마지막 자물쇠). 비우면 서명 검증만 수행.
+    SES_SNS_TOPIC_ARN: str = ""
     # 수신거부 링크·본문 링크의 공개 웹 기준 URL
     PUBLIC_WEB_URL: str = "https://bideasy.kr"
     PUBLIC_API_URL: str = "https://api.bideasy.kr"
