@@ -258,6 +258,12 @@ def render_blocks_to_md(blocks: dict, slug: str = "") -> str:
 
 # ─── 초안 생성 (검수 게이트: publish_at 없음) ──────────────────
 
+def _review(db, post) -> None:
+    """자동 검수 게이트(그림자 모드) — 판정을 남긴다. 실패해도 초안 생성엔 영향 없음."""
+    from app.services import content_review
+    content_review.review_and_store(db, post)
+
+
 def create_draft_from_topic(db, code: str, force: bool = False):
     """주제 코드 → 구조화 정본 초안 저장. 반환 (post|None, status).
 
@@ -289,8 +295,10 @@ def create_draft_from_topic(db, code: str, force: bool = False):
         existing.hero = hero_path_for(blocks, slug)
         existing.blocks_json = blocks
         existing.channel_assets_json = None  # 정본이 바뀌었으니 파생 캐시 무효화
+        existing.review_json = None          # 본문이 바뀌었으니 이전 판정도 무효
         db.commit()
         db.refresh(existing)
+        _review(db, existing)
         return existing, "created"
 
     blocks = generate_blocks(topic)
@@ -318,6 +326,7 @@ def create_draft_from_topic(db, code: str, force: bool = False):
     db.add(post)
     db.commit()
     db.refresh(post)
+    _review(db, post)
     return post, "created"
 
 

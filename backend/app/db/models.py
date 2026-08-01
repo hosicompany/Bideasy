@@ -396,6 +396,9 @@ class BlogPost(Base):
     # 블록이 원본, body_md 는 블록에서 렌더된 파생(채널 간 메시지 정합의 근원).
     blocks_json = Column(JSON, nullable=True)          # ContentSource 블록 (훅·요약·핵심·데이터·CTA)
     channel_assets_json = Column(JSON, nullable=True)  # 채널 파생 캐시 (Phase 2 — 카드/릴스/유튜브)
+    # 자동 검수 게이트 판정 (services/content_review.py). 그림자 모드 — 기록만 하고
+    # 발행을 막지 않는다. 사람 판단과의 일치율을 모은 뒤 Phase 2 에서 자동 발행에 연결.
+    review_json = Column(JSON, nullable=True)          # {verdict, checks[], blocking[], advisory[]}
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 

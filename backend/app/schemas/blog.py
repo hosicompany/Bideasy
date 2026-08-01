@@ -66,5 +66,6 @@ class BlogPostOut(BaseModel):
     publish_at: Optional[datetime] = None
     blocks_json: Optional[dict] = None          # 콘텐츠 엔진 구조화 정본 (Phase 1)
     channel_assets_json: Optional[dict] = None  # 채널 파생 캐시 (Phase 2)
+    review_json: Optional[dict] = None          # 자동 검수 판정 (그림자 모드)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
