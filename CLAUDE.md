@@ -2,6 +2,7 @@
 
 > **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
+> 🖥️ **새 PC에서 처음 세팅하는 중이라면** `docs/HANDOFF_MIGRATION.md` 를 먼저 읽으세요 (2026-08-01 PC 이관 — 비공개 파일 복원·`preserve/*` WIP 브랜치·환경 재구축). 셋업이 끝났으면 무시해도 됩니다.
 > 최종 갱신: 2026-07-30 (**SES 발송 파이프라인 라이브** — PR #47 머지·배포·실발송 검증 완료. ① **수신동의 증적**(`consent_records` 추가 전용 로그[주체·연락처 스냅샷·목적·grant/withdraw·문구버전·본문 sha256·출처·IP·UA, FK 없음·수정삭제 API 없음] + `Lead`/`User` 상태 컬럼 + `services/consent.py` 의 `can_send_marketing`/`sendable_filter` **단일 발송판정**[동의·철회·2년 재확인 §50⑧] + `/diagnose`·`/signup` 사전체크 없는 동의 UI + `/admin/consents`·`/consents/summary`. 마이그 `f4c1e8a92b37`) ② **발송 파이프라인**(`services/nurture.py` **유일 진입점**[게이트→멱등 선점→렌더→전송→원장] · `mailer.py` SES `send_raw_email`[List-Unsubscribe 헤더 때문에 raw 필수] · `email_templates.py` 가 "(광고)" 접두·발신자·수신거부를 **강제** · `OutboundMessage` 원장[`dedupe_key` 유니크, 차단건도 skipped 로 기록] · 수신거부 무기한 서명토큰 + `GET /unsubscribe/status`(조회)/`POST /unsubscribe`(처리·RFC 8058 원클릭) + 정적 `/unsubscribe` · `/admin/outbound`(원장·킬스위치 상태)·`/preview`·`/test-send`. 마이그 `a9d3f5c17e42`) ③ **운영 가동**(발송 전용 IAM `bideasy-ses-sender`+`BideasySesSendOnly`[`ses:SendRawEmail`·`SendEmail`, 서울 한정] 신규 생성 → 서버 `.env.production` 에 `OUTBOUND_EMAIL_ENABLED=true`+키 2개 추가[백업 `~/env.production.bak-20260730-outbound`] → 재배포 → **실제 1통 발송 성공**[CloudWatch Send 1·Delivery 1·Bounce 0·Complaint 0] + 미동의 광고메일 `skipped/no_consent` 게이트 실증 + 서명토큰 정상 200/변조 400). 테스트 487건 통과(PR 시점 브랜치 기준 484 + master 병합분). ⚠️ **기존 리드·회원은 전부 미동의로 시작**(마이그 기본값 false) — 소급 발송 금지. 현재 `leads` 0건이라 광고 발송 모수는 0. 다음 = **반송·불만 자동 억제(SNS 구독)** → 리드 육성 시퀀스 → 체험 시퀀스 6통 → 알림톡 채널.)
 > 직전 갱신: 2026-07-30 (**성장 전략 정본 + 유입 인프라 4종** — `docs/GROWTH_STRATEGY.md` 정본(NSM=주간 활성 투찰자 WAB, 킬 기준 사전등록) · **색인 표면 50→2,188건**(PR #41 사이트맵 인덱스·`/search` SSR) · **GitHub Actions CD**(PR #42·#43, forced-command) · **IndexNow 자동 통보**(PR #43·#44·#45) · **AWS SES 프로덕션 승인**(GRANTED 50,000통/일) · **🚨 계산기 거짓 안전 판정 수습**(PR #37 — 구 하한율 87.745 하드코딩+A값 보정 누락으로 무효 입찰을 '안전' 표시. `assets/lower-limits.js` 미러 + `test_lower_limits_sync.py` 드리프트 가드). 그 이전 07-19 = 콘텐츠 엔진 Phase 1~3·큐 지속가능성·Sonnet 5 채택·몰입 페르소나(PR #29~#36).)
 
@@ -282,7 +283,7 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 ## 8. 테스트 — 검증 명령 (코드 변경 후 반드시 실행)
 
 ```bash
-cd backend && pytest          # 487건 통과 기준 (2026-07-30 master 실측. SQLite in-memory/파일)
+cd backend && pytest          # 508건 통과 기준 (2026-08-01 master 실측, PR #48·#49 병합분 포함. SQLite in-memory/파일)
 ```
 - **모든 코드 변경 후 위 명령을 실행하고, 완료 보고(Gate Check)에 결과와 신뢰도(🟢🟡🔴)를 기재한다.** 실패 상태로 커밋·배포 금지. 실패 수정은 2회까지, 이후 에스컬레이션.
 - 결제: `tests/test_billing.py`(토스), `tests/test_payple.py`(페이플 9건 — provider/prepare/callback/서비스청구/Celery갱신, HTTP 모킹).
