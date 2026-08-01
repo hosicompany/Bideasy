@@ -68,6 +68,22 @@ class TestUnsourcedNumbers:
         r = cr.check_unsourced_numbers("3분 안에 정리했고 5가지만 기억하세요")
         assert r["level"] == cr.PASS
 
+    def test_decimal_rate_is_not_split_by_sentence_break(self):
+        """★ 실측 회귀 — 문장 분리가 '89.745%' 를 '89' / '745%' 로 쪼개면 안 된다.
+
+        발행된 상록수 4편이 전부 이 버그로 거짓 경보를 맞았다(하한율이 통째로
+        '출처 없는 수치'로 잡힘).
+        """
+        r = cr.check_unsourced_numbers("이 공고의 낙찰하한율은 89.745% 입니다. 확인하세요.")
+        assert r["level"] == cr.PASS, r["hits"]
+
+    def test_lower_limit_whitelist_follows_single_source(self):
+        """하한율 화이트리스트는 lower_limits.py 를 따라간다 (하드코딩 드리프트 방지)."""
+        from app.services import lower_limits as ll
+        for _, rate in ll._CONSTRUCTION_2026 + ll._CONSTRUCTION_OLD:
+            r = cr.check_unsourced_numbers(f"하한율은 {rate}% 예요")
+            assert r["level"] == cr.PASS, f"{rate} 가 오탐됨"
+
     def test_db_numbers_are_allowed(self):
         blocks = {"data_blocks": [{"numbers": [{"participants": 42}]}]}
         allowed = cr.allowed_numbers_from_blocks(blocks)
@@ -110,6 +126,25 @@ class TestStructure:
         r = cr.check_structure("## 하나\n\n짧아요")
         assert r["level"] == cr.WARN
         assert any("미만" in i for i in r["issues"])
+
+    def test_length_not_enforced_for_handwritten(self):
+        """★ 실측 회귀 — 분량 기준은 LLM 글에만. 손글씨 상록수(1,000자대)가
+        전부 WARN 을 맞던 문제."""
+        short = "## 하나\n\n내용\n\n## 둘\n\n내용\n\n## 셋\n\n[계산기](/calculator)"
+        assert cr.check_structure(short, enforce_length=False)["level"] == cr.PASS
+        assert cr.check_structure(short, enforce_length=True)["level"] == cr.WARN
+
+    def test_review_applies_length_only_to_auto_posts(self, db_session):
+        db_session.query(models.BlogPost).delete()
+        db_session.commit()
+        short = "## 하나\n\n내용\n\n## 둘\n\n내용\n\n## 셋\n\n[계산기](/calculator)"
+        manual = _post(db_session, "st-manual", body=short)
+        manual.source = "admin"
+        auto = _post(db_session, "st-auto", body=short + "\n\n다른 내용" * 5)
+        auto.source = "auto"
+        db_session.commit()
+        assert cr.review_post(db_session, manual, use_llm=False)["verdict"] == cr.PASS
+        assert cr.review_post(db_session, auto, use_llm=False)["verdict"] == cr.WARN
 
     def test_missing_internal_link_warns(self):
         body = "## 하나\n\n" + "가" * 2500 + "\n\n## 둘\n\n내용\n\n## 셋\n\n내용"
