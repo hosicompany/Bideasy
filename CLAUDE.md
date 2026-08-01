@@ -3,8 +3,9 @@
 > **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
 > 🖥️ **새 PC에서 처음 세팅하는 중이라면** `docs/HANDOFF_MIGRATION.md` 를 먼저 읽으세요 (2026-08-01 PC 이관 — 비공개 파일 복원·`preserve/*` WIP 브랜치·환경 재구축). 셋업이 끝났으면 무시해도 됩니다.
-> 최종 갱신: 2026-08-01 (**리드 육성 시퀀스 라이브** — PR #50 머지·배포·**E2E 실검증 완료**. 흐름: 진단 캡처 → **더블 옵트인 확인 메일**(거래) → 확인 클릭 → 웰컴(광고) → 매주 화 08:00 신규 매칭(광고). 설계 판단 5가지·표 = `docs/LEAD_ACQUISITION.md` §3-3. 요지: ① `services/lead_matching.py` = 진단 화면과 육성 메일의 **자격 판정 단일 소스**(`since` 로 신규만) ② `/leads/capture` 는 인증 없는 공개 폼이라 **확인 전 광고 금지** — `grant_marketing(confirmed=False)` → `marketing_confirmed_at` NULL → `sendable_filter` 가 차단, `POST /optin` 으로만 확정(GET 은 스캐너 프리페치 방지 조회) + 정적 `/optin` ③ 멱등 주체 = **행이 아니라 수신자**(이메일 해시) — 캡처는 upsert 없이 매번 새 Lead 행을 만들기 때문 ④ `can_send_marketing` 의 `marketing_consent_at` **폴백 제거**(SQL 판본 `sendable_filter` 와 판정이 갈라져 있었음) ⑤ 실패는 1건에 갇힌다(입력 제어문자 정제 + `mailer` 조립실패도 `MailerError` 로 변환 + 배치 리드 단위 except + 실패 시 `dedupe_key` 해제). 테스트 529건. **E2E 실측**: 캡처 `confirm_pending=true`·광고 미발송 → 확인 메일 수신 → 클릭 → `(광고)` 웰컴 수신·수신거부 링크 정상. 다음 = 체험 시퀀스 6통 → 수신거부 처리결과 통지 → 알림톡 채널.)
-> 직전 갱신: 2026-07-30 (**아웃바운드 3층 구축** — 수신동의 증적(`consent_records` 추가 전용·문구 sha256, 마이그 `f4c1e8a92b37`) → 발송 파이프라인(`nurture.py` 유일 진입점·`OutboundMessage` 원장·수신거부 서명토큰, 마이그 `a9d3f5c17e42`) → 반송·불만 자동 억제(PR #49, 마이그 `c8e5b1f37d94`). SES 프로덕션 승인 + 발송 전용 IAM `bideasy-ses-sender` + `OUTBOUND_EMAIL_ENABLED=true` 로 **실발송 검증 완료**. 상세 런북 = `docs/OUTBOUND_EMAIL.md`. 그 이전 07-26~30 = 성장 전략 정본(`docs/GROWTH_STRATEGY.md`)·색인 표면 50→2,188건(PR #41)·GitHub Actions CD(PR #42·#43)·IndexNow(PR #43~#45)·계산기 거짓 안전판정 수습(PR #37).)
+> 최종 갱신: 2026-08-02 (**아웃바운드 법적 요구사항 완결** — PR #51·#53·#56 머지·배포. ① **수신거부 처리 결과 통지**(§50 법정 고지 — 보내도 되는 게 아니라 **보내야 하는** 메일. `POST /unsubscribe` 가 철회 후 `unsub_result`(거래) 발송. 광고 문구 금지·통지 실패가 해지를 되돌리지 않음·멱등 키에 철회 시각 **마이크로초**) ② **체험 라이프사이클 시퀀스**(D0 웰컴/D-3·D-1 만료고지 = **거래·전원** / D1 매칭·D3 익스텐션·D7 요약·만료후 할인 = **광고·확인자만**. `trial.send_onboarding_sequence` 매일 10:10) ③ **가입 더블 옵트인**(`/signup` 도 이메일 소유 미확인이라 같은 구멍이었다 → `confirmed=False` + 확인 메일. 확인 경로를 리드·회원 공용 `endpoints/optin.py` 로 승격, 구 `/leads/optin` 제거) ④ 웰컴 메일 캡 표기(`50건+`). 테스트 560건. **독립 리뷰가 두 번 다 실제 결함을 잡았다** — 특히 메일 발송 실패 시 `db.rollback()` 이 아직 커밋 안 된 **인앱 알림까지 지우던 회귀**는 560건 전부 통과하는 상태에서 숨어 있었다(`_notify_then_mail` 로 수정). 가입 경로의 SES 동기 호출도 2회→1회로 줄이고 타임아웃을 고정했다(퍼널의 목에서 504 나면 계정은 생겼는데 재가입도 막힌다). 다음 = 알림톡 채널(리드타임 대기) · 랜딩 미니계산기 슬라이더 · 익스텐션 재제출.)
+> 직전 갱신: 2026-08-01 (**리드 육성 시퀀스 라이브** — PR #50, E2E 실검증. 진단 캡처 → 확인 메일 → 웰컴 → 매주 화 08:00 신규 매칭. 설계 판단 5가지 = `docs/LEAD_ACQUISITION.md` §3-3: 자격 판정 단일 소스(`lead_matching.py`) · 확인 전 광고 금지 · 멱등 주체는 **행이 아니라 수신자** · `can_send_marketing` 폴백 제거 · 실패는 1건에 갇힌다.)
+> 그 이전: 2026-07-30 (**아웃바운드 3층 구축** — 수신동의 증적(마이그 `f4c1e8a92b37`) → 발송 파이프라인(`nurture.py` 유일 진입점·`OutboundMessage` 원장, 마이그 `a9d3f5c17e42`) → 반송·불만 자동 억제(PR #49, 마이그 `c8e5b1f37d94`). SES 프로덕션 승인 + 발송 전용 IAM + 실발송 검증. 런북 = `docs/OUTBOUND_EMAIL.md`. 07-26~30 = 성장 전략 정본·색인 표면 50→2,188건(PR #41)·GitHub Actions CD(PR #42·#43)·IndexNow(PR #43~#45)·계산기 거짓 안전판정 수습(PR #37).)
 
 ---
 
@@ -77,6 +78,14 @@
   **E2E 실측(2026-08-01)**: 캡처 `confirm_pending=true`·광고 미발송 → 확인 메일 수신 → 클릭 → `(광고)` 웰컴 수신·수신거부 링크·발신자 표기 정상. 운영 첫 리드 `lead_id=1`.
   ⚠️ 주간 배치(`nurture.send_lead_matches`)는 **아직 한 번도 안 돌았다** — 2026-08-04 화 08:00 첫 발동으로 beat 등록을 실증한다.
 
+- **아웃바운드 법적 요구사항 완결 (2026-08-02 · PR #51·#53·#56 머지·배포)** — 런북 `docs/OUTBOUND_EMAIL.md`.
+  ① **수신거부 처리 결과 통지**(#53): 정보통신망법 §50 은 철회 처리 결과를 **알리도록** 요구한다 — 보내도 되는 메일이 아니라 **보내야 하는** 메일이다. `POST /unsubscribe` 가 철회 후 `unsub_result`(거래) 발송. 계약 3가지: 광고 문구 금지(방금 광고를 거부한 사람이다) · 통지 실패가 해지를 되돌리지 않음 · 멱등 키에 철회 시각을 **마이크로초까지**(초 단위로 자르면 짧은 간격의 서로 다른 철회가 뭉쳐 뒤엣것이 조용히 누락된다). 억제 목록에 오른 주소엔 통지도 막힌다(의도된 동작, 원장에 `skipped/suppressed`).
+  ② **체험 라이프사이클 시퀀스**(#56): **카테고리 배치가 전부다.** 거래(동의 불요·전원) = D0 웰컴 + D-3·D-1 만료 고지 / 광고(확인자만) = D1 매칭·D3 익스텐션·D7 사용요약·만료후 할인. 만료 '사실'을 거래로 보내는 덕에 **미동의자도 체험 종료를 반드시 안다.** `trial.send_onboarding_sequence`(매일 10:10, 만료 고지 10:00 과 10분 띄움). 윈백 금액·유예일은 `schemas/subscription.py` 상수에서 파생(가격 개편 때 메일이 거짓말하지 않도록). D7 요약은 `UserBid`·`Favorite` 만 센다 — `AIAnalysisLog` 는 `bid_no` 기준 캐시라 사용자별 집계가 불가능하다.
+  ③ **가입 더블 옵트인**(#56): `/signup` 도 이메일 소유를 확인하지 않아 리드와 같은 구멍이었다 → `confirmed=False` + 확인 메일. 확인 경로를 **리드·회원 공용 `endpoints/optin.py`** 로 승격(구 `/leads/optin` 제거, 404 확인). 옵트인/수신거부 토큰은 용도 분리 — 섞이면 유출된 해지 링크로 재구독이 된다. 소셜 가입은 광고 동의 UI 가 없어 광고 대상이 아니다(거래는 받음).
+  ④ 웰컴 메일 캡 표기 `50건+`(#51) — 진단 화면의 `capped` 와 정합.
+  **독립 리뷰가 두 번 다 실제 결함을 잡았다.** 특히 메일 실패 시 `db.rollback()` 이 아직 커밋 안 된 **인앱 알림까지 지우던 회귀**는 테스트 560건이 전부 통과하는 상태에서 숨어 있었다(→ `_notify_then_mail` 이 알림을 먼저 커밋). 가입 경로 SES 호출도 2회→1회 + 타임아웃 고정(연결 3s·읽기 4s·재시도 0) + nginx `/api/v1/auth/` `proxy_read_timeout` 명시 — 퍼널의 목에서 504 가 나면 계정은 생겼는데 재가입도 막힌다.
+  ⚠️ 온보딩 3종은 **아직 한 번도 안 돌았다**(대상 회원 없음). 첫 실증은 새 가입자 발생 후 D1.
+
 ### ⏳ 대기 중인 외부 작업 (코드 아님, 사용자/제3자 처리)
 | 항목 | 상태 |
 |---|---|
@@ -98,7 +107,10 @@
 - 남은 검증 코드: 가입 직후 1문항 마이크로 설문(업종·월 투찰수) + 커뮤니티 질문글.
 
 ### 다음 주제
-- **주간 매칭 배치 첫 발동 확인 (2026-08-04 화 08:00 KST)** — `nurture.send_lead_matches` 가 실제로 도는지 = beat 스케줄이 등록됐는지의 유일한 실증. E2E 로 만든 **`lead_id=1`(hosicompany@gmail.com)이 그대로 대상**이라 메일이 오면 성공. 안 오면 `celery_beat` 스케줄 등록을 의심(`deploy.sh` 가 force-recreate 하도록 돼 있으나 실측은 아직). 확인처 = `/admin/outbound` 원장. 그 뒤 수신거부 링크까지 눌러보면 전 구간이 닫힌다.
+- **발송 배치 첫 발동 확인 (미검증 구간 2개)** — beat 스케줄이 실제로 등록됐는지의 유일한 실증이다.
+  ① **2026-08-04(화) 08:00** `nurture.send_lead_matches` — E2E 로 만든 `lead_id=1`(hosicompany@gmail.com)이 그대로 대상이라 메일이 오면 성공. 그 뒤 수신거부 링크까지 눌러보면 전 구간이 닫힌다.
+  ② **새 가입자 발생 후 D1(10:10)** `trial.send_onboarding_sequence` — 대상 회원이 없어 아직 한 번도 안 돌았다.
+  둘 다 안 오면 `celery_beat` 스케줄 등록을 의심한다(`deploy.sh` 가 force-recreate 하도록 돼 있으나 실측된 적 없음). 확인처 = `/admin/outbound` 원장.
 - **카카오 알림톡 채널 개설** — 리드타임 2~3주(사용자 대기). 게이트(`consent.py`)는 그대로 재사용하고 어댑터만 추가.
 - **랜딩 미니계산기 슬라이더 범위** (작음, PR #37 잔여) — `index.html` `DEMO_MIN/MAX = 86.5/90.5` → 계산기 본페이지처럼 `85/92` 로. 현재 하한 89.745% 에서 안전 구간이 0.755%p 뿐이라 게이지가 거의 빨강 = 첫인상 손해.
 - **유입 효과 판정 (2주 뒤 = 2026-08-13 경)** — 서치콘솔 색인 페이지 수·서치어드바이저 수집 현황·GA4 오가닉 세션. 판정 기준·킬 기준은 `docs/GROWTH_STRATEGY.md` §7 에 **사전 등록**돼 있음(사후 합리화 금지).
@@ -207,6 +219,7 @@ Bideasy/
 | `notifications.py` | 인앱 알림 |
 | `leads.py` | 무료 자격 진단 리드(`/leads/diagnose`·`/capture`·`/consent-texts`) — 공개·IP 레이트리밋, 캡처 시 **동의 증적 기록** |
 | `unsubscribe.py` | **수신거부**(공개·무인증) — `GET /unsubscribe/status`(조회) · `POST /unsubscribe`(처리·RFC 8058 원클릭). 서명 토큰 |
+| `optin.py` | **더블 옵트인 확인**(공개·무인증, 리드·회원 공용) — `GET /optin/status`(조회) · `POST /optin`(확정). 확인 전에는 `sendable_filter` 가 광고를 막는다 |
 | `health.py` | `/health` |
 | `admin/*` | 관리자 전용 (`require_admin` 가드). 아웃바운드 관련: `consents.py`(증적 검색·발송가능 규모)·`outbound.py`(발송 원장·미리보기·테스트 발송) |
 
@@ -237,6 +250,8 @@ Bideasy/
 | 20:00 | `verification.daily_verify_predictions` | 예측 검증 |
 | 月 04:00 | `autocalibrate.recalibrate_strategy` | 전략 재보정 |
 | 月 08:00 | `content.weekly_data_story` | 데이터스토리 주간 초안(유예 `publish_at` 부여) |
+| 10:10 | `trial.send_onboarding_sequence` | 체험 온보딩 광고 3종(D1·D3·D7, 확인자만) |
+| 火 08:00 | `nurture.send_lead_matches` | 리드 주간 신규 매칭(광고, 확인자만) |
 | 매시 05분 | `content.publish_scheduled` | 예약·유예 도래 draft 자동 발행 |
 | 1일 05:00 | `notices.purge_old` | 오래된 공고 정리 |
 
@@ -301,12 +316,12 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 ## 8. 테스트 — 검증 명령 (코드 변경 후 반드시 실행)
 
 ```bash
-cd backend && pytest          # 560건 통과 기준 (2026-08-01 master 실측, PR #50 병합분 포함. SQLite in-memory/파일)
+cd backend && pytest          # 560건 통과 기준 (2026-08-02 master 실측, PR #56 병합분 포함. SQLite in-memory/파일)
 python -m ruff check backend/ # CI lint 와 동일 — 미사용 import 하나로 CI 가 red 가 된다
 ```
 - **모든 코드 변경 후 위 명령을 실행하고, 완료 보고(Gate Check)에 결과와 신뢰도(🟢🟡🔴)를 기재한다.** 실패 상태로 커밋·배포 금지. 실패 수정은 2회까지, 이후 에스컬레이션.
 - 결제: `tests/test_billing.py`(토스), `tests/test_payple.py`(페이플 9건 — provider/prepare/callback/서비스청구/Celery갱신, HTTP 모킹).
-- 아웃바운드: `tests/test_consent.py`(20건 — 증적 기록·구버전 경로·2년 만료·SQL필터↔단건판정 일치·**화면↔서버 문구 드리프트 가드**), `tests/test_nurture.py`(32건 — 게이트 차단 시 실제 미발송·"(광고)" 표기·원클릭 헤더·멱등·실패 시 키 해제·토큰 위조/용도 전용·**수신거부 결과 통지**[광고 아님·재동의 유도 없음·통지 실패해도 해지 성공]), `tests/test_lead_nurture.py`(21건 — **제3자 주소 광고 차단**·GET 프리페치 무확인·철회자 부활 방지·개행 리드가 배치를 안 죽임·같은 사람 재진단 시 1통).
+- 아웃바운드: `tests/test_consent.py`(20건 — 증적 기록·구버전 경로·2년 만료·SQL필터↔단건판정 일치·**화면↔서버 문구 드리프트 가드**), `tests/test_optin.py`(10건 — 가입 확인 전 광고 차단·GET 프리페치 무확인·**토큰 용도 분리**), `tests/test_trial_sequence.py`(13건 — 만료 고지는 전원·할인은 확인자만·**메일 실패가 인앱 알림을 지우지 않음**·유료 전환자 제외), `tests/test_nurture.py`(32건 — 게이트 차단 시 실제 미발송·"(광고)" 표기·원클릭 헤더·멱등·실패 시 키 해제·토큰 위조/용도 전용·**수신거부 결과 통지**[광고 아님·재동의 유도 없음·통지 실패해도 해지 성공]), `tests/test_lead_nurture.py`(21건 — **제3자 주소 광고 차단**·GET 프리페치 무확인·철회자 부활 방지·개행 리드가 배치를 안 죽임·같은 사람 재진단 시 1통).
 - 그 외 feed/calculator/qualification/favorites/deadline/ai 등.
 
 ---
