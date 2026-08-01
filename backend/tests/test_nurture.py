@@ -255,6 +255,109 @@ class TestUnsubscribeEndpoint:
 
     def test_invalid_token_rejected(self, client):
         assert client.post("/api/v1/unsubscribe", params={"token": "forged.token"}).status_code == 400
+
+
+class TestUnsubscribeResultNotice:
+    """수신거부 처리 결과 통지 — 정보통신망법 제50조가 요구하는 법정 고지.
+
+    보내도 되는 메일이 아니라 **보내야 하는** 메일이다. 동시에 방금 광고를 거부한
+    사람에게 가는 메일이라, 광고성 문구가 한 줄이라도 섞이면 거부 의사를 무시한
+    광고 발송이 된다.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate(self, db_session):
+        """테스트 DB 는 세션 스코프 파일이라 원장·억제가 누적된다 — 매 테스트 초기화."""
+        from app.db import models
+
+        def _wipe():
+            for model in (models.OutboundMessage, models.EmailSuppression):
+                db_session.query(model).delete()
+            db_session.commit()
+
+        _wipe()
+        yield
+        _wipe()
+
+    def test_unsubscribe_sends_result_notice(self, client, db_session, consented_lead, captured_mail):
+        token = nurture.unsubscribe_token("lead", consented_lead.id)
+        client.post("/api/v1/unsubscribe", params={"token": token})
+
+        assert len(captured_mail) == 1
+        mail = captured_mail[0]
+        assert mail["to"] == consented_lead.email
+        assert "수신거부 처리 결과" in mail["subject"]
+
+    def test_notice_is_not_an_ad(self, client, db_session, consented_lead, captured_mail):
+        """통지에 광고 표기·재동의 유도·수신거부 링크가 붙으면 안 된다."""
+        token = nurture.unsubscribe_token("lead", consented_lead.id)
+        client.post("/api/v1/unsubscribe", params={"token": token})
+
+        mail = captured_mail[0]
+        assert not mail["subject"].startswith(email_templates.AD_PREFIX)
+        # 거래 메일이므로 원클릭 수신거부 헤더를 붙이지 않는다(이미 거부한 사람이다)
+        assert "List-Unsubscribe" not in mail["headers"]
+        assert "수신거부하실 수 있어요" not in mail["text"]
+        # 재동의 유도가 섞이면 그 순간 광고물이 된다
+        for lure in ("할인", "다시 받", "구독", "혜택"):
+            assert lure not in mail["text"]
+
+    def test_notice_records_processing_time(self, client, db_session, consented_lead, captured_mail):
+        """처리 일시를 함께 알린다 — '언제 처리했는가'가 통지의 핵심이다."""
+        token = nurture.unsubscribe_token("lead", consented_lead.id)
+        client.post("/api/v1/unsubscribe", params={"token": token})
+
+        db_session.refresh(consented_lead)
+        assert "(KST)" in captured_mail[0]["text"]
+        assert consented_lead.email in captured_mail[0]["text"]
+
+    def test_repeat_unsubscribe_does_not_renotify(self, client, db_session, consented_lead, captured_mail):
+        """이미 해지된 상태에서 다시 눌러도 통지는 한 번 — 재통지는 그 자체로 스팸이다."""
+        token = nurture.unsubscribe_token("lead", consented_lead.id)
+        client.post("/api/v1/unsubscribe", params={"token": token})
+        client.post("/api/v1/unsubscribe", params={"token": token})
+
+        assert len(captured_mail) == 1
+
+    def test_unsubscribe_survives_notice_failure(self, client, db_session, consented_lead, monkeypatch):
+        """통지 발송이 터져도 **해지는 성공한다** — 해지 실패가 훨씬 나쁘다."""
+        def _boom(**kwargs):
+            raise mailer.MailerError("SES down")
+
+        monkeypatch.setattr(mailer, "send", _boom)
+
+        resp = client.post(
+            "/api/v1/unsubscribe",
+            params={"token": nurture.unsubscribe_token("lead", consented_lead.id)},
+        )
+        assert resp.status_code == 200 and resp.json()["already"] is False
+
+        db_session.refresh(consented_lead)
+        assert consented_lead.marketing_consent is False
+        assert consent_service.can_send_marketing(consented_lead) is False
+
+    def test_suppressed_address_is_not_notified(self, client, db_session, consented_lead, captured_mail):
+        """억제된 주소(반송·불만)에는 통지도 나가지 않는다 — 채널을 지키는 쪽이 우선."""
+        from app.db import models
+        from app.services import suppression
+
+        suppression.suppress(db_session, consented_lead.email, reason=suppression.REASON_COMPLAINT)
+
+        client.post(
+            "/api/v1/unsubscribe",
+            params={"token": nurture.unsubscribe_token("lead", consented_lead.id)},
+        )
+
+        assert captured_mail == []
+        db_session.refresh(consented_lead)
+        assert consented_lead.marketing_consent is False      # 해지는 그대로 처리됨
+        # 막힌 사실이 원장에 남아 "통지를 시도했다"는 증적이 된다
+        row = (
+            db_session.query(models.OutboundMessage)
+            .filter(models.OutboundMessage.template == "unsub_result")
+            .one()
+        )
+        assert row.status == "skipped" and row.reason == "suppressed"
         assert client.get("/api/v1/unsubscribe/status", params={"token": "x"}).status_code == 400
 
     def test_user_subject_supported(self, client, db_session):

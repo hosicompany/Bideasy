@@ -233,6 +233,45 @@ def _lead_new_matches(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
+@register("unsub_result", "transactional")
+def _unsub_result(ctx: dict) -> tuple[str, str, str]:
+    """수신거부 처리 결과 통지 — 정보통신망법 제50조가 요구하는 **법정 고지**.
+
+    광고성 정보 전송자는 수신거부·수신동의 철회 의사를 받으면 그 **처리 결과를 알려야**
+    한다. 즉 이 메일은 보내도 되는 정도가 아니라 **보내야 하는** 메일이다.
+
+    ⚠️ 여기에 재동의 유도·할인·서비스 소식을 넣지 말 것. 방금 광고를 거부한 사람에게
+    보내는 메일이라, 광고성 문구가 한 줄이라도 섞이면 **거부 의사를 무시한 광고 발송**이
+    된다. 처리 사실과 시각만 알린다.
+    """
+    email = ctx.get("email") or ""
+    processed_at = ctx.get("processed_at") or ""
+
+    subject = "광고성 정보 수신거부 처리 결과 안내"
+    text = (
+        "요청하신 광고성 정보 수신거부가 처리됐어요.\n\n"
+        + (f"· 대상: {email}\n" if email else "")
+        + (f"· 처리 일시: {processed_at}\n" if processed_at else "")
+        + "\n앞으로 광고성 정보는 보내드리지 않습니다.\n"
+        "결제·영수증·체험 만료 안내 같은 거래 관련 안내는 수신거부와 무관하게 계속 발송됩니다.\n"
+    )
+    rows = "".join(
+        f'<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 6px;">· {label} '
+        f"<b>{escape(value)}</b></p>"
+        for label, value in (("대상", email), ("처리 일시", processed_at))
+        if value
+    )
+    html = (
+        '<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">요청하신 '
+        "<b>광고성 정보 수신거부</b>가 처리됐어요.</p>"
+        f"{rows}"
+        '<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:16px 0 0;">'
+        "앞으로 광고성 정보는 보내드리지 않습니다.<br>"
+        "결제·영수증·체험 만료 안내 같은 거래 관련 안내는 수신거부와 무관하게 계속 발송됩니다.</p>"
+    )
+    return subject, text, html
+
+
 @register("trial_expiry", "transactional")
 def _trial_expiry(ctx: dict) -> tuple[str, str, str]:
     """체험 만료 안내 — 거래 관련 고지라 광고 동의와 무관하게 발송한다."""
