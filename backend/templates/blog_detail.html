@@ -35,6 +35,23 @@
     "mainEntityOfPage": "{{ site_url }}/blog/{{ post.slug }}"
   }
   </script>
+  {# 입찰상식(K) 트랙 Q&A → FAQPage 리치 결과 (CONTENT_ENGINE.md §9.3).
+     본문에 "## 자주 묻는 질문"으로 실제 노출되는 내용과 동일해야 정책 위반이 아니다.
+     q·a 가 온전한 항목만 추린 뒤 렌더 — 빠진 항목이 콤마를 흘려 JSON 을 깨뜨리지 않게. #}
+  {% set faqs = (post.blocks.faq if post.blocks else []) | selectattr('q') | selectattr('a') | list %}
+  {% if faqs %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {% for f in faqs %}{ "@type": "Question", "name": {{ f.q | tojson }},
+        "acceptedAnswer": { "@type": "Answer", "text": {{ f.a | tojson }} } }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ]
+  }
+  </script>
+  {% endif %}
   {% else %}
   <title>글을 찾을 수 없어요 - BidEasy 블로그</title>
   <meta name="robots" content="noindex">

@@ -98,7 +98,8 @@ class TestDataStoryGrace:
             open_date=od, basic_price=1_000_000_000, winner_rate=88.0, participants_count=5,
         ))
         db_session.commit()
-        post, status = data_story.create_weekly_draft(db_session, ref_date=ref)
+        # 관심사는 유예(publish_at) — 얇은 주 게이트(§9.2)는 allow_thin 으로 비껴간다
+        post, status = data_story.create_weekly_draft(db_session, ref_date=ref, allow_thin=True)
         assert status == "created" and post.status == "draft"
         assert post.publish_at is not None
         delta = post.publish_at - _naive_utc()
@@ -115,7 +116,8 @@ class TestDataStoryGrace:
             open_date=od, basic_price=1_000_000_000, winner_rate=88.0, participants_count=5,
         ))
         db_session.commit()
-        post, status = data_story.create_weekly_draft(db_session, ref_date=ref)
+        # 관심사는 유예(publish_at) — 얇은 주 게이트(§9.2)는 allow_thin 으로 비껴간다
+        post, status = data_story.create_weekly_draft(db_session, ref_date=ref, allow_thin=True)
         assert status == "created"
         assert post.publish_at is None  # 킬스위치: 유예 미부여
 

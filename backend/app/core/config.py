@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     #   CONTENT_LLM_BASE_URL=https://openrouter.ai/api/v1
     #   CONTENT_LLM_API_KEY=<OpenRouter 키; 서버 .env.production 에만>
     CONTENT_LLM_MODEL: str = "gpt-4o"
+    # 정본(깊이 필요) 외 가벼운 콘텐츠 호출용 저가 모델 — 채널 파생·주제 제안·주간 서술.
+    # BASE_URL 을 OpenRouter 등으로 바꿨다면 이 값도 그 프로바이더 표기로 함께 바꿔야 한다.
+    CONTENT_LLM_CHEAP_MODEL: str = "gpt-4o-mini"
     CONTENT_LLM_BASE_URL: str = ""   # 비면 OpenAI 기본 엔드포인트
     CONTENT_LLM_API_KEY: str = ""    # 비면 OPENAI_API_KEY 재사용
     PUBLIC_DATA_KEY: str = ""
@@ -155,6 +158,11 @@ class Settings(BaseSettings):
     # 발행/삭제하지 않으면 스케줄러가 자동 발행한다. 0 이하면 유예 부여 안 함
     # (=현행 draft 유지, 킬스위치). 상록수 예약 드립은 admin 이 publish_at 을 직접 지정.
     BLOG_AUTOPUBLISH_GRACE_HOURS: int = 48
+    # 주간 데이터스토리 발행에 필요한 최소 개찰 건수. 미만이면 초안을 만들지 않는다
+    # (docs/CONTENT_ENGINE.md §9.2 — 얇거나 서로 비슷한 주간 페이지는 구글 스팸정책
+    # doorway/중복 판정 리스크). 정상 주는 수천 건이라 이 값은 '크롤 실패한 주'만 걸러낸다.
+    # 0 이하면 게이트 해제.
+    BLOG_MIN_WEEKLY_RECORDS: int = 30
 
     # === Firebase (FCM Push Notifications) ===
     FIREBASE_CREDENTIALS_JSON: str = ""  # Path to service account JSON file

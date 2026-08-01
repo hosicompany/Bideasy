@@ -52,7 +52,9 @@ def test_no_data_returns_none(db_session):
     assert data_story.build_weekly_story(db_session, ref_date=date(2024, 1, 8)) is None
 
 
-def test_create_weekly_draft_idempotent(db_session):
+def test_create_weekly_draft_idempotent(db_session, monkeypatch):
+    # 이 테스트의 관심사는 멱등성 — 얇은 주 게이트(§9.2)는 임계 0으로 비활성화
+    monkeypatch.setattr(data_story.settings, "BLOG_MIN_WEEKLY_RECORDS", 0)
     ref = date(2025, 7, 21)
     mon, _ = data_story.last_completed_week(ref)
     _seed_week(db_session, mon, [("A", 10, 88.0, 1_000_000_000), ("B", 1, 0, 500_000_000)])
@@ -65,7 +67,9 @@ def test_create_weekly_draft_idempotent(db_session):
     assert status2 == "exists" and post2.id == post.id
 
 
-def test_generate_endpoint(admin_client, db_session, client):
+def test_generate_endpoint(admin_client, db_session, client, monkeypatch):
+    # 관심사는 초안→발행 왕복 — 얇은 주 게이트(§9.2)는 임계 0으로 비활성화
+    monkeypatch.setattr(data_story.settings, "BLOG_MIN_WEEKLY_RECORDS", 0)
     mon, _ = data_story.last_completed_week(date.today())
     _seed_week(db_session, mon, [("X기관", 30, 88.2, 2_000_000_000), ("Y기관", 1, 0, 700_000_000)])
     r = admin_client.post("/api/v1/admin/blog/generate-data-story")

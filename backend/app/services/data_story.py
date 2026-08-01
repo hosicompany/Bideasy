@@ -8,7 +8,6 @@
 """
 from __future__ import annotations
 
-import json
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
@@ -16,6 +15,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db import models
 from app.services import blog as blog_svc
+from app.services import content_llm
 
 logger = get_logger(__name__)
 
@@ -81,25 +81,18 @@ def _collect(db, start: datetime, end: datetime) -> list:
 
 def _llm_narrative(ctx: str) -> Optional[dict]:
     """주어진 통계로 인트로·인사이트 프로즈 생성. 키 없거나 실패 시 None(→ 템플릿 폴백)."""
-    if not getattr(settings, "OPENAI_API_KEY", ""):
+    if not content_llm.available():
         return None
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
         sys = (
             "너는 공공입찰 데이터 매체 'BidEasy'의 에디터다. 주어진 통계 '숫자만' 근거로 "
             "쉽고 신뢰감 있게 쓴다. 새로운 숫자나 사실을 지어내지 마라. 과장·낚시 금지. "
             'JSON {"intro": "...", "insight": "..."} 으로만 답하라. '
             "intro=2~3문장 도입, insight=2문장 인사이트(중소 시공사 대표 독자 대상)."
         )
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": sys}, {"role": "user", "content": ctx}],
-            response_format={"type": "json_object"},
-            temperature=0.4,
-            max_tokens=500,
+        data = content_llm.chat_json(
+            sys, ctx, max_tokens=500, temperature=0.4, model=content_llm.cheap_model()
         )
-        data = json.loads(resp.choices[0].message.content)
         intro, insight = (data.get("intro") or "").strip(), (data.get("insight") or "").strip()
         if intro and insight:
             return {"intro": intro, "insight": insight}
@@ -209,15 +202,33 @@ def build_weekly_story(db, ref_date: Optional[date] = None) -> Optional[dict]:
     }
 
 
-def create_weekly_draft(db, ref_date: Optional[date] = None):
+def min_weekly_records() -> int:
+    """주간 글 발행 최소 데이터 임계. 0 이하면 게이트 해제(킬스위치)."""
+    return getattr(settings, "BLOG_MIN_WEEKLY_RECORDS", 0) or 0
+
+
+def create_weekly_draft(db, ref_date: Optional[date] = None, allow_thin: bool = False):
     """주간 데이터스토리 초안 생성. 반환 (post|None, status).
 
-    status: created | exists | no_data
+    status: created | exists | no_data | thin_data
     멱등 — 같은 주 slug 가 파일/DB 에 이미 있으면 생성 안 함.
+
+    `thin_data`: 개찰 데이터가 임계 미만인 주. 이런 주의 글은 TOP10 도 못 채우고
+    주마다 서로 비슷해져 구글 스팸정책(scaled content abuse / doorway)에 걸린다 —
+    `docs/CONTENT_ENGINE.md` §9.2 "빈약한 주는 발행하지 않는다". 유예 자동발행이
+    켜져 있으면 사람 검수 없이 나가므로 **생성 단계에서** 막는다.
+    사람이 판단해 강행할 때만 `allow_thin=True`(어드민 수동 호출의 force).
     """
     story = build_weekly_story(db, ref_date)
     if not story:
         return None, "no_data"
+    threshold = min_weekly_records()
+    count = (story.get("period") or {}).get("count") or 0
+    if not allow_thin and threshold > 0 and count < threshold:
+        logger.info(
+            f"[data_story] 개찰 {count}건 < 임계 {threshold}건 — 얇은 주라 초안 생성 건너뜀 ({story['slug']})"
+        )
+        return None, "thin_data"
     if blog_svc.get_post(story["slug"], db) is not None:
         existing = db.query(models.BlogPost).filter(models.BlogPost.slug == story["slug"]).first()
         return existing, "exists"

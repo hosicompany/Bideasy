@@ -18,9 +18,9 @@ import json
 import logging
 from typing import Optional
 
-from app.core.config import settings
 from app.db import models
 from app.services import blog as blog_svc
+from app.services import content_llm
 
 logger = logging.getLogger(__name__)
 
@@ -148,48 +148,20 @@ _SYSTEM_PROMPT = (
 
 def generate_blocks(topic: dict) -> Optional[dict]:
     """주제 → 구조화 정본 블록. 키 미설정/실패 시 None (지어낸 폴백 초안 금지)."""
-    primary_key = settings.CONTENT_LLM_API_KEY or settings.OPENAI_API_KEY
-    if not primary_key:
+    if not content_llm.available():
         return None
     try:
-        from openai import OpenAI
-
-        # 정본 작성 모델은 OpenAI 호환 엔드포인트(OpenRouter 등)로 교체 가능 —
-        # 폴백(gpt-4o-mini)은 항상 OpenAI 직결이라 프로바이더 장애와 독립적이다.
-        base_url = settings.CONTENT_LLM_BASE_URL or None
-        primary_client = OpenAI(api_key=primary_key, base_url=base_url)
         user_prompt = (
             f"주제: {topic['title']}\n앵글: {topic['angle']}\n"
             f"SEO 타겟 검색어: {topic.get('keyword') or '(없음)'}\n"
             "위 주제로 구조화 정본 블록을 만들어라."
         )
-        def _chat(client, model: str, extra: str = "") -> dict:
-            kwargs = dict(
-                model=model,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt + extra},
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=4000,
-            )
-            # Claude 계열(Sonnet 5 등)은 temperature 등 샘플링 파라미터를 거부(400)
-            if "claude" not in model.lower():
-                kwargs["temperature"] = 0.5
-            resp = client.chat.completions.create(**kwargs)
-            return json.loads(resp.choices[0].message.content)
 
         def _call(extra: str = "") -> dict:
             # 상위 모델 우선(깊이), 실패(미지원 모델·프로바이더 장애 등) 시 4o-mini 폴백
-            primary = getattr(settings, "CONTENT_LLM_MODEL", "gpt-4o-mini")
-            try:
-                return _chat(primary_client, primary, extra)
-            except Exception:
-                if not settings.OPENAI_API_KEY:
-                    raise  # 폴백 경로(OpenAI 직결) 불가 — 정직하게 실패
-                logger.warning("content model %s failed — fallback to gpt-4o-mini", primary)
-                fallback_client = OpenAI(api_key=settings.OPENAI_API_KEY)
-                return _chat(fallback_client, "gpt-4o-mini", extra)
+            return content_llm.chat_json(
+                _SYSTEM_PROMPT, user_prompt + extra, max_tokens=4000, temperature=0.5
+            )
 
         data = _call()
         sections = data.get("sections") or data.get("key_points") or []
@@ -237,6 +209,19 @@ def _image_placeholder(slot: str, caption: str, slug: str, idx: int) -> str:
         f"<!-- 이미지 자리({slot}): 힉스필드 생성 → /assets/blog/{slug}/{fname} 배치 "
         f"→ 눈검수 후 아래 주석 해제\n![{caption}](/assets/blog/{slug}/{fname})\n-->"
     )
+
+
+def hero_path_for(blocks: dict, slug: str) -> str:
+    """§5.1 이미지 워크플로가 배치할 히어로 경로. 히어로 프롬프트가 없으면 빈 문자열.
+
+    이 값이 `BlogPost.hero` 로 들어가야 blog_detail.html 의 og:image/twitter:image 가
+    렌더된다(엔진 글이 카톡·SNS 공유 시 썸네일 없이 나가던 문제). 파일 실체는 사람이
+    생성·눈검수 후 배치하며, admin-blog "🖼 이미지 프롬프트" 안내와 같은 경로다.
+    """
+    if not slug:
+        return ""
+    has_hero = any(p.get("slot") == "hero" for p in (blocks.get("image_prompts") or []))
+    return f"/assets/blog/{slug}/hero.png" if has_hero else ""
 
 
 def render_blocks_to_md(blocks: dict, slug: str = "") -> str:
@@ -301,6 +286,7 @@ def create_draft_from_topic(db, code: str, force: bool = False):
         existing.body_md = body_md
         existing.body_html = html
         existing.reading_time = rt
+        existing.hero = hero_path_for(blocks, slug)
         existing.blocks_json = blocks
         existing.channel_assets_json = None  # 정본이 바뀌었으니 파생 캐시 무효화
         db.commit()
@@ -319,6 +305,7 @@ def create_draft_from_topic(db, code: str, force: bool = False):
         summary=blocks.get("seo_summary") or blocks.get("summary_30s", ""),
         category="입찰상식",
         tags=f"입찰상식, {topic.get('keyword', '')}".strip(", "),
+        hero=hero_path_for(blocks, slug),   # og:image — §5.1 배치 경로와 동일
         body_md=body_md,
         body_html=html,
         reading_time=rt,
@@ -355,23 +342,16 @@ _DERIVE_SYSTEM_PROMPT = (
 
 def derive_channel_assets(blocks: dict) -> Optional[dict]:
     """정본 블록 → 채널 파생 자산. 키 미설정/실패 시 None (가짜 자산 금지)."""
-    if not settings.OPENAI_API_KEY:
+    if not content_llm.available():
         return None
     try:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": _DERIVE_SYSTEM_PROMPT},
-                {"role": "user", "content": "정본 블록:\n" + json.dumps(blocks, ensure_ascii=False)},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.4,
+        data = content_llm.chat_json(
+            _DERIVE_SYSTEM_PROMPT,
+            "정본 블록:\n" + json.dumps(blocks, ensure_ascii=False),
             max_tokens=2500,
+            temperature=0.4,
+            model=content_llm.cheap_model(),
         )
-        data = json.loads(resp.choices[0].message.content)
         if not data.get("instagram_cards"):
             return None
         # fr 페이지 표기 결정적 보정 (n / N)
@@ -441,24 +421,17 @@ def propose_topic_candidates(n: int = 8) -> Optional[list]:
 
     키 미설정/실패 시 None. 큐 보충의 편집 결정권은 사람에게 남긴다.
     """
-    if not settings.OPENAI_API_KEY:
+    if not content_llm.available():
         return None
     try:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
         existing = "\n".join(f"- {t['title']} ({t['angle']})" for t in TOPIC_SEEDS)
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": _PROPOSE_SYSTEM_PROMPT},
-                {"role": "user", "content": f"기존 주제 목록(중복 금지):\n{existing}\n\n신규 후보 {n}개를 제안하라."},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.7,
+        data = content_llm.chat_json(
+            _PROPOSE_SYSTEM_PROMPT,
+            f"기존 주제 목록(중복 금지):\n{existing}\n\n신규 후보 {n}개를 제안하라.",
             max_tokens=1500,
+            temperature=0.7,
+            model=content_llm.cheap_model(),
         )
-        data = json.loads(resp.choices[0].message.content)
         cands = [
             c for c in (data.get("candidates") or [])
             if c.get("title") and "낙찰률" not in c["title"] and "낙찰률" not in c.get("angle", "")

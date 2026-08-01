@@ -36,6 +36,25 @@ def generate_weekly_data_story() -> dict:
         if status == "no_data":
             logger.info("[content.weekly_data_story] 지난주 개찰 데이터 없음 — 건너뜀")
             return {"ok": True, "skipped": "no_data"}
+        if status == "thin_data":
+            # 조용한 스킵 금지 — 블로그가 소리 없이 멈추는 것을 관리자가 알아야 한다.
+            # (임계 자체는 §9.2 스팸정책 방어라 자동 강행하지 않는다)
+            admins = db.query(models.User).filter(models.User.is_admin == True).all()  # noqa: E712
+            for a in admins:
+                db.add(models.Notification(
+                    user_id=a.id,
+                    title="🪶 데이터스토리 건너뜀 — 데이터가 얇아요",
+                    body=(
+                        f"지난주 개찰 건수가 최소 임계({data_story.min_weekly_records()}건) 미만이라 "
+                        "이번 주 글을 만들지 않았어요. 크롤이 정상인지 확인해보세요."
+                    ),
+                    noti_type="BLOG_THIN_WEEK_SKIPPED",
+                    data_json={"threshold": data_story.min_weekly_records()},
+                    is_read=0,
+                ))
+            db.commit()
+            logger.warning("[content.weekly_data_story] 얇은 주 — 건너뜀 + 관리자 경보")
+            return {"ok": True, "skipped": "thin_data"}
         if status == "exists":
             logger.info(f"[content.weekly_data_story] 이미 존재: {post.slug if post else '?'}")
             return {"ok": True, "skipped": "exists", "slug": post.slug if post else None}
