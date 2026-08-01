@@ -6,6 +6,36 @@
 
 ---
 
+---
+
+## ✅ 이관 실행 완료 (2026-08-01, Tailscale 원격 셋업)
+
+**`hoseung-thinkpad-x1` 로의 이관은 이미 끝났습니다.** 아래 §1~§4는 "어떻게 했는가"의 기록이자,
+다른 기기에 다시 이관할 때 쓰는 절차서입니다. 새 PC에서 처음 세션을 여는 것이라면 **§5(작업 재개 지점)와 아래 잔여 작업만** 보면 됩니다.
+
+구 PC(`hoseung-thinkpad-t14s`)에서 Tailscale P2P + SSH로 원격 수행한 결과:
+
+| 항목 | 결과 |
+|---|---|
+| 레포 4개 | ✅ `C:\Project\` 배치 완료. private 2종(`Bideasy-Extension`·`bideasy-agent`)은 gh 토큰 만료로 `git bundle` 전송 후 복원, origin URL은 GitHub으로 재설정됨 |
+| 비공개 파일 5종 | ✅ `.env` 2종·`PATENT.md`·체크리스트 2건 배치. `git status` clean = `.gitignore` 정상 |
+| Lightsail SSH 키 | ✅ `~/.ssh/lightsail_bideasy.pem` (소유자 읽기 전용으로 권한 제한) |
+| 전역 규칙 | ✅ `~/.claude/GLOBAL_RULES_HOSI.md` + 기존 SuperClaude 진입점에 `@GLOBAL_RULES_HOSI.md` import 추가(덮어쓰기 아님, 원본은 `CLAUDE.md.bak-20260801`) |
+| Claude 메모리 9개 | ✅ `~/.claude/projects/C--Project-Bideasy/memory/` — SHA256 해시 일치 검증 |
+| Python 환경 | ✅ venv(Python 3.12.10) + `requirements.txt` 설치 |
+| **검증** | ✅ **`pytest` 508건 전부 통과** (구 PC와 동일) |
+
+### ⏳ 잔여 작업 (사람이 해야 하는 것)
+
+1. **`gh auth login`** — 대상 PC의 GitHub 토큰이 만료 상태(`The token in default is invalid`). push·PR 작업 전에 필요
+2. **임시 SSH 키 제거** — 이관용으로 등록한 키를 지운다. 관리자 PowerShell에서:
+   `C:\ProgramData\ssh\administrators_authorized_keys` 의 `bideasy-migration-temp-20260801` 줄 삭제
+3. **OneDrive `_BIDEASY_이관\` 꾸러미 삭제** — 평문 API 키가 클라우드에 남아 있다
+4. **OpenAI 키·`POSTGRES_PASSWORD` 로테이션** (권고) — 2026-06-19 감사 이후 미처리 항목
+5. 익스텐션 `security/audit-2026-06-19` 문서 3커밋 머지 여부 판단 (§1.1)
+
+---
+
 ## 0. 결론 먼저 — 이관 난이도는 낮습니다
 
 조사 결과 **이 PC에 붙잡혀 있던 자산은 거의 없습니다.** 소스·문서·최근 작업은 전부 GitHub에 있고,
@@ -141,15 +171,18 @@ pytest                                                   # ← 508건 통과해�
 
 ## 6. 이관 검증 체크리스트
 
-새 PC에서 아래가 전부 ✅면 이관 성공입니다.
+`hoseung-thinkpad-x1` 기준 2026-08-01 실행 결과입니다.
 
-- [ ] 레포 4개 clone 완료
-- [ ] `backend/.env`, `infra/.env.production.local` 복원
-- [ ] `PATENT.md` 복원 + `git status`에 안 뜨는 것 확인
-- [ ] `~/.claude/CLAUDE.md` + 메모리 7개 복원
-- [ ] `pip install -r requirements.txt` → `pytest` 508건 통과
-- [ ] `git fetch --all` 후 `preserve/*` 브랜치 3개 확인
-- [ ] `gh auth login` 완료 → `gh pr list` 동작
-- [ ] Lightsail `.pem` 백업 확인 → 서버 SSH 접속 성공
-- [ ] `https://api.bideasy.kr/health` → 200 + `database:connected`
-- [ ] **위가 전부 끝나면 OneDrive `_BIDEASY_이관/` 꾸러미 삭제** (평문 키가 클라우드에 남지 않도록)
+- [x] 레포 4개 배치 완료 (private 2종은 bundle 경유)
+- [x] `backend/.env`, `infra/.env.production.local` 복원
+- [x] `PATENT.md` 복원 + `git status` clean 확인 (`.gitignore` 정상)
+- [x] 전역 규칙 + 메모리 9개 복원 (SHA256 일치, SuperClaude와 병존)
+- [x] `pip install -r requirements.txt` → **`pytest` 508건 통과**
+- [x] Lightsail `.pem` 배치 (`~/.ssh/lightsail_bideasy.pem`, 권한 제한)
+- [ ] `gh auth login` → `gh pr list` 동작 ← **잔여**
+- [ ] 서버 SSH 접속 확인 / `https://api.bideasy.kr/health` 200 + `database:connected`
+- [ ] **임시 SSH 키 제거** (`administrators_authorized_keys` 의 `bideasy-migration-temp-20260801`) ← **잔여**
+- [ ] **OneDrive `_BIDEASY_이관/` 꾸러미 삭제** (평문 키가 클라우드에 남지 않도록) ← **잔여**
+
+> 참고: `preserve/*` 브랜치는 clone/bundle에 포함돼 있습니다. 익스텐션의 `security/audit-2026-06-19` 는
+> 원격 추적 브랜치(`origin/security/audit-2026-06-19`)로 존재하므로 `git switch -c` 로 언제든 꺼낼 수 있습니다.
