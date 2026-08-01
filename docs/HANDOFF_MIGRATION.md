@@ -52,14 +52,13 @@ C:\dev\
 
 > ⚠️ 앞으로 폴더를 또 옮긴다면 **반드시 이 3가지를 세트로** 처리하세요: ① venv 재생성 ② `~/.claude/projects/` 키 폴더 rename ③ `bideasy.code-workspace` 의 `path` 확인.
 
-### ⏳ 잔여 작업 (사람이 해야 하는 것)
+### ⏳ 잔여 작업 (2026-08-01 세션에서 대부분 종료)
 
-1. **`gh auth login`** — 대상 PC의 GitHub 토큰이 만료 상태(`The token in default is invalid`). push·PR 작업 전에 필요
-2. **임시 SSH 키 제거** — 이관용으로 등록한 키를 지운다. 관리자 PowerShell에서:
-   `C:\ProgramData\ssh\administrators_authorized_keys` 의 `bideasy-migration-temp-20260801` 줄 삭제
-3. **OneDrive `_BIDEASY_이관\` 꾸러미 삭제** — 평문 API 키가 클라우드에 남아 있다
-4. **OpenAI 키·`POSTGRES_PASSWORD` 로테이션** (권고) — 2026-06-19 감사 이후 미처리 항목
-5. 익스텐션 `security/audit-2026-06-19` 문서 3커밋 머지 여부 판단 (§1.1)
+1. ~~`gh auth login`~~ — ✅ **이미 완료**(실측: `hosicompany` 로그인, scope `repo`·`workflow`)
+2. ~~임시 SSH 키 제거~~ — ✅ **완료**(2026-08-01). `administrators_authorized_keys` 에서 `bideasy-migration-temp-20260801` 줄 삭제, `hermes-mac-to-windows-hosic` 만 남음. 백업 `administrators_authorized_keys.bak-20260801` 에 제거한 키가 들어 있으니 **이상 없음 확인 후 삭제 권장**
+3. ~~OneDrive `_BIDEASY_이관\` 꾸러미 삭제~~ — ✅ 로컬에 폴더 없음 확인. 단 **웹 휴지통에 남아 있을 수 있어** 한 번 확인 권장(평문 API 키)
+4. **OpenAI 키·`POSTGRES_PASSWORD` 로테이션** (권고) — 🔴 **미처리**. 2026-06-19 감사 이후 그대로. 로컬 `~/.aws/credentials` `[default]` 루트 액세스 키 폐기도 함께(`CLAUDE.md` §대기 항목)
+5. ~~익스텐션 문서 3커밋 머지 판단~~ — ✅ **머지 완료**(2026-08-01, `main` `198f736`). 머지하면서 하네스의 구 경로 하드코딩(`C:\Project\...`)을 새 경로로 고치고 `$PSScriptRoot` 역산으로 견고화. **`& npm test` 가 `npm.ps1` shim 에서 인자가 깨져(`Unknown command: "pm"`) 게이트가 한 번도 동작한 적이 없던 것**도 함께 수정(`npm.cmd` 고정)
 
 ---
 
@@ -206,10 +205,12 @@ pytest                                                   # ← 508건 통과해�
 - [x] 전역 규칙 + 메모리 9개 복원 (SHA256 일치, SuperClaude와 병존)
 - [x] `pip install -r requirements.txt` → **`pytest` 508건 통과**
 - [x] Lightsail `.pem` 배치 (`~/.ssh/lightsail_bideasy.pem`, 권한 제한)
-- [ ] `gh auth login` → `gh pr list` 동작 ← **잔여**
-- [ ] 서버 SSH 접속 확인 / `https://api.bideasy.kr/health` 200 + `database:connected`
-- [ ] **임시 SSH 키 제거** (`administrators_authorized_keys` 의 `bideasy-migration-temp-20260801`) ← **잔여**
-- [ ] **OneDrive `_BIDEASY_이관/` 꾸러미 삭제** (평문 키가 클라우드에 남지 않도록) ← **잔여**
+- [x] `gh auth login` → `gh pr list` 동작 (2026-08-01 실측)
+- [x] `https://api.bideasy.kr/health` 200 + `database:connected` (2026-08-01 실측. 배포는 GitHub Actions 버튼이라 로컬 SSH 불요)
+- [x] **임시 SSH 키 제거** (2026-08-01)
+- [x] **OneDrive `_BIDEASY_이관/` 꾸러미** — 로컬 부재 확인 (웹 휴지통은 사용자 확인 권장)
+
+> **이 문서는 역할을 다했습니다.** 남은 것은 위 §잔여 4번(키 로테이션)뿐이고 그건 `CLAUDE.md` §대기 항목에도 있습니다.
 
 > 참고: `preserve/*` 브랜치는 clone/bundle에 포함돼 있습니다. 익스텐션의 `security/audit-2026-06-19` 는
 > 원격 추적 브랜치(`origin/security/audit-2026-06-19`)로 존재하므로 `git switch -c` 로 언제든 꺼낼 수 있습니다.
