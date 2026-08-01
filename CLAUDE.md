@@ -3,7 +3,7 @@
 > **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
 > 🖥️ **새 PC에서 처음 세팅하는 중이라면** `docs/HANDOFF_MIGRATION.md` 를 먼저 읽으세요 (2026-08-01 PC 이관 — 비공개 파일 복원·`preserve/*` WIP 브랜치·환경 재구축). 셋업이 끝났으면 무시해도 됩니다.
-> 최종 갱신: 2026-08-01 (**리드 육성 시퀀스 라이브** — PR #50 머지·배포·**E2E 실검증 완료**. 흐름: 진단 캡처 → **더블 옵트인 확인 메일**(거래) → 확인 클릭 → 웰컴(광고) → 매주 화 08:00 신규 매칭(광고). 설계 판단 5가지·표 = `docs/LEAD_ACQUISITION.md` §3-3. 요지: ① `services/lead_matching.py` = 진단 화면과 육성 메일의 **자격 판정 단일 소스**(`since` 로 신규만) ② `/leads/capture` 는 인증 없는 공개 폼이라 **확인 전 광고 금지** — `grant_marketing(confirmed=False)` → `marketing_confirmed_at` NULL → `sendable_filter` 가 차단, `POST /leads/optin` 으로만 확정(GET 은 스캐너 프리페치 방지 조회) + 정적 `/optin` ③ 멱등 주체 = **행이 아니라 수신자**(이메일 해시) — 캡처는 upsert 없이 매번 새 Lead 행을 만들기 때문 ④ `can_send_marketing` 의 `marketing_consent_at` **폴백 제거**(SQL 판본 `sendable_filter` 와 판정이 갈라져 있었음) ⑤ 실패는 1건에 갇힌다(입력 제어문자 정제 + `mailer` 조립실패도 `MailerError` 로 변환 + 배치 리드 단위 except + 실패 시 `dedupe_key` 해제). 테스트 529건. **E2E 실측**: 캡처 `confirm_pending=true`·광고 미발송 → 확인 메일 수신 → 클릭 → `(광고)` 웰컴 수신·수신거부 링크 정상. 다음 = 체험 시퀀스 6통 → 수신거부 처리결과 통지 → 알림톡 채널.)
+> 최종 갱신: 2026-08-01 (**리드 육성 시퀀스 라이브** — PR #50 머지·배포·**E2E 실검증 완료**. 흐름: 진단 캡처 → **더블 옵트인 확인 메일**(거래) → 확인 클릭 → 웰컴(광고) → 매주 화 08:00 신규 매칭(광고). 설계 판단 5가지·표 = `docs/LEAD_ACQUISITION.md` §3-3. 요지: ① `services/lead_matching.py` = 진단 화면과 육성 메일의 **자격 판정 단일 소스**(`since` 로 신규만) ② `/leads/capture` 는 인증 없는 공개 폼이라 **확인 전 광고 금지** — `grant_marketing(confirmed=False)` → `marketing_confirmed_at` NULL → `sendable_filter` 가 차단, `POST /optin` 으로만 확정(GET 은 스캐너 프리페치 방지 조회) + 정적 `/optin` ③ 멱등 주체 = **행이 아니라 수신자**(이메일 해시) — 캡처는 upsert 없이 매번 새 Lead 행을 만들기 때문 ④ `can_send_marketing` 의 `marketing_consent_at` **폴백 제거**(SQL 판본 `sendable_filter` 와 판정이 갈라져 있었음) ⑤ 실패는 1건에 갇힌다(입력 제어문자 정제 + `mailer` 조립실패도 `MailerError` 로 변환 + 배치 리드 단위 except + 실패 시 `dedupe_key` 해제). 테스트 529건. **E2E 실측**: 캡처 `confirm_pending=true`·광고 미발송 → 확인 메일 수신 → 클릭 → `(광고)` 웰컴 수신·수신거부 링크 정상. 다음 = 체험 시퀀스 6통 → 수신거부 처리결과 통지 → 알림톡 채널.)
 > 직전 갱신: 2026-07-30 (**아웃바운드 3층 구축** — 수신동의 증적(`consent_records` 추가 전용·문구 sha256, 마이그 `f4c1e8a92b37`) → 발송 파이프라인(`nurture.py` 유일 진입점·`OutboundMessage` 원장·수신거부 서명토큰, 마이그 `a9d3f5c17e42`) → 반송·불만 자동 억제(PR #49, 마이그 `c8e5b1f37d94`). SES 프로덕션 승인 + 발송 전용 IAM `bideasy-ses-sender` + `OUTBOUND_EMAIL_ENABLED=true` 로 **실발송 검증 완료**. 상세 런북 = `docs/OUTBOUND_EMAIL.md`. 그 이전 07-26~30 = 성장 전략 정본(`docs/GROWTH_STRATEGY.md`)·색인 표면 50→2,188건(PR #41)·GitHub Actions CD(PR #42·#43)·IndexNow(PR #43~#45)·계산기 거짓 안전판정 수습(PR #37).)
 
 ---
@@ -70,7 +70,7 @@
 - **리드 육성 시퀀스 — 더블 옵트인 (2026-08-01 · PR #50 머지·배포·E2E 실검증 완료)** — 상세·설계 판단 5가지 = `docs/LEAD_ACQUISITION.md` §3-3.
   진단 캡처 → `lead_optin_confirm`(**거래**, 광고 미포함) → 확인 클릭 → `lead_welcome`(광고) → 매주 화 08:00 `lead_new_matches`(광고).
   ① **자격 판정 단일 소스** `services/lead_matching.py` — 진단 화면이 "50건"이라 보여준 뒤 메일이 다른 기준으로 고르면 판정 신뢰가 깨진다. `since` 로 신규만 볼 수 있고, 콜드-DB 워밍은 진단 화면 전용 관심사라 `leads.py` 에 남겼다.
-  ② **더블 옵트인** — `/leads/capture` 는 인증도 주소 소유 확인도 없는 공개 폼이다. 본문의 `marketing_consent:true` 만 믿고 보내면 남의 주소를 적은 요청이 그대로 **제3자 광고**가 된다(증적은 제출자 IP·UA 일 뿐). `grant_marketing(confirmed=False)` → `marketing_confirmed_at` NULL → `sendable_filter` 차단. 확정은 `POST /leads/optin` 으로만(GET 은 조회 — 메일 스캐너 프리페치가 대신 누르는 것 방지). 정적 `/optin`, `confirm_pending` 을 보고 `/diagnose` 가 안내.
+  ② **더블 옵트인** — `/leads/capture` 는 인증도 주소 소유 확인도 없는 공개 폼이다. 본문의 `marketing_consent:true` 만 믿고 보내면 남의 주소를 적은 요청이 그대로 **제3자 광고**가 된다(증적은 제출자 IP·UA 일 뿐). `grant_marketing(confirmed=False)` → `marketing_confirmed_at` NULL → `sendable_filter` 차단. 확정은 `POST /optin` 으로만(GET 은 조회 — 메일 스캐너 프리페치가 대신 누르는 것 방지). 정적 `/optin`, `confirm_pending` 을 보고 `/diagnose` 가 안내.
   ③ **멱등 주체 = 수신자**(이메일 sha1) — 캡처는 upsert 없이 매번 새 `Lead` 행을 만들어, 행 기준 키는 재진단·더블클릭마다 갈라진다. 배치도 수신자당 1건만 뽑는다.
   ④ **`can_send_marketing` 폴백 제거** — `marketing_confirmed_at` 이 없을 때 `marketing_consent_at` 으로 폴백하던 것을 없앴다. 폴백이 있으면 확인 대기가 발송 가능으로 새고, SQL 판본(`sendable_filter`)과 판정이 갈라진다.
   ⑤ **실패는 1건에 갇힌다** — 입력 제어문자 정제(공백 치환) + `mailer` 가 조립 실패도 `MailerError` 로 변환 + 배치 리드 단위 `except` + 실패 시 `dedupe_key` 해제(선점만 하고 멈춘 `sending` 유령행이 재발송을 영구히 막지 않게).
@@ -99,7 +99,6 @@
 
 ### 다음 주제
 - **주간 매칭 배치 첫 발동 확인 (2026-08-04 화 08:00 KST)** — `nurture.send_lead_matches` 가 실제로 도는지 = beat 스케줄이 등록됐는지의 유일한 실증. E2E 로 만든 **`lead_id=1`(hosicompany@gmail.com)이 그대로 대상**이라 메일이 오면 성공. 안 오면 `celery_beat` 스케줄 등록을 의심(`deploy.sh` 가 force-recreate 하도록 돼 있으나 실측은 아직). 확인처 = `/admin/outbound` 원장. 그 뒤 수신거부 링크까지 눌러보면 전 구간이 닫힌다.
-- **체험 라이프사이클 시퀀스 6통** — D0/D1/D3/D7/D11/D13(`GROWTH_STRATEGY.md` §C3). **광고/거래 구분해 템플릿 배치**: 체험 만료 고지는 거래(동의 불요), 할인·권유는 광고(동의 필요). 섞으면 메일 전체가 광고물이 된다.
 - **카카오 알림톡 채널 개설** — 리드타임 2~3주(사용자 대기). 게이트(`consent.py`)는 그대로 재사용하고 어댑터만 추가.
 - **랜딩 미니계산기 슬라이더 범위** (작음, PR #37 잔여) — `index.html` `DEMO_MIN/MAX = 86.5/90.5` → 계산기 본페이지처럼 `85/92` 로. 현재 하한 89.745% 에서 안전 구간이 0.755%p 뿐이라 게이지가 거의 빨강 = 첫인상 손해.
 - **유입 효과 판정 (2주 뒤 = 2026-08-13 경)** — 서치콘솔 색인 페이지 수·서치어드바이저 수집 현황·GA4 오가닉 세션. 판정 기준·킬 기준은 `docs/GROWTH_STRATEGY.md` §7 에 **사전 등록**돼 있음(사후 합리화 금지).
@@ -134,8 +133,11 @@
 12. **`OUTBOUND_EMAIL_ENABLED` 를 임의로 끄지 말 것** — 현재 true(라이브). 끄면 모든 발송이 조용히 `dry_run` 이 되어 "보낸 줄 알았는데 안 감" 사고가 난다. 반대로 켠 채 대량 시퀀스를 돌리기 전에는 **반송·불만 억제**(§다음 주제)가 먼저다 — 반송률 5%·불만율 0.1% 초과 시 AWS 계정 정지.
 13. **`dedupe_key` 없이 주기 발송 금지** — 규칙은 **수신자 기준** `"{template}:email:{sha1(이메일)}[:{주기}]"`. `lead.id` 로 잡지 말 것 — `/leads/capture` 는 upsert 없이 매번 새 `Lead` 행을 만들어서, 같은 사람이 재진단·더블클릭하면 키가 갈라져 같은 메일이 여러 통 나간다.
 14. **`can_send_marketing` 에 폴백을 되살리지 말 것** — `marketing_confirmed_at` **만** 본다. `marketing_consent_at` 으로 폴백하면 ① 더블 옵트인 확인 대기가 발송 가능으로 새고 ② SQL 판본 `sendable_filter`(이 컬럼 필수)와 판정이 갈라진다. 판정이 두 갈래면 언젠가 위법 발송 쪽으로 갈라진다.
-15. **리드에게 보내는 첫 메일은 광고가 될 수 없다** — `/leads/capture` 는 인증·주소 소유 확인이 없는 공개 폼이다. 캡처 직후 나가는 건 `lead_optin_confirm`(거래·광고 미포함)뿐이고, 광고는 **확인 클릭 이후**에만. 확인은 `POST /leads/optin` 으로만 처리한다(GET 으로 확정하면 메일 스캐너 프리페치가 사용자 대신 눌러 더블 옵트인이 무의미해진다 — 수신거부와 같은 규칙).
-16. **발송 배치는 리드 단위로 예외를 가둘 것** — 데이터 결함 1건(제목에 섞인 개행 등)이 배치를 끊으면 매주 같은 지점에서 전원이 조용히 메일을 못 받는다(beat 는 실패를 알리지 않는다). 실패는 원장에 `failed` + **`dedupe_key` 를 놓은 상태**로 남아야 재시도가 가능하다.
+15. **리드에게 보내는 첫 메일은 광고가 될 수 없다** — `/leads/capture` 는 인증·주소 소유 확인이 없는 공개 폼이다. 캡처 직후 나가는 건 `lead_optin_confirm`(거래·광고 미포함)뿐이고, 광고는 **확인 클릭 이후**에만. 확인은 `POST /optin` 으로만 처리한다(리드·회원 공용 `endpoints/optin.py`)(GET 으로 확정하면 메일 스캐너 프리페치가 사용자 대신 눌러 더블 옵트인이 무의미해진다 — 수신거부와 같은 규칙).
+16. **가입·진단 폼은 이메일 소유를 확인하지 않는다** — `/signup`·`/leads/capture` 둘 다 체크박스만으로는 광고 대상이 되지 않는다(`grant_marketing(confirmed=False)` → 확인 링크 클릭). 새 가입 경로를 만들 때 이 계약을 빠뜨리면 제3자 주소로 광고가 나간다. **소셜 가입은 광고 동의 UI 자체가 없어** 시퀀스 광고 대상이 되지 않는다(거래 메일은 받는다).
+16-1. **가입 응답 경로의 메일은 1통을 넘기지 말 것** — `/auth/register` 는 퍼널의 목이다. SES 가 한 번 느려지면 가입이 504 로 실패하는데 계정은 이미 커밋돼 재시도하면 "이미 등록된 이메일"이 된다. 동의자는 확인 메일만 받고 웰컴은 확인 직후(`optin.py`)에 보낸다. `mailer` 의 SES 타임아웃(연결 3초·읽기 4초·재시도 0)과 nginx `/api/v1/auth/` 의 `proxy_read_timeout` 도 이 이유로 고정돼 있다.
+16-2. **인앱 알림은 메일보다 먼저 커밋할 것** — 발송 실패 시 `db.rollback()` 이 아직 pending 인 `Notification` 까지 지운다. 체험 알림의 대상 쿼리는 '하루짜리 창'이라 다음 날엔 창 밖 — 그 사용자는 영영 알림을 못 받고 카운터는 성공으로 집계된다(`trial_tasks._notify_then_mail`).
+17. **발송 배치는 리드 단위로 예외를 가둘 것** — 데이터 결함 1건(제목에 섞인 개행 등)이 배치를 끊으면 매주 같은 지점에서 전원이 조용히 메일을 못 받는다(beat 는 실패를 알리지 않는다). 실패는 원장에 `failed` + **`dedupe_key` 를 놓은 상태**로 남아야 재시도가 가능하다.
 
 ---
 
@@ -299,7 +301,7 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 ## 8. 테스트 — 검증 명령 (코드 변경 후 반드시 실행)
 
 ```bash
-cd backend && pytest          # 535건 통과 기준 (2026-08-01 master 실측, PR #50 병합분 포함. SQLite in-memory/파일)
+cd backend && pytest          # 560건 통과 기준 (2026-08-01 master 실측, PR #50 병합분 포함. SQLite in-memory/파일)
 python -m ruff check backend/ # CI lint 와 동일 — 미사용 import 하나로 CI 가 red 가 된다
 ```
 - **모든 코드 변경 후 위 명령을 실행하고, 완료 보고(Gate Check)에 결과와 신뢰도(🟢🟡🔴)를 기재한다.** 실패 상태로 커밋·배포 금지. 실패 수정은 2회까지, 이후 에스컬레이션.

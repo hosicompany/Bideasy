@@ -43,8 +43,8 @@ def _run_task(db_session):
 
 
 def _optin_token(lead_id: int) -> str:
-    from app.api.v1.endpoints.leads import OPTIN_PURPOSE
     from app.core.signed_token import make_token
+    from app.services.nurture import OPTIN_PURPOSE
 
     return make_token(OPTIN_PURPOSE, "lead", lead_id)
 
@@ -180,7 +180,7 @@ class TestWelcomeOnCapture:
         lead = db_session.get(models.Lead, resp.json()["lead_id"])
         token = _optin_token(lead.id)
 
-        status = client.get("/api/v1/leads/optin/status", params={"token": token})
+        status = client.get("/api/v1/optin/status", params={"token": token})
         assert status.status_code == 200
         assert status.json()["confirmed"] is False
 
@@ -195,7 +195,7 @@ class TestWelcomeOnCapture:
         lead = db_session.get(models.Lead, resp.json()["lead_id"])
         captured_mail.clear()   # 확인 메일은 검증했으므로 비우고 웰컴만 본다
 
-        confirmed = client.post("/api/v1/leads/optin", params={"token": _optin_token(lead.id)})
+        confirmed = client.post("/api/v1/optin", params={"token": _optin_token(lead.id)})
         assert confirmed.status_code == 200
         assert confirmed.json()["already"] is False
 
@@ -216,8 +216,8 @@ class TestWelcomeOnCapture:
         token = _optin_token(lead.id)
         captured_mail.clear()
 
-        client.post("/api/v1/leads/optin", params={"token": token})
-        second = client.post("/api/v1/leads/optin", params={"token": token})
+        client.post("/api/v1/optin", params={"token": token})
+        second = client.post("/api/v1/optin", params={"token": token})
         assert second.json()["already"] is True
         assert len(captured_mail) == 1
 
@@ -231,7 +231,7 @@ class TestWelcomeOnCapture:
         db_session.commit()
         captured_mail.clear()
 
-        result = client.post("/api/v1/leads/optin", params={"token": _optin_token(lead.id)})
+        result = client.post("/api/v1/optin", params={"token": _optin_token(lead.id)})
         assert result.status_code == 400
 
         db_session.refresh(lead)
@@ -249,7 +249,7 @@ class TestWelcomeOnCapture:
         db_session.commit()
         captured_mail.clear()
 
-        client.post("/api/v1/leads/optin", params={"token": _optin_token(lead.id)})
+        client.post("/api/v1/optin", params={"token": _optin_token(lead.id)})
 
         assert f"{lead_matching.MATCH_LIMIT}건+" in captured_mail[0]["subject"]
         assert f"{lead_matching.MATCH_LIMIT}건+" in captured_mail[0]["text"]
@@ -264,15 +264,15 @@ class TestWelcomeOnCapture:
         db_session.commit()
         captured_mail.clear()
 
-        client.post("/api/v1/leads/optin", params={"token": _optin_token(lead.id)})
+        client.post("/api/v1/optin", params={"token": _optin_token(lead.id)})
 
         assert "3건" in captured_mail[0]["subject"]
         assert "3건+" not in captured_mail[0]["subject"]
 
     def test_bad_token_rejected(self, client, db_session, busan_new_notice):
         """서명이 맞지 않는 토큰은 거부된다."""
-        assert client.post("/api/v1/leads/optin", params={"token": "forged.sig"}).status_code == 400
-        assert client.get("/api/v1/leads/optin/status", params={"token": "forged.sig"}).status_code == 400
+        assert client.post("/api/v1/optin", params={"token": "forged.sig"}).status_code == 400
+        assert client.get("/api/v1/optin/status", params={"token": "forged.sig"}).status_code == 400
 
     def test_capture_survives_send_failure(self, client, db_session, busan_new_notice, monkeypatch):
         """발송이 터져도 리드 캡처는 성공한다 — 메일 한 통 때문에 연락처를 잃지 않는다."""
@@ -314,7 +314,7 @@ class TestWelcomeOnCapture:
         captured_mail.clear()
 
         for lead_id in (first.json()["lead_id"], second.json()["lead_id"]):
-            client.post("/api/v1/leads/optin", params={"token": _optin_token(lead_id)})
+            client.post("/api/v1/optin", params={"token": _optin_token(lead_id)})
 
         assert len(captured_mail) == 1      # 사람은 하나 → 웰컴도 하나
 

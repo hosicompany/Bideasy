@@ -330,6 +330,14 @@ class TestSignupConsent:
         assert resp.status_code == 200
         user = db_session.query(models.User).filter(models.User.email == "withmkt@company.com").first()
         assert user.marketing_consent is True
+
+        # 더블 옵트인: 가입 폼도 이메일 소유를 확인하지 않는다(소셜 로그인만 검증된
+        # 이메일을 준다). 동의 증적은 남기되 확인 링크를 누르기 전까지는 발송 대상이 아니다.
+        assert user.marketing_confirmed_at is None
+        assert consent_service.can_send_marketing(user) is False
+
+        consent_service.confirm_marketing(db_session, user, subject_type="user", source="test")
+        db_session.commit()
         assert consent_service.can_send_marketing(user) is True
 
         rec = (

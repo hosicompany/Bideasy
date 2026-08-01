@@ -111,4 +111,11 @@ celery_app.conf.beat_schedule = {
         "task": "nurture.send_lead_matches",
         "schedule": crontab(hour=8, minute=0, day_of_week=2),
     },
+    # 14) 매일 10:10 — 체험 온보딩 광고 3종(D1 매칭·D3 익스텐션·D7 요약).
+    # 만료 고지(10:00, 거래·전원)와 10분 띄운다: 같은 사람에게 두 통이 동시에 꽂히면
+    # 체감상 스팸이고, D 계산이 겹치는 날(예: 체험 마지막 주)엔 실제로 겹칠 수 있다.
+    "daily-trial-onboarding": {
+        "task": "trial.send_onboarding_sequence",
+        "schedule": crontab(hour=10, minute=10),
+    },
 }

@@ -141,7 +141,7 @@ Lead.nurture_channel
 | 항목 | 위치 |
 |---|---|
 | 매칭 단일 소스 | `backend/app/services/lead_matching.py` — `match_notices(..., since=)`. 진단 화면과 육성 메일이 **같은 기준**을 쓴다 |
-| 더블 옵트인 | `endpoints/leads.py` — `GET /leads/optin/status`(조회) · `POST /leads/optin`(확인) + 정적 `/optin` |
+| 더블 옵트인 | `endpoints/optin.py`(리드·회원 공용) — `GET /optin/status`(조회) · `POST /optin`(확인) + 정적 `/optin` |
 | 확인 상태 전이 | `services/consent.py` — `grant_marketing(confirmed=False)` → `confirm_marketing()` |
 | 주기 발송 | `backend/app/tasks/nurture_tasks.py` `nurture.send_lead_matches` (beat `weekly-lead-nurture`) |
 | 테스트 | `tests/test_lead_nurture.py` (21건) |

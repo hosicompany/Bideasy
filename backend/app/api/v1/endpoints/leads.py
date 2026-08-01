@@ -13,7 +13,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -21,7 +21,6 @@ from app.core.cache import _get_redis, cache_key
 from app.core.client_meta import client_ip as _client_ip
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.signed_token import InvalidSignedToken, parse_token
 from app.db import models
 from app.db.session import get_db
 from app.services import consent as consent_service
@@ -383,16 +382,7 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
 
 
 # ─────────────────────────── 더블 옵트인 ───────────────────────────
-OPTIN_PURPOSE = "optin"
-
-
-def optin_url(lead_id: int) -> str:
-    from app.core.signed_token import make_token
-
-    token = make_token(OPTIN_PURPOSE, "lead", lead_id)
-    return f"{settings.PUBLIC_WEB_URL}/optin?t={token}"
-
-
+# 확인 엔드포인트 자체는 `endpoints/optin.py`(공용 — 리드·회원 모두 처리).
 def _send_optin_confirm(db: Session, lead: models.Lead) -> None:
     """수신 신청 확인 메일 — best-effort.
 
@@ -410,7 +400,7 @@ def _send_optin_confirm(db: Session, lead: models.Lead) -> None:
             subject_type="lead",
             template="lead_optin_confirm",
             ctx={
-                "confirm_url": optin_url(lead.id),
+                "confirm_url": nurture.optin_url("lead", lead.id),
                 "region": lead.region,
                 "industry": lead.industry,
             },
@@ -421,62 +411,7 @@ def _send_optin_confirm(db: Session, lead: models.Lead) -> None:
         logger.warning(f"lead optin 확인메일 발송 실패(비치명적) lead={lead.id}: {e}")
 
 
-def _resolve_optin(db: Session, token: Optional[str]) -> models.Lead:
-    try:
-        subject_type, subject_id = parse_token(OPTIN_PURPOSE, token)
-    except InvalidSignedToken:
-        raise HTTPException(status_code=400, detail="링크가 올바르지 않아요. 메일의 링크를 다시 눌러 주세요.")
-    if subject_type != "lead":
-        raise HTTPException(status_code=400, detail="링크가 올바르지 않아요.")
-    lead = db.get(models.Lead, subject_id)
-    if lead is None:
-        raise HTTPException(status_code=400, detail="링크가 만료됐어요. 진단을 다시 받아 주세요.")
-    return lead
-
-
-@router.get("/optin/status")
-def optin_status(token: str = Query(...), db: Session = Depends(get_db)):
-    """확인 전 조회 — 상태를 바꾸지 않는다.
-
-    GET 으로 확정하지 않는 이유는 수신거부와 같다: 메일 서버·보안 스캐너가 링크를 미리
-    열어보면 사용자 의사와 무관하게 확인 처리돼 더블 옵트인이 무의미해진다.
-    """
-    lead = _resolve_optin(db, token)
-    return {
-        "valid": True,
-        "confirmed": consent_service.can_send_marketing(lead),
-        "region": lead.region,
-        "industry": lead.industry,
-    }
-
-
-@router.post("/optin")
-def optin_confirm(
-    request: Request,
-    token: Optional[str] = Query(None),
-    body_token: Optional[str] = Body(None, embed=True, alias="token"),
-    db: Session = Depends(get_db),
-):
-    """수신 신청 확인 — 이 시점부터 광고 발송 대상이 된다(멱등)."""
-    lead = _resolve_optin(db, token or body_token)
-
-    already = consent_service.can_send_marketing(lead)
-    if not already:
-        rec = consent_service.confirm_marketing(
-            db, lead, subject_type="lead", source="email_optin", request=request,
-        )
-        if rec is None:
-            # 철회했거나 동의 자체가 없는 리드 — 확인으로 되살리지 않는다.
-            raise HTTPException(status_code=400, detail="수신 신청 내역이 없어요. 진단을 다시 받아 주세요.")
-        db.commit()
-        db.refresh(lead)
-        logger.info("lead optin confirmed: lead=%s", lead.id)
-        _send_welcome(db, lead)
-
-    return {"ok": True, "already": already}
-
-
-def _send_welcome(db: Session, lead: models.Lead) -> None:
+def send_welcome(db: Session, lead: models.Lead) -> None:
     """확인을 마친 리드에게 보내는 웰컴(광고) — best-effort.
 
     멱등 키의 주체는 `lead.id` 가 아니라 **수신자**다. 같은 사람이 재진단하면 Lead 행이
