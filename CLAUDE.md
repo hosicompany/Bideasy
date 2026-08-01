@@ -100,7 +100,6 @@
 ### 다음 주제
 - **주간 매칭 배치 첫 발동 확인 (2026-08-04 화 08:00 KST)** — `nurture.send_lead_matches` 가 실제로 도는지 = beat 스케줄이 등록됐는지의 유일한 실증. E2E 로 만든 **`lead_id=1`(hosicompany@gmail.com)이 그대로 대상**이라 메일이 오면 성공. 안 오면 `celery_beat` 스케줄 등록을 의심(`deploy.sh` 가 force-recreate 하도록 돼 있으나 실측은 아직). 확인처 = `/admin/outbound` 원장. 그 뒤 수신거부 링크까지 눌러보면 전 구간이 닫힌다.
 - **체험 라이프사이클 시퀀스 6통** — D0/D1/D3/D7/D11/D13(`GROWTH_STRATEGY.md` §C3). **광고/거래 구분해 템플릿 배치**: 체험 만료 고지는 거래(동의 불요), 할인·권유는 광고(동의 필요). 섞으면 메일 전체가 광고물이 된다.
-- **수신거부 처리 결과 통지** — 정보통신망법상 철회 처리 결과를 통지해야 한다(현재 즉시 반영은 되나 통지 메일은 미구현).
 - **카카오 알림톡 채널 개설** — 리드타임 2~3주(사용자 대기). 게이트(`consent.py`)는 그대로 재사용하고 어댑터만 추가.
 - **랜딩 미니계산기 슬라이더 범위** (작음, PR #37 잔여) — `index.html` `DEMO_MIN/MAX = 86.5/90.5` → 계산기 본페이지처럼 `85/92` 로. 현재 하한 89.745% 에서 안전 구간이 0.755%p 뿐이라 게이지가 거의 빨강 = 첫인상 손해.
 - **유입 효과 판정 (2주 뒤 = 2026-08-13 경)** — 서치콘솔 색인 페이지 수·서치어드바이저 수집 현황·GA4 오가닉 세션. 판정 기준·킬 기준은 `docs/GROWTH_STRATEGY.md` §7 에 **사전 등록**돼 있음(사후 합리화 금지).
@@ -300,12 +299,12 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 ## 8. 테스트 — 검증 명령 (코드 변경 후 반드시 실행)
 
 ```bash
-cd backend && pytest          # 529건 통과 기준 (2026-08-01 master 실측, PR #50 병합분 포함. SQLite in-memory/파일)
+cd backend && pytest          # 535건 통과 기준 (2026-08-01 master 실측, PR #50 병합분 포함. SQLite in-memory/파일)
 python -m ruff check backend/ # CI lint 와 동일 — 미사용 import 하나로 CI 가 red 가 된다
 ```
 - **모든 코드 변경 후 위 명령을 실행하고, 완료 보고(Gate Check)에 결과와 신뢰도(🟢🟡🔴)를 기재한다.** 실패 상태로 커밋·배포 금지. 실패 수정은 2회까지, 이후 에스컬레이션.
 - 결제: `tests/test_billing.py`(토스), `tests/test_payple.py`(페이플 9건 — provider/prepare/callback/서비스청구/Celery갱신, HTTP 모킹).
-- 아웃바운드: `tests/test_consent.py`(20건 — 증적 기록·구버전 경로·2년 만료·SQL필터↔단건판정 일치·**화면↔서버 문구 드리프트 가드**), `tests/test_nurture.py`(26건 — 게이트 차단 시 실제 미발송·"(광고)" 표기·원클릭 헤더·멱등·실패 시 키 해제·토큰 위조/용도 전용), `tests/test_lead_nurture.py`(21건 — **제3자 주소 광고 차단**·GET 프리페치 무확인·철회자 부활 방지·개행 리드가 배치를 안 죽임·같은 사람 재진단 시 1통).
+- 아웃바운드: `tests/test_consent.py`(20건 — 증적 기록·구버전 경로·2년 만료·SQL필터↔단건판정 일치·**화면↔서버 문구 드리프트 가드**), `tests/test_nurture.py`(32건 — 게이트 차단 시 실제 미발송·"(광고)" 표기·원클릭 헤더·멱등·실패 시 키 해제·토큰 위조/용도 전용·**수신거부 결과 통지**[광고 아님·재동의 유도 없음·통지 실패해도 해지 성공]), `tests/test_lead_nurture.py`(21건 — **제3자 주소 광고 차단**·GET 프리페치 무확인·철회자 부활 방지·개행 리드가 배치를 안 죽임·같은 사람 재진단 시 1통).
 - 그 외 feed/calculator/qualification/favorites/deadline/ai 등.
 
 ---
