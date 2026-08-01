@@ -208,23 +208,31 @@ class BidDetailService:
     @staticmethod
     def _format_bid_detail(item: Dict) -> Dict:
         """Format API response into a structured dictionary for LLM analysis."""
+        # ⚠️ 필드명은 2026-08-02 에 공사/용역/물품 3종 응답을 실측해 교정했다.
+        # 이전 키(cntrctMthdNm·bidMthdNm·ppncRgnNm·bidClsfcNm·ntceSttusNm·
+        # intrntnlBidYn·jntcontrctPsbltyYn)는 응답에 존재하지 않아, LLM 분석
+        # 컨텍스트에 계약방법·입찰방법·지역이 전부 'N/A' 로 들어가고 있었다.
         return {
             "bid_no": f"{item.get('bidNtceNo', '')}-{item.get('bidNtceOrd', '000')}",
             "title": item.get("bidNtceNm", ""),
             "announcement_date": item.get("bidNtceDt", ""),
             "opening_date": item.get("opengDt", ""),
             "estimated_price": item.get("presmptPrce", 0),
-            "budget_amount": item.get("asignBdgtAmt", 0),
+            # 공사는 bdgtAmt, 용역·물품은 asignBdgtAmt
+            "budget_amount": item.get("bdgtAmt") or item.get("asignBdgtAmt") or 0,
             "organization": item.get("ntceInsttNm", ""),
             "demand_organization": item.get("dmndInsttNm", ""),
-            "contract_method": item.get("cntrctMthdNm", ""),
-            "bid_method": item.get("bidMthdNm", ""),
+            "contract_method": item.get("cntrctCnclsMthdNm", ""),
+            # 낙찰자결정방법 원문 (전략 키는 CrawlerService.parse_bid_method 로 추출)
+            "bid_method": item.get("sucsfbidMthdNm", ""),
+            "bid_submit_method": item.get("bidMethdNm", ""),
+            "lower_limit_rate": item.get("sucsfbidLwltRate", ""),
             "qualification": item.get("bidQlfctRgstDt", ""),
-            "region": item.get("ppncRgnNm", ""),
-            "bid_type": item.get("bidClsfcNm", ""),
-            "notice_type": item.get("ntceSttusNm", ""),
-            "international_bid": item.get("intrntnlBidYn", "N"),
-            "joint_contract": item.get("jntcontrctPsbltyYn", "N"),
+            "region": item.get("cnstrtsiteRgnNm", ""),   # 공사만 제공
+            "notice_type": item.get("ntceKindNm", ""),
+            "international_bid": item.get("intrbidYn", ""),
+            "rebid_allowed": item.get("rbidPermsnYn", ""),
+            "re_notice": item.get("reNtceYn", ""),
             "raw_data": item  # Keep full data for debugging
         }
     
@@ -234,20 +242,30 @@ class BidDetailService:
         if not bid_detail:
             return ""
         
+        def _money(value) -> str:
+            """API 는 금액을 문자열로 준다 — 숫자 포맷 전에 반드시 변환.
+            (변환 없이 :,.0f 를 쓰면 TypeError 로 컨텍스트 생성이 통째로 실패한다)"""
+            try:
+                return f"{float(value or 0):,.0f}원"
+            except (TypeError, ValueError):
+                return "N/A"
+
         lines = [
             f"공고명: {bid_detail.get('title', 'N/A')}",
             f"공고기관: {bid_detail.get('organization', 'N/A')}",
             f"수요기관: {bid_detail.get('demand_organization', 'N/A')}",
-            f"추정가격: {bid_detail.get('estimated_price', 0):,.0f}원",
-            f"배정예산: {bid_detail.get('budget_amount', 0):,.0f}원",
-            f"계약방법: {bid_detail.get('contract_method', 'N/A')}",
-            f"입찰방법: {bid_detail.get('bid_method', 'N/A')}",
+            f"추정가격: {_money(bid_detail.get('estimated_price'))}",
+            f"배정예산: {_money(bid_detail.get('budget_amount'))}",
+            f"계약방법: {bid_detail.get('contract_method') or 'N/A'}",
+            f"낙찰자결정방법: {bid_detail.get('bid_method') or 'N/A'}",
+            f"낙찰하한율: {bid_detail.get('lower_limit_rate') or 'N/A'}",
+            f"입찰방식: {bid_detail.get('bid_submit_method') or 'N/A'}",
             f"공고일: {bid_detail.get('announcement_date', 'N/A')}",
             f"개찰일: {bid_detail.get('opening_date', 'N/A')}",
-            f"지역: {bid_detail.get('region', 'N/A')}",
-            f"입찰구분: {bid_detail.get('bid_type', 'N/A')}",
-            f"국제입찰여부: {bid_detail.get('international_bid', 'N')}",
-            f"공동계약가능: {bid_detail.get('joint_contract', 'N')}",
+            f"지역: {bid_detail.get('region') or 'N/A'}",
+            f"공고종류: {bid_detail.get('notice_type') or 'N/A'}",
+            f"재공고여부: {bid_detail.get('re_notice') or 'N/A'}",
+            f"국제입찰여부: {bid_detail.get('international_bid') or 'N/A'}",
         ]
-        
+
         return "\n".join(lines)
