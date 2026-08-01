@@ -126,20 +126,24 @@ def _send(
         db.rollback()
         return skipped("duplicate")
 
-    unsub = unsubscribe_url(subject_type, subject_id) if subject_id else None
-    rendered = email_templates.render(template, ctx, unsubscribe_url=unsub)
-
-    headers = {}
-    if category == "marketing" and subject_id:
-        # 원클릭 수신거부 — 스팸 신고 대신 해지를 누르게 만드는 가장 효과적인 장치이자
-        # 주요 메일 사업자의 대량 발신 요구사항(RFC 8058).
-        headers["List-Unsubscribe"] = (
-            f"<{one_click_unsubscribe_url(subject_type, subject_id)}>, <mailto:{email_templates.SENDER_CONTACT}>"
-        )
-        headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
-
-    row.subject = rendered.subject
+    # 선점 커밋 이후의 모든 단계를 한 번에 감싼다. 렌더·헤더 조립도 실패할 수 있는데
+    # (템플릿 ctx 결함, 제목에 섞인 제어문자 등) 그 예외가 빠져나가면 원장에 status="sending"
+    # + dedupe_key 를 점유한 유령행이 영구히 남아, 원인을 고쳐도 그 대상에게 **재발송이
+    # 불가능**해진다. 실패는 언제나 "키를 놓은 failed" 로 수렴해야 한다.
     try:
+        unsub = unsubscribe_url(subject_type, subject_id) if subject_id else None
+        rendered = email_templates.render(template, ctx, unsubscribe_url=unsub)
+
+        headers = {}
+        if category == "marketing" and subject_id:
+            # 원클릭 수신거부 — 스팸 신고 대신 해지를 누르게 만드는 가장 효과적인 장치이자
+            # 주요 메일 사업자의 대량 발신 요구사항(RFC 8058).
+            headers["List-Unsubscribe"] = (
+                f"<{one_click_unsubscribe_url(subject_type, subject_id)}>, <mailto:{email_templates.SENDER_CONTACT}>"
+            )
+            headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+
+        row.subject = rendered.subject
         result = mailer.send(
             to=email, subject=rendered.subject, text=rendered.text,
             html=rendered.html, headers=headers,
@@ -147,7 +151,7 @@ def _send(
         row.status = result.status              # sent | dry_run
         row.provider = result.provider
         row.provider_message_id = result.message_id
-    except mailer.MailerError as exc:
+    except Exception as exc:  # noqa: BLE001 — 발송 실패가 호출부를 죽이지 않는다
         row.status = "failed"
         row.error = str(exc)[:300]
         row.dedupe_key = None                   # 재시도 가능하게 키 해제

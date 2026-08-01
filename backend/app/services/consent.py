@@ -206,17 +206,24 @@ def grant_marketing(
     channel: str = "email",
     version: Optional[str] = None,
     request: Optional[Request] = None,
+    confirmed: bool = True,
 ) -> models.ConsentRecord:
     """광고성 정보 수신 동의(선택) — 상태 갱신 + 증적.
 
     재동의(철회 후 다시 동의)도 이 함수로 처리한다: withdrawn_at 을 비우고
     동의 시각을 새로 찍되, 철회 증적은 로그에 그대로 남는다.
+
+    `confirmed=False` 는 **더블 옵트인 대기** 상태다. 인증 없는 공개 폼(리드 진단)은
+    제출자가 그 주소의 주인이라는 증거가 없다 — 남의 주소를 적어도 우리가 가진 증적은
+    제출자의 IP·UA 뿐이다. 그래서 주소 소유자가 확인 링크를 누를 때까지
+    `marketing_confirmed_at` 을 비워 두고, `sendable_filter` 가 그 사이 광고 발송을
+    막는다(그 컬럼이 NULL 이면 발송 대상이 아니다).
     """
     now = _utcnow()
     ver = resolve_version(PURPOSE_MARKETING, version)
     subject.marketing_consent = True
     subject.marketing_consent_at = now
-    subject.marketing_confirmed_at = now
+    subject.marketing_confirmed_at = now if confirmed else None
     subject.marketing_withdrawn_at = None
     subject.consent_text_version = ver
     if request is not None:
@@ -234,6 +241,43 @@ def grant_marketing(
         email=getattr(subject, "email", None),
         phone=getattr(subject, "phone", None),
         request=request,
+    )
+
+
+def confirm_marketing(
+    db: Session,
+    subject,
+    *,
+    subject_type: str,
+    source: str,
+    channel: str = "email",
+    request: Optional[Request] = None,
+) -> Optional[models.ConsentRecord]:
+    """더블 옵트인 확인 — 주소 소유자가 확인 링크를 눌렀다.
+
+    이 시점에야 `marketing_confirmed_at` 이 채워져 `sendable_filter` 를 통과한다.
+    철회한 사람이 확인 링크를 눌러 되살아나는 일이 없도록, 철회 이력이 있으면
+    아무것도 하지 않는다(재동의는 명시적 재신청 경로로만).
+    """
+    if getattr(subject, "marketing_withdrawn_at", None) is not None:
+        return None
+    if not getattr(subject, "marketing_consent", False):
+        return None
+
+    subject.marketing_confirmed_at = _utcnow()
+    return record(
+        db,
+        subject_type=subject_type,
+        subject_id=getattr(subject, "id", None),
+        purpose=PURPOSE_MARKETING,
+        action=ACTION_RECONFIRM,
+        source=source,
+        version=getattr(subject, "consent_text_version", None) or None,
+        channel=channel,
+        email=getattr(subject, "email", None),
+        phone=getattr(subject, "phone", None),
+        request=request,
+        note="더블 옵트인 확인",
     )
 
 
@@ -279,11 +323,13 @@ def can_send_marketing(subject, now: Optional[datetime] = None) -> bool:
         return False
     if getattr(subject, "marketing_withdrawn_at", None) is not None:
         return False
-    confirmed = getattr(subject, "marketing_confirmed_at", None) or getattr(
-        subject, "marketing_consent_at", None
-    )
+    # `marketing_confirmed_at` 만 본다 — `marketing_consent_at` 으로 폴백하지 않는다.
+    # 폴백을 두면 ① 더블 옵트인 대기 상태(확인 전)가 발송 가능으로 새고
+    # ② SQL 판본(sendable_filter)은 이 컬럼을 필수로 요구하므로 단건 판정과 갈라진다.
+    # 판정이 두 갈래면 언젠가 반드시 위법 발송 쪽으로 갈라진다.
+    confirmed = getattr(subject, "marketing_confirmed_at", None)
     if confirmed is None:
-        return False  # 동의 플래그만 있고 시각 증적이 없으면 보내지 않는다
+        return False  # 동의 플래그만 있고 확인 증적이 없으면 보내지 않는다
     if confirmed.tzinfo is not None:
         confirmed = confirmed.astimezone(timezone.utc).replace(tzinfo=None)
     return (now or _utcnow()) - confirmed <= timedelta(days=REVALIDATE_DAYS)

@@ -76,7 +76,13 @@ def send(
     headers: Optional[dict] = None,
 ) -> SendResult:
     """이메일 1통 전송. 킬스위치가 꺼져 있으면 dry_run 으로 즉시 반환."""
-    msg = build_message(to=to, subject=subject, text=text, html=html, headers=headers)
+    try:
+        msg = build_message(to=to, subject=subject, text=text, html=html, headers=headers)
+    except (ValueError, TypeError) as exc:
+        # 제목·헤더에 개행이 섞이면 email 패키지가 ValueError 를 던진다(헤더 인젝션 방어).
+        # 이걸 그대로 흘리면 호출부의 `except MailerError` 를 지나쳐 배치 전체를 죽이므로
+        # 여기서 도메인 예외로 변환한다 — 조립 실패도 '이 한 통의 실패'여야 한다.
+        raise MailerError(f"메시지 조립 실패: {exc}") from exc
 
     if not settings.OUTBOUND_EMAIL_ENABLED:
         logger.info("[dry-run] email to=%s subject=%s", to, subject)

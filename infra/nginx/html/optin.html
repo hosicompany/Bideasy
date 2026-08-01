@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>수신 신청 확인 — BidEasy</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="/brand/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>
+    html,body{margin:0;}
+    .oi-wrap{max-width:520px;margin:0 auto;padding:64px 22px;}
+    .oi-card{border:1px solid var(--line);border-radius:16px;padding:26px 22px;background:var(--surface);}
+    .oi-msg{font-size:14.5px;color:var(--muted);line-height:1.7;margin:10px 0 0;}
+  </style>
+  <script src="/assets/app.js"></script>
+</head>
+<body class="bd" data-theme="light">
+  <div class="oi-wrap">
+    <div class="oi-card">
+      <h1 style="font-size:22px;font-weight:800;letter-spacing:-.5px;margin:0;">수신 신청 확인</h1>
+      <p class="oi-msg" id="oi-desc">확인 중이에요…</p>
+      <div id="oi-actions" style="margin-top:20px;display:none;">
+        <button id="oi-go" class="btn btn-primary btn-block">신청 확인하기</button>
+      </div>
+      <p class="oi-msg" style="margin-top:18px;font-size:12.5px;">
+        본인이 신청하지 않으셨다면 이 페이지를 닫아 주세요. 확인 전에는 아무 알림도 보내지 않습니다.
+        문의: <a href="mailto:support@bideasy.kr" style="color:var(--muted);">support@bideasy.kr</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    // 수신거부 페이지와 같은 규칙: GET 으로는 상태를 바꾸지 않는다. 메일 서버·보안 스캐너가
+    // 링크를 미리 열어보면 사용자 의사와 무관하게 확인 처리돼 더블 옵트인이 무의미해진다.
+    var API = (window.BD && window.BD.API_BASE) || 'https://api.bideasy.kr/api/v1';
+    var params = new URLSearchParams(location.search);
+    var token = params.get('t') || params.get('token');
+    var desc = document.getElementById('oi-desc');
+    var actions = document.getElementById('oi-actions');
+    var btn = document.getElementById('oi-go');
+
+    function done() {
+      actions.style.display = 'none';
+      desc.textContent = '확인됐어요. 조건에 맞는 새 공고가 올라오면 알려드릴게요. 언제든 메일 하단에서 수신거부하실 수 있어요.';
+    }
+
+    if (!token) {
+      desc.textContent = '링크가 올바르지 않아요. 메일에 담긴 확인 링크를 다시 눌러 주세요.';
+      return;
+    }
+
+    fetch(API + '/leads/optin/status?token=' + encodeURIComponent(token))
+      .then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); })
+      .then(function (d) {
+        if (d.confirmed) { done(); return; }
+        var who = [d.region, d.industry].filter(Boolean).join(' ');
+        desc.textContent = (who ? who + ' 조건으로 ' : '') + '신청하신 공고 알림 수신을 확인할까요?';
+        actions.style.display = 'block';
+      })
+      .catch(function () {
+        desc.textContent = '링크가 만료됐거나 올바르지 않아요. 진단을 다시 받으시거나 support@bideasy.kr 로 알려주세요.';
+      });
+
+    btn.addEventListener('click', function () {
+      btn.disabled = true; btn.textContent = '처리 중…';
+      fetch(API + '/leads/optin?token=' + encodeURIComponent(token), { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); })
+        .then(function () { done(); })
+        .catch(function () {
+          btn.disabled = false; btn.textContent = '신청 확인하기';
+          desc.textContent = '처리에 실패했어요. 잠시 후 다시 시도하시거나 support@bideasy.kr 로 알려주세요.';
+        });
+    });
+  })();
+  </script>
+</body>
+</html>

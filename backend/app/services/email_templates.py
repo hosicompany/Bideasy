@@ -137,6 +137,40 @@ def _lead_welcome(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
+@register("lead_optin_confirm", "transactional")
+def _lead_optin_confirm(ctx: dict) -> tuple[str, str, str]:
+    """더블 옵트인 확인 요청 — 주소 소유자에게 "정말 신청하셨나요"를 묻는다.
+
+    **광고를 담지 않는다.** 담는 순간 이 메일 자체가 미확인 주소로 보낸 광고물이 되어
+    더블 옵트인을 도입한 이유가 사라진다. 그래서 할인·권유·공고 목록이 없고, 확인
+    버튼과 "본인이 아니면 무시하세요" 안내만 있다.
+    """
+    confirm_url = ctx.get("confirm_url") or ""
+    region = ctx.get("region") or ""
+    industry = ctx.get("industry") or ""
+    who = f"{region} {industry}".strip()
+
+    subject = "수신 신청을 확인해 주세요"
+    text = (
+        "사장님, 아래 버튼을 눌러 주셔야 조건에 맞는 공고 알림을 보내드릴 수 있어요.\n"
+        + (f"신청하신 조건: {who}\n" if who else "")
+        + f"\n확인하기: {confirm_url}\n\n"
+        "본인이 신청하지 않으셨다면 이 메일을 무시해 주세요. 확인 전에는 아무 알림도 가지 않습니다.\n"
+    )
+    html = (
+        '<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, 아래 버튼을 눌러 주셔야 '
+        "조건에 맞는 공고 알림을 보내드릴 수 있어요.</p>"
+        + (
+            f'<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 20px;">'
+            f"신청하신 조건: <b>{escape(who)}</b></p>" if who else ""
+        )
+        + f"{_btn(confirm_url, '수신 신청 확인하기')}"
+        '<p style="font-size:13px;line-height:1.6;color:#8B95A1;margin:18px 0 0;">'
+        "본인이 신청하지 않으셨다면 이 메일을 무시해 주세요. 확인 전에는 아무 알림도 가지 않습니다.</p>"
+    )
+    return subject, text, html
+
+
 @register("lead_new_matches", "marketing")
 def _lead_new_matches(ctx: dict) -> tuple[str, str, str]:
     """주기 육성 — 진단 이후 **새로** 올라온 공고 중 조건에 맞는 것만 추린다.
@@ -149,11 +183,14 @@ def _lead_new_matches(ctx: dict) -> tuple[str, str, str]:
     count = int(ctx.get("new_count") or 0)
     notices = ctx.get("notices") or []          # [{title, organization, end_date_label}]
     web = settings.PUBLIC_WEB_URL
+    # 매칭 상한(MATCH_LIMIT)에 걸린 값이면 실제로는 더 많다 — 진단 화면의 `capped` 와
+    # 같은 정직성 장치. 상한값을 딱 떨어지게 말하면 사실과 다른 수를 말하게 된다.
+    label = f"{count}건+" if ctx.get("capped") else f"{count}건"
 
-    subject = f"{region} {industry}, 새로 올라온 공고 {count}건이 조건에 맞아요".strip()
+    subject = f"{region} {industry}, 새로 올라온 공고 {label}이 조건에 맞아요".strip()
 
     lines = [
-        f"사장님, 진단해 드린 조건({region} {industry})에 맞는 공고가 새로 {count}건 올라왔어요.",
+        f"사장님, 진단해 드린 조건({region} {industry})에 맞는 공고가 새로 {label} 올라왔어요.",
         "",
     ]
     for n in notices:
@@ -184,7 +221,7 @@ def _lead_new_matches(ctx: dict) -> tuple[str, str, str]:
     html = (
         f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, 진단해 드린 조건'
         f'(<b>{escape(region)} {escape(industry)}</b>)에 맞는 공고가 새로 '
-        f'<b style="color:#3182F6;">{count}건</b> 올라왔어요.</p>'
+        f'<b style="color:#3182F6;">{escape(label)}</b> 올라왔어요.</p>'
         f'<ul style="padding-left:18px;margin:0 0 20px;">{items}</ul>'
         f"{_btn(f'{web}/diagnose', '전체 목록 보기')}"
         '<p style="font-size:13px;line-height:1.6;color:#8B95A1;margin:18px 0 0;">'

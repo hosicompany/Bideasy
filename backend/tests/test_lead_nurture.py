@@ -1,10 +1,13 @@
-"""리드 육성 시퀀스 테스트 — 웰컴 1통 + 주기 신규 매칭.
+"""리드 육성 시퀀스 테스트 — 더블 옵트인 → 웰컴 → 주기 신규 매칭.
 
 지키려는 사실:
-  1) 진단 캡처에서 동의를 남긴 리드에게만 웰컴이 실제로 나간다(미동의는 나가지 않는다).
-  2) 웰컴 발송이 실패해도 **리드 캡처는 성공한다**(연락처를 잃지 않는다).
-  3) 주기 발송은 `sendable_filter` 를 통과한 리드에게만, **신규** 공고가 있을 때만 나간다.
-  4) 같은 주에 두 번 나가지 않는다(멱등), 전환된 리드에게는 나가지 않는다.
+  1) 캡처만으로는 **광고가 나가지 않는다.** 인증 없는 공개 폼이므로 주소 소유자가
+     확인 링크를 눌러야 발송 대상이 된다(제3자 주소로 광고를 쏘지 않는다).
+  2) 확인은 GET 프리페치로 되지 않고 POST 로만 된다(메일 스캐너 오확인 방지).
+  3) 발송이 실패해도 **리드 캡처는 성공한다**(연락처를 잃지 않는다).
+  4) 멱등의 주체는 행이 아니라 **수신자**다 — 같은 사람이 재진단해도 중복 발송이 없다.
+  5) 리드 1건의 데이터 결함이 주간 배치 전체를 죽이지 않는다.
+  6) 주기 발송은 `sendable_filter` 통과 + **신규** 공고가 있을 때만, 같은 주엔 한 번만.
 """
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -37,6 +40,13 @@ def _run_task(db_session):
 
     with patch("app.tasks.nurture_tasks.SessionLocal", lambda: _SessionWrapper(db_session)):
         return send_lead_matches()
+
+
+def _optin_token(lead_id: int) -> str:
+    from app.api.v1.endpoints.leads import OPTIN_PURPOSE
+    from app.core.signed_token import make_token
+
+    return make_token(OPTIN_PURPOSE, "lead", lead_id)
 
 
 @pytest.fixture(autouse=True)
@@ -91,16 +101,24 @@ def busan_new_notice(db_session):
     return _mk_notice(db_session, "NUR-E1", "부산 전기공사 신규 공고", "부산광역시", start_days_ago=1)
 
 
-def _consented_lead(db, *, email="lead@company.com", status="new", confirmed=None):
+def _consented_lead(db, *, email="lead@company.com", status="new", confirmed=None,
+                    created_at=None, region="부산광역시", industry="전기공사"):
+    """더블 옵트인까지 마친 리드(= 광고 발송 대상).
+
+    `created_at` 기본값을 과거로 두는 이유: 배치는 리드 생성 이후 올라온 공고만
+    '새 공고'로 보므로(웰컴이 이미 보여준 것과 중복 방지), 방금 만든 리드는 어떤
+    공고와도 매칭되지 않는다.
+    """
     from app.db import models
 
     now = confirmed or _utcnow()
     lead = models.Lead(
         email=email,
-        region="부산광역시",
-        industry="전기공사",
+        region=region,
+        industry=industry,
         matched_count=3,
         nurture_status=status,
+        created_at=created_at or (_utcnow() - timedelta(days=30)),
         privacy_consent=True,
         privacy_consent_at=now,
         marketing_consent=True,
@@ -126,36 +144,104 @@ class TestWelcomeOnCapture:
         body.update(over)
         return body
 
-    def test_consented_capture_sends_welcome(self, client, db_session, busan_new_notice, captured_mail):
-        """동의한 캡처 → 웰컴이 실제로 나가고 '(광고)' 표기가 붙는다."""
+    def test_capture_sends_confirmation_not_ad(self, client, db_session, busan_new_notice, captured_mail):
+        """캡처만으로는 광고가 나가지 않는다 — 나가는 건 '확인 요청'(거래) 1통뿐."""
         resp = client.post("/api/v1/leads/capture", json=self._capture_body())
         assert resp.status_code == 200
+        assert resp.json()["confirm_pending"] is True
 
         assert len(captured_mail) == 1
         mail = captured_mail[0]
         assert mail["to"] == "welcome@company.com"
-        assert mail["subject"].startswith(email_templates.AD_PREFIX)
-        # 광고 메일에는 원클릭 수신거부 헤더가 반드시 붙는다(RFC 8058)
-        assert "List-Unsubscribe" in mail["headers"]
+        # 광고 표기가 **없어야** 한다 — 있으면 미확인 주소로 광고를 보낸 것이 된다.
+        assert not mail["subject"].startswith(email_templates.AD_PREFIX)
+        assert "확인" in mail["subject"]
+        # 확인 메일에 공고 목록·권유가 섞이면 그 순간 광고물이 된다.
+        assert busan_new_notice.title not in mail["text"]
 
-    def test_no_consent_capture_does_not_send(self, client, db_session, busan_new_notice, captured_mail):
-        """수신동의를 안 한 리드에게는 웰컴이 나가지 않는다(원장에는 사유가 남는다)."""
+    def test_third_party_address_gets_no_ad(self, client, db_session, busan_new_notice, captured_mail):
+        """남의 주소를 적어 제출해도 그 주소로 광고는 가지 않는다(확인 전까지)."""
         from app.db import models
 
-        resp = client.post(
-            "/api/v1/leads/capture",
-            json=self._capture_body(email="noad@company.com", marketing_consent=False),
-        )
-        assert resp.status_code == 200
+        client.post("/api/v1/leads/capture", json=self._capture_body(email="victim@other.co.kr"))
+
+        lead = db_session.query(models.Lead).filter(models.Lead.email == "victim@other.co.kr").one()
+        assert consent_service.can_send_marketing(lead) is False
+        assert all(not m["subject"].startswith(email_templates.AD_PREFIX) for m in captured_mail)
+
+        # 확인 전에는 주기 발송 대상에도 잡히지 않는다
+        assert _run_task(db_session)["leads_checked"] == 0
+
+    def test_get_status_does_not_confirm(self, client, db_session, busan_new_notice, captured_mail):
+        """GET 조회로는 확인되지 않는다 — 메일 스캐너 프리페치로 인한 오확인 방지."""
+        from app.db import models
+
+        resp = client.post("/api/v1/leads/capture", json=self._capture_body(email="prefetch@company.com"))
+        lead = db_session.get(models.Lead, resp.json()["lead_id"])
+        token = _optin_token(lead.id)
+
+        status = client.get("/api/v1/leads/optin/status", params={"token": token})
+        assert status.status_code == 200
+        assert status.json()["confirmed"] is False
+
+        db_session.refresh(lead)
+        assert consent_service.can_send_marketing(lead) is False
+
+    def test_post_optin_confirms_and_sends_welcome(self, client, db_session, busan_new_notice, captured_mail):
+        """확인 버튼(POST)을 눌러야 발송 대상이 되고, 그때 웰컴(광고)이 나간다."""
+        from app.db import models
+
+        resp = client.post("/api/v1/leads/capture", json=self._capture_body(email="ok@company.com"))
+        lead = db_session.get(models.Lead, resp.json()["lead_id"])
+        captured_mail.clear()   # 확인 메일은 검증했으므로 비우고 웰컴만 본다
+
+        confirmed = client.post("/api/v1/leads/optin", params={"token": _optin_token(lead.id)})
+        assert confirmed.status_code == 200
+        assert confirmed.json()["already"] is False
+
+        db_session.refresh(lead)
+        assert consent_service.can_send_marketing(lead) is True
+
+        assert len(captured_mail) == 1
+        assert captured_mail[0]["subject"].startswith(email_templates.AD_PREFIX)
+        # 광고 메일에는 원클릭 수신거부 헤더가 반드시 붙는다(RFC 8058)
+        assert "List-Unsubscribe" in captured_mail[0]["headers"]
+
+    def test_optin_is_idempotent(self, client, db_session, busan_new_notice, captured_mail):
+        """확인을 두 번 눌러도 웰컴은 한 통."""
+        from app.db import models
+
+        resp = client.post("/api/v1/leads/capture", json=self._capture_body(email="twice@company.com"))
+        lead = db_session.get(models.Lead, resp.json()["lead_id"])
+        token = _optin_token(lead.id)
+        captured_mail.clear()
+
+        client.post("/api/v1/leads/optin", params={"token": token})
+        second = client.post("/api/v1/leads/optin", params={"token": token})
+        assert second.json()["already"] is True
+        assert len(captured_mail) == 1
+
+    def test_withdrawn_lead_cannot_be_revived_by_optin(self, client, db_session, busan_new_notice, captured_mail):
+        """철회한 사람이 옛 확인 링크를 눌러도 되살아나지 않는다."""
+        from app.db import models
+
+        resp = client.post("/api/v1/leads/capture", json=self._capture_body(email="gone@company.com"))
+        lead = db_session.get(models.Lead, resp.json()["lead_id"])
+        consent_service.withdraw_marketing(db_session, lead, subject_type="lead", source="test")
+        db_session.commit()
+        captured_mail.clear()
+
+        result = client.post("/api/v1/leads/optin", params={"token": _optin_token(lead.id)})
+        assert result.status_code == 400
+
+        db_session.refresh(lead)
+        assert consent_service.can_send_marketing(lead) is False
         assert captured_mail == []
 
-        row = (
-            db_session.query(models.OutboundMessage)
-            .filter(models.OutboundMessage.email == "noad@company.com")
-            .one()
-        )
-        assert row.status == "skipped"
-        assert row.reason == "no_consent"
+    def test_bad_token_rejected(self, client, db_session, busan_new_notice):
+        """서명이 맞지 않는 토큰은 거부된다."""
+        assert client.post("/api/v1/leads/optin", params={"token": "forged.sig"}).status_code == 400
+        assert client.get("/api/v1/leads/optin/status", params={"token": "forged.sig"}).status_code == 400
 
     def test_capture_survives_send_failure(self, client, db_session, busan_new_notice, monkeypatch):
         """발송이 터져도 리드 캡처는 성공한다 — 메일 한 통 때문에 연락처를 잃지 않는다."""
@@ -173,16 +259,35 @@ class TestWelcomeOnCapture:
             db_session.query(models.Lead).filter(models.Lead.email == "boom@company.com").one()
         ) is not None
 
-    def test_welcome_is_idempotent_per_lead(self, client, db_session, busan_new_notice, captured_mail):
-        """같은 리드에게 웰컴은 한 번만 — 재제출해도 두 통 가지 않는다."""
-        from app.api.v1.endpoints import leads as leads_mod
+    def test_control_chars_are_stripped_at_capture(self, client, db_session, busan_new_notice, captured_mail):
+        """개행이 든 입력은 저장 전에 정제된다 — 그대로 두면 메일 제목 조립이 터진다."""
         from app.db import models
 
-        resp = client.post("/api/v1/leads/capture", json=self._capture_body(email="once@company.com"))
-        lead = db_session.query(models.Lead).filter(models.Lead.id == resp.json()["lead_id"]).one()
+        resp = client.post(
+            "/api/v1/leads/capture",
+            json=self._capture_body(email="ctrl@company.com", region="부산광역시\n경상남도"),
+        )
+        assert resp.status_code == 200
 
-        leads_mod._send_welcome(db_session, lead, 3)   # 같은 리드로 재시도
-        assert len(captured_mail) == 1
+        lead = db_session.get(models.Lead, resp.json()["lead_id"])
+        assert "\n" not in (lead.region or "")
+        assert lead.region == "부산광역시 경상남도"
+        assert len(captured_mail) == 1      # 조립 실패 없이 확인 메일이 나갔다
+
+    def test_same_person_recapturing_gets_one_welcome(self, client, db_session, busan_new_notice, captured_mail):
+        """같은 사람이 재진단해 Lead 행이 늘어도 웰컴은 한 통 — 멱등 주체는 수신자."""
+        from app.db import models
+
+        body = self._capture_body(email="Repeat@Company.com")
+        first = client.post("/api/v1/leads/capture", json=body)
+        second = client.post("/api/v1/leads/capture", json=dict(body, email="repeat@company.com"))
+        assert first.json()["lead_id"] != second.json()["lead_id"]   # 행은 둘
+        captured_mail.clear()
+
+        for lead_id in (first.json()["lead_id"], second.json()["lead_id"]):
+            client.post("/api/v1/leads/optin", params={"token": _optin_token(lead_id)})
+
+        assert len(captured_mail) == 1      # 사람은 하나 → 웰컴도 하나
 
 
 class TestLeadMatchesTask:
@@ -252,3 +357,50 @@ class TestLeadMatchesTask:
         assert second["sent"] == 0
         assert second["blocked"] == 1     # duplicate 로 차단
         assert len(captured_mail) == 1
+
+    def test_one_bad_lead_does_not_kill_the_batch(self, db_session, busan_new_notice):
+        """리드 1건의 데이터 결함이 배치를 끊지 않는다 — 나머지는 정상 발송된다.
+
+        정제가 들어간 지금도 과거 데이터·다른 경로로 개행이 든 값이 남아 있을 수 있다.
+        그때 배치가 통째로 죽으면 매주 같은 지점에서 전원이 조용히 메일을 못 받는다.
+
+        `captured_mail` 을 쓰지 않는 이유: mailer.send 를 통째로 가짜로 바꾸면 제목 조립
+        (build_message)이 호출되지 않아 이 실패 경로가 재현되지 않는다. dry-run 경로는
+        실제로 조립을 수행하므로 여기서는 그대로 태운다.
+        """
+        from app.db import models
+
+        _consented_lead(db_session, email="poison@company.com", region="부산광역시\n경상남도")
+        _consented_lead(db_session, email="healthy@company.com")
+
+        result = _run_task(db_session)
+
+        assert result["leads_checked"] == 2
+        assert result["errors"] == 0                     # 예외가 아니라 failed 로 수렴
+        assert result["sent"] == 1                       # 정상 리드는 받았다
+
+        rows = {r.email: r for r in db_session.query(models.OutboundMessage).all()}
+        assert rows["poison@company.com"].status == "failed"
+        # 실패는 키를 놓아 재시도 여지를 남긴다(유령행 금지)
+        assert rows["poison@company.com"].dedupe_key is None
+        assert rows["healthy@company.com"].status == "dry_run"
+
+    def test_same_person_multiple_rows_gets_one_mail(self, db_session, busan_new_notice, captured_mail):
+        """같은 사람의 Lead 행이 여럿이어도 주간 메일은 한 통."""
+        _consented_lead(db_session, email="dup@company.com")
+        _consented_lead(db_session, email="DUP@Company.com")
+
+        result = _run_task(db_session)
+
+        assert result["sent"] == 1
+        assert len(captured_mail) == 1
+
+    def test_fresh_lead_does_not_get_duplicate_of_welcome(self, db_session, busan_new_notice, captured_mail):
+        """갓 캡처된 리드에게는 웰컴이 이미 보여준 공고를 다시 보내지 않는다."""
+        _consented_lead(db_session, email="fresh@company.com", created_at=_utcnow())
+
+        result = _run_task(db_session)
+
+        assert result["sent"] == 0
+        assert result["skipped_no_match"] == 1
+        assert captured_mail == []

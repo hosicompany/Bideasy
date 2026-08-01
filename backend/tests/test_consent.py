@@ -175,10 +175,19 @@ class TestCaptureConsent:
         lead = db_session.get(models.Lead, resp.json()["lead_id"])
         assert lead.marketing_consent is True
         assert lead.marketing_consent_at is not None
-        assert lead.marketing_confirmed_at is not None
         assert lead.marketing_withdrawn_at is None
         assert lead.consent_ip == "1.2.3.4"
         assert "pytest-agent" in (lead.consent_user_agent or "")
+
+        # 더블 옵트인: 이 폼은 인증이 없어 제출자가 그 주소의 주인이라는 증거가 없다.
+        # 동의 증적은 남기되 주소 소유자가 확인 링크를 누르기 전까지는 발송 대상이 아니다.
+        assert lead.marketing_confirmed_at is None
+        assert consent_service.can_send_marketing(lead) is False
+        assert resp.json()["confirm_pending"] is True
+
+        consent_service.confirm_marketing(db_session, lead, subject_type="lead", source="test")
+        db_session.commit()
+        assert lead.marketing_confirmed_at is not None
         assert consent_service.can_send_marketing(lead) is True
 
         rec = _records(db_session, lead.id, consent_service.PURPOSE_MARKETING)[0]
