@@ -7,6 +7,17 @@ import pytest
 
 from app.db import models
 from app.services import content_engine as ce
+from app.services import content_llm
+
+
+def _no_llm(monkeypatch):
+    """콘텐츠 LLM 완전 차단 — 전용 키와 OpenAI 키를 **둘 다** 비운다.
+
+    OPENAI_API_KEY 만 비우면, CONTENT_LLM_API_KEY 로 구성된 환경(OpenRouter 등)에서는
+    '키 없음' 경로가 실제로 타지 않는데도 테스트가 통과해버린다(게이트 불일치 은폐).
+    """
+    monkeypatch.setattr(content_llm.settings, "CONTENT_LLM_API_KEY", "")
+    monkeypatch.setattr(content_llm.settings, "OPENAI_API_KEY", "")
 
 
 SAMPLE_BLOCKS = {
@@ -116,7 +127,7 @@ class TestCreateDraft:
     def test_no_llm_key_honest_failure(self, db_session, monkeypatch):
         """LLM 키 없으면 지어낸 폴백 초안을 만들지 않는다 (정직)."""
         self._cleanup(db_session, "K3")
-        monkeypatch.setattr(ce.settings, "OPENAI_API_KEY", "")
+        _no_llm(monkeypatch)
         post, status = ce.create_draft_from_topic(db_session, "K3")
         assert post is None and status == "llm_unavailable"
 
@@ -128,7 +139,7 @@ class TestAdminEndpoints:
         assert len(res.json()["topics"]) == 24
 
     def test_generate_endpoint_llm_unavailable_503(self, admin_client, monkeypatch):
-        monkeypatch.setattr(ce.settings, "OPENAI_API_KEY", "")
+        _no_llm(monkeypatch)
         res = admin_client.post("/api/v1/admin/blog/generate-from-topic/K4")
         assert res.status_code == 503
 
@@ -184,7 +195,7 @@ class TestChannelAssets:
 
     def test_ensure_assets_no_llm_is_noop_not_error(self, db_session, monkeypatch):
         post = self._mk_engine_post(db_session, "K2")
-        monkeypatch.setattr(ce.settings, "OPENAI_API_KEY", "")
+        _no_llm(monkeypatch)
         assert ce.ensure_channel_assets(db_session, post) is False  # 예외 없이 False
         db_session.refresh(post)
         assert post.channel_assets_json is None
@@ -218,7 +229,7 @@ class TestChannelAssets:
 
     def test_derive_endpoint_503_without_llm(self, admin_client, db_session, monkeypatch):
         post = self._mk_engine_post(db_session, "K4")
-        monkeypatch.setattr(ce.settings, "OPENAI_API_KEY", "")
+        _no_llm(monkeypatch)
         assert admin_client.post(f"/api/v1/admin/blog/{post.id}/derive-assets").status_code == 503
 
 
@@ -296,11 +307,11 @@ class TestQueueSustainability:
         assert ce.remaining_topics(db_session) == 23
 
     def test_propose_returns_none_without_llm(self, monkeypatch):
-        monkeypatch.setattr(ce.settings, "OPENAI_API_KEY", "")
+        _no_llm(monkeypatch)
         assert ce.propose_topic_candidates(5) is None
 
     def test_propose_endpoint_503_without_llm(self, admin_client, monkeypatch):
-        monkeypatch.setattr(ce.settings, "OPENAI_API_KEY", "")
+        _no_llm(monkeypatch)
         res = admin_client.get("/api/v1/admin/blog/topics/propose")
         assert res.status_code == 503
 
@@ -341,7 +352,8 @@ class TestDataStoryBlocksAlignment:
             participants_count=42,
         ))
         db_session.commit()
-        post, status = data_story.create_weekly_draft(db_session, ref.date())
+        # 이 테스트의 관심사는 blocks 정합 — 얇은 주 게이트(§9.2)는 allow_thin 으로 비껴간다
+        post, status = data_story.create_weekly_draft(db_session, ref.date(), allow_thin=True)
         assert status == "created"
         blocks = post.blocks_json
         assert blocks["track"] == "data_story"

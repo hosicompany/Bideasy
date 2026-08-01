@@ -99,6 +99,7 @@ def _parse_file(path: Path) -> Optional[dict]:
         "author_avatar": BLOG_AUTHOR["avatar"],
         "author_bio": BLOG_AUTHOR["bio"],
         "body_html": _render_markdown(body),
+        "blocks": None,   # 파일 글은 구조화 블록이 없음 (DB 엔진 글만 보유)
     }
 
 
@@ -155,6 +156,8 @@ def _db_to_dict(post) -> dict:
         "author_avatar": BLOG_AUTHOR["avatar"],
         "author_bio": BLOG_AUTHOR["bio"],
         "body_html": post.body_html or "",
+        # 구조화 정본 블록 — 상세 템플릿의 FAQPage 스키마가 읽는다 (CONTENT_ENGINE §9.3)
+        "blocks": post.blocks_json or None,
     }
 
 

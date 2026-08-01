@@ -133,15 +133,22 @@ def generate_from_topic(topic_code: str, force: bool = False, db: Session = Depe
 
 
 @router.post("/blog/generate-data-story", response_model=BlogPostOut)
-def generate_data_story_now(db: Session = Depends(get_db), _admin=Depends(require_admin)):
+def generate_data_story_now(force: bool = False, db: Session = Depends(get_db), _admin=Depends(require_admin)):
     """지난주 개찰 데이터로 데이터스토리 초안 즉시 생성(수동·테스트용).
 
     Celery 주간 task(content.weekly_data_story)와 동일 로직. 이미 같은 주 초안이 있으면 그걸 반환.
+    데이터가 임계 미만이면 409 로 거부(§9.2) — 사람이 판단해 강행하려면 force=true.
     """
     from app.services import data_story
-    post, status = data_story.create_weekly_draft(db)
+    post, status = data_story.create_weekly_draft(db, allow_thin=force)
     if status == "no_data":
         raise HTTPException(404, "지난주 개찰 데이터가 없어요 (opening_results 비어있음)")
+    if status == "thin_data":
+        raise HTTPException(
+            409,
+            f"지난주 개찰 데이터가 최소 임계({data_story.min_weekly_records()}건) 미만이에요. "
+            "얇은 주 글은 검색 스팸으로 잡힐 수 있어요 — 그래도 만들려면 force=true 로 요청하세요.",
+        )
     return post
 
 
