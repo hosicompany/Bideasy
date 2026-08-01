@@ -38,8 +38,39 @@ class CrawlerService:
         return any(region in keyword for region in CrawlerService.REGION_KEYWORDS)
     
     @staticmethod
+    def parse_bid_method(raw: str) -> str:
+        """낙찰자결정방법명 → 전략 키 (첫 토큰).
+
+        API 는 세부 기준까지 붙여서 준다:
+          '적격심사제-추정가격 3억원 미만 8천만원 이상인 공사(전기…)'
+          '소액수의견적-소액수의견적(2인 이상 견적 제출)-국민연금보험료 등 합산액 감액 적용'
+        '-' 앞 첫 토큰만 취해야 BID_STRATEGY 키 · OpeningResult.bid_method 와
+        같은 어휘가 된다(그래야 전략 조회·세그먼트 조인이 맞는다).
+        """
+        if not raw:
+            return ""
+        return raw.split("-", 1)[0].strip()
+
+    @staticmethod
+    def _num(value, cast=float):
+        """API 숫자 필드 파싱. 빈 문자열·None·비숫자는 None (0 으로 위장하지 않음)."""
+        if value in (None, ""):
+            return None
+        try:
+            return cast(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
     def _map_item(item: dict, contract_type: str) -> dict:
-        """OpenAPI item → Notice dict. contract_type 은 호출 엔드포인트에서 확정 전달."""
+        """OpenAPI item → Notice dict. contract_type 은 호출 엔드포인트에서 확정 전달.
+
+        ⚠️ 필드명은 2026-08-02 에 공사/용역/물품 3종 응답을 실측해 교정했다.
+        그 전에는 존재하지 않는 키(`bidMthdNm`·`cntrctMthdNm`·`prtcptLmtRgnNm` 등)를
+        읽어 bid_method·region·contract_method 가 **100% 결측**이었고, 그 탓에
+        recommend_bid_price 가 전 건 DEFAULT 전략으로 떨어지고 지역 검색이
+        무력화돼 있었다. 키를 바꿀 때는 반드시 3종 응답을 다시 실측할 것.
+        """
         bid_no = f"{item.get('bidNtceNo')}-{item.get('bidNtceOrd')}"
 
         # opengDt(개찰일시)를 effective end_date 로 사용 (입찰은 개찰 전 마감)
@@ -50,6 +81,10 @@ class CrawlerService:
             end_dt = datetime.now() + timedelta(days=7)
 
         title = item.get("bidNtceNm", "No Title")
+        sucsfbid_mthd = item.get("sucsfbidMthdNm", "") or ""
+        # 예산: 공사는 bdgtAmt, 용역·물품은 asignBdgtAmt (엔드포인트별로 다름)
+        budget = CrawlerService._num(item.get("bdgtAmt") or item.get("asignBdgtAmt"))
+
         return {
             "bid_no": bid_no,
             "title": title,
@@ -60,22 +95,32 @@ class CrawlerService:
             "end_date": end_dt,
             "organization": item.get("ntceInsttNm", ""),
             "demand_organization": item.get("dmndInsttNm", ""),
-            "bid_method": item.get("bidMthdNm", ""),
-            "contract_method": item.get("cntrctMthdNm", ""),
-            "bid_type": item.get("bidClsfcNm", ""),
-            "status": item.get("bidNtceSttusNm", ""),
-            "region": item.get("prtcptLmtRgnNm", ""),
-            "budget_amount": float(item.get("asignBdgtAmt", 0) or 0),
+            # 전략 선택 키 — 낙찰자결정방법의 첫 토큰
+            "bid_method": CrawlerService.parse_bid_method(sucsfbid_mthd),
+            "bid_method_detail": sucsfbid_mthd,
+            "bid_method_code": item.get("sucsfbidMthdCd", ""),
+            "contract_method": item.get("cntrctCnclsMthdNm", ""),
+            "bid_submit_method": item.get("bidMethdNm", ""),
+            "notice_kind": item.get("ntceKindNm", ""),
+            # 공고 명시 낙찰하한율 (용역 등 미제공 건은 None)
+            "lower_limit_rate": CrawlerService._num(item.get("sucsfbidLwltRate")),
+            "prdprc_total": CrawlerService._num(item.get("totPrdprcNum"), int),
+            "prdprc_draw": CrawlerService._num(item.get("drwtPrdprcNum"), int),
+            # 공사현장 지역 — 공사 엔드포인트에만 존재. 용역·물품은 결측 유지.
+            # (rgnLmtBidLocplcJdgmBssNm 은 '지역제한 판단기준'이라 지역명이 아니다)
+            "region": item.get("cnstrtsiteRgnNm", ""),
+            "budget_amount": budget,
             "opening_date": item.get("opengDt", ""),
-            "international_bid": item.get("intrntnlBidYn", "N"),
-            "joint_contract": item.get("jntcontrctPsbltyYn", "N"),
-            "big_company_ok": item.get("lrgcntrctPsbltyYn", "N"),
-            "sme_only": item.get("dminsttRcptcpYn", "N"),
+            "international_bid": item.get("intrbidYn", ""),
             "bid_qualification": item.get("bidQlfctRgstDt", ""),
-            "emergency_bid": item.get("urgntNtceYn", "N"),
-            "rebid_yn": item.get("rbidYn", "N"),
+            "rebid_yn": item.get("rbidPermsnYn", ""),
+            "re_notice_yn": item.get("reNtceYn", ""),
             "attachment_url": item.get("ntceSpecDocUrl1", ""),
             "attachment_name": item.get("ntceSpecFileNm1", ""),
+            # ⚠️ 목록 API 가 제공하지 않는 필드는 아예 넣지 않는다.
+            # (bid_type·status·joint_contract·sme_only·big_company_ok·emergency_bid)
+            # 예전엔 없는 키를 읽고 기본값 "N" 을 저장해, "중소기업 전용 아님" 같은
+            # 확인되지 않은 사실을 단정하고 있었다. 모르는 건 비워 둔다.
         }
 
     @staticmethod
@@ -300,10 +345,21 @@ class CrawlerService:
             }
         ]
 
+    # 기존 행 갱신에서 제외할 컬럼 — 최초 수집 시각은 재크롤로 바뀌면 안 된다.
+    _UPSERT_SKIP = frozenset({"bid_no", "start_date"})
+
     @staticmethod
     def save_notices(db_session, notices_data: List[dict]):
-        """
-        Save fetched notices to database.
+        """공고를 DB 에 upsert. 반환은 **신규 삽입 건수**(기존 동작 호환).
+
+        예전엔 신규만 insert 하고 기존 행은 건드리지 않았다. 그 탓에 매핑이
+        고쳐져도 이미 저장된 공고는 빈 필드로 영원히 남았다(2026-08-02 실측:
+        공사 3,511건 전부 bid_method 결측). 공고는 정정(chgNtceRsn)도 되므로
+        재크롤 시 최신 값을 반영하는 게 맞다.
+
+        A값(`a_value`)·`net_cost` 는 별도 파이프라인(익스텐션 크라우드소스·
+        첨부파싱)이 채우는 값이라 `_map_item` 결과에 없고, 따라서 여기서
+        덮어써지지 않는다 — 이 불변식을 깨지 말 것.
         """
         saved_count = 0
         for data in notices_data:
@@ -312,5 +368,11 @@ class CrawlerService:
                 notice = models.Notice(**data)
                 db_session.add(notice)
                 saved_count += 1
+                continue
+            # 기존 행 갱신 — None 은 "API 가 값을 주지 않음"이라 기존 값을 지우지 않는다.
+            for key, value in data.items():
+                if key in CrawlerService._UPSERT_SKIP or value is None:
+                    continue
+                setattr(existing, key, value)
         db_session.commit()
         return saved_count

@@ -119,22 +119,39 @@ class Notice(Base):
     # Extended fields
     organization = Column(String(255))
     demand_organization = Column(String(255))
+    # 낙찰자결정방법의 첫 토큰 ("적격심사제"/"소액수의견적"/"협상에의한계약" …).
+    # BID_STRATEGY 키 · OpeningResult.bid_method 와 같은 어휘를 쓴다 —
+    # calculator.recommend_bid_price(bid_method=) 가 이 값으로 전략을 고른다.
     bid_method = Column(String(100))
     contract_method = Column(String(100))
-    bid_type = Column(String(100))
-    status = Column(String(50))
+    bid_type = Column(String(100))      # ⚠️ 목록 API 미제공 — 항상 결측
+    status = Column(String(50))         # ⚠️ 목록 API 미제공 — notice_kind 를 볼 것
     region = Column(String(100))
     budget_amount = Column(Float)
     opening_date = Column(String(100))
     international_bid = Column(String(10))
-    joint_contract = Column(String(10))
-    sme_only = Column(String(10))
-    big_company_ok = Column(String(10))
+    joint_contract = Column(String(10))  # ⚠️ 목록 API 미제공
+    sme_only = Column(String(10))        # ⚠️ 목록 API 미제공
+    big_company_ok = Column(String(10))  # ⚠️ 목록 API 미제공
     bid_qualification = Column(String(255))
-    emergency_bid = Column(String(10))
+    emergency_bid = Column(String(10))   # ⚠️ 목록 API 미제공
     rebid_yn = Column(String(10))
     attachment_url = Column(String(500))
     attachment_name = Column(String(255))
+
+    # 낙찰자결정방법 상세 (2026-08-02 추가) — 공고 API 가 이미 주던 값들.
+    # bid_method 는 첫 토큰만 담으므로, 세부 기준(A값 감액 적용 여부 등)은
+    # 원문 detail 에서만 읽을 수 있다.
+    bid_method_detail = Column(String(300))   # sucsfbidMthdNm 원문
+    bid_method_code = Column(String(20))      # sucsfbidMthdCd (예: 낙030001)
+    # 공고가 명시한 낙찰하한율. 금액대 테이블 추정(lower_limits)보다 우선하는 실측값.
+    lower_limit_rate = Column(Float)          # sucsfbidLwltRate (예: 89.745)
+    # 복수예비가격 총수/추첨수 — simulation_service 가 15/4 로 하드코딩한 값의 실제치.
+    prdprc_total = Column(Integer)            # totPrdprcNum
+    prdprc_draw = Column(Integer)             # drwtPrdprcNum
+    bid_submit_method = Column(String(50))    # bidMethdNm (전자입찰 등)
+    notice_kind = Column(String(50))          # ntceKindNm (등록공고/변경공고/취소공고)
+    re_notice_yn = Column(String(10))         # reNtceYn (재공고 여부)
 
     # Calculator Fields
     a_value = Column(Integer, default=0)
@@ -174,6 +191,14 @@ class Notice(Base):
             "attachment_name": self.attachment_name,
             "a_value": self.a_value,
             "net_cost": self.net_cost,
+            "bid_method_detail": self.bid_method_detail,
+            "bid_method_code": self.bid_method_code,
+            "lower_limit_rate": self.lower_limit_rate,
+            "prdprc_total": self.prdprc_total,
+            "prdprc_draw": self.prdprc_draw,
+            "bid_submit_method": self.bid_submit_method,
+            "notice_kind": self.notice_kind,
+            "re_notice_yn": self.re_notice_yn,
         }
 
 
