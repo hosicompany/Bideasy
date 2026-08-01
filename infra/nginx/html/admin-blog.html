@@ -39,6 +39,14 @@
     .b-pub{background:var(--green-bg);color:var(--green)}
     .b-auto{background:#EEF2FF;color:#4338CA}
     .b-sched{background:#FEF3C7;color:#92400E}
+    .b-pass{background:#E7F8EC;color:#1B7F3B}
+    .b-warn{background:#FEF3C7;color:#92400E}
+    .b-fail{background:#FDECEC;color:#C0392B}
+    .review{margin-top:12px;border:1px solid #E5E8EB;border-radius:12px;padding:12px 14px;background:#FBFCFD}
+    .review h4{font-size:13px;font-weight:800;margin-bottom:8px}
+    .review .chk{font-size:12px;color:#4B5563;padding:4px 0;border-top:1px solid #EEF1F4}
+    .review .chk:first-of-type{border-top:0}
+    .review .q{color:#8B95A1;font-size:11px;display:block;margin-top:2px}
     label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:10px 0 4px}
     input,textarea,select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;color:var(--ink)}
     textarea{resize:vertical}
@@ -114,7 +122,10 @@
         <button class="btn ghost" id="btnCards" onclick="sendToCardmaker()" style="display:none" title="카드 카피를 카드메이커로 전달">🎴 카드메이커</button>
         <button class="btn ghost" id="btnCopyScripts" onclick="copyScripts()" style="display:none" title="릴스·유튜브·네이버 카피 클립보드 복사">📋 카피 복사</button>
         <button class="btn ghost" id="btnImgPrompts" onclick="copyImagePrompts()" style="display:none" title="힉스필드 이미지 프롬프트 + 배치 절차 복사">🖼 이미지 프롬프트</button>
+        <button class="btn ghost" id="btnReview" onclick="runReview(this)" style="display:none" title="자동 검수 재실행 (본문 수정 후)">🔍 검수 재실행</button>
       </div>
+
+      <div class="review" id="reviewBox" style="display:none"></div>
     </div>
   </div>
 
@@ -157,15 +168,42 @@
           const st = p.status==='published' ? '<span class="badge b-pub">발행</span>' : '<span class="badge b-draft">초안</span>';
           const src = p.source==='auto' ? '<span class="badge b-auto">자동</span>' : '';
           const sched = (p.status!=='published' && p.publish_at) ? `<span class="badge b-sched">⏰ ${kstShort(p.publish_at)}</span>` : '';
+          const rv = reviewBadge(p);
           return `<div class="item ${p.id===editingId?'active':''}" onclick="selectPost(${p.id})">
             <div class="t">${escapeHtml(p.title)}</div>
-            <div class="m">${st}${src}${sched} /${escapeHtml(p.slug)} · ${p.date||'미발행'} · ${p.reading_time||1}분</div>
+            <div class="m">${st}${src}${sched}${rv} /${escapeHtml(p.slug)} · ${p.date||'미발행'} · ${p.reading_time||1}분</div>
           </div>`;
         }).join('');
       }catch(e){ list.innerHTML='<div class="empty">불러오기 실패: '+e.message+'</div>'; }
     }
 
     function escapeHtml(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+    // ── 자동 검수 게이트 (그림자 모드) — 판정은 참고용이고 발행을 막지 않는다 ──
+    const _RV = {PASS:['b-pass','✅ 검수 통과'], WARN:['b-warn','⚠ 확인 권장'], FAIL:['b-fail','⛔ 검토 필요']};
+    function reviewBadge(p){
+      const v = p && p.review_json && p.review_json.verdict;
+      if(!v || !_RV[v]) return '';
+      return `<span class="badge ${_RV[v][0]}">${_RV[v][1]}</span>`;
+    }
+    function renderReview(p){
+      const box = el('reviewBox');
+      const rj = p && p.review_json;
+      if(!rj){ box.style.display='none'; box.innerHTML=''; return; }
+      const [cls,label] = _RV[rj.verdict] || ['b-warn', rj.verdict];
+      const rows = (rj.checks||[]).map(function(c){
+        const mark = c.level==='FAIL' ? '⛔' : (c.level==='WARN' ? '⚠' : '✅');
+        const quotes = []
+          .concat((c.hits||[]).map(h=>h.quote||h.value||h.term))
+          .concat((c.issues||[]).map(i=>typeof i==='string' ? i : (i.quote||'')))
+          .filter(Boolean).slice(0,3);
+        const q = quotes.length ? `<span class="q">${escapeHtml(quotes.join(' · '))}</span>` : '';
+        return `<div class="chk">${mark} <b>${escapeHtml(c.code)}</b> — ${escapeHtml(c.detail||'')}${q}</div>`;
+      }).join('');
+      box.innerHTML = `<h4>자동 검수 <span class="badge ${cls}">${label}</span>
+        <span class="q" style="display:inline;margin-left:4px">그림자 모드 — 발행을 막지 않아요. 판정이 맞았는지 봐주세요.</span></h4>${rows}`;
+      box.style.display='';
+    }
 
     // publish_at 은 서버에 naive UTC 로 저장/반환. 관리자는 KST 로 보고 입력한다.
     function _asUtcDate(iso){ if(!iso) return null; const d=new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso)?iso:iso+'Z'); return isNaN(d)?null:d; }
@@ -203,6 +241,8 @@
       el('btnCopyScripts').style.display = (p && p.channel_assets_json) ? '' : 'none';
       el('btnDerive').style.display = (p && p.blocks_json && !p.channel_assets_json) ? '' : 'none';
       el('btnImgPrompts').style.display = (p && p.blocks_json && (p.blocks_json.image_prompts||[]).length) ? '' : 'none';
+      el('btnReview').style.display = p ? '' : 'none';
+      renderReview(p);
     }
 
     async function copyImagePrompts(){ // Phase 3 — 힉스필드 프롬프트 + 배치 절차 복사
@@ -241,6 +281,16 @@
         const p = await api('/admin/blog/'+_curPost.id+'/derive-assets', {method:'POST', headers:authHeaders()});
         fillForm(p); toast('채널 자산 생성됨 — 🎴 카드메이커/📋 복사 사용 가능');
       }catch(e){ toast(e.message||'자산 생성 실패', false); }
+      finally{ btn.disabled = false; btn.textContent = t0; }
+    }
+
+    async function runReview(btn){ // 자동 검수 재실행 (그림자 모드 — 발행엔 영향 없음)
+      if(!_curPost){ return; }
+      btn.disabled = true; const t0 = btn.textContent; btn.textContent = '검수 중…';
+      try{
+        const p = await api('/admin/blog/'+_curPost.id+'/review', {method:'POST', headers:authHeaders()});
+        fillForm(p); await loadPosts(); toast('검수 완료 — 판정 '+((p.review_json||{}).verdict||'?'));
+      }catch(e){ toast(e.message||'검수 실패', false); }
       finally{ btn.disabled = false; btn.textContent = t0; }
     }
 

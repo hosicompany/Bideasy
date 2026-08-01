@@ -80,9 +80,57 @@ def propose_topics(n: int = 8, db: Session = Depends(get_db), _admin=Depends(req
     }
 
 
+@router.get("/blog/review-stats")
+def blog_review_stats(db: Session = Depends(get_db), _admin=Depends(require_admin)):
+    """자동 검수 판정 × 사람의 최종 처리 교차표 (Phase 1 그림자 모드 측정).
+
+    자동 발행(Phase 2)으로 넘어가도 되는지 판단하는 근거. 보는 법:
+    - `PASS × published`  → 기계가 맞음 (자동 발행해도 됐을 건)
+    - `FAIL × published`  → **거짓 경보**. 게이트가 과하게 엄격 → 규칙 완화 검토
+    - `PASS × draft(장기)` → **놓침 가능성**. 기계가 통과시켰는데 사람이 안 냄 → 규칙 보강
+    판단 기준: FAIL×published 가 0에 수렴하고 표본이 쌓이면 Phase 2 착수.
+
+    주의: /blog/{post_id}(int) 보다 먼저 등록해야 경로가 가로채이지 않는다.
+    """
+    rows = db.query(models.BlogPost).all()
+    matrix: dict[str, dict[str, int]] = {}
+    unreviewed = 0
+    for p in rows:
+        verdict = (p.review_json or {}).get("verdict") if p.review_json else None
+        if not verdict:
+            unreviewed += 1
+            continue
+        matrix.setdefault(verdict, {}).setdefault(p.status, 0)
+        matrix[verdict][p.status] += 1
+    reviewed = sum(sum(v.values()) for v in matrix.values())
+    false_alarms = matrix.get("FAIL", {}).get("published", 0)
+    return {
+        "matrix": matrix,
+        "reviewed": reviewed,
+        "unreviewed": unreviewed,
+        "false_alarms": false_alarms,
+        "mode": "shadow",
+        "note": (
+            "그림자 모드 — 판정은 발행을 막지 않아요. FAIL 인데 발행된 건(false_alarms)이 "
+            "0에 수렴하고 표본이 충분해지면 Phase 2(자동 발행 연결)를 검토하세요."
+        ),
+    }
+
+
 @router.get("/blog/{post_id}", response_model=BlogPostOut)
 def get_blog_post(post_id: int, db: Session = Depends(get_db), _admin=Depends(require_admin)):
     return _get_or_404(post_id, db)
+
+
+@router.post("/blog/{post_id}/review", response_model=BlogPostOut)
+def review_blog_post(post_id: int, db: Session = Depends(get_db), _admin=Depends(require_admin)):
+    """자동 검수 재실행 (본문을 고친 뒤 다시 보고 싶을 때)."""
+    from app.services import content_review
+    post = _get_or_404(post_id, db)
+    if content_review.review_and_store(db, post) is None:
+        raise HTTPException(503, "검수를 지금 실행할 수 없어요 (일시 오류).")
+    db.refresh(post)
+    return post
 
 
 @router.post("/blog", response_model=BlogPostOut, status_code=201)

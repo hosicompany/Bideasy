@@ -259,4 +259,7 @@ def create_weekly_draft(db, ref_date: Optional[date] = None, allow_thin: bool = 
     db.add(post)
     db.commit()
     db.refresh(post)
+    # 자동 검수 게이트(그림자 모드) — 판정만 기록, 유예 자동발행 경로는 불변
+    from app.services import content_review
+    content_review.review_and_store(db, post)
     return post, "created"
