@@ -52,7 +52,7 @@
       return;
     }
 
-    fetch(API + '/leads/optin/status?token=' + encodeURIComponent(token))
+    fetch(API + '/optin/status?token=' + encodeURIComponent(token))
       .then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); })
       .then(function (d) {
         if (d.confirmed) { done(); return; }
@@ -66,7 +66,7 @@
 
     btn.addEventListener('click', function () {
       btn.disabled = true; btn.textContent = '처리 중…';
-      fetch(API + '/leads/optin?token=' + encodeURIComponent(token), { method: 'POST' })
+      fetch(API + '/optin?token=' + encodeURIComponent(token), { method: 'POST' })
         .then(function (r) { if (!r.ok) throw new Error('bad'); return r.json(); })
         .then(function () { done(); })
         .catch(function () {

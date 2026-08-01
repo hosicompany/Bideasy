@@ -233,6 +233,33 @@ def _lead_new_matches(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
+@register("signup_optin_confirm", "transactional")
+def _signup_optin_confirm(ctx: dict) -> tuple[str, str, str]:
+    """가입 시 수신동의한 회원의 더블 옵트인 확인 요청.
+
+    리드용(`lead_optin_confirm`)과 문구만 다르다 — 이쪽은 이미 계정이 있는 사람이라
+    "가입해 주셔서 감사합니다"가 아니라 **알림 수신 확인**만 묻는다. 광고는 담지 않는다.
+    """
+    confirm_url = ctx.get("confirm_url") or ""
+
+    subject = "공고 알림 수신을 확인해 주세요"
+    text = (
+        "사장님, 가입하실 때 체크하신 공고 알림을 보내드리려면 확인이 한 번 필요해요.\n\n"
+        f"확인하기: {confirm_url}\n\n"
+        "본인이 신청하지 않으셨다면 이 메일을 무시해 주세요. 확인 전에는 알림이 가지 않습니다.\n"
+        "결제·체험 만료 같은 거래 관련 안내는 이 확인과 무관하게 발송됩니다.\n"
+    )
+    html = (
+        '<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, 가입하실 때 체크하신 '
+        "<b>공고 알림</b>을 보내드리려면 확인이 한 번 필요해요.</p>"
+        f"{_btn(confirm_url, '알림 수신 확인하기')}"
+        '<p style="font-size:13px;line-height:1.6;color:#8B95A1;margin:18px 0 0;">'
+        "본인이 신청하지 않으셨다면 이 메일을 무시해 주세요. 확인 전에는 알림이 가지 않습니다.<br>"
+        "결제·체험 만료 같은 거래 관련 안내는 이 확인과 무관하게 발송됩니다.</p>"
+    )
+    return subject, text, html
+
+
 @register("unsub_result", "transactional")
 def _unsub_result(ctx: dict) -> tuple[str, str, str]:
     """수신거부 처리 결과 통지 — 정보통신망법 제50조가 요구하는 **법정 고지**.
@@ -268,6 +295,160 @@ def _unsub_result(ctx: dict) -> tuple[str, str, str]:
         '<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:16px 0 0;">'
         "앞으로 광고성 정보는 보내드리지 않습니다.<br>"
         "결제·영수증·체험 만료 안내 같은 거래 관련 안내는 수신거부와 무관하게 계속 발송됩니다.</p>"
+    )
+    return subject, text, html
+
+
+# ── 체험 라이프사이클 (docs/GROWTH_STRATEGY.md §C3) ──
+# 카테고리 배치가 이 시퀀스의 핵심이다. **체험 종료 고지는 거래**(동의 불요, 전원 대상)이고
+# **할인·권유는 광고**(동의 필요)다. 하나의 메일에 섞으면 그 메일 전체가 광고물이 되어,
+# 미동의자에게 보낸 순간 위법 발송이 된다(CLAUDE.md 함정 #10).
+@register("trial_welcome", "transactional")
+def _trial_welcome(ctx: dict) -> tuple[str, str, str]:
+    """D0 — 체험 시작 안내 + 프로필 완성 유도.
+
+    거래성인 이유: 방금 시작한 서비스의 **이용 안내**다. 프로필(면허·지역)이 없으면
+    자격 판정 자체가 '판정 불가'로 나오므로, 이 안내는 광고가 아니라 기능 설명이다.
+    할인·구매 권유를 넣는 순간 광고가 되므로 넣지 않는다.
+    """
+    days = int(ctx.get("trial_days") or 14)
+    needs_profile = bool(ctx.get("needs_profile"))
+    web = settings.PUBLIC_WEB_URL
+
+    subject = f"Pro 체험 {days}일이 시작됐어요"
+    profile_line = (
+        "면허·지역을 넣으시면 '이 공고에 넣을 수 있는지'를 바로 판정해 드려요. 30초면 됩니다.\n"
+        if needs_profile else
+        "등록하신 면허·지역 기준으로 자격 판정이 이미 켜져 있어요.\n"
+    )
+    text = (
+        f"사장님, 오늘부터 {days}일 동안 Pro 기능을 카드 등록 없이 쓰실 수 있어요.\n\n"
+        f"{profile_line}"
+        "\nBidEasy 는 낙찰가를 예측하지 않습니다. 대신 무효·적자 입찰을 막는 데 집중해요.\n"
+        f"\n내 조건 설정하기: {web}/account\n"
+    )
+    html = (
+        f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, 오늘부터 '
+        f'<b style="color:#3182F6;">{days}일</b> 동안 Pro 기능을 카드 등록 없이 쓰실 수 있어요.</p>'
+        f'<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 20px;">{escape(profile_line.strip())}</p>'
+        f"{_btn(f'{web}/account', '내 조건 설정하기')}"
+        '<p style="font-size:13px;line-height:1.6;color:#8B95A1;margin:18px 0 0;">'
+        "BidEasy 는 낙찰가를 예측하지 않습니다. 대신 무효·적자 입찰을 막는 데 집중해요.</p>"
+    )
+    return subject, text, html
+
+
+@register("trial_daily_matches", "marketing")
+def _trial_daily_matches(ctx: dict) -> tuple[str, str, str]:
+    """D1 — 자격 PASS 공고를 처음 보여준다(첫 가치 경험)."""
+    count = int(ctx.get("matched_count") or 0)
+    notices = ctx.get("notices") or []
+    web = settings.PUBLIC_WEB_URL
+    label = f"{count}건+" if ctx.get("capped") else f"{count}건"
+
+    subject = f"오늘 사장님 자격으로 넣을 수 있는 공고 {label}"
+    lines = [f"사장님 조건으로 지금 입찰 가능한 공고가 {label} 있어요.", ""]
+    for n in notices:
+        due = n.get("end_date_label") or ""
+        lines.append(f"· {n.get('title') or ''}" + (f" (마감 {due})" if due else ""))
+    lines += ["", f"전체 보기: {web}/dashboard", "",
+              "※ 자격 요건이 맞는지까지만 확인해 드립니다. 낙찰 여부를 예측하지는 않아요.", ""]
+
+    items = "".join(
+        '<li style="font-size:15px;line-height:1.7;margin:0 0 8px;">'
+        f"<b>{escape(n.get('title') or '')}</b>"
+        + (f'<br><span style="font-size:13px;color:#8B95A1;">마감 {escape(n.get("end_date_label") or "")}</span>'
+           if n.get("end_date_label") else "")
+        + "</li>"
+        for n in notices
+    )
+    html = (
+        f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님 조건으로 지금 입찰 가능한 공고가 '
+        f'<b style="color:#3182F6;">{escape(label)}</b> 있어요.</p>'
+        f'<ul style="padding-left:18px;margin:0 0 20px;">{items}</ul>'
+        f"{_btn(f'{web}/dashboard', '전체 공고 보기')}"
+        '<p style="font-size:13px;line-height:1.6;color:#8B95A1;margin:18px 0 0;">'
+        "자격 요건이 맞는지까지만 확인해 드립니다. 낙찰 여부를 예측하지는 않아요.</p>"
+    )
+    return subject, "\n".join(lines), html
+
+
+@register("trial_extension_guide", "marketing")
+def _trial_extension_guide(ctx: dict) -> tuple[str, str, str]:
+    """D3 — 아직 안 써본 분에게 익스텐션 안내(습관화)."""
+    web = settings.PUBLIC_WEB_URL
+
+    subject = "나라장터 화면에서 바로 확인하는 방법"
+    text = (
+        "사장님, 나라장터에서 공고를 보실 때 창을 옮겨 다니지 않아도 돼요.\n"
+        "크롬 확장 프로그램을 설치하시면 보고 계신 공고 위에 자격 판정과 안전 투찰 구간이 바로 뜹니다.\n\n"
+        f"설치 방법 보기: {web}/guide\n"
+    )
+    html = (
+        '<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, 나라장터에서 공고를 보실 때 '
+        "창을 옮겨 다니지 않아도 돼요.</p>"
+        '<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 20px;">'
+        "크롬 확장 프로그램을 설치하시면 <b>보고 계신 공고 위에</b> 자격 판정과 안전 투찰 구간이 바로 뜹니다.</p>"
+        f"{_btn(f'{web}/guide', '설치 방법 보기')}"
+    )
+    return subject, text, html
+
+
+@register("trial_value_recap", "marketing")
+def _trial_value_recap(ctx: dict) -> tuple[str, str, str]:
+    """D7 — 체험 절반 시점의 사용 요약(가치 각인).
+
+    숫자는 **실제 사용 기록**만 쓴다. 없으면 없다고 말한다 — 지어낸 성과는 신뢰를 깎는다.
+    """
+    checks = int(ctx.get("check_count") or 0)
+    favorites = int(ctx.get("favorite_count") or 0)
+    web = settings.PUBLIC_WEB_URL
+
+    subject = "체험 절반이 지났어요 — 지금까지 확인하신 것들"
+    if checks or favorites:
+        body_line = f"지금까지 투찰 계산 {checks}회, 관심 공고 {favorites}건을 담아두셨어요."
+    else:
+        body_line = "아직 확인해 보신 공고가 없네요. 한 건만 넣어보셔도 판정이 바로 나와요."
+    text = (
+        f"사장님, {body_line}\n\n"
+        "무효 입찰은 한 번이면 그 건을 통째로 잃습니다. 넣기 전에 30초만 확인해 보세요.\n"
+        f"\n내 대시보드: {web}/dashboard\n"
+    )
+    html = (
+        f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, {escape(body_line)}</p>'
+        '<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 20px;">'
+        "무효 입찰은 한 번이면 그 건을 통째로 잃습니다. 넣기 전에 30초만 확인해 보세요.</p>"
+        f"{_btn(f'{web}/dashboard', '내 대시보드 열기')}"
+    )
+    return subject, text, html
+
+
+@register("trial_winback", "marketing")
+def _trial_winback(ctx: dict) -> tuple[str, str, str]:
+    """체험 만료 직후 — 할인 안내. **광고다**(할인은 그 자체로 광고성 정보).
+
+    그래서 미동의자에게는 나가지 않는다. 만료 '사실'은 거래 템플릿(`trial_expiry`)이
+    이미 전원에게 알렸으므로, 미동의자가 정보를 놓치는 일은 없다.
+    """
+    price = ctx.get("discount_price") or ""
+    days = int(ctx.get("grace_days") or 7)
+    web = settings.PUBLIC_WEB_URL
+
+    subject = f"체험 종료 후 {days}일 안에는 첫 달 반값이에요"
+    text = (
+        f"사장님, Pro 체험이 끝났지만 {days}일 안에 시작하시면 첫 달을 절반 가격으로 쓰실 수 있어요.\n"
+        + (f"첫 달 {price}\n" if price else "")
+        + "\n무효 입찰 한 번이면 1년 구독료가 회수됩니다.\n"
+        f"\n요금제 보기: {web}/pricing\n"
+    )
+    html = (
+        f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, Pro 체험이 끝났지만 '
+        f'<b>{days}일</b> 안에 시작하시면 <b style="color:#3182F6;">첫 달을 절반 가격</b>으로 쓰실 수 있어요.</p>'
+        + (f'<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 20px;">첫 달 '
+           f"<b>{escape(str(price))}</b></p>" if price else "")
+        + f"{_btn(f'{web}/pricing', '요금제 보기')}"
+        '<p style="font-size:13px;line-height:1.6;color:#8B95A1;margin:18px 0 0;">'
+        "무효 입찰 한 번이면 1년 구독료가 회수됩니다.</p>"
     )
     return subject, text, html
 

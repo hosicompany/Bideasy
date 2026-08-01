@@ -30,12 +30,21 @@ from app.services import email_templates, mailer, suppression
 
 logger = get_logger(__name__)
 
-# 수신거부 토큰의 용도 라벨 — 다른 용도로 재사용 불가(core/signed_token.py 참조)
+# 토큰 용도 라벨 — 서로 다른 용도로 재사용 불가(core/signed_token.py 참조).
+# 옵트인(수신 시작)과 옵트아웃(수신 중단)은 정반대 행위라 반드시 분리한다. 한 토큰이
+# 둘 다 할 수 있으면, 해지 링크가 유출됐을 때 재구독까지 가능해진다.
 UNSUB_PURPOSE = "unsub"
+OPTIN_PURPOSE = "optin"
 
 
 def unsubscribe_token(subject_type: str, subject_id: int) -> str:
     return make_token(UNSUB_PURPOSE, subject_type, subject_id)
+
+
+def optin_url(subject_type: str, subject_id: int) -> str:
+    """더블 옵트인 확인 페이지 — 사람이 눌러서 수신 시작을 확정한다."""
+    token = make_token(OPTIN_PURPOSE, subject_type, subject_id)
+    return f"{settings.PUBLIC_WEB_URL}/optin?t={token}"
 
 
 def unsubscribe_url(subject_type: str, subject_id: int) -> str:

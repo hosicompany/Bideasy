@@ -147,26 +147,89 @@ def register(request: Request, user_in: user_schemas.UserCreate, db: Session = D
 
     # 광고성 정보 수신 동의(선택) — 동의한 경우에만 상태+증적 기록.
     # 미동의는 정상 경로다(거래 관련 안내는 동의와 무관하게 나감).
+    optin_pending = False
     if user_in.marketing_consent:
         try:
+            # confirmed=False — 이 폼도 이메일 소유를 확인하지 않는다. 남의 주소로
+            # 가입하면서 체크박스를 켜면 그 주소로 광고가 나가게 되므로, 리드 캡처와
+            # 동일하게 주소 소유자가 확인 링크를 누를 때까지 발송 대상에서 뺀다.
+            # (소셜 로그인은 제공자가 email_verified 를 주므로 이 경로가 아니다.)
             consent_service.grant_marketing(
                 db, user, subject_type="user", source="web_signup",
                 channel="email",
                 version=(user_in.consent_version or consent_service.SIGNUP_MARKETING_VERSION),
                 request=request,
+                confirmed=False,
             )
+            optin_pending = True
         except consent_service.UnknownConsentVersion:
             # 캐시된 구버전 폼 — 가입 자체는 막지 않고 미동의로 남긴다(임의 기록 금지).
             logger.warning("signup marketing consent: unknown text version %s", user_in.consent_version)
 
     db.commit()
     db.refresh(user)
+
+    _send_trial_welcome(db, user)
+    if optin_pending:
+        _send_optin_confirm(db, user)
     # 리드 전환 링크 — 동일 이메일 진단 리드가 있으면 converted 기록. best-effort 백스톱.
     try:
         link_leads_to_user(db, user)
     except Exception:
         logger.exception("lead linking backstop (register) user_id=%s", user.id)
     return user
+
+
+def _send_trial_welcome(db, user) -> None:
+    """D0 — 체험 시작 안내(거래). 동의와 무관하게 전원에게 나간다.
+
+    거래성인 이유는 방금 시작한 서비스의 **이용 안내**이기 때문이다. 프로필이 비어 있으면
+    자격 판정이 '판정 불가'로 나오므로 그 사실을 알리는 건 기능 설명이지 광고가 아니다.
+    할인·구매 권유를 넣는 순간 광고가 되므로 템플릿에 넣지 않았다.
+    """
+    from app.schemas.subscription import TRIAL_DAYS
+    from app.services import nurture
+
+    if not user.email:
+        return
+    needs_profile = not (user.licenses or "").strip() and not (user.location or "").strip()
+    try:
+        nurture.send_transactional(
+            db, user,
+            subject_type="user",
+            template="trial_welcome",
+            ctx={"trial_days": TRIAL_DAYS, "needs_profile": needs_profile},
+            dedupe_key=f"trial_welcome:user:{user.id}",
+        )
+    except Exception as e:  # noqa: BLE001 — 가입 응답을 절대 막지 않는다
+        db.rollback()
+        logger.warning("trial welcome 발송 실패(비치명적) user=%s: %s", user.id, e)
+
+
+def _send_optin_confirm(db, user) -> None:
+    """가입 시 수신동의한 회원에게 확인 메일 — best-effort.
+
+    회원은 이미 커밋됐다. 발송이 실패해도 **가입을 되돌리지 않는다** — 확인 메일 한 통
+    때문에 가입 자체를 잃는 것이 훨씬 큰 손해다. 확인 전까지는 `sendable_filter` 가
+    광고를 막으므로, 실패해도 위법 발송으로는 이어지지 않는다.
+
+    이 메일은 광고가 아니라 거래성(확인 요청)이라 미확인 주소에도 보낼 수 있다.
+    """
+    from app.services import nurture
+
+    if not user.email:
+        return
+    try:
+        nurture.send_transactional(
+            db, user,
+            subject_type="user",
+            template="signup_optin_confirm",
+            ctx={"confirm_url": nurture.optin_url("user", user.id)},
+            dedupe_key=f"signup_optin_confirm:user:{user.id}",
+        )
+    except Exception as e:  # noqa: BLE001 — 가입 응답을 절대 막지 않는다
+        db.rollback()
+        logger.warning("signup optin 확인메일 발송 실패(비치명적) user=%s: %s", user.id, e)
 
 
 @router.post("/login")
