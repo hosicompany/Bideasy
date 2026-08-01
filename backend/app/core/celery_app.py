@@ -16,6 +16,7 @@ celery_app = Celery(
         "app.tasks.deadline_tasks",
         "app.tasks.recommendation_tasks",
         "app.tasks.content_tasks",
+        "app.tasks.nurture_tasks",
     ],
 )
 
@@ -102,5 +103,12 @@ celery_app.conf.beat_schedule = {
     "publish-scheduled-posts": {
         "task": "content.publish_scheduled",
         "schedule": crontab(minute=5),
+    },
+    # 13) 매주 화요일 08:00 — 리드 육성: 조건에 맞는 신규 공고 알림(동의한 리드 한정)
+    # 주 1회인 이유는 nurture_tasks.py 상단 참조(반송·불만율이 계정 발송을 좌우한다).
+    # 일일 크롤(06:00)·A값 백필(06:30) 이후라 그 주의 신규 공고가 이미 적재돼 있다.
+    "weekly-lead-nurture": {
+        "task": "nurture.send_lead_matches",
+        "schedule": crontab(hour=8, minute=0, day_of_week=2),
     },
 }

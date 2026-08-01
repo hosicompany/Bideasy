@@ -8,12 +8,12 @@
 진단 입력값이 곧 비치헤드 검증 마이크로설문(업종·지역). 발송 인프라(SES/알림톡) 없이도
 캡처는 동작 — 육성은 nurture_channel 로 후속 pluggable. 공개 엔드포인트라 IP 레이트리밋.
 """
+import unicodedata
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -21,23 +21,19 @@ from app.core.cache import _get_redis, cache_key
 from app.core.client_meta import client_ip as _client_ip
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.signed_token import InvalidSignedToken, parse_token
 from app.db import models
 from app.db.session import get_db
 from app.services import consent as consent_service
-from app.services.qualification_checker import QualificationChecker
+from app.services import lead_matching, nurture
 
 logger = get_logger(__name__)
 
 router = APIRouter()
 
-# 진단 스캔·반환 상한 (성능 보호)
-_SCAN_LIMIT = 500      # 자격 판정할 후보 공고 최대 스캔 수
-_MATCH_LIMIT = 50      # 반환할 매칭 공고 최대 수
+# 매칭 상한은 lead_matching 이 단일 소스(진단·육성 메일 공용)
+_MATCH_LIMIT = lead_matching.MATCH_LIMIT
 _PREVIEW_N = 3         # 비로그인 미리보기 공개 건수 (나머지는 연락처로 잠금해제)
-
-# 업종·면허 텍스트에서 대표 면허 루트 키워드 추출용
-# (QualificationChecker 가 공고 제목에서 인식하는 키워드와 정합)
-_LICENSE_ROOTS = ["전기", "정보통신", "통신", "소방", "건축", "토목"]
 
 # 콜드-DB 워밍: 활성 공고가 0건이면(=일일 크롤 전 콜드 스타트) 실방문자에게
 # "매칭 0건"이 오인 표시됨(피드는 크롤O·진단은 DB만 읽음). 1회 크롤로 워밍하되
@@ -114,15 +110,9 @@ class CaptureRequest(DiagnoseRequest):
 
 
 # ─────────────────────────── 매칭 로직 ───────────────────────────
-def _detect_root(*texts: Optional[str]) -> Optional[str]:
-    """업종·면허 문자열에서 대표 면허 루트 키워드 1개 추출(없으면 None)."""
-    blob = " ".join(t for t in texts if t)
-    for root in _LICENSE_ROOTS:
-        if root in blob:
-            return root
-    return None
-
-
+# 자격 판정 자체는 services/lead_matching.py 가 단일 소스다(진단 화면과 육성 메일이
+# 같은 기준을 써야 사용자가 우리 판정을 믿는다). 여기 남은 것은 진단 화면 전용
+# 관심사인 콜드-DB 워밍뿐.
 def _active_pool_is_cold(db: Session) -> bool:
     """활성(마감 전) 실공고가 DB 에 하나도 없으면 True(=콜드 DB)."""
     return (
@@ -183,32 +173,9 @@ def _match_notices(
     licenses: Optional[str],
     region: Optional[str],
 ) -> List[models.Notice]:
-    """활성 공고를 QualificationChecker 로 필터해 자격 PASS 공고만 반환.
-
-    로그인 없이 동작하도록 user 자리에 가상 프로필(location/licenses 속성만)을 넣는다.
-    업종 루트 키워드가 있으면 후보를 그 공종으로 좁혀 '내 공종의 넣을 수 있는 공고'로 정밀화.
-    """
+    """진단용 매칭 — 콜드-DB 워밍 후 lead_matching 에 위임."""
     _warm_db_if_cold(db)  # 콜드-DB면 1회 크롤 워밍(운영 전용·가드) 후 아래 조회
-    pseudo = SimpleNamespace(location=(region or ""), licenses=(licenses or industry or ""))
-
-    q = db.query(models.Notice).filter(~models.Notice.title.like("[Mock]%"))
-    q = q.filter(models.Notice.end_date > datetime.now())  # 활성(마감 전)만
-
-    root = _detect_root(industry, licenses)
-    if root:
-        q = q.filter(models.Notice.title.ilike(f"%{root}%"))
-
-    candidates = q.order_by(models.Notice.end_date.asc()).limit(_SCAN_LIMIT).all()
-
-    matched: List[models.Notice] = []
-    for n in candidates:
-        notice_dict = {"bidNtceNm": n.title or "", "LmtRegion": n.region or ""}
-        res = QualificationChecker.check_qualification(notice_dict, pseudo)
-        if res.get("status") == "PASS":
-            matched.append(n)
-            if len(matched) >= _MATCH_LIMIT:
-                break
-    return matched
+    return lead_matching.match_notices(db, industry, licenses, region)
 
 
 def _notice_card(n: models.Notice) -> dict:
@@ -221,6 +188,46 @@ def _notice_card(n: models.Notice) -> dict:
         "end_date": n.end_date.isoformat() if n.end_date else None,
         "contract_type": n.contract_type,
     }
+
+
+# 자유 텍스트 필드의 저장 상한 — 컬럼 길이(region 100 / industry 60 / licenses 255)를
+# 넘으면 Postgres 는 DataError 를 던진다(SQLite 는 조용히 통과해 테스트가 못 잡는다).
+_TEXT_LIMITS = {"industry": 60, "licenses": 255, "region": 100}
+
+
+def _clean_text(value: Optional[str], limit: int) -> Optional[str]:
+    """공개 폼에서 들어온 자유 텍스트를 저장·발송에 안전한 형태로 정규화.
+
+    제어문자(특히 개행)를 지우는 이유는 이 값이 나중에 **메일 제목**에 들어가기 때문이다.
+    제목에 개행이 섞이면 헤더 인젝션 방어가 예외를 던지고, 그 리드는 매주 같은 지점에서
+    발송을 실패시킨다. 입력 시점에 끊는 것이 가장 싸다.
+    """
+    if value is None:
+        return None
+    # 제어문자는 삭제가 아니라 공백으로 치환한다 — 지워버리면 "부산광역시\n경상남도" 가
+    # "부산광역시경상남도" 로 붙어 사용자가 쓴 적 없는 값이 저장된다.
+    cleaned = "".join(" " if unicodedata.category(ch)[0] == "C" else ch for ch in value)
+    cleaned = " ".join(cleaned.split()).strip()
+    return cleaned[:limit] or None
+
+
+def _normalize_email(email: Optional[str]) -> Optional[str]:
+    """발송 주체 식별용 정규화 — 대소문자·공백 차이로 같은 사람이 갈라지지 않게."""
+    if not email:
+        return None
+    return email.strip().lower() or None
+
+
+def _recipient_key(email: Optional[str]) -> str:
+    """멱등 키의 주체 = 수신자(이메일).
+
+    `lead.id` 를 쓰면 같은 사람이 재진단할 때마다 새 Lead 행이 생겨 키가 갈라지고,
+    한 사람에게 같은 메일이 여러 통 나간다. 실제로 중복을 체감하는 주체는 행이 아니라
+    **받는 사람**이므로 키도 거기에 맞춘다.
+    """
+    import hashlib
+
+    return hashlib.sha1((_normalize_email(email) or "").encode("utf-8")).hexdigest()[:16]
 
 
 def _valid_contact(email: Optional[str], phone: Optional[str]) -> bool:
@@ -316,14 +323,19 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
     has_consent_ui = req.privacy_consent is True
     marketing_ok = bool(req.marketing_consent) and has_consent_ui
 
-    matched = _match_notices(db, req.industry, req.licenses, req.region)
+    # 자유 텍스트는 저장 전에 정규화한다 — 이 값들이 나중에 메일 제목에 들어간다.
+    industry = _clean_text(req.industry, _TEXT_LIMITS["industry"])
+    licenses = _clean_text(req.licenses, _TEXT_LIMITS["licenses"])
+    region = _clean_text(req.region, _TEXT_LIMITS["region"])
+
+    matched = _match_notices(db, industry, licenses, region)
 
     lead = models.Lead(
-        email=(req.email or None),
+        email=_normalize_email(req.email),
         phone=(req.phone or None),
-        industry=req.industry,
-        licenses=req.licenses,
-        region=req.region,
+        industry=industry,
+        licenses=licenses,
+        region=region,
         capacity_cost=req.capacity_cost,
         matched_count=len(matched),
         utm_source=req.utm_source,
@@ -342,10 +354,13 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
             version=req.consent_version, request=request,
         )
         if marketing_ok:
+            # confirmed=False — 이 폼은 인증이 없어 제출자가 그 주소의 주인이라는 증거가
+            # 없다. 주소 소유자가 확인 링크를 누르기 전까지 sendable_filter 가 광고를 막는다.
             consent_service.grant_marketing(
                 db, lead, subject_type="lead", source="web_diagnose",
                 channel=(lead.nurture_channel or ("kakao" if req.phone else "email")),
                 version=req.consent_version, request=request,
+                confirmed=False,
             )
     else:
         # 구버전 페이지 제출 — 동의 증적이 없으므로 광고성 발송 대상에서 자동 제외된다.
@@ -354,10 +369,136 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
     db.commit()
     db.refresh(lead)
 
+    if marketing_ok:
+        _send_optin_confirm(db, lead)
+
     return {
         "ok": True,
         "lead_id": lead.id,
         "matched_count": len(matched),
         "marketing_consent": bool(lead.marketing_consent),
+        "confirm_pending": bool(marketing_ok),   # 확인 메일을 눌러야 알림이 시작된다
         "notices": [_notice_card(n) for n in matched],
     }
+
+
+# ─────────────────────────── 더블 옵트인 ───────────────────────────
+OPTIN_PURPOSE = "optin"
+
+
+def optin_url(lead_id: int) -> str:
+    from app.core.signed_token import make_token
+
+    token = make_token(OPTIN_PURPOSE, "lead", lead_id)
+    return f"{settings.PUBLIC_WEB_URL}/optin?t={token}"
+
+
+def _send_optin_confirm(db: Session, lead: models.Lead) -> None:
+    """수신 신청 확인 메일 — best-effort.
+
+    리드는 이미 커밋됐다. 발송이 실패해도 **리드 저장과 응답을 되돌리지 않는다** —
+    메일 한 통 때문에 어렵게 얻은 연락처를 잃는 것이 훨씬 큰 손해다.
+
+    이 메일은 광고가 아니라 거래성(확인 요청)이라 미확인 주소에도 보낼 수 있다. 대신
+    본문에 광고를 담지 않는다 — 담는 순간 미확인 주소로 보낸 광고물이 된다.
+    """
+    if not lead.email:
+        return
+    try:
+        nurture.send_transactional(
+            db, lead,
+            subject_type="lead",
+            template="lead_optin_confirm",
+            ctx={
+                "confirm_url": optin_url(lead.id),
+                "region": lead.region,
+                "industry": lead.industry,
+            },
+            dedupe_key=f"lead_optin_confirm:email:{_recipient_key(lead.email)}",
+        )
+    except Exception as e:  # noqa: BLE001 — 캡처 응답을 절대 막지 않는다
+        db.rollback()
+        logger.warning(f"lead optin 확인메일 발송 실패(비치명적) lead={lead.id}: {e}")
+
+
+def _resolve_optin(db: Session, token: Optional[str]) -> models.Lead:
+    try:
+        subject_type, subject_id = parse_token(OPTIN_PURPOSE, token)
+    except InvalidSignedToken:
+        raise HTTPException(status_code=400, detail="링크가 올바르지 않아요. 메일의 링크를 다시 눌러 주세요.")
+    if subject_type != "lead":
+        raise HTTPException(status_code=400, detail="링크가 올바르지 않아요.")
+    lead = db.get(models.Lead, subject_id)
+    if lead is None:
+        raise HTTPException(status_code=400, detail="링크가 만료됐어요. 진단을 다시 받아 주세요.")
+    return lead
+
+
+@router.get("/optin/status")
+def optin_status(token: str = Query(...), db: Session = Depends(get_db)):
+    """확인 전 조회 — 상태를 바꾸지 않는다.
+
+    GET 으로 확정하지 않는 이유는 수신거부와 같다: 메일 서버·보안 스캐너가 링크를 미리
+    열어보면 사용자 의사와 무관하게 확인 처리돼 더블 옵트인이 무의미해진다.
+    """
+    lead = _resolve_optin(db, token)
+    return {
+        "valid": True,
+        "confirmed": consent_service.can_send_marketing(lead),
+        "region": lead.region,
+        "industry": lead.industry,
+    }
+
+
+@router.post("/optin")
+def optin_confirm(
+    request: Request,
+    token: Optional[str] = Query(None),
+    body_token: Optional[str] = Body(None, embed=True, alias="token"),
+    db: Session = Depends(get_db),
+):
+    """수신 신청 확인 — 이 시점부터 광고 발송 대상이 된다(멱등)."""
+    lead = _resolve_optin(db, token or body_token)
+
+    already = consent_service.can_send_marketing(lead)
+    if not already:
+        rec = consent_service.confirm_marketing(
+            db, lead, subject_type="lead", source="email_optin", request=request,
+        )
+        if rec is None:
+            # 철회했거나 동의 자체가 없는 리드 — 확인으로 되살리지 않는다.
+            raise HTTPException(status_code=400, detail="수신 신청 내역이 없어요. 진단을 다시 받아 주세요.")
+        db.commit()
+        db.refresh(lead)
+        logger.info("lead optin confirmed: lead=%s", lead.id)
+        _send_welcome(db, lead)
+
+    return {"ok": True, "already": already}
+
+
+def _send_welcome(db: Session, lead: models.Lead) -> None:
+    """확인을 마친 리드에게 보내는 웰컴(광고) — best-effort.
+
+    멱등 키의 주체는 `lead.id` 가 아니라 **수신자**다. 같은 사람이 재진단하면 Lead 행이
+    새로 생기는데, 행 기준으로 키를 잡으면 같은 사람에게 같은 메일이 여러 통 나간다.
+    """
+    if not lead.email:
+        return
+    try:
+        row = nurture.send_marketing(
+            db, lead,
+            subject_type="lead",
+            template="lead_welcome",
+            ctx={
+                "region": lead.region,
+                "industry": lead.industry,
+                "matched_count": lead.matched_count or 0,
+            },
+            dedupe_key=f"lead_welcome:email:{_recipient_key(lead.email)}",
+        )
+        if row.status in ("sent", "dry_run") and lead.nurture_status != "converted":
+            lead.nurture_status = "sent"
+            db.commit()
+    except Exception as e:  # noqa: BLE001 — 확인 응답을 막지 않는다
+        db.rollback()
+        logger.warning(f"lead welcome 발송 실패(비치명적) lead={lead.id}: {e}")
