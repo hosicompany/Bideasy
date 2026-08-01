@@ -121,6 +121,35 @@ class TestExpiryIsTransactional:
             assert ad_word not in text
 
 
+    def test_mail_failure_does_not_erase_inapp_notification(self, db_session, captured_mail, monkeypatch):
+        """메일이 실패해도 **인앱 알림은 살아남는다.**
+
+        알림을 커밋하기 전에 메일을 보내면, 발송 실패 시 `db.rollback()` 이 아직
+        pending 인 알림까지 지운다. 대상 쿼리가 '하루짜리 창'이라 다음 날엔 창 밖 —
+        그 사용자의 만료 알림은 영영 생성되지 않는다. 카운터는 성공으로 집계돼
+        운영에서 감지도 안 된다.
+        """
+        from app.db import models
+
+        u = _trial_user(db_session, "noti@company.com", days_left=3)
+
+        def _boom(**kwargs):
+            raise mailer.MailerError("SES down")
+
+        monkeypatch.setattr(mailer, "send", _boom)
+
+        result = _run_expiry(db_session)
+
+        assert result["3d"] == 1
+        noti = (
+            db_session.query(models.Notification)
+            .filter(models.Notification.user_id == u.id,
+                    models.Notification.noti_type == "TRIAL_EXPIRING_3D")
+            .first()
+        )
+        assert noti is not None      # ← 메일 실패에 휩쓸려 사라지면 안 된다
+
+
 class TestWinbackIsMarketing:
     def test_unconsented_user_gets_no_discount_mail(self, db_session, captured_mail):
         """할인 안내는 광고 — 미동의자에게는 나가지 않는다(원장에는 사유가 남는다)."""
@@ -196,14 +225,30 @@ class TestOnboardingSequence:
         assert "아직 확인해 보신 공고가 없네요" in captured_mail[0]["text"]
 
     def test_off_schedule_day_sends_nothing(self, db_session, captured_mail):
-        """D2·D5 처럼 예정에 없는 날엔 아무것도 보내지 않는다."""
+        """D2·D5 처럼 예정에 없는 날은 **쿼리 단계에서** 빠진다.
+
+        D-day 를 WHERE 에 넣은 이유가 이것이다 — 파이썬 루프에서만 판정하면 모수가
+        '체험을 시작한 적 있는 회원 전원'이 되고, 상한에 걸리는 순간 가장 최근
+        가입자(=대상 그 자체)가 잘려 나간다.
+        """
         _trial_user(db_session, "d5@company.com", started_days_ago=5,
                     consented=True, confirmed=True)
 
         result = _run_onboarding(db_session)
 
-        assert result["checked"] == 1
-        assert (result["d1"], result["d3"], result["d7"]) == (0, 0, 0)
+        assert result["checked"] == 0
+        assert captured_mail == []
+
+    def test_paid_user_is_excluded(self, db_session, captured_mail):
+        """체험 중 결제한 회원은 제외 — 체험은 결제 시 끝나므로 'D7 절반' 이 거짓이 된다."""
+        u = _trial_user(db_session, "paid@company.com", started_days_ago=7,
+                        consented=True, confirmed=True)
+        u.tier = "pro"
+        db_session.commit()
+
+        result = _run_onboarding(db_session)
+
+        assert result["checked"] == 0
         assert captured_mail == []
 
     def test_one_failure_does_not_kill_batch(self, db_session, captured_mail, monkeypatch):

@@ -25,7 +25,11 @@ from app.schemas import subscription
 from app.services import consent as consent_service
 from app.services import nurture
 
-# 한 회차에 처리할 회원 상한(폭주 방어). id 오름차순으로 자르므로 넘치면 로그로 알린다.
+# 온보딩 메일을 보내는 체험 경과일(D). 쿼리 프리필터와 루프 분기가 같은 목록을 쓴다.
+_ONBOARDING_DAYS = (1, 3, 7)
+
+# 한 회차에 처리할 회원 상한(폭주 방어). 위 D-day 프리필터로 모수가 하루치로 줄어든
+# 뒤 적용되므로, 여기 걸린다는 건 하루 가입자가 이 수를 넘었다는 뜻이다.
 _MAX_USERS_PER_RUN = 2000
 
 logger = get_logger(__name__)
@@ -45,6 +49,11 @@ _WINBACK_PRICE_LABEL = "{:,}원".format(
 def _send_mail(db, user, template: str, ctx: dict, key: str) -> None:
     """체험 시퀀스 메일 1통 — 실패가 다른 사용자·인앱 알림을 막지 않는다.
 
+    ⚠️ **호출 전에 인앱 알림을 커밋해 둘 것.** 여기서 예외가 나면 `db.rollback()` 을
+    부르는데, 세션에 커밋되지 않은 `Notification` 이 pending 으로 남아 있으면 그것까지
+    함께 사라진다. 대상 쿼리가 '하루짜리 창'이라 다음 날엔 창 밖이므로, 그 사용자의
+    만료 알림은 **영영 생성되지 않는다**(로그는 warning 한 줄뿐이라 감지도 안 된다).
+
     광고/거래 분기는 **템플릿 카테고리**가 결정한다. 여기서 대상을 자체 판단하지 않는
     이유는, 그러면 판정이 두 곳으로 갈라져 언젠가 미동의자에게 광고가 나가기 때문이다.
     광고 템플릿이면 `nurture` 가 동의 게이트에서 막고 `skipped/no_consent` 로 기록한다.
@@ -56,6 +65,20 @@ def _send_mail(db, user, template: str, ctx: dict, key: str) -> None:
     except Exception as e:  # noqa: BLE001 — 메일 1통 실패가 배치를 죽이지 않는다
         db.rollback()
         logger.warning("[trial] 메일 실패(건너뜀) user=%s template=%s: %s", user.id, template, e)
+
+
+def _notify_then_mail(db, user, noti_type: str, template: str, ctx: dict, key: str) -> bool:
+    """인앱 알림을 **먼저 확정**한 뒤 메일을 보낸다.
+
+    순서가 핵심이다. 메일 발송이 실패하면 `_send_mail` 이 세션을 롤백하므로, 알림이
+    아직 커밋되지 않았다면 함께 날아간다. 알림은 메일보다 확실한 채널이고 하루 창을
+    놓치면 복구가 안 되므로 먼저 못 박는다.
+    """
+    if not _create_trial_notification(db, user.id, noti_type):
+        return False
+    db.commit()          # ← 메일 실패가 이 알림을 되돌리지 못하게
+    _send_mail(db, user, template, ctx, key)
+    return True
 
 
 # 알림 제목·본문 템플릿
@@ -117,24 +140,52 @@ def send_onboarding_sequence() -> dict:
     D 계산은 `trial_started_at` 기준 **KST 달력일** 차이다. 시각 차로 하루가 밀리면
     D1 메일이 새벽에 가거나 건너뛰어진다(태스크는 매일 10:00 KST 1회 실행).
     """
+    from sqlalchemy import and_, or_
+
     from app.services import lead_matching
 
     db = SessionLocal()
     results = {"d1": 0, "d3": 0, "d7": 0, "checked": 0, "errors": 0}
     try:
-        today = datetime.now(timezone.utc).astimezone(KST).date()
+        now = datetime.now(timezone.utc)
+        today_kst = now.astimezone(KST).date()
+
+        # D-day 조건을 **쿼리에 넣는다**. 파이썬 루프에서만 판정하면 모수가 "체험을 시작한
+        # 적 있는 회원 전원"이 되고, id 오름차순 상한에 걸리는 순간 **가장 최근 가입자**
+        # (=D1/D3/D7 대상 그 자체)가 정확히 잘려 나가 영영 메일을 못 받는다.
+        # 비교값은 **naive UTC** 로 맞춘다. 컬럼이 naive 로 저장돼 있어서, tz-aware 를
+        # 그대로 바인딩하면 "+00:00" 이 붙은 문자열이 되어 비교가 조용히 어긋난다.
+        def _naive_utc(dt):
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+        day_windows = []
+        for d in _ONBOARDING_DAYS:
+            start_kst = datetime.combine(today_kst - timedelta(days=d),
+                                         datetime.min.time()).replace(tzinfo=KST)
+            day_windows.append(and_(
+                models.User.trial_started_at >= _naive_utc(start_kst),
+                models.User.trial_started_at < _naive_utc(start_kst + timedelta(days=1)),
+            ))
 
         users = (
             db.query(models.User)
             .filter(models.User.trial_started_at.isnot(None))
+            .filter(or_(*day_windows))
             .filter(consent_service.sendable_filter(models.User))
             .filter(models.User.email.isnot(None), models.User.email != "")
+            # 체험 중 결제한 회원은 제외한다 — 체험은 결제 시 종료되므로(CLAUDE.md §12)
+            # "체험 절반이 지났어요" 같은 문구가 사실과 달라진다.
+            .filter(models.User.tier == "free")
+            .filter(or_(
+                models.User.subscription_expires_at.is_(None),
+                models.User.subscription_expires_at < now,
+            ))
             .order_by(models.User.id)
             .limit(_MAX_USERS_PER_RUN)
             .all()
         )
         if len(users) == _MAX_USERS_PER_RUN:
-            logger.warning("[trial.onboarding] 회차 상한 %s 도달 — 이후 회원은 다음 회차로",
+            logger.warning("[trial.onboarding] 회차 상한 %s 도달 — 하루치 모수가 이를 넘었다",
                            _MAX_USERS_PER_RUN)
 
         for u in users:
@@ -143,7 +194,7 @@ def send_onboarding_sequence() -> dict:
                 started = u.trial_started_at
                 if started.tzinfo is None:
                     started = started.replace(tzinfo=timezone.utc)
-                day = (today - started.astimezone(KST).date()).days
+                day = (today_kst - started.astimezone(KST).date()).days
 
                 if day == 1:
                     matched = lead_matching.match_notices(db, None, u.licenses, u.location)
@@ -242,11 +293,10 @@ def send_expiry_reminders() -> dict:
             .all()
         )
         for u in users_3d:
-            if _create_trial_notification(db, u.id, "TRIAL_EXPIRING_3D"):
+            # 만료 '사실' 고지는 거래 — 동의와 무관하게 전원에게. 할인은 넣지 않는다.
+            if _notify_then_mail(db, u, "TRIAL_EXPIRING_3D", "trial_expiry",
+                                 {"days_left": 3}, f"trial_expiry:user:{u.id}:d3"):
                 results["3d"] += 1
-                # 만료 '사실' 고지는 거래 — 동의와 무관하게 전원에게. 할인은 넣지 않는다.
-                _send_mail(db, u, "trial_expiry", {"days_left": 3},
-                           f"trial_expiry:user:{u.id}:d3")
             else:
                 results["skipped"] += 1
 
@@ -266,10 +316,9 @@ def send_expiry_reminders() -> dict:
             .all()
         )
         for u in users_1d:
-            if _create_trial_notification(db, u.id, "TRIAL_EXPIRING_1D"):
+            if _notify_then_mail(db, u, "TRIAL_EXPIRING_1D", "trial_expiry",
+                                 {"days_left": 1}, f"trial_expiry:user:{u.id}:d1"):
                 results["1d"] += 1
-                _send_mail(db, u, "trial_expiry", {"days_left": 1},
-                           f"trial_expiry:user:{u.id}:d1")
             else:
                 results["skipped"] += 1
 
@@ -289,15 +338,14 @@ def send_expiry_reminders() -> dict:
             .all()
         )
         for u in users_expired:
-            if _create_trial_notification(db, u.id, "TRIAL_EXPIRED"):
+            # 만료 사실은 거래로 이미 알렸다(D-1). 여기서 보내는 건 **할인 안내**라
+            # 광고이고, 동의자에게만 나간다. 미동의자도 만료 사실은 이미 알고 있다.
+            if _notify_then_mail(
+                db, u, "TRIAL_EXPIRED", "trial_winback",
+                {"discount_price": _WINBACK_PRICE_LABEL, "grace_days": _WINBACK_GRACE_DAYS},
+                f"trial_winback:user:{u.id}",
+            ):
                 results["expired"] += 1
-                # 만료 사실은 거래로 이미 알렸다(D-1). 여기서 보내는 건 **할인 안내**라
-                # 광고이고, 동의자에게만 나간다. 미동의자도 만료 사실은 이미 알고 있다.
-                _send_mail(
-                    db, u, "trial_winback",
-                    {"discount_price": _WINBACK_PRICE_LABEL, "grace_days": _WINBACK_GRACE_DAYS},
-                    f"trial_winback:user:{u.id}",
-                )
             else:
                 results["skipped"] += 1
 

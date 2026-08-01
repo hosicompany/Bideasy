@@ -67,6 +67,22 @@ def build_message(
     return msg
 
 
+# SES 호출 상한 — 요청 스레드를 오래 붙잡지 않기 위한 값이다. 합계 최악 ~7초.
+_SES_CONNECT_TIMEOUT = 3
+_SES_READ_TIMEOUT = 4
+_SES_MAX_ATTEMPTS = 1          # 재시도는 하지 않는다. 실패한 메일은 원장에 남고 재시도 가능.
+
+
+def _botocore_config():
+    from botocore.config import Config
+
+    return Config(
+        connect_timeout=_SES_CONNECT_TIMEOUT,
+        read_timeout=_SES_READ_TIMEOUT,
+        retries={"max_attempts": _SES_MAX_ATTEMPTS, "mode": "standard"},
+    )
+
+
 def send(
     *,
     to: str,
@@ -88,12 +104,17 @@ def send(
         logger.info("[dry-run] email to=%s subject=%s", to, subject)
         return SendResult(status="dry_run", provider="none")
 
+    # 아래 SES 호출은 **요청 스레드에서 동기로** 일어날 수 있다(가입·리드 캡처).
+    # botocore 기본값은 connect/read 각 60초 + 재시도라, SES 가 한 번 느려지면 그 요청이
+    # nginx 타임아웃에 걸려 죽는다 — 사용자에겐 '가입 실패'인데 계정은 이미 만들어진
+    # 사각지대가 생긴다. 메일 한 통은 늦게 가도 되지만 가입은 늦으면 안 된다.
+
     try:
         import boto3  # 지연 import — 발송을 켜지 않은 환경에 의존성을 강요하지 않는다
     except ImportError as exc:
         raise MailerError("boto3 미설치 — SES 전송 불가") from exc
 
-    client_kwargs = {"region_name": settings.AWS_REGION}
+    client_kwargs = {"region_name": settings.AWS_REGION, "config": _botocore_config()}
     if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
         client_kwargs["aws_access_key_id"] = settings.AWS_ACCESS_KEY_ID
         client_kwargs["aws_secret_access_key"] = settings.AWS_SECRET_ACCESS_KEY

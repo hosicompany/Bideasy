@@ -44,24 +44,36 @@ def _user(db, email):
 
 
 class TestSignupOptin:
-    def test_signup_sends_no_ad(self, client, db_session, captured_mail):
-        """가입 시 나가는 건 전부 **거래** 메일이다 — 체험 시작 안내 + 수신 확인 요청.
+    def test_signup_sends_exactly_one_mail(self, client, db_session, captured_mail):
+        """가입 응답 경로에서 나가는 메일은 **딱 1통**이다.
 
-        확인 전이므로 광고는 한 통도 나가면 안 된다.
+        여기는 퍼널의 목이라 외부 I/O 를 최소로 둔다 — SES 가 한 번 느려지면 가입이
+        504 로 실패하는데 계정은 이미 커밋돼 재시도도 막힌다. 동의자는 확인 메일만
+        받고 웰컴은 확인 직후에 받는다.
         """
         from app.services import email_templates
 
         resp = _register(client, "sig1@company.com")
         assert resp.status_code == 200
 
-        assert len(captured_mail) == 2
+        assert len(captured_mail) == 1
+        mail = captured_mail[0]
+        assert mail["to"] == "sig1@company.com"
+        assert "확인" in mail["subject"]
+        assert not mail["subject"].startswith(email_templates.AD_PREFIX)
+        assert "List-Unsubscribe" not in mail["headers"]
+
+    def test_welcome_arrives_after_confirmation(self, client, db_session, captured_mail):
+        """웰컴은 확인 클릭 직후에 온다 — 가입 시점이 아니라."""
+        _register(client, "sig1b@company.com")
+        user = _user(db_session, "sig1b@company.com")
+        captured_mail.clear()
+
+        client.post("/api/v1/optin",
+                    params={"token": make_token(nurture.OPTIN_PURPOSE, "user", user.id)})
+
         subjects = [m["subject"] for m in captured_mail]
-        assert any("체험" in s for s in subjects)        # D0 웰컴(거래)
-        assert any("확인" in s for s in subjects)        # 옵트인 확인(거래)
-        for m in captured_mail:
-            assert m["to"] == "sig1@company.com"
-            assert not m["subject"].startswith(email_templates.AD_PREFIX)
-            assert "List-Unsubscribe" not in m["headers"]
+        assert any("체험" in s for s in subjects)
 
     def test_unconfirmed_user_is_not_sendable(self, client, db_session, captured_mail):
         """확인 전에는 광고 발송 대상이 아니다 — SQL 필터에서도 빠진다."""
@@ -109,9 +121,9 @@ class TestSignupOptin:
         """
         _register(client, "sig5@company.com", consent=False)
 
-        subjects = [m["subject"] for m in captured_mail]
-        assert any("체험" in s for s in subjects)          # D0 웰컴은 나간다
-        assert not any("확인" in s for s in subjects)      # 확인 요청은 나가지 않는다
+        assert len(captured_mail) == 1                      # 여기서도 1통
+        assert "체험" in captured_mail[0]["subject"]         # 웰컴(거래)만
+        assert "확인" not in captured_mail[0]["subject"]
 
     def test_signup_survives_mail_failure(self, client, db_session, monkeypatch):
         """확인 메일이 터져도 가입은 성공한다 — 메일 한 통 때문에 가입을 잃지 않는다."""

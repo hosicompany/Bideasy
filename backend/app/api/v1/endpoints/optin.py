@@ -89,13 +89,20 @@ def optin_confirm(
 
 
 def _after_confirm(db: Session, subject_type: str, subject) -> None:
-    """확인 직후 첫 광고 메일 — 대상 종류에 따라 다르다.
+    """확인 직후 첫 메일 — 대상 종류에 따라 다르다.
+
+    회원에게 체험 시작 안내(거래)를 여기서 보내는 이유: 가입 응답 경로에서 메일을
+    **1통으로 줄이기 위해서**다. 가입은 퍼널의 목이라 SES 호출이 늘수록 504 위험이
+    커진다. 동의자는 가입 시 확인 메일만 받고, 웰컴은 확인을 누른 이 시점에 받는다.
 
     여기서 실패해도 **확인 자체는 되돌리지 않는다.** 확인이 안 된 것으로 처리하면
     사용자는 링크를 눌렀는데도 아무 일이 없는 상태에 갇힌다.
     """
-    if subject_type != "lead":
-        return
-    from app.api.v1.endpoints.leads import send_welcome
+    if subject_type == "lead":
+        from app.api.v1.endpoints.leads import send_welcome
 
-    send_welcome(db, subject)
+        send_welcome(db, subject)
+    elif subject_type == "user":
+        from app.api.v1.endpoints.auth import _send_trial_welcome
+
+        _send_trial_welcome(db, subject)

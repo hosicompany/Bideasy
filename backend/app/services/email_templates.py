@@ -455,7 +455,13 @@ def _trial_winback(ctx: dict) -> tuple[str, str, str]:
 
 @register("trial_expiry", "transactional")
 def _trial_expiry(ctx: dict) -> tuple[str, str, str]:
-    """체험 만료 안내 — 거래 관련 고지라 광고 동의와 무관하게 발송한다."""
+    """체험 만료 안내 — 거래 관련 고지라 광고 동의와 무관하게 **전원에게** 발송한다.
+
+    ⚠️ 그래서 **구매 권유를 담지 않는다.** 예전 본문은 `/pricing` 으로 가는 "이어서
+    사용하기" 버튼을 달고 있었는데, 대상이 미동의자를 포함한 전원이라 그 버튼 하나로
+    메일 전체가 광고물로 다투어질 수 있다(CLAUDE.md 함정 #10). 여기서는 **종료 사실과
+    그 결과**만 알리고, 요금제 유도는 광고로 분리된 `trial_winback` 이 맡는다.
+    """
     days_left = int(ctx.get("days_left") or 0)
     web = settings.PUBLIC_WEB_URL
 
@@ -463,13 +469,13 @@ def _trial_expiry(ctx: dict) -> tuple[str, str, str]:
     text = (
         f"사장님, 사용 중이신 Pro 체험이 {days_left}일 뒤 종료돼요.\n"
         "종료되면 자격 판정·안전 투찰 계산은 Free 한도로 돌아갑니다.\n"
-        f"이어서 쓰시려면: {web}/pricing\n"
+        f"현재 이용 상태 보기: {web}/account\n"
     )
     html = (
         f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, 사용 중이신 '
         f'<b>Pro 체험</b>이 <b style="color:#3182F6;">{days_left}일</b> 뒤 종료돼요.</p>'
         '<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 20px;">'
         "종료되면 자격 판정·안전 투찰 계산이 Free 한도로 돌아갑니다.</p>"
-        f"{_btn(f'{web}/pricing', '이어서 사용하기')}"
+        f"{_btn(f'{web}/account', '현재 이용 상태 보기')}"
     )
     return subject, text, html

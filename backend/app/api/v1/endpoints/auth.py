@@ -99,6 +99,10 @@ def _find_or_create_social_user(
             link_leads_to_user(db, user)
         except Exception:
             logger.exception("lead linking backstop (social) user_id=%s", user.id)
+        # 체험 시작 안내는 거래라 소셜 가입자도 받는다(만료 고지도 마찬가지).
+        # 다만 소셜 가입 폼에는 광고 수신 동의 UI 가 없으므로 **광고 3종(D1/D3/D7)의
+        # 대상은 되지 않는다** — 동의를 받은 적이 없으니 그게 맞다.
+        _send_trial_welcome(db, user)
     return user
 
 
@@ -169,9 +173,14 @@ def register(request: Request, user_in: user_schemas.UserCreate, db: Session = D
     db.commit()
     db.refresh(user)
 
-    _send_trial_welcome(db, user)
+    # 가입 응답 경로에서 나가는 메일은 **항상 1통**이다. 여기는 퍼널의 목이라 외부
+    # I/O 를 최소로 둔다 — SES 가 한 번 느려지면 가입 자체가 504 로 실패하고, 계정은
+    # 이미 커밋돼 있어 재시도하면 "이미 등록된 이메일"이 되는 사각지대가 생긴다.
+    # 동의자는 확인 메일만 받고, 웰컴은 확인 클릭 직후에 보낸다(optin.py).
     if optin_pending:
         _send_optin_confirm(db, user)
+    else:
+        _send_trial_welcome(db, user)
     # 리드 전환 링크 — 동일 이메일 진단 리드가 있으면 converted 기록. best-effort 백스톱.
     try:
         link_leads_to_user(db, user)
