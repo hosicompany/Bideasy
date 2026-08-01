@@ -17,13 +17,40 @@
 
 | 항목 | 결과 |
 |---|---|
-| 레포 4개 | ✅ `C:\Project\` 배치 완료. private 2종(`Bideasy-Extension`·`bideasy-agent`)은 gh 토큰 만료로 `git bundle` 전송 후 복원, origin URL은 GitHub으로 재설정됨 |
+| 레포 4개 | ✅ `C:\dev\bideasy-suite\` 배치 완료(§0-1 폴더 통합 반영). private 2종(`Bideasy-Extension`·`bideasy-agent`)은 gh 토큰 만료로 `git bundle` 전송 후 복원, origin URL은 GitHub으로 재설정됨 |
 | 비공개 파일 5종 | ✅ `.env` 2종·`PATENT.md`·체크리스트 2건 배치. `git status` clean = `.gitignore` 정상 |
 | Lightsail SSH 키 | ✅ `~/.ssh/lightsail_bideasy.pem` (소유자 읽기 전용으로 권한 제한) |
 | 전역 규칙 | ✅ `~/.claude/GLOBAL_RULES_HOSI.md` + 기존 SuperClaude 진입점에 `@GLOBAL_RULES_HOSI.md` import 추가(덮어쓰기 아님, 원본은 `CLAUDE.md.bak-20260801`) |
-| Claude 메모리 9개 | ✅ `~/.claude/projects/C--Project-Bideasy/memory/` — SHA256 해시 일치 검증 |
+| Claude 메모리 9개 | ✅ `~/.claude/projects/C--dev-bideasy-suite-Bideasy/memory/` — SHA256 해시 일치 검증 |
 | Python 환경 | ✅ venv(Python 3.12.10) + `requirements.txt` 설치 |
 | **검증** | ✅ **`pytest` 508건 전부 통과** (구 PC와 동일) |
+
+### 📂 폴더 통합 (2026-08-01, 이관 직후 후속)
+
+이관 후 새 PC에 `C:\Project\`(이관분)와 `C:\Projects\`(기존 작업분)가 **나란히 존재**해 혼동 위험이 컸습니다.
+특히 `C:\Projects\BidEasy` 는 **2026-02-02 커밋의 6개월 낡은 사본**(behind 269 / ahead 0, 887MB)이라
+최신본과 헷갈리면 사고로 이어질 상태였습니다. 그래서 `C:\dev\` 로 통합했습니다.
+
+```
+C:\dev\
+  ├─ bideasy-suite\          ← BidEasy 4종 (워크스페이스 상대경로 그대로 유효)
+  │   ├─ Bideasy\            ← 메인. Claude Code 는 반드시 여기서 실행
+  │   ├─ Bideasy-Extension\
+  │   ├─ bideasy-agent\
+  │   └─ bideasy-policy\
+  ├─ CoupangRankTracker\   ├─ insane-search\
+  ├─ KSourceglobal\        ├─ Stardust_Sangse_Page\
+  └─ _archive\bideasy-2026-02-test-scripts\   (낡은 사본에서 건진 API 테스트 6개 + 출처 메모)
+```
+
+함께 처리한 것:
+- **낡은 사본 삭제** — untracked 스크립트 6개만 `_archive` 로 건지고 887MB 폴더 제거. `ahead 0` 이라 코드 유실 없음
+- **venv 재생성** — Python venv 는 절대경로가 `pyvenv.cfg` 에 박혀 이동하면 깨지므로, 이동 전 삭제 후 새 위치에서 재생성
+- **Claude 프로젝트 키 rename** — 경로가 바뀌면 키도 바뀌어 메모리·세션이 끊기므로 3건을 함께 이동
+  `C--Project-Bideasy`→`C--dev-bideasy-suite-Bideasy`(mem 9) · `C--Projects-insane-search`→`C--dev-insane-search`(mem 2·sess 3) · `C--Projects-Stardust-Sangse-Page`→`C--dev-Stardust-Sangse-Page`(mem 3·sess 2)
+- 빈 `C:\Project`·`C:\Projects` 제거
+
+> ⚠️ 앞으로 폴더를 또 옮긴다면 **반드시 이 3가지를 세트로** 처리하세요: ① venv 재생성 ② `~/.claude/projects/` 키 폴더 rename ③ `bideasy.code-workspace` 의 `path` 확인.
 
 ### ⏳ 잔여 작업 (사람이 해야 하는 것)
 
@@ -61,10 +88,10 @@
 | **bideasy-policy** | 개인정보처리방침·정책 문서 (웹스토어 심사용) | ✅ 깨끗 |
 
 ```bash
-mkdir -p ~/Project && cd ~/Project && for r in Bideasy Bideasy-Extension bideasy-agent bideasy-policy; do git clone https://github.com/hosicompany/$r.git; done
+mkdir -p /c/dev/bideasy-suite && cd /c/dev/bideasy-suite && for r in Bideasy Bideasy-Extension bideasy-agent bideasy-policy; do git clone https://github.com/hosicompany/$r.git; done
 ```
 
-> 경로는 **`C:\Project\` 그대로** 쓰는 것을 권장합니다. Claude Code 메모리·설정이 `C--Project-Bideasy` 키로 저장돼 있어 경로가 바뀌면 프로젝트 히스토리가 새로 시작됩니다.
+> 경로는 **`C:\dev\bideasy-suite\` 그대로** 쓰는 것을 권장합니다. Claude Code 메모리·설정이 `C--dev-bideasy-suite-Bideasy` 키로 저장돼 있어, 경로가 바뀌면 프로젝트 히스토리가 새로 시작됩니다(위 §폴더 통합의 ⚠️ 참고).
 
 ### 1.1 익스텐션 — `security/audit-2026-06-19` 잔여 3커밋
 
@@ -96,7 +123,7 @@ bdf6172 docs: AGENTS.md 포인터 추가 — Codex 등 타 도구용 (정본=CLA
 | `private-docs/MORNING_CHECKLIST.md` | `Bideasy/MORNING_CHECKLIST.md` | 내부 문서 (커밋 금지) |
 | `private-docs/OVERNIGHT_REPORT.md` | `Bideasy/OVERNIGHT_REPORT.md` | 내부 문서 (커밋 금지) |
 | `claude-context/GLOBAL_CLAUDE.md` | `~/.claude/CLAUDE.md` | 전역 규칙 (모든 프로젝트 공통) |
-| `claude-context/memory/*.md` (7개) | `~/.claude/projects/C--Project-Bideasy/memory/` | Claude 메모리 (경쟁사 3사·가격 결정·pytest 함정 등) |
+| `claude-context/memory/*.md` (9개) | `~/.claude/projects/C--dev-bideasy-suite-Bideasy/memory/` | Claude 메모리 (경쟁사 3사·가격 결정·pytest 함정 등) |
 
 복원 후 `git status`에 위 파일들이 **안 뜨면 정상**입니다(.gitignore 정상 작동).
 
@@ -125,7 +152,7 @@ bdf6172 docs: AGENTS.md 포인터 추가 — Codex 등 타 도구용 (정본=CLA
 구 PC 환경: **Python 3.14.2 / Node v20.20.2 / Docker 29.2.0 / Flutter 설치됨**
 
 ```bash
-cd ~/Project/Bideasy/backend
+cd /c/dev/bideasy-suite/Bideasy/backend
 python -m venv .venv && source .venv/Scripts/activate   # Windows Git Bash
 pip install -r requirements.txt
 pytest                                                   # ← 508건 통과해야 정상 (2026-08-01 master 실측)

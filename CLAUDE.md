@@ -169,7 +169,9 @@ Bideasy/
 ```
 > **크롬 익스텐션은 이 폴더에 없음** — 사이드 레포 `Bideasy-Extension/`.
 >
-> 💡 **레포 4개를 한 창에서 보려면** `bideasy.code-workspace` 를 여세요 (VS Code/Cursor). 4개가 `C:\Project\` 아래 **형제 폴더**로 있는 것을 전제로 상대경로 참조합니다 — 폴더를 옮기면 이 파일의 `path` 도 함께 고치세요.
+> 💡 **레포 4개를 한 창에서 보려면** `bideasy.code-workspace` 를 여세요 (VS Code/Cursor). 4개가 `C:\dev\bideasy-suite\` 아래 **형제 폴더**로 있는 것을 전제로 상대경로 참조합니다 — 폴더를 옮기면 이 파일의 `path` 도 함께 고치세요.
+>
+> 📂 **작업 루트 = `C:\dev\`** (2026-08-01 통합). BidEasy 4종은 `C:\dev\bideasy-suite\`, 다른 개발 프로젝트는 `C:\dev\` 직하. Claude Code 는 반드시 **`C:\dev\bideasy-suite\Bideasy`** 에서 실행해야 메모리가 붙습니다(프로젝트 키 `C--dev-bideasy-suite-Bideasy`).
 
 ---
 
