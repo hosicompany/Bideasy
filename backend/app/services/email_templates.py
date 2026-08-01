@@ -137,6 +137,62 @@ def _lead_welcome(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
+@register("lead_new_matches", "marketing")
+def _lead_new_matches(ctx: dict) -> tuple[str, str, str]:
+    """주기 육성 — 진단 이후 **새로** 올라온 공고 중 조건에 맞는 것만 추린다.
+
+    웰컴에서 "조건에 맞는 건이 뜨면 이어서 알려드릴게요"라고 약속한 것의 이행이다.
+    낙찰 가능성·예측은 쓰지 않는다(전역 금지) — '넣을 수 있는가'까지만 말한다.
+    """
+    region = ctx.get("region") or ""
+    industry = ctx.get("industry") or "우리 회사"
+    count = int(ctx.get("new_count") or 0)
+    notices = ctx.get("notices") or []          # [{title, organization, end_date_label}]
+    web = settings.PUBLIC_WEB_URL
+
+    subject = f"{region} {industry}, 새로 올라온 공고 {count}건이 조건에 맞아요".strip()
+
+    lines = [
+        f"사장님, 진단해 드린 조건({region} {industry})에 맞는 공고가 새로 {count}건 올라왔어요.",
+        "",
+    ]
+    for n in notices:
+        due = n.get("end_date_label") or ""
+        org = n.get("organization") or ""
+        lines.append(f"· {n.get('title') or ''}" + (f" ({org}, 마감 {due})" if org or due else ""))
+    lines += [
+        "",
+        f"전체 목록 보기: {web}/diagnose",
+        "",
+        "※ 자격 요건이 맞는지까지만 확인해 드립니다. 낙찰 여부를 예측하지는 않아요.",
+        "",
+    ]
+    text = "\n".join(lines)
+
+    items = "".join(
+        '<li style="font-size:15px;line-height:1.7;color:#191F28;margin:0 0 8px;">'
+        f"<b>{escape(n.get('title') or '')}</b>"
+        + (
+            '<br><span style="font-size:13px;color:#8B95A1;">'
+            f"{escape(n.get('organization') or '')}"
+            + (f" · 마감 {escape(n.get('end_date_label') or '')}" if n.get("end_date_label") else "")
+            + "</span>"
+        )
+        + "</li>"
+        for n in notices
+    )
+    html = (
+        f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, 진단해 드린 조건'
+        f'(<b>{escape(region)} {escape(industry)}</b>)에 맞는 공고가 새로 '
+        f'<b style="color:#3182F6;">{count}건</b> 올라왔어요.</p>'
+        f'<ul style="padding-left:18px;margin:0 0 20px;">{items}</ul>'
+        f"{_btn(f'{web}/diagnose', '전체 목록 보기')}"
+        '<p style="font-size:13px;line-height:1.6;color:#8B95A1;margin:18px 0 0;">'
+        "자격 요건이 맞는지까지만 확인해 드립니다. 낙찰 여부를 예측하지는 않아요.</p>"
+    )
+    return subject, text, html
+
+
 @register("trial_expiry", "transactional")
 def _trial_expiry(ctx: dict) -> tuple[str, str, str]:
     """체험 만료 안내 — 거래 관련 고지라 광고 동의와 무관하게 발송한다."""

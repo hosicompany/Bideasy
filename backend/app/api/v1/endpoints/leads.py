@@ -10,7 +10,6 @@
 """
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -24,20 +23,15 @@ from app.core.logging import get_logger
 from app.db import models
 from app.db.session import get_db
 from app.services import consent as consent_service
-from app.services.qualification_checker import QualificationChecker
+from app.services import lead_matching, nurture
 
 logger = get_logger(__name__)
 
 router = APIRouter()
 
-# 진단 스캔·반환 상한 (성능 보호)
-_SCAN_LIMIT = 500      # 자격 판정할 후보 공고 최대 스캔 수
-_MATCH_LIMIT = 50      # 반환할 매칭 공고 최대 수
+# 매칭 상한은 lead_matching 이 단일 소스(진단·육성 메일 공용)
+_MATCH_LIMIT = lead_matching.MATCH_LIMIT
 _PREVIEW_N = 3         # 비로그인 미리보기 공개 건수 (나머지는 연락처로 잠금해제)
-
-# 업종·면허 텍스트에서 대표 면허 루트 키워드 추출용
-# (QualificationChecker 가 공고 제목에서 인식하는 키워드와 정합)
-_LICENSE_ROOTS = ["전기", "정보통신", "통신", "소방", "건축", "토목"]
 
 # 콜드-DB 워밍: 활성 공고가 0건이면(=일일 크롤 전 콜드 스타트) 실방문자에게
 # "매칭 0건"이 오인 표시됨(피드는 크롤O·진단은 DB만 읽음). 1회 크롤로 워밍하되
@@ -114,15 +108,9 @@ class CaptureRequest(DiagnoseRequest):
 
 
 # ─────────────────────────── 매칭 로직 ───────────────────────────
-def _detect_root(*texts: Optional[str]) -> Optional[str]:
-    """업종·면허 문자열에서 대표 면허 루트 키워드 1개 추출(없으면 None)."""
-    blob = " ".join(t for t in texts if t)
-    for root in _LICENSE_ROOTS:
-        if root in blob:
-            return root
-    return None
-
-
+# 자격 판정 자체는 services/lead_matching.py 가 단일 소스다(진단 화면과 육성 메일이
+# 같은 기준을 써야 사용자가 우리 판정을 믿는다). 여기 남은 것은 진단 화면 전용
+# 관심사인 콜드-DB 워밍뿐.
 def _active_pool_is_cold(db: Session) -> bool:
     """활성(마감 전) 실공고가 DB 에 하나도 없으면 True(=콜드 DB)."""
     return (
@@ -183,32 +171,9 @@ def _match_notices(
     licenses: Optional[str],
     region: Optional[str],
 ) -> List[models.Notice]:
-    """활성 공고를 QualificationChecker 로 필터해 자격 PASS 공고만 반환.
-
-    로그인 없이 동작하도록 user 자리에 가상 프로필(location/licenses 속성만)을 넣는다.
-    업종 루트 키워드가 있으면 후보를 그 공종으로 좁혀 '내 공종의 넣을 수 있는 공고'로 정밀화.
-    """
+    """진단용 매칭 — 콜드-DB 워밍 후 lead_matching 에 위임."""
     _warm_db_if_cold(db)  # 콜드-DB면 1회 크롤 워밍(운영 전용·가드) 후 아래 조회
-    pseudo = SimpleNamespace(location=(region or ""), licenses=(licenses or industry or ""))
-
-    q = db.query(models.Notice).filter(~models.Notice.title.like("[Mock]%"))
-    q = q.filter(models.Notice.end_date > datetime.now())  # 활성(마감 전)만
-
-    root = _detect_root(industry, licenses)
-    if root:
-        q = q.filter(models.Notice.title.ilike(f"%{root}%"))
-
-    candidates = q.order_by(models.Notice.end_date.asc()).limit(_SCAN_LIMIT).all()
-
-    matched: List[models.Notice] = []
-    for n in candidates:
-        notice_dict = {"bidNtceNm": n.title or "", "LmtRegion": n.region or ""}
-        res = QualificationChecker.check_qualification(notice_dict, pseudo)
-        if res.get("status") == "PASS":
-            matched.append(n)
-            if len(matched) >= _MATCH_LIMIT:
-                break
-    return matched
+    return lead_matching.match_notices(db, industry, licenses, region)
 
 
 def _notice_card(n: models.Notice) -> dict:
@@ -354,6 +319,8 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
     db.commit()
     db.refresh(lead)
 
+    _send_welcome(db, lead, len(matched))
+
     return {
         "ok": True,
         "lead_id": lead.id,
@@ -361,3 +328,33 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
         "marketing_consent": bool(lead.marketing_consent),
         "notices": [_notice_card(n) for n in matched],
     }
+
+
+def _send_welcome(db: Session, lead: models.Lead, matched_count: int) -> None:
+    """진단 직후 웰컴 메일 — best-effort.
+
+    리드는 이미 커밋됐다. 발송이 실패하더라도 **리드 저장과 응답을 되돌리지 않는다** —
+    메일 한 통 때문에 어렵게 얻은 연락처를 잃는 것이 훨씬 큰 손해다. 동의·억제 게이트와
+    멱등은 nurture 가 책임지므로 여기서 조건을 자체 판단하지 않는다(미동의면 nurture 가
+    `skipped/no_consent` 로 남긴다).
+    """
+    if not lead.email:
+        return
+    try:
+        row = nurture.send_marketing(
+            db, lead,
+            subject_type="lead",
+            template="lead_welcome",
+            ctx={
+                "region": lead.region,
+                "industry": lead.industry,
+                "matched_count": matched_count,
+            },
+            dedupe_key=f"lead_welcome:lead:{lead.id}",
+        )
+        if row.status in ("sent", "dry_run"):
+            lead.nurture_status = "sent"
+            db.commit()
+    except Exception as e:  # noqa: BLE001 — 캡처 응답을 절대 막지 않는다
+        db.rollback()
+        logger.warning(f"lead welcome 발송 실패(비치명적) lead={lead.id}: {e}")

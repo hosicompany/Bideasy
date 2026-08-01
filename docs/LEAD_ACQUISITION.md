@@ -128,6 +128,39 @@ Lead.nurture_channel
 
 **다음 단계**: 반송·불만 자동 억제(SNS 구독 — 시퀀스보다 먼저) → 리드 육성 시퀀스(진단 직후 웰컴 + 주기 매칭) → 체험 시퀀스(`GROWTH_STRATEGY.md` §C3) → 수신거부 처리 결과 통지 → 알림톡 어댑터.
 
+### 3-3. 리드 육성 시퀀스 — **구현 완료(2026-08-01)**
+
+동의·발송·억제 3층이 갖춰졌으므로 퍼널 ③(육성)을 실제로 켰다. 접촉은 **2회뿐**이다:
+캡처 직후 웰컴 1통, 그 뒤 주 1회 신규 매칭.
+
+| 시점 | 템플릿 | 성격 | 멱등 키 |
+|---|---|---|---|
+| 캡처 직후(동기) | `lead_welcome` | 광고 | `lead_welcome:lead:{id}` |
+| 매주 화 08:00 KST | `lead_new_matches` | 광고 | `lead_new_matches:lead:{id}:{YYYY}W{주차}` |
+
+| 항목 | 위치 |
+|---|---|
+| 매칭 단일 소스 | `backend/app/services/lead_matching.py` — `match_notices(..., since=)`. 진단 화면과 육성 메일이 **같은 기준**을 쓴다 |
+| 웰컴 발송 | `endpoints/leads.py` `_send_welcome` — 캡처 커밋 **이후** best-effort |
+| 주기 발송 | `backend/app/tasks/nurture_tasks.py` `nurture.send_lead_matches` (beat `weekly-lead-nurture`) |
+| 템플릿 | `services/email_templates.py` `lead_new_matches` |
+| 테스트 | `tests/test_lead_nurture.py` (10건) |
+
+**설계 판단 3가지**
+
+1. **웰컴은 큐가 아니라 인라인.** 이 코드베이스는 API 에서 Celery 를 호출하지 않는다(패턴 0건).
+   큐를 새로 도입하는 대신 동기 발송하되, **커밋 이후에 `try/except` 로 감쌌다** — 발송 실패가
+   리드 저장을 되돌리면 어렵게 얻은 연락처를 메일 한 통 때문에 잃는다. 응답은 수백 ms 느려진다.
+2. **주 1회.** 반송률 5%·불만율 0.1% 초과 시 AWS 가 계정 발송을 정지시키고, 그러면 광고뿐 아니라
+   **거래 메일까지 막힌다.** 리드 모수가 작은 지금은 빈도를 올려 얻을 것보다 잃을 것이 크다.
+   빈도는 나중에 올리기 쉽지만 스팸으로 인식된 신뢰는 되돌리기 어렵다.
+3. **신규 매칭이 0건이면 보내지 않는다.** 빈 메일은 그 자체가 스팸이다. 대상 조회는
+   `sendable_filter` + 전환 리드 제외(회원 알림과 중복 방지)까지만 하고, 동의·억제·멱등의
+   최종 판정은 `nurture.send_marketing` 이 한다 — 태스크가 `marketing_consent` 를 직접 보지 않는다.
+
+⚠️ **소급 발송 없음**: 대상은 `sendable_filter` 통과분뿐이다. 2026-07-30 이전 캡처분은 증적이
+없어 자동으로 빠진다(현재 `leads` 0건이라 실질 모수는 새로 들어오는 리드부터).
+
 ⚠️ 현재 `leads` 0건 — 광고 발송 모수는 새 동의자부터 쌓인다. 7/30 이전 캡처분 소급 발송 금지.
 
 ---
