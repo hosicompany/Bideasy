@@ -238,6 +238,37 @@ class TestWelcomeOnCapture:
         assert consent_service.can_send_marketing(lead) is False
         assert captured_mail == []
 
+    def test_welcome_marks_capped_count(self, client, db_session, busan_new_notice, captured_mail):
+        """매칭 상한에 걸린 건수는 "50건+" 으로 말한다 — 딱 떨어지게 말하면 거짓이 된다."""
+        from app.db import models
+        from app.services import lead_matching
+
+        resp = client.post("/api/v1/leads/capture", json=self._capture_body(email="cap@company.com"))
+        lead = db_session.get(models.Lead, resp.json()["lead_id"])
+        lead.matched_count = lead_matching.MATCH_LIMIT      # 상한에 걸린 상태로 고정
+        db_session.commit()
+        captured_mail.clear()
+
+        client.post("/api/v1/leads/optin", params={"token": _optin_token(lead.id)})
+
+        assert f"{lead_matching.MATCH_LIMIT}건+" in captured_mail[0]["subject"]
+        assert f"{lead_matching.MATCH_LIMIT}건+" in captured_mail[0]["text"]
+
+    def test_welcome_exact_count_has_no_plus(self, client, db_session, busan_new_notice, captured_mail):
+        """상한 미만이면 정확한 수이므로 "+" 를 붙이지 않는다."""
+        from app.db import models
+
+        resp = client.post("/api/v1/leads/capture", json=self._capture_body(email="exact@company.com"))
+        lead = db_session.get(models.Lead, resp.json()["lead_id"])
+        lead.matched_count = 3
+        db_session.commit()
+        captured_mail.clear()
+
+        client.post("/api/v1/leads/optin", params={"token": _optin_token(lead.id)})
+
+        assert "3건" in captured_mail[0]["subject"]
+        assert "3건+" not in captured_mail[0]["subject"]
+
     def test_bad_token_rejected(self, client, db_session, busan_new_notice):
         """서명이 맞지 않는 토큰은 거부된다."""
         assert client.post("/api/v1/leads/optin", params={"token": "forged.sig"}).status_code == 400
