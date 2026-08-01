@@ -337,6 +337,13 @@
           document.getElementById('dg-lock').classList.add('dg-hidden');
           var full = document.getElementById('dg-full');
           var head = '<p style="font-size:14px;font-weight:800;margin:0 0 12px;">✅ 접수됐어요! 넣을 수 있는 공고 ' + won(data.matched_count) + '건 전체예요.</p>';
+          // 수신동의를 하셨다면 확인 메일을 한 번 눌러 주셔야 알림이 시작된다(더블 옵트인).
+          // 안내가 없으면 사용자는 뜬금없는 메일을 받고, 확인율이 떨어져 알림이 영영 안 간다.
+          if (data.confirm_pending) {
+            head += '<p style="font-size:13px;line-height:1.7;color:var(--muted);margin:0 0 12px;">'
+                  + '📩 방금 보내드린 <b>확인 메일</b>의 버튼을 눌러 주셔야 새 공고 알림이 시작돼요. '
+                  + '메일이 안 보이면 스팸함도 확인해 주세요.</p>';
+          }
           full.innerHTML = head + (data.notices || []).map(function (n) { return noticeCard(n, false); }).join('');
           full.classList.remove('dg-hidden');
           document.getElementById('dg-next').classList.remove('dg-hidden');
