@@ -168,14 +168,16 @@ pytest                                                   # ← 508건 통과해�
 
 로컬 `git stash`와 미커밋 변경을 **원격 브랜치로 밀어뒀습니다.** clone 직후엔 안 보이니 `git fetch --all` 후 확인하세요.
 
-| 브랜치 | 레포 | 내용 | 다루는 법 |
-|---|---|---|---|
-| `preserve/stash-0-settings-content-engine` | Bideasy | `.claude/settings.local.json` 권한 추가 + `docs/CONTENT_ENGINE.md` 보강 | `git diff master...preserve/stash-0-settings-content-engine` 로 보고 필요분만 반영 |
-| `preserve/stash-1-bd-track-wip` | Bideasy | `BD.track` 분석 이벤트 WIP (웹 5파일: app.js·bid·calculator·login·signup) | **미완성 실험 코드** — 그대로 머지하지 말 것. 2026-05 작성분이라 이미 낡았을 수 있음 |
-| `preserve/ext-toolbar-icons` | Bideasy-Extension | 툴바 아이콘 3종(16·48·128px) 교체본 | 웹스토어 재제출 시 검토 (`CLAUDE.md` 대기 항목 "툴바 아이콘 빌드") |
+**✅ 2026-08-01 세 브랜치 모두 검토·처리 완료 — 원격에서 삭제됨.** 판정 근거:
 
-> stash는 커밋 객체 그대로 푸시해 **내용 손실이 없습니다.** 반영이 끝나면 브랜치를 삭제하세요.
-> ⚠️ 이 3개는 **base가 2026-05~07 시점**이라 현재 master와 격차가 큽니다. cherry-pick보다 **내용을 보고 다시 작성**하는 편이 안전합니다.
+| 브랜치 | 판정 |
+|---|---|
+| `preserve/stash-0-settings-content-engine` | **건질 것 없음** — `CONTENT_ENGINE.md` 는 master 가 더 최신이고, 나머지는 `.claude/settings.local.json`(개인 로컬 권한, 2026-05 시점이라 낡음) |
+| `preserve/stash-1-bd-track-wip` | **건질 것 없음** — 안에 있던 `probe_bsns_div.py`·`BACKFILL_VALIDATION_DESIGN.md` 는 **master 에 이미 더 최신 버전으로 존재**. `BD.track` 자체는 미완성 실험 코드 |
+| `preserve/ext-toolbar-icons` | **폐기 결정** — 아이콘 교체본은 현재 `B`+상승 모티프와 전혀 다른 **과녁(bullseye) 디자인**이었다. 과녁은 "적중·명중"의 은유라 **"낙찰가 예측은 하지 않는다"** 브랜드 포지션과 반대로 읽히고, 그건 예측형 경쟁사의 자리다. 2026-05 작성분이라 7월에 정리된 경쟁 전략 정본보다 앞선 시점의 디자인 |
+
+> 교훈: stash 는 커밋 객체 그대로 푸시해 **내용 손실은 없었지만**, base 가 2026-05~07 이라 실제로 살릴 내용은 거의 없었다.
+> 대부분은 그 사이 master 에 더 나은 형태로 들어와 있었다. 다음에 이관할 때도 **보존은 하되 기대는 낮게** 잡으면 된다.
 
 ### 4.1 미머지 PR — 없음
 
