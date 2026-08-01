@@ -25,10 +25,12 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Windows 콘솔(cp949)에서 한글·em dash 출력이 깨지지 않도록 (mock_bidding_test.py 관례)
+# Windows 콘솔(cp949)에서 한글·em dash 출력이 깨지지 않도록 (mock_bidding_test.py 관례).
+# line_buffering: 장시간 실행이라 로그를 파일로 넘기면 블록 버퍼링에 걸려
+# 끝날 때까지 진행 상황이 안 보인다(`nohup ... > log` 로 돌릴 때 실제로 겪음).
 try:
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
+    sys.stderr.reconfigure(encoding="utf-8", line_buffering=True)
 except (AttributeError, ValueError):
     pass
 
@@ -89,6 +91,7 @@ def run(days: int, categories: list[str], window: int, pages: int,
             print(f"  [{cat}] 시작 채움률: {before}")
 
         totals = {"fetched": 0, "inserted": 0, "updated": 0, "windows": 0}
+        samples_shown = False
         for start, end in _windows(days, window):
             totals["windows"] += 1
             for cat in categories:
@@ -102,12 +105,16 @@ def run(days: int, categories: list[str], window: int, pages: int,
                     totals["fetched"] += len(items)
 
                     if dry_run:
-                        if totals["fetched"] <= 3:
+                        # 첫 배치만 매핑 결과를 보여준다 (dry-run 의 목적).
+                        # totals 를 올린 뒤 건수로 판정하면 영영 출력되지 않는다.
+                        if not samples_shown:
+                            samples_shown = True
                             for d in items[:3]:
                                 print(f"    샘플: {d['bid_no']} | "
                                       f"bid_method={d.get('bid_method')!r} | "
                                       f"llr={d.get('lower_limit_rate')!r} | "
-                                      f"region={d.get('region')!r}")
+                                      f"region={d.get('region')!r} | "
+                                      f"kind={d.get('notice_kind')!r}")
                     else:
                         incoming = [d["bid_no"] for d in items if d.get("bid_no")]
                         existing = {
