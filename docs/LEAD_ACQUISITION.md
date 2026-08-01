@@ -144,7 +144,7 @@ Lead.nurture_channel
 | 더블 옵트인 | `endpoints/leads.py` — `GET /leads/optin/status`(조회) · `POST /leads/optin`(확인) + 정적 `/optin` |
 | 확인 상태 전이 | `services/consent.py` — `grant_marketing(confirmed=False)` → `confirm_marketing()` |
 | 주기 발송 | `backend/app/tasks/nurture_tasks.py` `nurture.send_lead_matches` (beat `weekly-lead-nurture`) |
-| 테스트 | `tests/test_lead_nurture.py` (19건) |
+| 테스트 | `tests/test_lead_nurture.py` (21건) |
 
 **설계 판단 5가지**
 

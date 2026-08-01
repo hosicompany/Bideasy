@@ -493,6 +493,9 @@ def _send_welcome(db: Session, lead: models.Lead) -> None:
                 "region": lead.region,
                 "industry": lead.industry,
                 "matched_count": lead.matched_count or 0,
+                # 진단 화면이 `capped` 로 "더 있을 수 있다"고 말한 것과 같은 기준.
+                # 캡에 걸린 값을 딱 떨어지게 말하면 사실과 다른 수를 말하게 된다.
+                "capped": (lead.matched_count or 0) >= _MATCH_LIMIT,
             },
             dedupe_key=f"lead_welcome:email:{_recipient_key(lead.email)}",
         )

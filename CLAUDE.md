@@ -3,7 +3,7 @@
 > **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
 > 🖥️ **새 PC에서 처음 세팅하는 중이라면** `docs/HANDOFF_MIGRATION.md` 를 먼저 읽으세요 (2026-08-01 PC 이관 — 비공개 파일 복원·`preserve/*` WIP 브랜치·환경 재구축). 셋업이 끝났으면 무시해도 됩니다.
-> 최종 갱신: 2026-08-01 (**리드 육성 시퀀스 라이브** — PR #50 머지·배포·**E2E 실검증 완료**. 흐름: 진단 캡처 → **더블 옵트인 확인 메일**(거래) → 확인 클릭 → 웰컴(광고) → 매주 화 08:00 신규 매칭(광고). 설계 판단 5가지·표 = `docs/LEAD_ACQUISITION.md` §3-3. 요지: ① `services/lead_matching.py` = 진단 화면과 육성 메일의 **자격 판정 단일 소스**(`since` 로 신규만) ② `/leads/capture` 는 인증 없는 공개 폼이라 **확인 전 광고 금지** — `grant_marketing(confirmed=False)` → `marketing_confirmed_at` NULL → `sendable_filter` 가 차단, `POST /leads/optin` 으로만 확정(GET 은 스캐너 프리페치 방지 조회) + 정적 `/optin` ③ 멱등 주체 = **행이 아니라 수신자**(이메일 해시) — 캡처는 upsert 없이 매번 새 Lead 행을 만들기 때문 ④ `can_send_marketing` 의 `marketing_consent_at` **폴백 제거**(SQL 판본 `sendable_filter` 와 판정이 갈라져 있었음) ⑤ 실패는 1건에 갇힌다(입력 제어문자 정제 + `mailer` 조립실패도 `MailerError` 로 변환 + 배치 리드 단위 except + 실패 시 `dedupe_key` 해제). 테스트 527건. **E2E 실측**: 캡처 `confirm_pending=true`·광고 미발송 → 확인 메일 수신 → 클릭 → `(광고)` 웰컴 수신·수신거부 링크 정상. 다음 = 체험 시퀀스 6통 → 수신거부 처리결과 통지 → 알림톡 채널.)
+> 최종 갱신: 2026-08-01 (**리드 육성 시퀀스 라이브** — PR #50 머지·배포·**E2E 실검증 완료**. 흐름: 진단 캡처 → **더블 옵트인 확인 메일**(거래) → 확인 클릭 → 웰컴(광고) → 매주 화 08:00 신규 매칭(광고). 설계 판단 5가지·표 = `docs/LEAD_ACQUISITION.md` §3-3. 요지: ① `services/lead_matching.py` = 진단 화면과 육성 메일의 **자격 판정 단일 소스**(`since` 로 신규만) ② `/leads/capture` 는 인증 없는 공개 폼이라 **확인 전 광고 금지** — `grant_marketing(confirmed=False)` → `marketing_confirmed_at` NULL → `sendable_filter` 가 차단, `POST /leads/optin` 으로만 확정(GET 은 스캐너 프리페치 방지 조회) + 정적 `/optin` ③ 멱등 주체 = **행이 아니라 수신자**(이메일 해시) — 캡처는 upsert 없이 매번 새 Lead 행을 만들기 때문 ④ `can_send_marketing` 의 `marketing_consent_at` **폴백 제거**(SQL 판본 `sendable_filter` 와 판정이 갈라져 있었음) ⑤ 실패는 1건에 갇힌다(입력 제어문자 정제 + `mailer` 조립실패도 `MailerError` 로 변환 + 배치 리드 단위 except + 실패 시 `dedupe_key` 해제). 테스트 529건. **E2E 실측**: 캡처 `confirm_pending=true`·광고 미발송 → 확인 메일 수신 → 클릭 → `(광고)` 웰컴 수신·수신거부 링크 정상. 다음 = 체험 시퀀스 6통 → 수신거부 처리결과 통지 → 알림톡 채널.)
 > 직전 갱신: 2026-07-30 (**아웃바운드 3층 구축** — 수신동의 증적(`consent_records` 추가 전용·문구 sha256, 마이그 `f4c1e8a92b37`) → 발송 파이프라인(`nurture.py` 유일 진입점·`OutboundMessage` 원장·수신거부 서명토큰, 마이그 `a9d3f5c17e42`) → 반송·불만 자동 억제(PR #49, 마이그 `c8e5b1f37d94`). SES 프로덕션 승인 + 발송 전용 IAM `bideasy-ses-sender` + `OUTBOUND_EMAIL_ENABLED=true` 로 **실발송 검증 완료**. 상세 런북 = `docs/OUTBOUND_EMAIL.md`. 그 이전 07-26~30 = 성장 전략 정본(`docs/GROWTH_STRATEGY.md`)·색인 표면 50→2,188건(PR #41)·GitHub Actions CD(PR #42·#43)·IndexNow(PR #43~#45)·계산기 거짓 안전판정 수습(PR #37).)
 
 ---
@@ -99,7 +99,6 @@
 
 ### 다음 주제
 - **주간 매칭 배치 첫 발동 확인 (2026-08-04 화 08:00 KST)** — `nurture.send_lead_matches` 가 실제로 도는지 = beat 스케줄이 등록됐는지의 유일한 실증. E2E 로 만든 **`lead_id=1`(hosicompany@gmail.com)이 그대로 대상**이라 메일이 오면 성공. 안 오면 `celery_beat` 스케줄 등록을 의심(`deploy.sh` 가 force-recreate 하도록 돼 있으나 실측은 아직). 확인처 = `/admin/outbound` 원장. 그 뒤 수신거부 링크까지 눌러보면 전 구간이 닫힌다.
-- **웰컴 메일 캡 표기 (작음)** — `lead_welcome` 은 `matched_count` 를 그대로 말하는데 이 값은 `MATCH_LIMIT=50` 에 걸린 값이라 실제로는 더 많다. `lead_new_matches` 는 `capped` 로 "50건+" 을 쓰고 진단 화면도 `capped` 를 쓰는데 웰컴만 빠져 있다 — 정직·비예측 포지션과 어긋난다.
 - **체험 라이프사이클 시퀀스 6통** — D0/D1/D3/D7/D11/D13(`GROWTH_STRATEGY.md` §C3). **광고/거래 구분해 템플릿 배치**: 체험 만료 고지는 거래(동의 불요), 할인·권유는 광고(동의 필요). 섞으면 메일 전체가 광고물이 된다.
 - **수신거부 처리 결과 통지** — 정보통신망법상 철회 처리 결과를 통지해야 한다(현재 즉시 반영은 되나 통지 메일은 미구현).
 - **카카오 알림톡 채널 개설** — 리드타임 2~3주(사용자 대기). 게이트(`consent.py`)는 그대로 재사용하고 어댑터만 추가.
@@ -300,12 +299,12 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 ## 8. 테스트 — 검증 명령 (코드 변경 후 반드시 실행)
 
 ```bash
-cd backend && pytest          # 527건 통과 기준 (2026-08-01 master 실측, PR #50 병합분 포함. SQLite in-memory/파일)
+cd backend && pytest          # 529건 통과 기준 (2026-08-01 master 실측, PR #50 병합분 포함. SQLite in-memory/파일)
 python -m ruff check backend/ # CI lint 와 동일 — 미사용 import 하나로 CI 가 red 가 된다
 ```
 - **모든 코드 변경 후 위 명령을 실행하고, 완료 보고(Gate Check)에 결과와 신뢰도(🟢🟡🔴)를 기재한다.** 실패 상태로 커밋·배포 금지. 실패 수정은 2회까지, 이후 에스컬레이션.
 - 결제: `tests/test_billing.py`(토스), `tests/test_payple.py`(페이플 9건 — provider/prepare/callback/서비스청구/Celery갱신, HTTP 모킹).
-- 아웃바운드: `tests/test_consent.py`(20건 — 증적 기록·구버전 경로·2년 만료·SQL필터↔단건판정 일치·**화면↔서버 문구 드리프트 가드**), `tests/test_nurture.py`(26건 — 게이트 차단 시 실제 미발송·"(광고)" 표기·원클릭 헤더·멱등·실패 시 키 해제·토큰 위조/용도 전용), `tests/test_lead_nurture.py`(19건 — **제3자 주소 광고 차단**·GET 프리페치 무확인·철회자 부활 방지·개행 리드가 배치를 안 죽임·같은 사람 재진단 시 1통).
+- 아웃바운드: `tests/test_consent.py`(20건 — 증적 기록·구버전 경로·2년 만료·SQL필터↔단건판정 일치·**화면↔서버 문구 드리프트 가드**), `tests/test_nurture.py`(26건 — 게이트 차단 시 실제 미발송·"(광고)" 표기·원클릭 헤더·멱등·실패 시 키 해제·토큰 위조/용도 전용), `tests/test_lead_nurture.py`(21건 — **제3자 주소 광고 차단**·GET 프리페치 무확인·철회자 부활 방지·개행 리드가 배치를 안 죽임·같은 사람 재진단 시 1통).
 - 그 외 feed/calculator/qualification/favorites/deadline/ai 등.
 
 ---

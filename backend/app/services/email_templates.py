@@ -118,10 +118,13 @@ def _lead_welcome(ctx: dict) -> tuple[str, str, str]:
     industry = ctx.get("industry") or "우리 회사"
     matched = int(ctx.get("matched_count") or 0)
     web = settings.PUBLIC_WEB_URL
+    # 매칭 상한(MATCH_LIMIT)에 걸린 값이면 실제로는 더 많다 — 진단 화면의 `capped` 와
+    # 같은 정직성 장치. 상한값을 딱 떨어지게 말하면 사실과 다른 수를 말하게 된다.
+    label = f"{matched}건+" if ctx.get("capped") else f"{matched}건"
 
-    subject = f"{region} {industry}, 지금 넣을 수 있는 공고 {matched}건 정리해 드렸어요".strip()
+    subject = f"{region} {industry}, 지금 넣을 수 있는 공고 {label} 정리해 드렸어요".strip()
     text = (
-        f"사장님, 진단 결과 {region} {industry} 기준으로 자격이 맞는 공고가 {matched}건이었어요.\n\n"
+        f"사장님, 진단 결과 {region} {industry} 기준으로 자격이 맞는 공고가 {label}이었어요.\n\n"
         "새 공고는 매일 올라오니, 조건에 맞는 건이 뜨면 이어서 알려드릴게요.\n"
         f"지금 목록 다시 보기: {web}/diagnose\n"
         f"나라장터 화면 위에서 바로 확인하려면: {web}/guide\n"
@@ -129,7 +132,7 @@ def _lead_welcome(ctx: dict) -> tuple[str, str, str]:
     html = (
         f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, 진단 결과 '
         f'<b>{escape(region)} {escape(industry)}</b> 기준으로 자격이 맞는 공고가 '
-        f'<b style="color:#3182F6;">{matched}건</b>이었어요.</p>'
+        f'<b style="color:#3182F6;">{escape(label)}</b>이었어요.</p>'
         '<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 20px;">'
         "새 공고는 매일 올라옵니다. 조건에 맞는 건이 뜨면 이어서 알려드릴게요.</p>"
         f"{_btn(f'{web}/diagnose', '내 조건 공고 다시 보기')}"
