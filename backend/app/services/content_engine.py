@@ -158,9 +158,11 @@ def generate_blocks(topic: dict) -> Optional[dict]:
         )
 
         def _call(extra: str = "") -> dict:
-            # 상위 모델 우선(깊이), 실패(미지원 모델·프로바이더 장애 등) 시 4o-mini 폴백
+            # 상위 모델 우선(깊이), 실패(미지원 모델·프로바이더 장애 등) 시 4o-mini 폴백.
+            # max_tokens 는 넉넉히 — 정본은 2,800자+ 를 요구하는데, 추론형 모델(Claude 5)은
+            # reasoning 에 먼저 토큰을 쓴다. 4,000 이면 추론만 하다 빈 응답이 온다(실측).
             return content_llm.chat_json(
-                _SYSTEM_PROMPT, user_prompt + extra, max_tokens=4000, temperature=0.5
+                _SYSTEM_PROMPT, user_prompt + extra, max_tokens=16000, temperature=0.5
             )
 
         data = _call()

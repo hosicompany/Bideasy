@@ -84,6 +84,13 @@ class TestUnsourcedNumbers:
             r = cr.check_unsourced_numbers(f"하한율은 {rate}% 예요")
             assert r["level"] == cr.PASS, f"{rate} 가 오탐됨"
 
+    def test_hypothetical_numbers_ignored(self):
+        """★ 실측 회귀 — 예시·가정으로 명시된 숫자는 사실 주장이 아니다 (K5 초안 오탐)."""
+        assert cr.check_unsourced_numbers("투찰률(예: 92%)을 곱하면")["level"] == cr.PASS
+        assert cr.check_unsourced_numbers("그대로 92%를 곱해 넣었다고 해볼게요")["level"] == cr.PASS
+        # 가정 표현이 없으면 여전히 잡힌다
+        assert cr.check_unsourced_numbers("작년 평균은 92% 였어요")["level"] == cr.WARN
+
     def test_db_numbers_are_allowed(self):
         blocks = {"data_blocks": [{"numbers": [{"participants": 42}]}]}
         allowed = cr.allowed_numbers_from_blocks(blocks)

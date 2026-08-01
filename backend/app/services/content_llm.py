@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Optional
 
 from app.core.config import settings
@@ -45,6 +46,21 @@ def cheap_model() -> str:
     return settings.CONTENT_LLM_CHEAP_MODEL or FALLBACK_MODEL
 
 
+class ContentLLMError(RuntimeError):
+    """콘텐츠 LLM 응답이 쓸 수 없는 상태 — 호출부가 폴백/실패로 분기하게 한다."""
+
+
+# ```json … ``` 펜스 제거 — Claude 계열은 response_format=json_object 를 줘도
+# 마크다운 코드펜스로 감싸 보낸다(2026-08-01 OpenRouter 실측). 이걸 안 벗기면
+# json.loads 가 'Expecting value: line 1 column 1' 로 죽는다.
+_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.S)
+
+
+def _unfence(text: str) -> str:
+    m = _FENCE_RE.match(text)
+    return m.group(1) if m else text
+
+
 def _completion(client, model: str, system: str, user: str, max_tokens: int, temperature: float) -> dict:
     kwargs = dict(
         model=model,
@@ -59,7 +75,27 @@ def _completion(client, model: str, system: str, user: str, max_tokens: int, tem
     if "claude" not in model.lower():
         kwargs["temperature"] = temperature
     resp = client.chat.completions.create(**kwargs)
-    return json.loads(resp.choices[0].message.content)
+    choice = resp.choices[0]
+    content = (getattr(choice.message, "content", None) or "").strip()
+    if not content:
+        # 추론형 모델(Claude 5 등)은 reasoning 에 토큰을 먼저 쓴다. max_tokens 가
+        # 빠듯하면 추론만 하다 끝나 본문이 비어서 온다 — 원인을 메시지에 남긴다.
+        reasoning = getattr(
+            getattr(resp.usage, "completion_tokens_details", None), "reasoning_tokens", None
+        )
+        raise ContentLLMError(
+            f"빈 응답 (model={model}, finish_reason={choice.finish_reason}, "
+            f"max_tokens={max_tokens}, reasoning_tokens={reasoning}) — "
+            "추론형 모델이면 max_tokens 를 늘려야 한다"
+        )
+    try:
+        return json.loads(_unfence(content))
+    except json.JSONDecodeError as e:
+        if choice.finish_reason == "length":
+            raise ContentLLMError(
+                f"응답이 max_tokens({max_tokens})에서 잘려 JSON 이 깨졌다 (model={model})"
+            ) from e
+        raise
 
 
 def chat_json(

@@ -102,13 +102,16 @@ _STAT_PATTERNS = [
 ]
 # 서술형 표현 안의 숫자는 통계 주장이 아니다 (예: "3분 안에", "5가지", "1원 차이")
 _BENIGN_CONTEXT = re.compile(r"\d+\s*(?:분|초|시간|일|주|개월|년|가지|선|단계|위|원 차이|번째)")
+# 가정·예시로 명시된 숫자는 사실 주장이 아니다 — "투찰률(예: 92%)", "~라고 해볼게요".
+# (실측: K5 초안에서 예시 투찰률이 전부 '출처 없는 수치'로 잡혔음)
+_HYPOTHETICAL = ("예:", "예를 들어", "예시", "가정", "해볼게요", "해볼까요", "쳐볼게요", "라고 치면")
 
 
 def check_unsourced_numbers(text: str, allowed: Optional[set] = None) -> dict:
     allowed = (allowed or set()) | _FACTSHEET_NUMBERS
     found = []
     for sent in _sentences(text):
-        if _BENIGN_CONTEXT.search(sent):
+        if _BENIGN_CONTEXT.search(sent) or any(h in sent for h in _HYPOTHETICAL):
             continue
         for pat in _STAT_PATTERNS:
             for m in re.finditer(pat, sent):
