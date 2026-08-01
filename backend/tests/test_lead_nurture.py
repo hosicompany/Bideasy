@@ -276,8 +276,6 @@ class TestWelcomeOnCapture:
 
     def test_same_person_recapturing_gets_one_welcome(self, client, db_session, busan_new_notice, captured_mail):
         """같은 사람이 재진단해 Lead 행이 늘어도 웰컴은 한 통 — 멱등 주체는 수신자."""
-        from app.db import models
-
         body = self._capture_body(email="Repeat@Company.com")
         first = client.post("/api/v1/leads/capture", json=body)
         second = client.post("/api/v1/leads/capture", json=dict(body, email="repeat@company.com"))
