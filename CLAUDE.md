@@ -168,6 +168,8 @@ Bideasy/
 └── claude.md                  # ← 이 문서
 ```
 > **크롬 익스텐션은 이 폴더에 없음** — 사이드 레포 `Bideasy-Extension/`.
+>
+> 💡 **레포 4개를 한 창에서 보려면** `bideasy.code-workspace` 를 여세요 (VS Code/Cursor). 4개가 `C:\Project\` 아래 **형제 폴더**로 있는 것을 전제로 상대경로 참조합니다 — 폴더를 옮기면 이 파일의 `path` 도 함께 고치세요.
 
 ---
 

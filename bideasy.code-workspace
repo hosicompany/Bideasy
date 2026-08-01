@@ -1,0 +1,57 @@
+{
+  "folders": [
+    {
+      "name": "Bideasy — backend · web · flutter",
+      "path": "."
+    },
+    {
+      "name": "Extension — chrome (private)",
+      "path": "../Bideasy-Extension"
+    },
+    {
+      "name": "agent — ops kit (private)",
+      "path": "../bideasy-agent"
+    },
+    {
+      "name": "policy — 개인정보처리방침",
+      "path": "../bideasy-policy"
+    }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder:Bideasy — backend · web · flutter}/backend/.venv/Scripts/python.exe",
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": ["backend/tests"],
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/.ruff_cache": true,
+      "**/.dart_tool": true
+    },
+    "search.exclude": {
+      "**/.venv": true,
+      "**/node_modules": true,
+      "**/build": true,
+      "**/__pycache__": true,
+      "**/frontend/.dart_tool": true,
+      "**/*.lock": true
+    },
+    "files.watcherExclude": {
+      "**/.venv/**": true,
+      "**/node_modules/**": true,
+      "**/build/**": true,
+      "**/__pycache__/**": true
+    },
+    "files.associations": {
+      "*.code-workspace": "jsonc"
+    },
+    "git.detectSubmodules": false,
+    "git.openRepositoryInParentFolders": "never"
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-python.python",
+      "ms-python.vscode-pylance",
+      "charliermarsh.ruff"
+    ]
+  }
+}
