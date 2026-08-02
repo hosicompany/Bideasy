@@ -295,10 +295,15 @@ def register_due_notices(db: Session, window_hours: int = REGISTER_WINDOW_HOURS,
 
     result = {"candidates": len(candidates), "notices": 0, "registered": 0, "skips": {}}
     for n in candidates:
+        # **공고 단위로 커밋한다.** 마지막에 한 번만 커밋하면, 커밋 시점에야
+        # 드러나는 결함(예: 대형 공고의 정수 오버플로) 하나가 그 배치의
+        # 정상 등록분까지 전부 롤백시킨다 — 실제로 겪었다. 그러면 마감이
+        # 지나 그 회차는 영영 등록되지 않는다(사전 등록은 재시도가 안 된다).
         try:
             r = register_notice(db, n, now=now)
+            db.commit()
         except Exception as e:  # noqa: BLE001
-            # 공고 1건의 결함이 배치 전체를 끊지 않게 가둔다.
+            db.rollback()
             logger.warning(f"[mock_bidding] register 실패 {n.bid_no}: {type(e).__name__}: {e}")
             result["skips"]["error"] = result["skips"].get("error", 0) + 1
             continue
@@ -308,7 +313,6 @@ def register_due_notices(db: Session, window_hours: int = REGISTER_WINDOW_HOURS,
         elif r.get("skipped"):
             k = r["skipped"]
             result["skips"][k] = result["skips"].get(k, 0) + 1
-    db.commit()
     logger.info(f"[mock_bidding.register] {result}")
     return result
 
