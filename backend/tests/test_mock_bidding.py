@@ -19,7 +19,8 @@ def _notice(bid_no="MB-1", *, basic_price=100_000_000, bid_method="적격심사�
         bid_no=bid_no, title="테스트 공고", basic_price=basic_price,
         contract_type=contract_type, bid_method=bid_method,
         notice_kind=notice_kind, lower_limit_rate=llr, a_value=a_value,
-        end_date=datetime.now() + timedelta(hours=end_offset_h),
+        # Notice.end_date 는 opengDt(KST 표기) 축이므로 픽스처도 KST 로 만든다
+        end_date=mb.now_kst() + timedelta(hours=end_offset_h),
         prdprc_total=prdprc[0], prdprc_draw=prdprc[1], re_notice_yn=re_notice,
     )
 
@@ -29,7 +30,7 @@ def _opening(bid_no="MB-1", *, basic=100_000_000, reserved=100_000_000,
     return models.OpeningResult(
         bid_no=bid_no, basic_price=basic, reserved_price=reserved,
         winner_price=winner, winner_rate=winner / basic * 100,
-        open_date=datetime.now(),
+        open_date=mb.now_kst(),
     )
 
 
@@ -275,7 +276,7 @@ class TestScoring:
         db_session.commit()
         # 마감 지난 것으로 만들어 채점 대상에 넣는다
         for row in db_session.query(models.MockBid).filter_by(bid_no=bid_no).all():
-            row.deadline_at = datetime.now() - timedelta(hours=1)
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
         db_session.commit()
 
     def test_scores_all_arms(self, db_session):
@@ -313,7 +314,7 @@ class TestScoring:
         mb.register_notice(db_session, n)
         db_session.commit()
         for row in db_session.query(models.MockBid).filter_by(bid_no="MB-SC-4").all():
-            row.deadline_at = datetime.now() - timedelta(hours=1)
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
         db_session.commit()
 
         r = mb.score_pending(db_session)
@@ -327,7 +328,7 @@ class TestScoring:
         mb.register_notice(db_session, n)
         db_session.commit()
         for row in db_session.query(models.MockBid).filter_by(bid_no="MB-SC-5").all():
-            row.deadline_at = datetime.now() - timedelta(hours=1)
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
         db_session.commit()
 
         mb.score_pending(db_session)
@@ -388,7 +389,7 @@ class TestSummary:
         db_session.add(_opening("MB-SUM-1", winner=95_000_000))
         db_session.commit()
         for row in db_session.query(models.MockBid).filter_by(bid_no="MB-SUM-1").all():
-            row.deadline_at = datetime.now() - timedelta(hours=1)
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
         db_session.commit()
         mb.score_pending(db_session)
 
@@ -409,7 +410,7 @@ class TestSummary:
         db_session.add(_opening("MB-SUM-2", winner=95_000_000))
         db_session.commit()
         for row in db_session.query(models.MockBid).filter_by(bid_no="MB-SUM-2").all():
-            row.deadline_at = datetime.now() - timedelta(hours=1)
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
         db_session.commit()
         mb.score_pending(db_session)
 
