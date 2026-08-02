@@ -83,11 +83,13 @@ class TestRender:
             {"slot": "diagram", "caption": "예정가격 추첨 흐름", "prompt": "Render the Korean text labels EXACTLY: ..."},
         ]
         md = ce.render_blocks_to_md(blocks, slug="knowledge-k1")
-        assert "<!-- 이미지 자리(hero)" in md
-        assert "/assets/blog/knowledge-k1/hero.png" in md
+        # ★ 히어로는 본문에 넣지 않는다 — hero 필드가 상단 배너로 렌더하므로
+        #    본문에도 넣으면 같은 이미지가 두 번 나온다(2026-08-02 미리보기로 발견).
+        assert "<!-- 이미지 자리(hero)" not in md
+        assert "/assets/blog/knowledge-k1/hero.png" not in md
         assert "/assets/blog/knowledge-k1/fig1.png" in md
-        # 이미지 마크다운은 전부 주석 블록 안 — 주석 열림/닫힘 쌍이 이미지 수만큼
-        assert md.count("<!--") == 2 and md.count("-->") == 2
+        # 이미지 마크다운은 전부 주석 블록 안 — 도식 1개뿐
+        assert md.count("<!--") == 1 and md.count("-->") == 1
         # slug 없으면(구 호출 호환) 자리 미직조
         assert "이미지 자리" not in ce.render_blocks_to_md(blocks)
 

@@ -234,12 +234,12 @@ def hero_path_for(blocks: dict, slug: str) -> str:
 def render_blocks_to_md(blocks: dict, slug: str = "") -> str:
     """구조화 블록 → 마크다운 본문 (결정적 — 같은 블록이면 같은 본문)."""
     prompts = blocks.get("image_prompts") or []
-    heroes = [p for p in prompts if p.get("slot") == "hero"]
     diagrams = [p for p in prompts if p.get("slot") == "diagram"]
 
+    # 히어로는 **본문에 넣지 않는다** — `BlogPost.hero` 필드가 blog_detail.html 상단
+    # 배너로 렌더하므로, 본문에도 넣으면 같은 이미지가 두 번 나온다(2026-08-02 미리보기로 발견).
+    # 손글씨 상록수 4편도 hero 는 프론트매터에만 두고 본문엔 도식만 넣는 관례다.
     L: list[str] = [blocks.get("hook", ""), ""]
-    if slug and heroes:
-        L += [_image_placeholder("hero", heroes[0].get("caption", ""), slug, 0), ""]
     if blocks.get("summary_30s"):
         L += [f"> **30초 요약** — {blocks['summary_30s']}", ""]
     for i, kp in enumerate(blocks.get("key_points", [])):
