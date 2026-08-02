@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import and_, case, func
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
@@ -360,12 +361,45 @@ def _failure_tags(mb: models.MockBid, actual: models.OpeningResult,
     return tags
 
 
+def estimate_rank(our_price: int, participant_prices: list[int]) -> int:
+    """우리 등록가를 참가자 투찰가 목록에 끼워넣었을 때의 개찰 순위(1 = 최저가).
+
+    개찰 API 의 `opengRank` 와 같은 축이다 — 하한선 미달(무효) 참가자도 순위에
+    포함된다. 동가는 같은 순위로 본다(우리보다 **엄격히 낮은** 가격 수 + 1).
+
+    ⚠️ 판정(judge)의 대체가 아니라 별개 지표다(§0.2 3차). WIN/LOST/DROPOUT
+    정의는 simulate_params 와 동일하게 유지된다(§P3) — 등수가 1이어도 하한선
+    미달이면 DROPOUT 이고, 그 모순처럼 보이는 조합이 바로 배울 거리다.
+    """
+    return 1 + sum(1 for p in participant_prices if p < our_price)
+
+
+def _participants_by_bid(db: Session, bid_nos: list[str]) -> dict[str, list[models.OpeningParticipant]]:
+    """참가자 행을 공고별로 묶어 반환 (등록 공고만 저장돼 있다 — §P4)."""
+    out: dict[str, list[models.OpeningParticipant]] = {}
+    if not bid_nos:
+        return out
+    rows = (
+        db.query(models.OpeningParticipant)
+        .filter(models.OpeningParticipant.bid_no.in_(bid_nos))
+        .all()
+    )
+    for p in rows:
+        out.setdefault(p.bid_no, []).append(p)
+    return out
+
+
 def score_mock_bid(db: Session, mb: models.MockBid,
                    actual: models.OpeningResult | None,
-                   notice: models.Notice | None = None) -> models.MockBidResult | None:
+                   notice: models.Notice | None = None,
+                   participants: list[models.OpeningParticipant] | None = None,
+                   ) -> models.MockBidResult | None:
     """등록 1건을 채점해 결과 행을 만든다(등록 행은 건드리지 않는다).
 
     이미 같은 내용으로 채점된 적이 있으면 None (중복 채점 방지).
+    참가자 데이터가 있으면 첫 채점에서 등수까지 채운다 — 참가자 크롤(19:00)이
+    채점(20:30)보다 앞서므로 대부분 여기서 채워지고, 늦게 도착한 건은
+    `backfill_participant_ranks` 가 새 scoring_rev 로 채운다.
     """
     prev = (
         db.query(models.MockBidResult)
@@ -409,6 +443,11 @@ def score_mock_bid(db: Session, mb: models.MockBid,
     if reserved <= 0:
         tags.append("예정가격_결측")
 
+    # 등수 재구성 (§4-3) — 참가자 투찰가 목록에 우리 등록가를 끼워넣는다.
+    p_prices = [int(p.bid_price) for p in (participants or []) if p.bid_price]
+    est_rank = estimate_rank(int(mb.price), p_prices) if p_prices else None
+    participants_count = len(p_prices) if p_prices else actual.participants_count
+
     res = models.MockBidResult(
         mock_bid_id=mb.id,
         scoring_rev=(prev.scoring_rev + 1) if prev else 1,
@@ -416,7 +455,8 @@ def score_mock_bid(db: Session, mb: models.MockBid,
         actual_reserved_price=reserved or None,
         actual_winner_price=winner,
         actual_lower_limit=round(lower_limit, 2),
-        participants_count=actual.participants_count,
+        estimated_rank=est_rank,
+        participants_count=participants_count,
         gap_to_winner_pct=round((float(mb.price) - winner) / winner * 100, 4) if winner else None,
         gap_to_limit_pct=(round((float(mb.price) - lower_limit) / lower_limit * 100, 4)
                           if lower_limit else None),
@@ -455,12 +495,14 @@ def score_pending(db: Session, limit: int = 5000) -> dict:
         n.bid_no: n for n in
         db.query(models.Notice).filter(models.Notice.bid_no.in_(bid_nos)).all()
     }
+    participants = _participants_by_bid(db, bid_nos)
 
     outcomes: dict[str, int] = {}
     scored = 0
     for mb in pending:
         try:
-            res = score_mock_bid(db, mb, actuals.get(mb.bid_no), notices.get(mb.bid_no))
+            res = score_mock_bid(db, mb, actuals.get(mb.bid_no), notices.get(mb.bid_no),
+                                 participants=participants.get(mb.bid_no))
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[mock_bidding] score 실패 id={mb.id}: {type(e).__name__}: {e}")
             continue
@@ -475,14 +517,88 @@ def score_pending(db: Session, limit: int = 5000) -> dict:
     return result
 
 
+def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
+    """참가자 데이터가 뒤늦게 도착한 채점분의 등수를 채운다 — **새 scoring_rev 행으로**.
+
+    채점 시점에 참가자가 이미 있으면 `score_mock_bid` 가 등수까지 채우지만,
+    참가자 크롤이 늦거나(적격검사 지연·재크롤) Phase 2 배포 전 채점분은 비어
+    있다. §0.5-3 이 기존 결과 행 UPDATE 를 금지하므로, 이전 판정을 그대로
+    복사하고 등수만 더한 새 행(scoring_rev+1)을 쌓는다 — 집계는 최신 rev 만 본다.
+    """
+    sq = _latest_rev_sq(db)
+    rows = (
+        db.query(models.MockBidResult, models.MockBid)
+        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                       models.MockBidResult.scoring_rev == sq.c.max_rev))
+        .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
+        .filter(models.MockBidResult.outcome.in_(("WIN", "LOST", "DROPOUT")),
+                models.MockBidResult.estimated_rank.is_(None))
+        .limit(limit)
+        .all()
+    )
+    if not rows:
+        return {"candidates": 0, "backfilled": 0}
+
+    participants = _participants_by_bid(db, list({b.bid_no for _, b in rows}))
+    backfilled = 0
+    for prev, mb in rows:
+        p_prices = [int(p.bid_price) for p in participants.get(mb.bid_no, []) if p.bid_price]
+        if not p_prices:
+            continue  # 참가자가 아직 없으면 다음 실행에서 다시 본다
+        try:
+            db.add(models.MockBidResult(
+                mock_bid_id=mb.id,
+                scoring_rev=prev.scoring_rev + 1,
+                outcome=prev.outcome,
+                actual_reserved_price=prev.actual_reserved_price,
+                actual_winner_price=prev.actual_winner_price,
+                actual_lower_limit=prev.actual_lower_limit,
+                estimated_rank=estimate_rank(int(mb.price), p_prices),
+                participants_count=len(p_prices),
+                gap_to_winner_pct=prev.gap_to_winner_pct,
+                gap_to_limit_pct=prev.gap_to_limit_pct,
+                reserved_ratio_actual=prev.reserved_ratio_actual,
+                reserved_ratio_predicted=prev.reserved_ratio_predicted,
+                ratio_error=prev.ratio_error,
+                failure_tags=prev.failure_tags,
+                scored_at=now_kst(),
+            ))
+            # 건 단위 커밋 — 1건 결함이 배치 전체를 롤백시키지 않게(등록 배치에서 실제로 겪은 사고)
+            db.commit()
+            backfilled += 1
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            logger.warning(f"[mock_bidding] rank backfill 실패 id={mb.id}: {type(e).__name__}: {e}")
+
+    result = {"candidates": len(rows), "backfilled": backfilled}
+    logger.info(f"[mock_bidding.rank_backfill] {result}")
+    return result
+
+
 # ── 집계 (어드민·리포트) ──────────────────────────────────────
+# 재채점(NO_RESULT→확정, 등수 백필)은 새 scoring_rev 행을 쌓으므로, 집계는
+# 반드시 **등록 건당 최신 rev 하나만** 봐야 한다 — 전 행을 세면 rev 가 쌓일
+# 때마다 같은 등록 건이 중복 집계된다.
+
+def _latest_rev_sq(db: Session):
+    """등록 건별 최신 scoring_rev 서브쿼리 — 모든 집계의 공통 진입."""
+    return (
+        db.query(models.MockBidResult.mock_bid_id.label("mock_bid_id"),
+                 func.max(models.MockBidResult.scoring_rev).label("max_rev"))
+        .group_by(models.MockBidResult.mock_bid_id)
+        .subquery()
+    )
+
 
 def summarize(db: Session, bid_method: str | None = None) -> dict:
     """arm 별 성적표. 1차 지표는 무효율(dropout) — 낙찰률이 아니다(§0.2)."""
+    sq = _latest_rev_sq(db)
     q = (
         db.query(models.MockBid.arm, models.MockBidResult.outcome,
                  models.MockBidResult.ratio_error)
         .join(models.MockBidResult, models.MockBidResult.mock_bid_id == models.MockBid.id)
+        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                       models.MockBidResult.scoring_rev == sq.c.max_rev))
     )
     if bid_method:
         q = q.filter(models.MockBid.snapshot_bid_method == bid_method)
@@ -531,8 +647,11 @@ def scoring_reach(db: Session) -> dict:
 
 def failure_tag_stats(db: Session) -> dict:
     """오답노트 — 태그별 등장·무효 건수. 여기서 나온 사실이 제품 경고가 된다."""
+    sq = _latest_rev_sq(db)
     rows = (
         db.query(models.MockBidResult.failure_tags, models.MockBidResult.outcome)
+        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                       models.MockBidResult.scoring_rev == sq.c.max_rev))
         .filter(models.MockBidResult.failure_tags.isnot(None)).all()
     )
     stats: dict[str, dict] = {}
@@ -547,3 +666,149 @@ def failure_tag_stats(db: Session) -> dict:
     for s in stats.values():
         s["dropout_rate"] = round(s["dropout"] / s["total"] * 100, 2) if s["total"] else None
     return dict(sorted(stats.items(), key=lambda kv: -kv[1]["total"]))
+
+
+# ── 시각화 집계 (어드민 차트 전용) ────────────────────────────
+# 지표 우선순위(§0.2)는 화면(admin.js pages.mockbidding)이 지킨다 —
+# 여기는 데이터만 만든다. 전부 최신 rev 기준.
+
+_JUDGED = ("WIN", "LOST", "DROPOUT")
+
+# 등수 히스토그램 상한 — 이 위는 "11+" 로 묶는다(꼬리가 길면 분포가 안 보인다)
+RANK_HISTOGRAM_CAP = 10
+
+# 낙찰가 대비 격차(%) 버킷 경계 — 음수 = 낙찰가 이하(WIN/무효권), 양수 = 초과(LOST).
+# "0~0.5%" 구간이 '아깝게 놓친' 건이다.
+GAP_BUCKETS = ("≤-5", "-5~-2", "-2~-0.5", "-0.5~0", "0~0.5", "0.5~1", "1~2", "2~5", ">5")
+
+
+def rank_distribution(db: Session) -> dict:
+    """arm 별 추정 등수 분포 (§0.2 3차 지표) — 우리가 몇 등에 몰리는지.
+
+    등수는 Phase 2 참가자 데이터가 붙은 건에만 있다(없으면 빈 dict).
+    """
+    sq = _latest_rev_sq(db)
+    rows = (
+        db.query(models.MockBid.arm, models.MockBidResult.estimated_rank,
+                 func.count().label("n"))
+        .join(models.MockBidResult, models.MockBidResult.mock_bid_id == models.MockBid.id)
+        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                       models.MockBidResult.scoring_rev == sq.c.max_rev))
+        .filter(models.MockBidResult.estimated_rank.isnot(None),
+                models.MockBidResult.outcome.in_(_JUDGED))
+        .group_by(models.MockBid.arm, models.MockBidResult.estimated_rank)
+        .all()
+    )
+    out: dict[str, dict[str, int]] = {}
+    for arm, rank, n in rows:
+        label = str(rank) if rank <= RANK_HISTOGRAM_CAP else f"{RANK_HISTOGRAM_CAP + 1}+"
+        d = out.setdefault(arm, {})
+        d[label] = d.get(label, 0) + n
+    return out
+
+
+def gap_distribution(db: Session) -> dict:
+    """arm 별 낙찰가 대비 격차 분포 — "얼마나 아깝게 놓쳤나"를 버킷으로.
+
+    gap_to_winner_pct = (우리가격 − 낙찰가)/낙찰가 × 100. 버킷 경계는
+    GAP_BUCKETS — SQL CASE 로 묶는다(행 단위로 끌어오면 표본이 쌓일수록 무겁다).
+    """
+    g = models.MockBidResult.gap_to_winner_pct
+    bucket = case(
+        (g <= -5, GAP_BUCKETS[0]),
+        (g <= -2, GAP_BUCKETS[1]),
+        (g <= -0.5, GAP_BUCKETS[2]),
+        (g <= 0, GAP_BUCKETS[3]),
+        (g <= 0.5, GAP_BUCKETS[4]),
+        (g <= 1, GAP_BUCKETS[5]),
+        (g <= 2, GAP_BUCKETS[6]),
+        (g <= 5, GAP_BUCKETS[7]),
+        else_=GAP_BUCKETS[8],
+    )
+    sq = _latest_rev_sq(db)
+    rows = (
+        db.query(models.MockBid.arm, bucket.label("bucket"), func.count().label("n"))
+        .join(models.MockBidResult, models.MockBidResult.mock_bid_id == models.MockBid.id)
+        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                       models.MockBidResult.scoring_rev == sq.c.max_rev))
+        .filter(g.isnot(None), models.MockBidResult.outcome.in_(_JUDGED))
+        .group_by(models.MockBid.arm, bucket)
+        .all()
+    )
+    out: dict[str, dict[str, int]] = {}
+    for arm, b, n in rows:
+        out.setdefault(arm, {})[b] = n
+    return out
+
+
+def ratio_error_trend(db: Session, arm: str = "active") -> list[dict]:
+    """사정률 예측 오차(§0.2 4차)의 일별 평균 추이.
+
+    arm 하나로 고정하는 이유: 예측(adjustment)이 arm 마다 달라 섞으면 신호가
+    오염된다. 기본은 운영 정본인 active. (standard/aggressive 는 adjustment 를
+    기록하지 않아 오차 자체가 없다.)
+    """
+    sq = _latest_rev_sq(db)
+    day = func.date(models.MockBidResult.scored_at)
+    rows = (
+        db.query(day.label("d"),
+                 func.avg(models.MockBidResult.ratio_error).label("e"),
+                 func.count().label("n"))
+        .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
+        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                       models.MockBidResult.scoring_rev == sq.c.max_rev))
+        .filter(models.MockBid.arm == arm,
+                models.MockBidResult.ratio_error.isnot(None))
+        .group_by(day)
+        .order_by(day)
+        .all()
+    )
+    return [{"date": str(d), "mean_error": round(float(e), 6), "n": n} for d, e, n in rows]
+
+
+def segment_stats(db: Session, arm: str = "active") -> list[dict]:
+    """세그먼트(입찰방법 × 금액대) 교차표 — arm 하나 기준(기본 active).
+
+    금액대 경계는 autocalibrate `dataset.get_bracket` 과 동일해야 한다
+    (calculator._get_price_bracket) — 어휘가 갈라지면 자가보정 세그먼트와
+    비교할 수 없다.
+    """
+    bp = models.MockBid.snapshot_basic_price
+    bracket = case(
+        (bp < 1e8, "small"),
+        (bp < 5e8, "medium"),
+        (bp < 1e9, "large"),
+        (bp < 5e9, "xlarge"),
+        else_="xxlarge",
+    )
+    sq = _latest_rev_sq(db)
+    rows = (
+        db.query(models.MockBid.snapshot_bid_method, bracket.label("bracket"),
+                 models.MockBidResult.outcome, func.count().label("n"))
+        .join(models.MockBidResult, models.MockBidResult.mock_bid_id == models.MockBid.id)
+        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                       models.MockBidResult.scoring_rev == sq.c.max_rev))
+        .filter(models.MockBid.arm == arm,
+                models.MockBidResult.outcome.in_(_JUDGED))
+        .group_by(models.MockBid.snapshot_bid_method, bracket,
+                  models.MockBidResult.outcome)
+        .all()
+    )
+    cells: dict[tuple, dict[str, int]] = {}
+    for method, brk, outcome, n in rows:
+        c = cells.setdefault((method or "?", brk), {"WIN": 0, "LOST": 0, "DROPOUT": 0})
+        c[outcome] = c.get(outcome, 0) + n
+    out = []
+    for (method, brk), c in sorted(cells.items()):
+        judged = c["WIN"] + c["LOST"] + c["DROPOUT"]
+        out.append({
+            "bid_method": method,
+            "bracket": brk,
+            "judged": judged,
+            "win": c["WIN"],
+            "lost": c["LOST"],
+            "dropout": c["DROPOUT"],
+            "dropout_rate": round(c["DROPOUT"] / judged * 100, 2) if judged else None,
+            "win_rate": round(c["WIN"] / judged * 100, 2) if judged else None,
+        })
+    return out

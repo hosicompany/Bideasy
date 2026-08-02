@@ -462,3 +462,191 @@ class TestSummary:
         stats = mb.failure_tag_stats(db_session)
         assert "A값_결측" in stats
         assert stats["A값_결측"]["total"] >= 1
+
+
+# ── Phase 2 — 참가자 데이터로 등수 재구성 (§4-3) ──────────────
+
+def _participant(bid_no, rank, price, company="참가사", sucsf="N"):
+    return models.OpeningParticipant(
+        bid_no=bid_no, rank=rank, company=company, bid_price=price,
+        bid_rate=round(price / 1e8 * 100, 4), sucsf_yn=sucsf,
+    )
+
+
+class TestEstimateRank:
+    """등수는 판정(judge)의 대체가 아니라 별개 지표다 — API opengRank 와 같은 축."""
+
+    def test_between_two_participants(self):
+        assert mb.estimate_rank(90, [89, 91]) == 2
+
+    def test_cheapest_is_first(self):
+        assert mb.estimate_rank(88, [89, 91]) == 1
+
+    def test_tie_shares_rank(self):
+        """동가는 같은 순위 — 엄격히 낮은 가격만 앞선다."""
+        assert mb.estimate_rank(90, [90, 91]) == 1
+
+    def test_most_expensive_is_last(self):
+        assert mb.estimate_rank(95, [89, 90, 91]) == 4
+
+
+class TestParticipantScoring:
+    def _prepare(self, db_session, bid_no, *, winner=90_000_000, participants=None):
+        n = _notice(bid_no)
+        db_session.add(n)
+        db_session.commit()
+        mb.register_notice(db_session, n)
+        db_session.commit()
+        db_session.add(_opening(bid_no, winner=winner))
+        for p in (participants or []):
+            db_session.add(p)
+        db_session.commit()
+        for row in db_session.query(models.MockBid).filter_by(bid_no=bid_no).all():
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
+        db_session.commit()
+
+    def test_rank_filled_at_first_scoring(self, db_session):
+        """참가자 크롤(19:00)이 채점(20:30)보다 앞서므로 대부분 첫 채점에서 채워진다."""
+        self._prepare(db_session, "MB-P2-1", winner=90_000_000, participants=[
+            _participant("MB-P2-1", 1, 90_000_000, sucsf="Y"),
+            _participant("MB-P2-1", 2, 92_000_000),
+            _participant("MB-P2-1", 3, 95_000_000),
+        ])
+        mb.score_pending(db_session)
+
+        row = (db_session.query(models.MockBidResult)
+               .join(models.MockBid)
+               .filter(models.MockBid.bid_no == "MB-P2-1",
+                       models.MockBid.arm == "standard").first())
+        # standard 등록가 97.5M > 참가자 전원 → 4위. 참여자 수는 실측 3명.
+        assert row.estimated_rank == 4
+        assert row.participants_count == 3
+
+    def test_rank_none_without_participants(self, db_session):
+        self._prepare(db_session, "MB-P2-2")
+        mb.score_pending(db_session)
+
+        row = (db_session.query(models.MockBidResult)
+               .join(models.MockBid)
+               .filter(models.MockBid.bid_no == "MB-P2-2").first())
+        assert row.estimated_rank is None
+
+    def test_backfill_creates_new_rev_not_update(self, db_session):
+        """§0.5-3 — 참가자가 뒤늦게 도착해도 기존 결과 행은 UPDATE 하지 않는다."""
+        self._prepare(db_session, "MB-P2-3")
+        mb.score_pending(db_session)
+
+        # 참가자가 채점 후에야 도착한 상황
+        db_session.add(_participant("MB-P2-3", 1, 90_000_000, sucsf="Y"))
+        db_session.add(_participant("MB-P2-3", 2, 93_000_000))
+        db_session.commit()
+
+        r = mb.backfill_participant_ranks(db_session)
+        assert r["backfilled"] == 5  # 5 arm 전부
+
+        rows = (db_session.query(models.MockBidResult)
+                .join(models.MockBid)
+                .filter(models.MockBid.bid_no == "MB-P2-3",
+                        models.MockBid.arm == "standard")
+                .order_by(models.MockBidResult.scoring_rev).all())
+        assert len(rows) == 2
+        assert rows[0].estimated_rank is None          # 기존 행 불변
+        assert rows[1].scoring_rev == rows[0].scoring_rev + 1
+        assert rows[1].estimated_rank == 3             # 97.5M > 2명 → 3위
+        assert rows[1].outcome == rows[0].outcome      # 판정은 복사 — 등수만 더한다
+        assert rows[1].participants_count == 2
+
+    def test_backfill_is_idempotent(self, db_session):
+        """최신 rev 에 등수가 채워지면 다음 실행은 아무것도 만들지 않는다."""
+        self._prepare(db_session, "MB-P2-4")
+        mb.score_pending(db_session)
+        db_session.add(_participant("MB-P2-4", 1, 90_000_000, sucsf="Y"))
+        db_session.commit()
+
+        first = mb.backfill_participant_ranks(db_session)
+        second = mb.backfill_participant_ranks(db_session)
+
+        assert first["backfilled"] == 5
+        assert second["backfilled"] == 0
+
+    def test_registration_immutable_through_backfill(self, db_session):
+        """등수 백필도 mock_bids 원장은 건드리지 않는다."""
+        self._prepare(db_session, "MB-P2-5")
+        mb.score_pending(db_session)
+        db_session.add(_participant("MB-P2-5", 1, 90_000_000, sucsf="Y"))
+        db_session.commit()
+
+        before = {
+            r.arm: (r.price, r.snapshot_basic_price, r.registered_at, r.status)
+            for r in db_session.query(models.MockBid).filter_by(bid_no="MB-P2-5").all()
+        }
+        mb.backfill_participant_ranks(db_session)
+        after = {
+            r.arm: (r.price, r.snapshot_basic_price, r.registered_at, r.status)
+            for r in db_session.query(models.MockBid).filter_by(bid_no="MB-P2-5").all()
+        }
+        assert before == after
+
+    def test_summarize_counts_latest_rev_only(self, db_session):
+        """재채점이 새 rev 를 쌓아도 같은 등록 건이 중복 집계되면 안 된다."""
+        self._prepare(db_session, "MB-P2-6")
+        mb.score_pending(db_session)
+        before = mb.summarize(db_session).get("standard", {}).get("judged", 0)
+
+        db_session.add(_participant("MB-P2-6", 1, 90_000_000, sucsf="Y"))
+        db_session.commit()
+        mb.backfill_participant_ranks(db_session)
+
+        after = mb.summarize(db_session).get("standard", {}).get("judged", 0)
+        assert after == before  # rev 가 늘어도 judged 는 그대로
+
+
+class TestChartAggregates:
+    """시각화 집계 — 전부 최신 rev 기준. 데이터 형태만 계약으로 고정한다."""
+
+    def _prepare_scored(self, db_session, bid_no):
+        n = _notice(bid_no)
+        db_session.add(n)
+        db_session.commit()
+        mb.register_notice(db_session, n)
+        db_session.commit()
+        db_session.add(_opening(bid_no, winner=95_000_000))
+        db_session.add(_participant(bid_no, 1, 95_000_000, sucsf="Y"))
+        db_session.add(_participant(bid_no, 2, 96_000_000))
+        db_session.commit()
+        for row in db_session.query(models.MockBid).filter_by(bid_no=bid_no).all():
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
+        db_session.commit()
+        mb.score_pending(db_session)
+
+    def test_rank_distribution_shape(self, db_session):
+        self._prepare_scored(db_session, "MB-CH-1")
+        dist = mb.rank_distribution(db_session)
+        assert "standard" in dist
+        # standard(97.5M)는 두 참가자보다 높아 3위 버킷에 1건 이상
+        assert dist["standard"].get("3", 0) >= 1
+
+    def test_gap_distribution_uses_fixed_buckets(self, db_session):
+        self._prepare_scored(db_session, "MB-CH-2")
+        dist = mb.gap_distribution(db_session)
+        assert "standard" in dist
+        for bucket in dist["standard"]:
+            assert bucket in mb.GAP_BUCKETS
+
+    def test_ratio_error_trend_active_only(self, db_session):
+        self._prepare_scored(db_session, "MB-CH-3")
+        trend = mb.ratio_error_trend(db_session, arm="active")
+        assert trend, "active arm 은 adjustment 를 기록하므로 오차가 있어야 한다"
+        assert {"date", "mean_error", "n"} <= set(trend[0].keys())
+
+    def test_segment_stats_bracket_vocab(self, db_session):
+        """금액대 어휘는 autocalibrate dataset.get_bracket 과 동일해야 한다."""
+        from app.services.autocalibrate.dataset import BRACKETS
+
+        self._prepare_scored(db_session, "MB-CH-4")
+        rows = mb.segment_stats(db_session, arm="standard")
+        assert rows
+        for r in rows:
+            assert r["bracket"] in BRACKETS
+        # 기초금액 1억 = medium (1e8 은 small 상한 밖)
+        assert any(r["bracket"] == "medium" and r["bid_method"] == "적격심사제" for r in rows)

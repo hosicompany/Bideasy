@@ -190,6 +190,92 @@ def _parse_item_to_kwargs(item: dict) -> dict | None:
     }
 
 
+def _parse_participant_kwargs(item: dict) -> dict | None:
+    """API 응답 item 을 OpeningParticipant kwargs 로 변환.
+
+    `_parse_item_to_kwargs` 가 낙찰자 행만 남기고 버리는 것과 달리, 여기서는
+    낙찰자를 포함한 **모든 참가자 행**을 줍는다(낙찰자도 참가자다). 등수
+    재구성(설계 §4-3)에 필요한 건 투찰가이므로 `bidprcAmt` 없는 행은 버린다.
+    """
+    bid_no_raw = item.get("bidNtceNo")
+    if not bid_no_raw:
+        return None
+    bid_no = f"{bid_no_raw}-{item.get('bidNtceOrd') or '000'}"
+
+    def _f(v):
+        if v in (None, ""):
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    bid_amt = _f(item.get("bidprcAmt"))
+    if not bid_amt or bid_amt <= 0:
+        return None
+
+    rank = None
+    try:
+        rank = int(item.get("opengRank"))
+    except (TypeError, ValueError):
+        pass  # 순위 결측이어도 투찰가만 있으면 등수 재구성엔 쓸 수 있다
+
+    return {
+        "bid_no": bid_no,
+        "rank": rank,
+        "company": item.get("bidprcCorpNm") or "",
+        "bid_price": int(bid_amt),
+        "bid_rate": _f(item.get("bidprcRt")),
+        "sucsf_yn": (item.get("sucsfYn") or "").strip().upper() or None,
+    }
+
+
+def _load_registered_bid_nos(db: Session) -> set[str]:
+    """모의투찰에 등록된 bid_no 집합 — 참가자 저장 범위(설계 §P4).
+
+    전수 저장은 하루 169k행 규모라 함정이다. 등록분만 담으면 데이터량이
+    수십분의 1로 떨어지면서 얻을 건 다 얻는다. 실패해도 본 크롤(낙찰 결과
+    적재)을 막지 않는다 — 참가자는 부가 데이터다.
+    """
+    try:
+        return {row[0] for row in db.query(models.MockBid.bid_no).distinct().all()}
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"opening_crawler: 등록 bid_no 조회 실패 — 참가자 저장 생략: {e}")
+        return set()
+
+
+def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
+    """공고 단위로 참가자 행을 삭제-재삽입.
+
+    (bid_no, rank) UNIQUE 대신 이 방식을 쓰는 이유: API 가 동가 참가자에게
+    동순위를 줄 가능성을 배제할 수 없고, 적격검사 진행 중엔 sucsfYn 이 나중에
+    바뀔 수 있어(N→Y) 재크롤 시 최신 상태로 갈아끼우는 편이 정확하다.
+    공고 단위 커밋 — 1건 결함이 나머지 공고의 참가자까지 날리지 않게.
+    """
+    saved_bids = 0
+    saved_rows = 0
+    for bid_no, rows in by_bid.items():
+        # 같은 세션 내 API 중복 행 방어 (신뢰하되 확인)
+        uniq: dict[tuple, dict] = {}
+        for r in rows:
+            uniq[(r["rank"], r["company"], r["bid_price"])] = r
+        try:
+            db.query(models.OpeningParticipant).filter(
+                models.OpeningParticipant.bid_no == bid_no
+            ).delete()
+            for r in uniq.values():
+                db.add(models.OpeningParticipant(
+                    **r, crawled_at=datetime.now(timezone.utc)
+                ))
+            db.commit()
+            saved_bids += 1
+            saved_rows += len(uniq)
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            logger.warning(f"opening_crawler: 참가자 저장 실패 {bid_no}: {type(e).__name__}: {e}")
+    return {"participant_bids": saved_bids, "participant_rows": saved_rows}
+
+
 def _upsert_opening_result(db: Session, kwargs: dict, seen: set[str]) -> bool:
     """OpeningResult upsert. 반환: 신규 삽입 True / 업데이트 False.
 
@@ -237,6 +323,11 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     pages_fetched = 0
     seen: set[str] = set()  # 이번 세션 dedupe (API 가 동일 bid_no 를 여러 row 로 반환)
 
+    # 참가자 저장 대상 = 모의투찰 등록 공고만 (설계 §P4 — 전수 저장 금지).
+    # API 는 참가자별로 row 를 쪼개 주므로, 낙찰자 판별과 별개로 여기서 줍는다.
+    registered_bid_nos = _load_registered_bid_nos(db)
+    participants_by_bid: dict[str, list[dict]] = {}
+
     try:
         for window_start, window_end in _daily_windows(start_dt, end_dt):
             start_str = window_start.strftime("%Y%m%d%H%M")
@@ -251,6 +342,10 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                 if not items:
                     break
                 for item in items:
+                    if registered_bid_nos:
+                        p = _parse_participant_kwargs(item)
+                        if p and p["bid_no"] in registered_bid_nos:
+                            participants_by_bid.setdefault(p["bid_no"], []).append(p)
                     kwargs = _parse_item_to_kwargs(item)
                     if kwargs is None:
                         window_skipped += 1
@@ -284,6 +379,16 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     finally:
         db.close()
 
+    # 참가자 저장 — 본 크롤 커밋이 전부 끝난 뒤 별도 세션에서 공고 단위 커밋.
+    # 실패해도 낙찰 결과 적재를 되돌리지 않는다(부가 데이터).
+    p_summary = {"participant_bids": 0, "participant_rows": 0}
+    if participants_by_bid:
+        pdb = SessionLocal()
+        try:
+            p_summary = _save_participants(pdb, participants_by_bid)
+        finally:
+            pdb.close()
+
     summary = {
         "ok": True,
         "range": f"{overall_start}~{overall_end}",
@@ -291,6 +396,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
         "inserted": inserted,
         "updated": updated,
         "skipped": skipped,
+        **p_summary,
     }
     logger.info(f"opening_crawler: {summary}")
     return summary

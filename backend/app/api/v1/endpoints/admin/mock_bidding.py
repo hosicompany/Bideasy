@@ -32,6 +32,33 @@ def summary(
     }
 
 
+@router.get("/mock-bidding/charts")
+def charts(
+    arm: str = Query("active", description="추이·세그먼트 기준 arm (기본 active = 운영 정본)"),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """시각화 대시보드용 집계 — 전부 등록 건당 최신 scoring_rev 기준.
+
+    화면 순서는 §0.2 지표 우선순위(무효율 → 적중률 → 등수 → 격차 → 오차)를
+    따르고, 그 배치는 admin.js 가 책임진다. 여기는 데이터만 만든다.
+    """
+    from app.services import mock_bidding as mb
+
+    return {
+        "arms": mb.summarize(db),
+        "rank_distribution": mb.rank_distribution(db),
+        "rank_histogram_cap": mb.RANK_HISTOGRAM_CAP,
+        "gap_distribution": mb.gap_distribution(db),
+        "gap_buckets": list(mb.GAP_BUCKETS),
+        "ratio_error_trend": mb.ratio_error_trend(db, arm=arm),
+        "failure_tags": mb.failure_tag_stats(db),
+        "segments": mb.segment_stats(db, arm=arm),
+        "trend_arm": arm,
+        "note": "1차 지표는 dropout_rate(무효율). 대외 낙찰률 표기 금지.",
+    }
+
+
 @router.get("/mock-bidding/registrations")
 def registrations(
     bid_no: str | None = Query(None),
@@ -110,6 +137,8 @@ def results(
                 "scoring_rev": r.scoring_rev,
                 "actual_winner_price": r.actual_winner_price,
                 "actual_lower_limit": r.actual_lower_limit,
+                "estimated_rank": r.estimated_rank,
+                "participants_count": r.participants_count,
                 "gap_to_winner_pct": r.gap_to_winner_pct,
                 "gap_to_limit_pct": r.gap_to_limit_pct,
                 "ratio_error": r.ratio_error,
