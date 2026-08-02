@@ -990,7 +990,216 @@ pages.simulation = async function(content) {
         <table style="width:100%;font-size:13px;margin-top:10px;"><thead><tr><th style="text-align:left;">여유분 가산</th><th style="text-align:left;">낙찰률</th><th style="text-align:left;">통과율</th><th style="text-align:left;">탈락률</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     } catch (e) { r.innerHTML = '<div class="card">오류: ' + e.message + '</div>'; }
   });
+
+  // ── 5-arm 비교 (모의투찰과 같은 arm 구성으로 과거를 재평가) ──
+  // 모의투찰은 표본이 쌓이는 데 시간이 걸린다. 같은 arm 을 과거에 적용해
+  // 지금 당장 방향을 본다. 판정은 mock_bidding.judge 재사용이라 두 화면의
+  // 정의가 갈라지지 않는다.
+  const armBox = document.createElement('div');
+  content.appendChild(armBox);
+  armBox.innerHTML = '<div class="card">5-arm 비교 불러오는 중...</div>';
+
+  try {
+    const d = await api('/admin/simulation/arms');
+    if (!d.available) {
+      armBox.innerHTML = '<div class="card">5-arm 비교: ' + (d.reason || '데이터 없음') + '</div>';
+    } else {
+      renderArms(armBox, d);
+    }
+  } catch (e) {
+    armBox.innerHTML = '<div class="card">5-arm 비교 오류: ' + e.message + '</div>';
+  }
 };
+
+const ARM_LABEL_BT = {
+  standard: 'standard', active: 'active',
+  frontier_c5: 'frontier_c5', frontier_c10: 'frontier_c10', aggressive: 'aggressive',
+};
+const ARM_SEQ = ['standard', 'active', 'frontier_c5', 'frontier_c10', 'aggressive'];
+
+function renderArms(box, d) {
+  const names = ARM_SEQ.filter((a) => d.arms[a]);
+  const cell = (m) => m
+    ? `<td class="${m.dropout_rate > 10 ? '' : ''}" style="font-weight:700;color:${m.dropout_rate > 10 ? '#FF3B30' : 'inherit'};">${m.dropout_rate.toFixed(2)}%</td>
+       <td>${m.win_rate.toFixed(2)}%<br><span style="font-size:11px;color:#8B95A1;font-weight:400;">${m.win_ci95[0].toFixed(1)}~${m.win_ci95[1].toFixed(1)}</span></td>`
+    : '<td>—</td><td>—</td>';
+
+  const rows = names.map((a) => {
+    const e = d.arms[a];
+    return `<tr${a === 'active' ? ' style="background:#E8F1FE;"' : ''}>
+      <td style="text-align:left;"><b>${ARM_LABEL_BT[a]}</b><br>
+        <span style="font-size:11px;color:#8B95A1;">${esc(e.desc || '')}</span></td>
+      ${cell(e.overall)}${cell(e.holdout)}${cell(e.qualification_holdout)}
+    </tr>`;
+  }).join('');
+
+  const sz = d.slice_sizes || {};
+  box.innerHTML = `
+    <div class="card">
+      <h3>5-arm 비교 — 과거 데이터</h3>
+      <p style="color:var(--color-text-muted);font-size:13px;">
+        모의투찰과 <b>같은 5개 ${gl('arm')}</b>을 과거 개찰 ${fmtNumber(d.n_records)}건에 적용한 결과입니다.
+        1차 지표는 ${gl('무효율')}이며, ${gl('적중률')}은 내부 참고용입니다.
+      </p>
+      ${(d.caveats || []).map((c) => `<div style="margin-top:10px;font-size:12.5px;color:#4E5968;background:#FFF7E6;border:1px solid #FFE0A3;border-radius:10px;padding:10px 12px;">⚠️ ${esc(c)}</div>`).join('')}
+      <div style="overflow-x:auto;margin-top:14px;">
+        <table style="width:100%;font-size:13px;min-width:680px;text-align:right;">
+          <thead>
+            <tr><th rowspan="2" style="text-align:left;">arm</th>
+              <th colspan="2">전체 (n=${fmtNumber(sz.overall)})</th>
+              <th colspan="2">${gl('holdout')} 2025 (n=${fmtNumber(sz.holdout)})</th>
+              <th colspan="2">${gl('적격심사제')} holdout (n=${fmtNumber(sz.qualification_holdout)})</th></tr>
+            <tr><th>무효율</th><th>적중률 (${gl('신뢰구간', 'CI')})</th>
+                <th>무효율</th><th>적중률 (CI)</th>
+                <th>무효율</th><th>적중률 (CI)</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>안전 ↔ 적중 트레이드오프</h3>
+      <p style="color:var(--color-text-muted);font-size:13px;">
+        가로축 ${gl('무효율')}, 세로축 ${gl('적중률')} — <b>왼쪽 위가 좋은 자리</b>입니다.
+        점선은 설계상의 ${gl('무효율 캡')}(5% · 10%).
+      </p>
+      <div class="chart-wrap" style="height:340px;"><canvas id="ch-arm-scatter"></canvas></div>
+    </div>
+
+    ${glossaryCard(['무효율', '적중률', '무효', '적중', '밀림', 'arm', 'holdout',
+                    '신뢰구간', '무효율 캡', '백테스트', '과적합', '낙찰하한율',
+                    '예정가격', '사정률', '적격심사제'])}`;
+
+  // 산점도 — holdout(공정 비교) 기준. active 만 강조, 나머지는 중립.
+  const pts = names.map((a) => ({
+    x: d.arms[a].holdout ? d.arms[a].holdout.dropout_rate : 0,
+    y: d.arms[a].holdout ? d.arms[a].holdout.win_rate : 0,
+    label: a,
+  }));
+  new Chart(document.getElementById('ch-arm-scatter'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        data: pts,
+        pointRadius: pts.map((p) => (p.label === 'active' ? 9 : 6)),
+        pointHoverRadius: 12,
+        backgroundColor: pts.map((p) =>
+          p.label === 'active' ? '#3182F6' : (p.x > 10 ? '#FF3B30' : '#8B95A1')),
+        borderColor: '#fff', borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (c) => `${c.raw.label} — 무효 ${c.raw.x.toFixed(2)}% / 적중 ${c.raw.y.toFixed(2)}%`,
+          },
+        },
+      },
+      scales: {
+        x: { title: { display: true, text: '무효율 % (낮을수록 좋음)' }, beginAtZero: true },
+        y: { title: { display: true, text: '적중률 %' }, beginAtZero: true },
+      },
+    },
+    plugins: [{
+      // 캡 기준선 + 점 라벨 — 색 단독으로 식별하지 않게 이름을 직접 붙인다.
+      id: 'armAnno',
+      afterDatasetsDraw(chart) {
+        const { ctx, scales: { x, y } } = chart;
+        ctx.save();
+        [5, 10].forEach((v) => {
+          if (v < x.min || v > x.max) return;
+          const px = x.getPixelForValue(v);
+          ctx.strokeStyle = '#C6CDD5'; ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(px, y.top); ctx.lineTo(px, y.bottom); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = '#8B95A1'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText('캡 ' + v + '%', px, y.top - 4);
+        });
+        const meta = chart.getDatasetMeta(0);
+        ctx.textAlign = 'left'; ctx.font = '700 12px sans-serif';
+        meta.data.forEach((pt, i) => {
+          const p = chart.data.datasets[0].data[i];
+          ctx.fillStyle = p.label === 'active' ? '#1B64DA' : '#191F28';
+          ctx.fillText(p.label, pt.x + 12, pt.y + 4);
+        });
+        ctx.restore();
+      },
+    }],
+  });
+}
+
+// ─── 용어집 ──────────────────────────────────────────────────
+// 정본: docs/GLOSSARY_BIDDING.md — 문구를 고칠 때 그 문서도 함께 고친다.
+// 공공입찰 도메인은 "예정가격이 개찰 순간 추첨으로 정해진다"는 전제를 모르면
+// 아래 지표가 전부 오해된다. 그래서 지표 옆에 설명을 붙인다.
+
+const GLOSSARY = {
+  '기초금액': '발주기관이 공고에 제시하는 기준 금액. 모든 계산의 출발점입니다.',
+  '복수예비가격': '기초금액 ±2~3% 범위로 만든 15개 후보 가격. 여기서 4개가 뽑혀 예정가격이 됩니다.',
+  '예정가격': '개찰 때 입찰자들이 뽑은 번호로 선택된 4개 예비가격의 평균. 낙찰 판정의 기준이며 개찰 전에는 알 수 없습니다(추첨).',
+  '사정률': '예정가격 ÷ 기초금액. 보통 97~103% 사이에서 움직입니다.',
+  '투찰률': '우리 투찰가 ÷ 기초금액 (%).',
+  '낙찰하한율': '예정가격 대비 최소 투찰 비율. 이 밑으로 쓰면 무효입니다. 공사·금액대·시행일별로 다릅니다(예: 10억 미만 공사 89.745%).',
+  '낙찰하한선': '예정가격 × 낙찰하한율. 이 금액 미만으로 투찰하면 입찰이 무효가 됩니다.',
+  'A값': '국민연금·건강보험·산재·고용보험 등 법정 고정비 합계. 투찰가 공식에서 사정률을 적용하지 않고 그대로 더합니다. ⚠️ 현재 공고의 99.99%에서 결측이라 0으로 계산 중입니다.',
+  '무효': 'DROPOUT — 투찰가가 낙찰하한선 미만이라 입찰 자체가 없던 일이 되는 것. 가장 나쁜 결과입니다.',
+  '무효율': '판정된 건 중 무효의 비율. 브랜드 KPI가 유효율이라 이것이 1차 지표입니다 — 낮을수록 좋습니다.',
+  '적중': 'WIN — 투찰가가 [낙찰하한선, 실제 낙찰가] 구간에 들어간 것. 하한선을 통과하면서 낙찰자보다 낮았다는 뜻입니다. ⚠️ 1순위 낙찰 보장은 아닙니다.',
+  '적중률': '판정된 건 중 적중의 비율. 내부 참고용이며 대외에 «낙찰률»로 표기하는 것은 금지입니다(전역 규칙 §4-2).',
+  '밀림': 'LOST — 하한선은 통과했으나 낙찰가보다 높아 더 싼 업체에 밀린 것.',
+  'arm': '동시에 시험하는 전략 하나. A/B 테스트의 각 안에 해당하며, 모의투찰은 같은 공고에 5개 arm을 동시 등록합니다.',
+  '사전 등록': '결과를 보기 전에 가격·지표·판정 기준을 확정해 잠그는 것. 사후에 유리하게 고치는 것(체리피킹)을 구조적으로 막습니다.',
+  '백테스트': '과거 데이터에 전략을 적용해 사후 재구성하는 것. 빠르지만 파라미터가 바뀌면 과거 수치도 함께 변합니다 — 참고용이지 증거가 아닙니다.',
+  'holdout': '파라미터 학습에 쓰지 않고 남겨둔 검증용 데이터. 과적합 여부를 봅니다.',
+  '과적합': '학습 데이터에만 잘 맞고 새 데이터에서는 무너지는 현상.',
+  '신뢰구간': 'Wilson 95% 신뢰구간 — 비율의 불확실성 범위. 표본이 작으면 넓어지고, 두 arm의 구간이 겹치면 우열을 단정할 수 없습니다.',
+  '오라클': '사후에 최적값을 골랐을 때의 상한. 어떤 알고리즘도 넘을 수 없는 천장입니다.',
+  '무효율 캡': '최적화할 때 «무효율이 이 값을 넘지 않는다»는 제약. frontier_c5는 캡 5%를 뜻합니다.',
+  '적격심사제': '최저가 순으로 이행능력(실적·재무·기술)을 심사해 통과한 첫 업체가 낙찰되는 방식. BidEasy의 비치헤드 시장입니다.',
+  '소액수의견적': '소액 공사에서 2인 이상 견적을 받아 결정하는 방식. 건수가 가장 많습니다.',
+  '채점 도달률': '등록한 건이 실제로 채점까지 도달한 비율. 개찰결과가 붙어야 채점되므로, 이 값이 낮으면 다른 지표를 해석할 수 없습니다.',
+  'G-A': '파이프라인 건전성 게이트 — 채점 도달률 60% 이상. 미달이면 다른 지표를 해석하지 않습니다.',
+  'G-B': '전략 우열 게이트 — 적격심사제 400건 누적 후, active가 슬라이더 기본값을 유의하게 상회하는지 판정합니다.',
+  'G-C': '제품화 검토 게이트 — frontier_c10이 active를 유의하게 상회하고 무효율 11% 이하일 때 Pro+ 전략투찰 검토에 착수합니다.',
+};
+
+/** 용어에 밑줄 + 네이티브 툴팁을 붙인다. 설명이 없으면 그냥 텍스트. */
+function gl(term, label) {
+  const d = GLOSSARY[term];
+  const text = label || term;
+  if (!d) return text;
+  return '<span title="' + esc(d) + '" style="border-bottom:1px dotted #8B95A1;cursor:help;">'
+    + text + '</span>';
+}
+
+/** 접이식 용어집 카드 — 페이지 하단에 붙인다. */
+function glossaryCard(terms) {
+  const rows = terms.filter((t) => GLOSSARY[t]).map((t) =>
+    '<tr><td style="white-space:nowrap;font-weight:700;vertical-align:top;">' + t + '</td>'
+    + '<td style="text-align:left;color:#4E5968;">' + esc(GLOSSARY[t]) + '</td></tr>').join('');
+  return `<div class="card">
+    <details>
+      <summary style="cursor:pointer;font-weight:700;font-size:15px;">📖 용어 설명 (${terms.length}개)</summary>
+      <p style="color:var(--color-text-muted);font-size:13px;margin:10px 0;">
+        정본: <code>docs/GLOSSARY_BIDDING.md</code>
+      </p>
+      <div style="overflow-x:auto;"><table style="width:100%;font-size:13px;">
+        <tbody>${rows}</tbody>
+      </table></div>
+    </details>
+  </div>`;
+}
+
+/** HTML 속성/본문에 넣을 텍스트 이스케이프 */
+function esc(t) {
+  return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 
 // ─── 모의투찰 (사전 등록·채점) ───────────────────────────────
 // 설계·게이트 정본: docs/MOCK_BIDDING_DESIGN.md
@@ -1063,7 +1272,7 @@ pages.mockbidding = async function (content) {
     <div class="card">
       <h3>G-A · 파이프라인 건전성</h3>
       <p style="color:var(--color-text-muted);font-size:13px;">
-        등록한 건이 실제로 채점까지 도달하는 비율. 이게 낮으면 다른 지표는 해석하지 않습니다.
+        등록한 건이 실제로 채점까지 도달하는 비율입니다. ${gl('G-A')} 기준 미달이면 다른 지표는 해석하지 않습니다.
       </p>
       <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;align-items:baseline;">
         <div><div style="font-size:12px;color:#8B95A1;">등록</div>
@@ -1095,7 +1304,7 @@ pages.mockbidding = async function (content) {
       <div class="card">
         <h3>③ 등수 분포 — 우리가 몇 등에 몰리는지</h3>
         <p style="color:var(--color-text-muted);font-size:13px;">
-          참가자 데이터(Phase 2)가 붙은 채점 건만. 등수는 무효 참가자 포함 순위입니다.
+          참가자 데이터가 붙은 채점 건만. 등수는 ${gl('무효')} 참가자를 포함한 순위입니다.
         </p>
         <div class="chart-wrap"><canvas id="mb-ch-rank"></canvas></div>
       </div>
@@ -1112,7 +1321,7 @@ pages.mockbidding = async function (content) {
       <div class="card">
         <h3>⑤ 사정률 예측 오차 추이 (active)</h3>
         <p style="color:var(--color-text-muted);font-size:13px;">
-          개별 승패는 추첨 노이즈가 크지만 이 오차는 모델의 순수 신호입니다(§0.2 4차).
+          개별 승패는 ${gl('예정가격')} 추첨 노이즈가 크지만, ${gl('사정률')} 오차는 모델의 순수 신호입니다.
         </p>
         <div class="chart-wrap"><canvas id="mb-ch-err"></canvas></div>
       </div>
@@ -1214,6 +1423,14 @@ pages.mockbidding = async function (content) {
       c.innerHTML = '<div class="card">오류: ' + e.message + '</div>';
     }
   });
+
+  // 용어집 — 도메인 용어를 모르면 위 지표가 전부 오해된다
+  content.insertAdjacentHTML('beforeend', glossaryCard([
+    '무효', '무효율', '적중', '적중률', '밀림', '채점 도달률',
+    'G-A', 'G-B', 'G-C', 'arm', '사전 등록',
+    '기초금액', '복수예비가격', '예정가격', '사정률', '투찰률',
+    '낙찰하한율', '낙찰하한선', 'A값', '적격심사제', '소액수의견적',
+  ]));
 
   // 원장·결과는 화면을 막지 않도록 뒤이어 채운다
   api('/admin/mock-bidding/registrations?limit=30').then((d) => {

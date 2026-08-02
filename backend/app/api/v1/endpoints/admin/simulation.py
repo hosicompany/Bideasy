@@ -7,7 +7,7 @@
 """
 import copy
 
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -118,3 +118,26 @@ def whatif(body: dict = Body(default={}), db: Session = Depends(get_db), _admin=
         m = evaluate_params(records, params)
         results.append({"margin_delta": d, **m})
     return {"results": results, "sample": len(records)}
+
+@router.get("/simulation/arms")
+def arm_backtest(
+    bid_method: str | None = Query(None, description="세그먼트 필터 (예: 적격심사제)"),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """과거 데이터에 모의투찰과 **같은 5 arm** 을 적용한 비교표.
+
+    모의투찰(전향 실험)은 표본이 쌓이는 데 시간이 걸리므로, 같은 arm 구성으로
+    과거를 재평가해 지금 당장 방향을 본다. 판정은 mock_bidding.judge 를
+    재사용하므로 모의투찰 화면과 정의가 갈라지지 않는다.
+
+    ⚠️ 응답의 `caveats` 를 화면에 반드시 함께 표기할 것 — 백테스트는 사후
+    재구성이라 파라미터가 바뀌면 과거 수치도 변한다(증거가 아니라 참고).
+    """
+    from app.services import arm_backtest as ab
+
+    try:
+        return ab.run(db=db, bid_method=bid_method)
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[admin.simulation.arms] {type(e).__name__}: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"5-arm 백테스트를 실행할 수 없어요: {e}")
