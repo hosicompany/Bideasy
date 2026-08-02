@@ -1,0 +1,495 @@
+{
+  "available": true,
+  "n_records": 4848,
+  "holdout_years": [
+    2025
+  ],
+  "slice_sizes": {
+    "overall": 4848,
+    "holdout": 483,
+    "qualification": 1117,
+    "qualification_holdout": 106
+  },
+  "arms": {
+    "standard": {
+      "desc": "슬라이더 기본 −2.5% — 실사용자 다수의 실제 행동",
+      "overall": {
+        "n": 4848,
+        "win_rate": 0.516,
+        "dropout_rate": 0.0,
+        "lost_rate": 99.484,
+        "win_ci95": [
+          0.35,
+          0.76
+        ]
+      },
+      "holdout": {
+        "n": 483,
+        "win_rate": 0.0,
+        "dropout_rate": 0.0,
+        "lost_rate": 100.0,
+        "win_ci95": [
+          0.0,
+          0.789
+        ]
+      },
+      "qualification": {
+        "n": 1117,
+        "win_rate": 0.0,
+        "dropout_rate": 0.0,
+        "lost_rate": 100.0,
+        "win_ci95": [
+          0.0,
+          0.343
+        ]
+      },
+      "qualification_holdout": {
+        "n": 106,
+        "win_rate": 0.0,
+        "dropout_rate": 0.0,
+        "lost_rate": 100.0,
+        "win_ci95": [
+          0.0,
+          3.497
+        ]
+      },
+      "by_year": {
+        "2021": {
+          "n": 2115,
+          "win_rate": 0.615,
+          "dropout_rate": 0.0,
+          "lost_rate": 99.385,
+          "win_ci95": [
+            0.36,
+            1.049
+          ]
+        },
+        "2022": {
+          "n": 821,
+          "win_rate": 0.365,
+          "dropout_rate": 0.0,
+          "lost_rate": 99.635,
+          "win_ci95": [
+            0.124,
+            1.069
+          ]
+        },
+        "2023": {
+          "n": 734,
+          "win_rate": 0.681,
+          "dropout_rate": 0.0,
+          "lost_rate": 99.319,
+          "win_ci95": [
+            0.291,
+            1.585
+          ]
+        },
+        "2024": {
+          "n": 695,
+          "win_rate": 0.576,
+          "dropout_rate": 0.0,
+          "lost_rate": 99.424,
+          "win_ci95": [
+            0.224,
+            1.47
+          ]
+        },
+        "2025": {
+          "n": 483,
+          "win_rate": 0.0,
+          "dropout_rate": 0.0,
+          "lost_rate": 100.0,
+          "win_ci95": [
+            0.0,
+            0.789
+          ]
+        }
+      }
+    },
+    "active": {
+      "desc": "현 자가보정 전략 (운영 정본)",
+      "overall": {
+        "n": 4848,
+        "win_rate": 13.861,
+        "dropout_rate": 5.281,
+        "lost_rate": 80.858,
+        "win_ci95": [
+          12.917,
+          14.863
+        ]
+      },
+      "holdout": {
+        "n": 483,
+        "win_rate": 29.4,
+        "dropout_rate": 6.418,
+        "lost_rate": 64.182,
+        "win_ci95": [
+          25.512,
+          33.612
+        ]
+      },
+      "qualification": {
+        "n": 1117,
+        "win_rate": 32.14,
+        "dropout_rate": 5.551,
+        "lost_rate": 62.31,
+        "win_ci95": [
+          29.466,
+          34.936
+        ]
+      },
+      "qualification_holdout": {
+        "n": 106,
+        "win_rate": 41.509,
+        "dropout_rate": 6.604,
+        "lost_rate": 51.887,
+        "win_ci95": [
+          32.587,
+          51.026
+        ]
+      },
+      "by_year": {
+        "2021": {
+          "n": 2115,
+          "win_rate": 9.693,
+          "dropout_rate": 5.343,
+          "lost_rate": 84.965,
+          "win_ci95": [
+            8.504,
+            11.028
+          ]
+        },
+        "2022": {
+          "n": 821,
+          "win_rate": 9.988,
+          "dropout_rate": 4.872,
+          "lost_rate": 85.14,
+          "win_ci95": [
+            8.119,
+            12.229
+          ]
+        },
+        "2023": {
+          "n": 734,
+          "win_rate": 9.537,
+          "dropout_rate": 5.586,
+          "lost_rate": 84.877,
+          "win_ci95": [
+            7.618,
+            11.877
+          ]
+        },
+        "2024": {
+          "n": 695,
+          "win_rate": 24.892,
+          "dropout_rate": 4.46,
+          "lost_rate": 70.647,
+          "win_ci95": [
+            21.821,
+            28.239
+          ]
+        },
+        "2025": {
+          "n": 483,
+          "win_rate": 29.4,
+          "dropout_rate": 6.418,
+          "lost_rate": 64.182,
+          "win_ci95": [
+            25.512,
+            33.612
+          ]
+        }
+      }
+    },
+    "frontier_c5": {
+      "desc": "무효율 캡 5% 최적 — 안전 우선",
+      "overall": {
+        "n": 4848,
+        "win_rate": 13.387,
+        "dropout_rate": 4.992,
+        "lost_rate": 81.621,
+        "win_ci95": [
+          12.457,
+          14.375
+        ]
+      },
+      "holdout": {
+        "n": 483,
+        "win_rate": 28.364,
+        "dropout_rate": 6.211,
+        "lost_rate": 65.424,
+        "win_ci95": [
+          24.527,
+          32.543
+        ]
+      },
+      "qualification": {
+        "n": 1117,
+        "win_rate": 29.902,
+        "dropout_rate": 4.924,
+        "lost_rate": 65.175,
+        "win_ci95": [
+          27.289,
+          32.652
+        ]
+      },
+      "qualification_holdout": {
+        "n": 106,
+        "win_rate": 38.679,
+        "dropout_rate": 5.66,
+        "lost_rate": 55.66,
+        "win_ci95": [
+          29.959,
+          48.192
+        ]
+      },
+      "by_year": {
+        "2021": {
+          "n": 2115,
+          "win_rate": 9.362,
+          "dropout_rate": 4.965,
+          "lost_rate": 85.674,
+          "win_ci95": [
+            8.193,
+            10.678
+          ]
+        },
+        "2022": {
+          "n": 821,
+          "win_rate": 9.622,
+          "dropout_rate": 4.629,
+          "lost_rate": 85.749,
+          "win_ci95": [
+            7.789,
+            11.832
+          ]
+        },
+        "2023": {
+          "n": 734,
+          "win_rate": 9.128,
+          "dropout_rate": 5.45,
+          "lost_rate": 85.422,
+          "win_ci95": [
+            7.252,
+            11.43
+          ]
+        },
+        "2024": {
+          "n": 695,
+          "win_rate": 24.173,
+          "dropout_rate": 4.173,
+          "lost_rate": 71.655,
+          "win_ci95": [
+            21.137,
+            27.492
+          ]
+        },
+        "2025": {
+          "n": 483,
+          "win_rate": 28.364,
+          "dropout_rate": 6.211,
+          "lost_rate": 65.424,
+          "win_ci95": [
+            24.527,
+            32.543
+          ]
+        }
+      }
+    },
+    "frontier_c10": {
+      "desc": "무효율 캡 10% 최적 — 균형",
+      "overall": {
+        "n": 4848,
+        "win_rate": 15.223,
+        "dropout_rate": 9.117,
+        "lost_rate": 75.66,
+        "win_ci95": [
+          14.239,
+          16.262
+        ]
+      },
+      "holdout": {
+        "n": 483,
+        "win_rate": 32.091,
+        "dropout_rate": 10.766,
+        "lost_rate": 57.143,
+        "win_ci95": [
+          28.083,
+          36.382
+        ]
+      },
+      "qualification": {
+        "n": 1117,
+        "win_rate": 33.93,
+        "dropout_rate": 7.699,
+        "lost_rate": 58.371,
+        "win_ci95": [
+          31.213,
+          36.758
+        ]
+      },
+      "qualification_holdout": {
+        "n": 106,
+        "win_rate": 41.509,
+        "dropout_rate": 8.491,
+        "lost_rate": 50.0,
+        "win_ci95": [
+          32.587,
+          51.026
+        ]
+      },
+      "by_year": {
+        "2021": {
+          "n": 2115,
+          "win_rate": 10.402,
+          "dropout_rate": 9.314,
+          "lost_rate": 80.284,
+          "win_ci95": [
+            9.172,
+            11.776
+          ]
+        },
+        "2022": {
+          "n": 821,
+          "win_rate": 10.475,
+          "dropout_rate": 8.161,
+          "lost_rate": 81.364,
+          "win_ci95": [
+            8.561,
+            12.757
+          ]
+        },
+        "2023": {
+          "n": 734,
+          "win_rate": 10.763,
+          "dropout_rate": 9.401,
+          "lost_rate": 79.837,
+          "win_ci95": [
+            8.722,
+            13.213
+          ]
+        },
+        "2024": {
+          "n": 695,
+          "win_rate": 28.489,
+          "dropout_rate": 8.201,
+          "lost_rate": 63.309,
+          "win_ci95": [
+            25.259,
+            31.956
+          ]
+        },
+        "2025": {
+          "n": 483,
+          "win_rate": 32.091,
+          "dropout_rate": 10.766,
+          "lost_rate": 57.143,
+          "win_ci95": [
+            28.083,
+            36.382
+          ]
+        }
+      }
+    },
+    "aggressive": {
+      "desc": "시장 추격 −12% — 공격 가설",
+      "overall": {
+        "n": 4848,
+        "win_rate": 16.089,
+        "dropout_rate": 27.64,
+        "lost_rate": 56.271,
+        "win_ci95": [
+          15.082,
+          17.15
+        ]
+      },
+      "holdout": {
+        "n": 483,
+        "win_rate": 35.404,
+        "dropout_rate": 29.814,
+        "lost_rate": 34.783,
+        "win_ci95": [
+          31.269,
+          39.769
+        ]
+      },
+      "qualification": {
+        "n": 1117,
+        "win_rate": 32.587,
+        "dropout_rate": 24.44,
+        "lost_rate": 42.972,
+        "win_ci95": [
+          29.902,
+          35.392
+        ]
+      },
+      "qualification_holdout": {
+        "n": 106,
+        "win_rate": 40.566,
+        "dropout_rate": 22.642,
+        "lost_rate": 36.792,
+        "win_ci95": [
+          31.707,
+          50.085
+        ]
+      },
+      "by_year": {
+        "2021": {
+          "n": 2115,
+          "win_rate": 10.686,
+          "dropout_rate": 28.322,
+          "lost_rate": 60.993,
+          "win_ci95": [
+            9.44,
+            12.074
+          ]
+        },
+        "2022": {
+          "n": 821,
+          "win_rate": 8.404,
+          "dropout_rate": 26.066,
+          "lost_rate": 65.53,
+          "win_ci95": [
+            6.695,
+            10.501
+          ]
+        },
+        "2023": {
+          "n": 734,
+          "win_rate": 9.809,
+          "dropout_rate": 27.52,
+          "lost_rate": 62.67,
+          "win_ci95": [
+            7.862,
+            12.175
+          ]
+        },
+        "2024": {
+          "n": 695,
+          "win_rate": 34.82,
+          "dropout_rate": 26.043,
+          "lost_rate": 39.137,
+          "win_ci95": [
+            31.37,
+            38.437
+          ]
+        },
+        "2025": {
+          "n": 483,
+          "win_rate": 35.404,
+          "dropout_rate": 29.814,
+          "lost_rate": 34.783,
+          "win_ci95": [
+            31.269,
+            39.769
+          ]
+        }
+      }
+    }
+  },
+  "caveats": [
+    "백테스트는 사후 재구성이라 자가보정이 파라미터를 바꾸면 과거 수치도 함께 변한다 — 참고용이지 증거가 아니다.",
+    "frontier_c5/c10 은 2021~2024 로 학습해 2025 를 holdout 으로 잡은 파라미터라, 전체 기간 열에서는 자기 학습 데이터가 섞여 유리하게 편향된다. 공정한 비교는 holdout 열이다.",
+    "적중률은 내부 참고용이며 대외 표기는 금지(전역 규칙 §4-2)."
+  ]
+}
