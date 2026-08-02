@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db import models
 from app.services import blog as blog_svc
-from app.services import content_llm
+from app.services import llm_gateway
 
 logger = get_logger(__name__)
 
@@ -81,7 +81,7 @@ def _collect(db, start: datetime, end: datetime) -> list:
 
 def _llm_narrative(ctx: str) -> Optional[dict]:
     """주어진 통계로 인트로·인사이트 프로즈 생성. 키 없거나 실패 시 None(→ 템플릿 폴백)."""
-    if not content_llm.available():
+    if not llm_gateway.available():
         return None
     try:
         sys = (
@@ -90,8 +90,8 @@ def _llm_narrative(ctx: str) -> Optional[dict]:
             'JSON {"intro": "...", "insight": "..."} 으로만 답하라. '
             "intro=2~3문장 도입, insight=2문장 인사이트(중소 시공사 대표 독자 대상)."
         )
-        data = content_llm.chat_json(
-            sys, ctx, max_tokens=500, temperature=0.4, model=content_llm.cheap_model()
+        data = llm_gateway.chat_json(
+            sys, ctx, max_tokens=500, temperature=0.4, model=llm_gateway.cheap_model()
         )
         intro, insight = (data.get("intro") or "").strip(), (data.get("insight") or "").strip()
         if intro and insight:

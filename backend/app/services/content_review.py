@@ -25,7 +25,7 @@ import re
 from typing import Optional
 
 from app.db import models
-from app.services import content_llm
+from app.services import llm_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,13 @@ _CRITIQUE_HINTS = ("믿으면", "안 되", "못 한", "않습니다", "않아요
                    "환상", "주의", "조심", "허위", "과장", "광고", "'", '"', "‘", "“")
 
 
+# 문장 분리 — **숫자 사이의 마침표는 자르지 않는다**. 안 그러면 "89.745%" 가
+# "89" / "745%" 로 쪼개져 하한율이 통째로 '출처 없는 수치'로 잡힌다(실측으로 발견).
+_SENT_SPLIT = re.compile(r"(?<!\d)[.!?]+(?!\d)|\n+")
+
+
 def _sentences(text: str) -> list[str]:
-    return [s for s in re.split(r"[.!?\n]+", text) if s.strip()]
+    return [s for s in _SENT_SPLIT.split(text) if s and s.strip()]
 
 
 def check_banned_terms(text: str) -> dict:
@@ -69,9 +74,26 @@ def check_banned_terms(text: str) -> dict:
 # ─── ② 출처 없는 수치 ─────────────────────────────────────────
 # 통계처럼 읽히는 숫자가 팩트시트·DB 숫자에 없으면 환각 가능성.
 # 정밀도가 아직 미검증이라 WARN(자문) 수준으로 둔다 — 그림자 모드로 노이즈를 측정한 뒤 조정.
+def _lower_limit_numbers() -> set:
+    """낙찰하한율 화이트리스트 — `lower_limits.py`(단일 소스)에서 끌어온다.
+
+    하드코딩하면 요율 개정 때마다 게이트가 정상 글을 오탐한다(실측: 87.745·86.745 가
+    전부 '출처 없는 수치'로 잡혔음). 단일 소스를 따라가게 해서 드리프트를 없앤다.
+    """
+    from app.services import lower_limits as ll
+    vals = {r for _, r in ll._CONSTRUCTION_2026} | {r for _, r in ll._CONSTRUCTION_OLD}
+    vals |= set(ll.LEGACY_RATES.values())
+    out = set()
+    for v in vals:
+        out.add(f"{v:g}")                     # 87.495
+        if float(v).is_integer():
+            out.add(str(int(v)))              # 60
+    return out
+
+
 _FACTSHEET_NUMBERS = {
-    "15", "4", "2", "3", "87.495", "89.745", "10",       # 복수예가·변동폭·하한율·금액구간
-}
+    "15", "4", "2", "3", "10",       # 복수예가 15→4개·변동폭 ±2/3%·금액구간 10억
+} | _lower_limit_numbers()
 _STAT_PATTERNS = [
     r"(\d+(?:\.\d+)?)\s*%",
     r"(\d+(?:,\d{3})*)\s*개사",
@@ -80,13 +102,16 @@ _STAT_PATTERNS = [
 ]
 # 서술형 표현 안의 숫자는 통계 주장이 아니다 (예: "3분 안에", "5가지", "1원 차이")
 _BENIGN_CONTEXT = re.compile(r"\d+\s*(?:분|초|시간|일|주|개월|년|가지|선|단계|위|원 차이|번째)")
+# 가정·예시로 명시된 숫자는 사실 주장이 아니다 — "투찰률(예: 92%)", "~라고 해볼게요".
+# (실측: K5 초안에서 예시 투찰률이 전부 '출처 없는 수치'로 잡혔음)
+_HYPOTHETICAL = ("예:", "예를 들어", "예시", "가정", "해볼게요", "해볼까요", "쳐볼게요", "라고 치면")
 
 
 def check_unsourced_numbers(text: str, allowed: Optional[set] = None) -> dict:
     allowed = (allowed or set()) | _FACTSHEET_NUMBERS
     found = []
     for sent in _sentences(text):
-        if _BENIGN_CONTEXT.search(sent):
+        if _BENIGN_CONTEXT.search(sent) or any(h in sent for h in _HYPOTHETICAL):
             continue
         for pat in _STAT_PATTERNS:
             for m in re.finditer(pat, sent):
@@ -158,11 +183,17 @@ def check_duplication(db, body_md: str, exclude_slug: str = "") -> dict:
 MIN_BODY_CHARS = 2000
 
 
-def check_structure(body_md: str, blocks: Optional[dict] = None) -> dict:
+def check_structure(body_md: str, blocks: Optional[dict] = None, enforce_length: bool = True) -> dict:
+    """구조 검사.
+
+    `enforce_length`: 분량 기준은 **LLM 이 쓴 글에만** 적용한다. 얕은 자동 생성물을
+    막으려고 만든 규칙이라, 사람이 길이를 정한 손글씨(상록수)에까지 들이대면
+    정상 글이 전부 WARN 이 된다(실측: 발행된 4편 모두 1,052~1,459자로 걸렸음).
+    """
     issues = []
     plain = re.sub(r"<!--.*?-->", "", body_md, flags=re.S)   # 주석 이미지 자리 제외
     chars = len(re.sub(r"\s+", "", plain))
-    if chars < MIN_BODY_CHARS:
+    if enforce_length and chars < MIN_BODY_CHARS:
         issues.append(f"본문 {chars}자 — 기준 {MIN_BODY_CHARS}자 미만")
     headings = len(re.findall(r"^##\s+", body_md, re.M))
     if headings < 3:
@@ -221,16 +252,16 @@ _JUDGE_PROMPT = (
 
 
 def check_llm_judge(title: str, body_md: str) -> dict:
-    if not content_llm.available():
+    if not llm_gateway.available():
         return {"code": "llm_judge", "level": PASS, "skipped": True,
                 "detail": "LLM 키 미설정 — 심판 건너뜀"}
     try:
-        data = content_llm.chat_json(
+        data = llm_gateway.chat_json(
             _JUDGE_PROMPT,
             f"제목: {title}\n\n본문:\n{body_md[:12000]}",
             max_tokens=1500,
             temperature=0.0,          # 심판은 일관성 우선
-            model=content_llm.cheap_model(),
+            model=llm_gateway.cheap_model(),
         )
         issues = [i for i in (data.get("issues") or []) if i.get("quote")]
         highs = [i for i in issues if i.get("severity") == "high"]
@@ -259,7 +290,8 @@ def review_post(db, post, use_llm: bool = True) -> dict:
         check_banned_terms(body),
         check_unsourced_numbers(body, allowed_numbers_from_blocks(blocks)),
         check_duplication(db, body, exclude_slug=post.slug or ""),
-        check_structure(body, blocks),
+        # 분량 기준은 자동 생성물에만 (손글씨 상록수는 사람이 길이를 정한 것)
+        check_structure(body, blocks, enforce_length=(getattr(post, "source", "") == "auto")),
         check_image_refs(body, post.slug or ""),
     ]
     if use_llm:

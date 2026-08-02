@@ -68,6 +68,29 @@ class TestUnsourcedNumbers:
         r = cr.check_unsourced_numbers("3분 안에 정리했고 5가지만 기억하세요")
         assert r["level"] == cr.PASS
 
+    def test_decimal_rate_is_not_split_by_sentence_break(self):
+        """★ 실측 회귀 — 문장 분리가 '89.745%' 를 '89' / '745%' 로 쪼개면 안 된다.
+
+        발행된 상록수 4편이 전부 이 버그로 거짓 경보를 맞았다(하한율이 통째로
+        '출처 없는 수치'로 잡힘).
+        """
+        r = cr.check_unsourced_numbers("이 공고의 낙찰하한율은 89.745% 입니다. 확인하세요.")
+        assert r["level"] == cr.PASS, r["hits"]
+
+    def test_lower_limit_whitelist_follows_single_source(self):
+        """하한율 화이트리스트는 lower_limits.py 를 따라간다 (하드코딩 드리프트 방지)."""
+        from app.services import lower_limits as ll
+        for _, rate in ll._CONSTRUCTION_2026 + ll._CONSTRUCTION_OLD:
+            r = cr.check_unsourced_numbers(f"하한율은 {rate}% 예요")
+            assert r["level"] == cr.PASS, f"{rate} 가 오탐됨"
+
+    def test_hypothetical_numbers_ignored(self):
+        """★ 실측 회귀 — 예시·가정으로 명시된 숫자는 사실 주장이 아니다 (K5 초안 오탐)."""
+        assert cr.check_unsourced_numbers("투찰률(예: 92%)을 곱하면")["level"] == cr.PASS
+        assert cr.check_unsourced_numbers("그대로 92%를 곱해 넣었다고 해볼게요")["level"] == cr.PASS
+        # 가정 표현이 없으면 여전히 잡힌다
+        assert cr.check_unsourced_numbers("작년 평균은 92% 였어요")["level"] == cr.WARN
+
     def test_db_numbers_are_allowed(self):
         blocks = {"data_blocks": [{"numbers": [{"participants": 42}]}]}
         allowed = cr.allowed_numbers_from_blocks(blocks)
@@ -111,6 +134,25 @@ class TestStructure:
         assert r["level"] == cr.WARN
         assert any("미만" in i for i in r["issues"])
 
+    def test_length_not_enforced_for_handwritten(self):
+        """★ 실측 회귀 — 분량 기준은 LLM 글에만. 손글씨 상록수(1,000자대)가
+        전부 WARN 을 맞던 문제."""
+        short = "## 하나\n\n내용\n\n## 둘\n\n내용\n\n## 셋\n\n[계산기](/calculator)"
+        assert cr.check_structure(short, enforce_length=False)["level"] == cr.PASS
+        assert cr.check_structure(short, enforce_length=True)["level"] == cr.WARN
+
+    def test_review_applies_length_only_to_auto_posts(self, db_session):
+        db_session.query(models.BlogPost).delete()
+        db_session.commit()
+        short = "## 하나\n\n내용\n\n## 둘\n\n내용\n\n## 셋\n\n[계산기](/calculator)"
+        manual = _post(db_session, "st-manual", body=short)
+        manual.source = "admin"
+        auto = _post(db_session, "st-auto", body=short + "\n\n다른 내용" * 5)
+        auto.source = "auto"
+        db_session.commit()
+        assert cr.review_post(db_session, manual, use_llm=False)["verdict"] == cr.PASS
+        assert cr.review_post(db_session, auto, use_llm=False)["verdict"] == cr.WARN
+
     def test_missing_internal_link_warns(self):
         body = "## 하나\n\n" + "가" * 2500 + "\n\n## 둘\n\n내용\n\n## 셋\n\n내용"
         r = cr.check_structure(body)
@@ -149,32 +191,32 @@ class TestImageRefs:
 
 class TestLlmJudge:
     def test_skipped_without_key(self, monkeypatch):
-        from app.services import content_llm
-        monkeypatch.setattr(content_llm.settings, "CONTENT_LLM_API_KEY", "")
-        monkeypatch.setattr(content_llm.settings, "OPENAI_API_KEY", "")
+        from app.services import llm_gateway
+        monkeypatch.setattr(llm_gateway.settings, "CONTENT_LLM_API_KEY", "")
+        monkeypatch.setattr(llm_gateway.settings, "OPENAI_API_KEY", "")
         r = cr.check_llm_judge("제목", "본문")
         assert r["level"] == cr.PASS and r["skipped"] is True
 
     def test_high_severity_is_fail(self, monkeypatch):
-        monkeypatch.setattr(cr.content_llm, "available", lambda: True)
-        monkeypatch.setattr(cr.content_llm, "chat_json", lambda *a, **k: {
+        monkeypatch.setattr(cr.llm_gateway, "available", lambda: True)
+        monkeypatch.setattr(cr.llm_gateway, "chat_json", lambda *a, **k: {
             "issues": [{"severity": "high", "quote": "무조건 낙찰됩니다", "why": "보장 표현"}]
         })
         assert cr.check_llm_judge("t", "b")["level"] == cr.FAIL
 
     def test_medium_is_warn_and_none_is_pass(self, monkeypatch):
-        monkeypatch.setattr(cr.content_llm, "available", lambda: True)
-        monkeypatch.setattr(cr.content_llm, "chat_json", lambda *a, **k: {
+        monkeypatch.setattr(cr.llm_gateway, "available", lambda: True)
+        monkeypatch.setattr(cr.llm_gateway, "chat_json", lambda *a, **k: {
             "issues": [{"severity": "medium", "quote": "q", "why": "w"}]})
         assert cr.check_llm_judge("t", "b")["level"] == cr.WARN
-        monkeypatch.setattr(cr.content_llm, "chat_json", lambda *a, **k: {"issues": []})
+        monkeypatch.setattr(cr.llm_gateway, "chat_json", lambda *a, **k: {"issues": []})
         assert cr.check_llm_judge("t", "b")["level"] == cr.PASS
 
     def test_judge_failure_warns_not_crashes(self, monkeypatch):
         def boom(*a, **k):
             raise RuntimeError("provider down")
-        monkeypatch.setattr(cr.content_llm, "available", lambda: True)
-        monkeypatch.setattr(cr.content_llm, "chat_json", boom)
+        monkeypatch.setattr(cr.llm_gateway, "available", lambda: True)
+        monkeypatch.setattr(cr.llm_gateway, "chat_json", boom)
         r = cr.check_llm_judge("t", "b")
         assert r["level"] == cr.WARN and r["skipped"] is True
 

@@ -7,7 +7,7 @@ import pytest
 
 from app.db import models
 from app.services import content_engine as ce
-from app.services import content_llm
+from app.services import llm_gateway
 
 
 def _no_llm(monkeypatch):
@@ -16,8 +16,9 @@ def _no_llm(monkeypatch):
     OPENAI_API_KEY 만 비우면, CONTENT_LLM_API_KEY 로 구성된 환경(OpenRouter 등)에서는
     '키 없음' 경로가 실제로 타지 않는데도 테스트가 통과해버린다(게이트 불일치 은폐).
     """
-    monkeypatch.setattr(content_llm.settings, "CONTENT_LLM_API_KEY", "")
-    monkeypatch.setattr(content_llm.settings, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(llm_gateway.settings, "LLM_API_KEY", "")
+    monkeypatch.setattr(llm_gateway.settings, "CONTENT_LLM_API_KEY", "")
+    monkeypatch.setattr(llm_gateway.settings, "OPENAI_API_KEY", "")
 
 
 SAMPLE_BLOCKS = {
