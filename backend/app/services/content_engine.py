@@ -146,8 +146,12 @@ _SYSTEM_PROMPT = (
 )
 
 
-def generate_blocks(topic: dict) -> Optional[dict]:
-    """주제 → 구조화 정본 블록. 키 미설정/실패 시 None (지어낸 폴백 초안 금지)."""
+def generate_blocks(topic: dict, model: Optional[str] = None) -> Optional[dict]:
+    """주제 → 구조화 정본 블록. 키 미설정/실패 시 None (지어낸 폴백 초안 금지).
+
+    `model`: 기본은 `CONTENT_LLM_MODEL`. 모델 A/B 비교 시에만 명시 지정한다
+    (전역 설정을 건드리지 않아야 병렬 비교가 안전하다).
+    """
     if not content_llm.available():
         return None
     try:
@@ -162,7 +166,8 @@ def generate_blocks(topic: dict) -> Optional[dict]:
             # max_tokens 는 넉넉히 — 정본은 2,800자+ 를 요구하는데, 추론형 모델(Claude 5)은
             # reasoning 에 먼저 토큰을 쓴다. 4,000 이면 추론만 하다 빈 응답이 온다(실측).
             return content_llm.chat_json(
-                _SYSTEM_PROMPT, user_prompt + extra, max_tokens=16000, temperature=0.5
+                _SYSTEM_PROMPT, user_prompt + extra, max_tokens=16000, temperature=0.5,
+                model=model,
             )
 
         data = _call()
