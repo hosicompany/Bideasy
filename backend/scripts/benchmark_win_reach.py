@@ -552,6 +552,13 @@ def run_frontier(
         "best_params_at_cap10": next(
             (p["params"] for p in points if p["dropout_cap_pp"] == 10.0), None
         ),
+        # 캡별 파라미터셋 — 모의투찰 arm(frontier_c5·frontier_c10)이 읽는다.
+        # points 에서 params 를 떼어내기만 하면 cap10 외의 캡은 재현할 수 없어,
+        # 사전 등록한 arm 을 구성하지 못한다(docs/MOCK_BIDDING_DESIGN.md §0.3).
+        "best_params_by_cap": {
+            ("none" if p["dropout_cap_pp"] is None else f"{p['dropout_cap_pp']:.0f}"): p["params"]
+            for p in points
+        },
     }
 
 

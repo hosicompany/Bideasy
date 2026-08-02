@@ -17,6 +17,7 @@ celery_app = Celery(
         "app.tasks.recommendation_tasks",
         "app.tasks.content_tasks",
         "app.tasks.nurture_tasks",
+        "app.tasks.mock_bid_tasks",
     ],
 )
 
@@ -117,5 +118,18 @@ celery_app.conf.beat_schedule = {
     "daily-trial-onboarding": {
         "task": "trial.send_onboarding_sequence",
         "schedule": crontab(hour=10, minute=10),
+    },
+    # 15) 매시 15분 — 모의투찰 사전 등록 (docs/MOCK_BIDDING_DESIGN.md)
+    # 매시인 이유: 마감시각이 공고마다 달라 하루 1회로는 "마감 전 등록"을
+    # 보장할 수 없다. 마감이 지나 등록하면 실험 자체가 무의미해진다.
+    "hourly-mock-bid-register": {
+        "task": "mock_bid.register",
+        "schedule": crontab(minute=15),
+    },
+    # 16) 매일 20:30 — 모의투찰 채점. 개찰결과 크롤(19:00)보다 뒤에 두어
+    # 같은 날 개찰분을 잡는다.
+    "daily-mock-bid-score": {
+        "task": "mock_bid.score",
+        "schedule": crontab(hour=20, minute=30),
     },
 }

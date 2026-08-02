@@ -11,13 +11,14 @@
 - payments   : 결제·환불 관리 (Phase C)
 - autocalibrate : 자가보정 운영 (Phase D)
 - system     : 수동 트리거·헬스 (Phase D)
-- simulation : 모의 투찰 백테스트 (Phase E)
+- simulation : 과거 데이터 백테스트 (Phase E)
+- mock_bidding : 모의투찰 사전등록·채점 조회 (docs/MOCK_BIDDING_DESIGN.md)
 """
 from fastapi import APIRouter, Depends
 
 from app.core.security import require_admin
 
-from . import accuracy, dashboard, users, payments, autocalibrate, system, simulation, blog, leads, consents, outbound
+from . import accuracy, dashboard, users, payments, autocalibrate, system, simulation, blog, leads, consents, outbound, mock_bidding
 
 # 라우터 수준 의존성 — 모든 sub-router 가 자동으로 require_admin 거침.
 # 개별 엔드포인트의 _admin=Depends(require_admin) 는 명시성·테스트 가독성 위해 유지.
@@ -33,3 +34,4 @@ router.include_router(blog.router)            # 블로그 — DB 기반 런타�
 router.include_router(leads.router)           # 리드 획득·전환 대시보드
 router.include_router(consents.router)        # 수신동의 증적 조회(발송 적법성 근거)
 router.include_router(outbound.router)        # 아웃바운드 발송 원장·미리보기·테스트
+router.include_router(mock_bidding.router)    # 모의투찰 — 사전등록·채점 조회
