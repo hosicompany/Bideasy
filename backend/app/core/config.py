@@ -71,19 +71,33 @@ class Settings(BaseSettings):
         return self.CELERY_RESULT_BACKEND or self.redis_url
 
     # === External APIs ===
+    # ⚠️ DEPRECATED (2026-08-02) — OpenAI 직결 폐지. 코드에서 더 이상 읽지 않는다.
+    # 필드만 남긴 이유: 서버 .env 에 이 키가 남아 있어도 기동이 깨지지 않게 하기 위함.
+    # 서버 정리가 끝나면 이 줄을 지워도 된다.
     OPENAI_API_KEY: str = ""
-    # 콘텐츠 엔진(블로그 정본) 작성 모델 — 브랜드 얼굴이라 상위 모델 기본.
-    # 주 1편 생성이라 비용 미미. 실패 시 gpt-4o-mini(OpenAI 직결) 자동 폴백.
-    # OpenAI 외 프로바이더는 아래 BASE_URL/API_KEY 로 교체 — 예: OpenRouter 경유 Claude
+
+    # === LLM 게이트웨이 — 전 기능이 OpenRouter 한 곳을 경유 (services/llm_gateway.py) ===
+    # 공고 요약·독소조항, 첨부 심층분석, 고객 챗봇, 블로그 정본·채널 파생 전부.
+    # 비워두면 아래 CONTENT_LLM_* 를 그대로 쓴다(구 배포 무중단 호환).
+    LLM_API_KEY: str = ""      # OpenRouter 키. 서버 .env.production 에만.
+    LLM_BASE_URL: str = ""     # 예: https://openrouter.ai/api/v1
+    # 용도별 모델 (OpenRouter 표기 — 프로바이더 접두사 필수)
+    LLM_MODEL_ANALYSIS: str = "openai/gpt-4o-mini"   # 공고 3줄 요약·독소조항 (Pro)
+    LLM_MODEL_DEEP: str = "openai/gpt-5-nano"        # 첨부 심층분석 (Pro+, 롱컨텍스트)
+    LLM_MODEL_SUPPORT: str = "openai/gpt-4o-mini"    # 고객 챗봇 (저지연 우선)
+    # 추론형 모델은 reasoning 에 토큰을 먼저 쓴다 — 넉넉해야 본문이 빈 채로 오지 않는다.
+    LLM_MAX_TOKENS_DEEP: int = 16000
+
+    # 콘텐츠 엔진(블로그 정본) 작성 모델 — 브랜드 얼굴이라 상위 모델.
+    # 2026-08-02 모델 비교(7종 동일 주제) 결과 Sonnet 5 유지 확정 — docs/CONTENT_ENGINE.md
     #   CONTENT_LLM_MODEL=anthropic/claude-sonnet-5
-    #   CONTENT_LLM_BASE_URL=https://openrouter.ai/api/v1
-    #   CONTENT_LLM_API_KEY=<OpenRouter 키; 서버 .env.production 에만>
-    CONTENT_LLM_MODEL: str = "gpt-4o"
-    # 정본(깊이 필요) 외 가벼운 콘텐츠 호출용 저가 모델 — 채널 파생·주제 제안·주간 서술.
-    # BASE_URL 을 OpenRouter 등으로 바꿨다면 이 값도 그 프로바이더 표기로 함께 바꿔야 한다.
-    CONTENT_LLM_CHEAP_MODEL: str = "gpt-4o-mini"
-    CONTENT_LLM_BASE_URL: str = ""   # 비면 OpenAI 기본 엔드포인트
-    CONTENT_LLM_API_KEY: str = ""    # 비면 OPENAI_API_KEY 재사용
+    #   LLM_BASE_URL=https://openrouter.ai/api/v1
+    #   LLM_API_KEY=<OpenRouter 키; 서버 .env.production 에만>
+    CONTENT_LLM_MODEL: str = "anthropic/claude-sonnet-5"
+    # 정본 외 가벼운 콘텐츠 호출용 저가 모델 — 채널 파생·주제 제안·주간 서술.
+    CONTENT_LLM_CHEAP_MODEL: str = "openai/gpt-4o-mini"
+    CONTENT_LLM_BASE_URL: str = ""   # (구 설정) LLM_BASE_URL 이 비면 이 값을 쓴다
+    CONTENT_LLM_API_KEY: str = ""    # (구 설정) LLM_API_KEY 가 비면 이 값을 쓴다
     PUBLIC_DATA_KEY: str = ""
 
     # === IndexNow (색인 통보 — 네이버·Bing 등) ===

@@ -191,32 +191,32 @@ class TestImageRefs:
 
 class TestLlmJudge:
     def test_skipped_without_key(self, monkeypatch):
-        from app.services import content_llm
-        monkeypatch.setattr(content_llm.settings, "CONTENT_LLM_API_KEY", "")
-        monkeypatch.setattr(content_llm.settings, "OPENAI_API_KEY", "")
+        from app.services import llm_gateway
+        monkeypatch.setattr(llm_gateway.settings, "CONTENT_LLM_API_KEY", "")
+        monkeypatch.setattr(llm_gateway.settings, "OPENAI_API_KEY", "")
         r = cr.check_llm_judge("제목", "본문")
         assert r["level"] == cr.PASS and r["skipped"] is True
 
     def test_high_severity_is_fail(self, monkeypatch):
-        monkeypatch.setattr(cr.content_llm, "available", lambda: True)
-        monkeypatch.setattr(cr.content_llm, "chat_json", lambda *a, **k: {
+        monkeypatch.setattr(cr.llm_gateway, "available", lambda: True)
+        monkeypatch.setattr(cr.llm_gateway, "chat_json", lambda *a, **k: {
             "issues": [{"severity": "high", "quote": "무조건 낙찰됩니다", "why": "보장 표현"}]
         })
         assert cr.check_llm_judge("t", "b")["level"] == cr.FAIL
 
     def test_medium_is_warn_and_none_is_pass(self, monkeypatch):
-        monkeypatch.setattr(cr.content_llm, "available", lambda: True)
-        monkeypatch.setattr(cr.content_llm, "chat_json", lambda *a, **k: {
+        monkeypatch.setattr(cr.llm_gateway, "available", lambda: True)
+        monkeypatch.setattr(cr.llm_gateway, "chat_json", lambda *a, **k: {
             "issues": [{"severity": "medium", "quote": "q", "why": "w"}]})
         assert cr.check_llm_judge("t", "b")["level"] == cr.WARN
-        monkeypatch.setattr(cr.content_llm, "chat_json", lambda *a, **k: {"issues": []})
+        monkeypatch.setattr(cr.llm_gateway, "chat_json", lambda *a, **k: {"issues": []})
         assert cr.check_llm_judge("t", "b")["level"] == cr.PASS
 
     def test_judge_failure_warns_not_crashes(self, monkeypatch):
         def boom(*a, **k):
             raise RuntimeError("provider down")
-        monkeypatch.setattr(cr.content_llm, "available", lambda: True)
-        monkeypatch.setattr(cr.content_llm, "chat_json", boom)
+        monkeypatch.setattr(cr.llm_gateway, "available", lambda: True)
+        monkeypatch.setattr(cr.llm_gateway, "chat_json", boom)
         r = cr.check_llm_judge("t", "b")
         assert r["level"] == cr.WARN and r["skipped"] is True
 

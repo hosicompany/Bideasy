@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services import content_llm as cl
+from app.services import llm_gateway as cl
 
 
 def _resp(content, finish_reason="stop", reasoning=None):
@@ -59,7 +59,7 @@ class TestFenceStripping:
 class TestEmptyResponse:
     def test_none_content_raises_clear_error(self):
         """★ 추론형 모델이 max_tokens 를 reasoning 에 다 써서 본문이 비어 온 사고."""
-        with pytest.raises(cl.ContentLLMError) as e:
+        with pytest.raises(cl.LLMError) as e:
             _complete(_resp(None, finish_reason="length", reasoning=2143))
         msg = str(e.value)
         assert "빈 응답" in msg
@@ -67,13 +67,13 @@ class TestEmptyResponse:
         assert "max_tokens" in msg
 
     def test_blank_content_raises(self):
-        with pytest.raises(cl.ContentLLMError):
+        with pytest.raises(cl.LLMError):
             _complete(_resp("   "))
 
 
 class TestTruncation:
     def test_truncated_json_reports_max_tokens(self):
-        with pytest.raises(cl.ContentLLMError) as e:
+        with pytest.raises(cl.LLMError) as e:
             _complete(_resp('{"hook": "잘린', finish_reason="length"))
         assert "잘려" in str(e.value)
 

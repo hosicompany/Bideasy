@@ -9,7 +9,7 @@ docs/CONTENT_ENGINE.md §2·§7 Phase 1 구현.
   사람이 승인/예약해야 발행(§5). 데이터스토리(B)만 유예 자동발행.
 - **정직** — LLM 에 숫자·통계 지어내기 금지 명시. data_blocks 는 우리 DB 숫자가
   있을 때만(K 트랙 기본 생성에서는 비움). '낙찰률' 마케팅 표현 금지.
-- OPENAI_API_KEY 미설정이면 지어낸 폴백 초안을 만들지 않고 명시적 실패.
+- LLM 키(llm_gateway) 미설정이면 지어낸 폴백 초안을 만들지 않고 명시적 실패.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Optional
 
 from app.db import models
 from app.services import blog as blog_svc
-from app.services import content_llm
+from app.services import llm_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +152,7 @@ def generate_blocks(topic: dict, model: Optional[str] = None) -> Optional[dict]:
     `model`: 기본은 `CONTENT_LLM_MODEL`. 모델 A/B 비교 시에만 명시 지정한다
     (전역 설정을 건드리지 않아야 병렬 비교가 안전하다).
     """
-    if not content_llm.available():
+    if not llm_gateway.available():
         return None
     try:
         user_prompt = (
@@ -165,7 +165,7 @@ def generate_blocks(topic: dict, model: Optional[str] = None) -> Optional[dict]:
             # 상위 모델 우선(깊이), 실패(미지원 모델·프로바이더 장애 등) 시 4o-mini 폴백.
             # max_tokens 는 넉넉히 — 정본은 2,800자+ 를 요구하는데, 추론형 모델(Claude 5)은
             # reasoning 에 먼저 토큰을 쓴다. 4,000 이면 추론만 하다 빈 응답이 온다(실측).
-            return content_llm.chat_json(
+            return llm_gateway.chat_json(
                 _SYSTEM_PROMPT, user_prompt + extra, max_tokens=16000, temperature=0.5,
                 model=model,
             )
@@ -358,15 +358,15 @@ _DERIVE_SYSTEM_PROMPT = (
 
 def derive_channel_assets(blocks: dict) -> Optional[dict]:
     """정본 블록 → 채널 파생 자산. 키 미설정/실패 시 None (가짜 자산 금지)."""
-    if not content_llm.available():
+    if not llm_gateway.available():
         return None
     try:
-        data = content_llm.chat_json(
+        data = llm_gateway.chat_json(
             _DERIVE_SYSTEM_PROMPT,
             "정본 블록:\n" + json.dumps(blocks, ensure_ascii=False),
             max_tokens=2500,
             temperature=0.4,
-            model=content_llm.cheap_model(),
+            model=llm_gateway.cheap_model(),
         )
         if not data.get("instagram_cards"):
             return None
@@ -437,16 +437,16 @@ def propose_topic_candidates(n: int = 8) -> Optional[list]:
 
     키 미설정/실패 시 None. 큐 보충의 편집 결정권은 사람에게 남긴다.
     """
-    if not content_llm.available():
+    if not llm_gateway.available():
         return None
     try:
         existing = "\n".join(f"- {t['title']} ({t['angle']})" for t in TOPIC_SEEDS)
-        data = content_llm.chat_json(
+        data = llm_gateway.chat_json(
             _PROPOSE_SYSTEM_PROMPT,
             f"기존 주제 목록(중복 금지):\n{existing}\n\n신규 후보 {n}개를 제안하라.",
             max_tokens=1500,
             temperature=0.7,
-            model=content_llm.cheap_model(),
+            model=llm_gateway.cheap_model(),
         )
         cands = [
             c for c in (data.get("candidates") or [])

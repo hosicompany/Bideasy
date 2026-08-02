@@ -25,7 +25,7 @@ import re
 from typing import Optional
 
 from app.db import models
-from app.services import content_llm
+from app.services import llm_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -252,16 +252,16 @@ _JUDGE_PROMPT = (
 
 
 def check_llm_judge(title: str, body_md: str) -> dict:
-    if not content_llm.available():
+    if not llm_gateway.available():
         return {"code": "llm_judge", "level": PASS, "skipped": True,
                 "detail": "LLM 키 미설정 — 심판 건너뜀"}
     try:
-        data = content_llm.chat_json(
+        data = llm_gateway.chat_json(
             _JUDGE_PROMPT,
             f"제목: {title}\n\n본문:\n{body_md[:12000]}",
             max_tokens=1500,
             temperature=0.0,          # 심판은 일관성 우선
-            model=content_llm.cheap_model(),
+            model=llm_gateway.cheap_model(),
         )
         issues = [i for i in (data.get("issues") or []) if i.get("quote")]
         highs = [i for i in issues if i.get("severity") == "high"]

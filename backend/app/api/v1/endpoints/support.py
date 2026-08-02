@@ -85,16 +85,18 @@ class TicketRequest(BaseModel):
 
 
 def _ask_llm(messages: list) -> str:
-    if not settings.OPENAI_API_KEY:
+    # 2026-08-02: OpenAI 직결 → llm_gateway(OpenRouter) 경유
+    from app.services import llm_gateway
+
+    if not llm_gateway.available():
         return "지금은 자동 답변을 드리기 어려워요. support@bideasy.kr 로 문의해 주시면 빠르게 도와드릴게요!"
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini", messages=messages, temperature=0.3, max_tokens=MAX_REPLY_TOKENS,
-        )
-        return (resp.choices[0].message.content or "").strip() or \
-            "조금 더 자세히 말씀해 주시겠어요? 아니면 support@bideasy.kr 로 문의해 주세요."
+        return llm_gateway.chat_text(
+            messages,
+            model=settings.LLM_MODEL_SUPPORT,
+            temperature=0.3,
+            max_tokens=MAX_REPLY_TOKENS,
+        ) or "조금 더 자세히 말씀해 주시겠어요? 아니면 support@bideasy.kr 로 문의해 주세요."
     except Exception as e:
         logger.error(f"support chat LLM error: {e}")
         return "답변 생성 중 문제가 생겼어요. 잠시 후 다시 시도하시거나 support@bideasy.kr 로 문의해 주세요."
