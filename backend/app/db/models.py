@@ -1,4 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text, Boolean
+from sqlalchemy import (
+    Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text, Boolean,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import TypeDecorator
 from datetime import datetime, timezone
@@ -587,3 +590,86 @@ class EmailSuppression(Base):
     event_count = Column(Integer, nullable=False, default=1, server_default="1")
     last_event_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class MockBid(Base):
+    """모의투찰 사전 등록 — **불변(append-only)**.
+
+    설계·게이트 정본: docs/MOCK_BIDDING_DESIGN.md
+
+    왜 불변인가: 이 테이블의 존재 이유가 "마감 전에 값을 못 박는 것"이다.
+    개찰 후에 계산하면 자가보정이 파라미터를 갱신할 때마다 과거 추천가가
+    소급 변경돼(현 prediction_verifier 가 그렇다) 성능 측정이 자기충족적이
+    된다. 따라서 등록 후 이 행을 UPDATE 하지 않는다 — 재채점은
+    MockBidResult 에 새 행(scoring_rev)으로 쌓는다.
+    """
+
+    __tablename__ = "mock_bids"
+    __table_args__ = (
+        UniqueConstraint("bid_no", "arm", name="uq_mock_bids_bid_no_arm"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    bid_no = Column(String(100), index=True, nullable=False)
+    arm = Column(String(30), nullable=False)  # standard|active|frontier_c5|frontier_c10|aggressive
+
+    # registered_at < deadline_at 을 등록 코드가 강제한다(위반 시 등록 거부).
+    # 이 가드가 실험 전체의 신뢰 근거다.
+    registered_at = Column(DateTime, nullable=False, default=_utcnow, index=True)
+    deadline_at = Column(DateTime, nullable=False)
+
+    strategy_version = Column(String(40))   # autocalibrate 전략 버전 (arm=active)
+    code_rev = Column(String(40))           # 등록 시점 코드 리비전
+
+    price = Column(Integer, nullable=False)
+    bid_rate = Column(Float)                # 기초금액 대비 %
+    adjustment = Column(Float)              # 예정가격 보정 %
+    margin = Column(Float)                  # 하한선 여유분 %p
+
+    # ── 입력 스냅샷 — "그때 우리가 본 정보" ──
+    # 공고는 정정된다(notice_kind='변경공고' 가 실측 5.6%). A값도 나중에 백필된다.
+    # 스냅샷이 없으면 성적이 나쁠 때 "그 사이 값이 바뀌었다"는 사후 변명이 가능해진다.
+    snapshot_basic_price = Column(Float, nullable=False)
+    snapshot_a_value = Column(Integer, default=0)
+    a_value_source = Column(String(10))          # tier1|tier2|none
+    snapshot_lower_limit_rate = Column(Float)
+    llr_source = Column(String(10))              # notice|table  (어느 쪽을 썼는지)
+    snapshot_bid_method = Column(String(100))
+    snapshot_contract_type = Column(String(50))
+    snapshot_notice_kind = Column(String(50))
+
+    status = Column(String(20), nullable=False, default="REGISTERED", index=True)
+
+
+class MockBidResult(Base):
+    """모의투찰 채점 결과 — 재채점 시 새 행(기존 행 수정 금지).
+
+    판정 정의는 optimizer.simulate_params 와 동일해야 한다. 갈라지면
+    자가보정과 모의투찰이 서로 다른 말을 하게 된다.
+    """
+
+    __tablename__ = "mock_bid_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    mock_bid_id = Column(Integer, ForeignKey("mock_bids.id"), nullable=False, index=True)
+    scoring_rev = Column(Integer, nullable=False, default=1)
+
+    outcome = Column(String(20), nullable=False, index=True)  # WIN|LOST|DROPOUT|NO_RESULT|VOID
+
+    actual_reserved_price = Column(Float)
+    actual_winner_price = Column(Float)
+    actual_lower_limit = Column(Float)
+
+    estimated_rank = Column(Integer)        # Phase 2(참가자 저장) 이후 채워진다
+    participants_count = Column(Integer)
+
+    gap_to_winner_pct = Column(Float)       # (우리가격 - 낙찰가)/낙찰가 × 100
+    gap_to_limit_pct = Column(Float)        # (우리가격 - 하한선)/하한선 × 100
+
+    # 사정률 예측 오차 — 개별 승패는 추첨 노이즈가 크지만 이건 모델의 순수 신호다
+    reserved_ratio_actual = Column(Float)
+    reserved_ratio_predicted = Column(Float)
+    ratio_error = Column(Float)
+
+    failure_tags = Column(JSON)             # 오답노트 (§6)
+    scored_at = Column(DateTime, nullable=False, default=_utcnow, index=True)
