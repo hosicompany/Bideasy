@@ -1,6 +1,6 @@
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text, Boolean,
-    UniqueConstraint,
+    BigInteger, Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text,
+    Boolean, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import TypeDecorator
@@ -621,7 +621,10 @@ class MockBid(Base):
     strategy_version = Column(String(40))   # autocalibrate 전략 버전 (arm=active)
     code_rev = Column(String(40))           # 등록 시점 코드 리비전
 
-    price = Column(Integer, nullable=False)
+    # BigInteger 필수 — 공사 기초금액은 6,203억(실측 최대)까지 간다.
+    # Integer(int4, 21.4억)로 두면 대형 공고 등록이 NumericValueOutOfRange 로
+    # 죽고, 그 한 건이 배치 커밋 전체를 롤백시킨다(실제로 겪음).
+    price = Column(BigInteger, nullable=False)
     bid_rate = Column(Float)                # 기초금액 대비 %
     adjustment = Column(Float)              # 예정가격 보정 %
     margin = Column(Float)                  # 하한선 여유분 %p
@@ -630,7 +633,7 @@ class MockBid(Base):
     # 공고는 정정된다(notice_kind='변경공고' 가 실측 5.6%). A값도 나중에 백필된다.
     # 스냅샷이 없으면 성적이 나쁠 때 "그 사이 값이 바뀌었다"는 사후 변명이 가능해진다.
     snapshot_basic_price = Column(Float, nullable=False)
-    snapshot_a_value = Column(Integer, default=0)
+    snapshot_a_value = Column(BigInteger, default=0)
     a_value_source = Column(String(10))          # tier1|tier2|none
     snapshot_lower_limit_rate = Column(Float)
     llr_source = Column(String(10))              # notice|table  (어느 쪽을 썼는지)

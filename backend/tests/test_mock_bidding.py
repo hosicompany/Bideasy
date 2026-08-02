@@ -208,6 +208,51 @@ class TestRegistration:
         assert r["registered"] == 0
         assert db_session.query(models.MockBid).filter_by(bid_no="MB-CANCEL-1").count() == 0
 
+    def test_large_notice_price_fits(self, db_session):
+        """공사 기초금액은 실측 최대 6,203억 — int4(21.4억)로는 등록이 죽는다."""
+        n = _notice("MB-BIG-1", basic_price=620_348_000_000)
+        db_session.add(n)
+        db_session.commit()
+
+        r = mb.register_notice(db_session, n)
+        db_session.commit()
+
+        assert r["registered"] == 5
+        row = db_session.query(models.MockBid).filter_by(bid_no="MB-BIG-1", arm="standard").first()
+        assert row.price > 2_147_483_647          # int4 상한 초과값이 저장돼야 한다
+
+    def test_bigint_column_types(self):
+        """모델 타입 자체를 고정 — SQLite 는 정수 크기 제한이 없어 저장만으로는
+        Postgres 회귀를 못 잡는다."""
+        from sqlalchemy import BigInteger
+
+        assert isinstance(models.MockBid.__table__.c.price.type, BigInteger)
+        assert isinstance(models.MockBid.__table__.c.snapshot_a_value.type, BigInteger)
+
+    def test_one_bad_notice_does_not_rollback_others(self, db_session, monkeypatch):
+        """배치 중 1건이 커밋에서 실패해도 나머지 등록분은 살아남아야 한다.
+
+        마지막에 한 번만 커밋하면 그 회차 전체가 날아가고, 마감이 지나 버려
+        사전 등록은 재시도조차 못 한다.
+        """
+        good = _notice("MB-BATCH-OK")
+        bad = _notice("MB-BATCH-BAD")
+        db_session.add_all([good, bad])
+        db_session.commit()
+
+        real = mb.register_notice
+
+        def flaky(db, notice, now=None):
+            if notice.bid_no == "MB-BATCH-BAD":
+                raise RuntimeError("simulated commit failure")
+            return real(db, notice, now=now)
+
+        monkeypatch.setattr(mb, "register_notice", flaky)
+        r = mb.register_due_notices(db_session, window_hours=2)
+
+        assert r["skips"].get("error") == 1
+        assert db_session.query(models.MockBid).filter_by(bid_no="MB-BATCH-OK").count() == 5
+
     def test_batch_picks_due_only(self, db_session):
         """마감 임박(2h 이내)만 등록 — 먼 공고는 아직 건드리지 않는다."""
         db_session.add(_notice("MB-DUE-1", end_offset_h=1))
