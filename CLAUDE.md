@@ -3,7 +3,8 @@
 > **이 문서가 BidEasy의 유일한 정본(Source of Truth)입니다.** OneDrive `Coding\MyProject\01_Bid Easy\CLAUDE.md`는 구버전(Flutter 시절) — 참조 금지.
 > **새 세션은 이 문서 + `git log --oneline -30` 을 먼저 읽으세요.** 코드 전반의 맥락·결정·현재 상태·대기 작업이 여기에 정리돼 있습니다.
 > 🖥️ **새 PC에서 처음 세팅하는 중이라면** `docs/HANDOFF_MIGRATION.md` 를 먼저 읽으세요 (2026-08-01 PC 이관 — 비공개 파일 복원·`preserve/*` WIP 브랜치·환경 재구축). 셋업이 끝났으면 무시해도 됩니다.
-> 최종 갱신: 2026-08-02 (**아웃바운드 법적 요구사항 완결** — PR #51·#53·#56 머지·배포. ① **수신거부 처리 결과 통지**(§50 법정 고지 — 보내도 되는 게 아니라 **보내야 하는** 메일. `POST /unsubscribe` 가 철회 후 `unsub_result`(거래) 발송. 광고 문구 금지·통지 실패가 해지를 되돌리지 않음·멱등 키에 철회 시각 **마이크로초**) ② **체험 라이프사이클 시퀀스**(D0 웰컴/D-3·D-1 만료고지 = **거래·전원** / D1 매칭·D3 익스텐션·D7 요약·만료후 할인 = **광고·확인자만**. `trial.send_onboarding_sequence` 매일 10:10) ③ **가입 더블 옵트인**(`/signup` 도 이메일 소유 미확인이라 같은 구멍이었다 → `confirmed=False` + 확인 메일. 확인 경로를 리드·회원 공용 `endpoints/optin.py` 로 승격, 구 `/leads/optin` 제거) ④ 웰컴 메일 캡 표기(`50건+`). 테스트 560건. **독립 리뷰가 두 번 다 실제 결함을 잡았다** — 특히 메일 발송 실패 시 `db.rollback()` 이 아직 커밋 안 된 **인앱 알림까지 지우던 회귀**는 560건 전부 통과하는 상태에서 숨어 있었다(`_notify_then_mail` 로 수정). 가입 경로의 SES 동기 호출도 2회→1회로 줄이고 타임아웃을 고정했다(퍼널의 목에서 504 나면 계정은 생겼는데 재가입도 막힌다). 다음 = 알림톡 채널(리드타임 대기) · 랜딩 미니계산기 슬라이더 · 익스텐션 재제출.)
+> 최종 갱신: 2026-08-02 (**블로그 자동화 Phase 1 + OpenAI 직결 폐지** — PR #52·#54·#55 머지. ① 블로그 SEO 갭 4건(얇은 주 자동발행 방어·FAQPage·엔진 글 og:image·LLM 키 게이트 단일화) ② **자동 검수 게이트 그림자 모드**(`content_review.py` — 판정만 남기고 **발행은 안 막는다**. 사람 판단과의 일치율을 모은 뒤 Phase 2 연결. 측정 = `GET /admin/blog/review-stats`) ③ **OpenAI 직결 폐지** — 요약·독소조항/심층분석/챗봇/블로그를 전부 `llm_gateway.py`(OpenRouter) 한 관문으로. **글=OpenRouter, 그림=힉스필드**로 외부 유료 서비스가 둘로 정리됨. ④ 정본 모델 7종 비교 후 **Sonnet 5 유지 확정**. ⑤ K2 시각물을 힉스필드로 실제 생성해 §5.1 워크플로 전 구간 관통. 테스트 713건. **이번 세션의 교훈: 테스트 통과 ≠ 작동.** 605건이 전부 통과하는 상태에서 정본 모델은 한 번도 성공한 적이 없었고(추론형 max_tokens·JSON 펜스), 검수 게이트는 실발행 4편을 100% 오탐했으며, Deep 분석은 폴백으로만 돌고 있었다 — 셋 다 **실호출로만** 드러났다. 다음 = 배포(⚠️ 아래 LLM 키 확인 **필수**) → Phase 2 판단(수 주 뒤).)
+> 같은 날 2026-08-02 (**아웃바운드 법적 요구사항 완결** — PR #51·#53·#56 머지·배포. ① **수신거부 처리 결과 통지**(§50 법정 고지 — 보내도 되는 게 아니라 **보내야 하는** 메일. `POST /unsubscribe` 가 철회 후 `unsub_result`(거래) 발송. 광고 문구 금지·통지 실패가 해지를 되돌리지 않음·멱등 키에 철회 시각 **마이크로초**) ② **체험 라이프사이클 시퀀스**(D0 웰컴/D-3·D-1 만료고지 = **거래·전원** / D1 매칭·D3 익스텐션·D7 요약·만료후 할인 = **광고·확인자만**. `trial.send_onboarding_sequence` 매일 10:10) ③ **가입 더블 옵트인**(`/signup` 도 이메일 소유 미확인이라 같은 구멍이었다 → `confirmed=False` + 확인 메일. 확인 경로를 리드·회원 공용 `endpoints/optin.py` 로 승격, 구 `/leads/optin` 제거) ④ 웰컴 메일 캡 표기(`50건+`). 테스트 560건. **독립 리뷰가 두 번 다 실제 결함을 잡았다** — 특히 메일 발송 실패 시 `db.rollback()` 이 아직 커밋 안 된 **인앱 알림까지 지우던 회귀**는 560건 전부 통과하는 상태에서 숨어 있었다(`_notify_then_mail` 로 수정). 가입 경로의 SES 동기 호출도 2회→1회로 줄이고 타임아웃을 고정했다(퍼널의 목에서 504 나면 계정은 생겼는데 재가입도 막힌다). 다음 = 알림톡 채널(리드타임 대기) · 랜딩 미니계산기 슬라이더 · 익스텐션 재제출.)
 > 직전 갱신: 2026-08-01 (**리드 육성 시퀀스 라이브** — PR #50, E2E 실검증. 진단 캡처 → 확인 메일 → 웰컴 → 매주 화 08:00 신규 매칭. 설계 판단 5가지 = `docs/LEAD_ACQUISITION.md` §3-3: 자격 판정 단일 소스(`lead_matching.py`) · 확인 전 광고 금지 · 멱등 주체는 **행이 아니라 수신자** · `can_send_marketing` 폴백 제거 · 실패는 1건에 갇힌다.)
 > 그 이전: 2026-07-30 (**아웃바운드 3층 구축** — 수신동의 증적(마이그 `f4c1e8a92b37`) → 발송 파이프라인(`nurture.py` 유일 진입점·`OutboundMessage` 원장, 마이그 `a9d3f5c17e42`) → 반송·불만 자동 억제(PR #49, 마이그 `c8e5b1f37d94`). SES 프로덕션 승인 + 발송 전용 IAM + 실발송 검증. 런북 = `docs/OUTBOUND_EMAIL.md`. 07-26~30 = 성장 전략 정본·색인 표면 50→2,188건(PR #41)·GitHub Actions CD(PR #42·#43)·IndexNow(PR #43~#45)·계산기 거짓 안전판정 수습(PR #37).)
 
@@ -86,19 +87,27 @@
   **독립 리뷰가 두 번 다 실제 결함을 잡았다.** 특히 메일 실패 시 `db.rollback()` 이 아직 커밋 안 된 **인앱 알림까지 지우던 회귀**는 테스트 560건이 전부 통과하는 상태에서 숨어 있었다(→ `_notify_then_mail` 이 알림을 먼저 커밋). 가입 경로 SES 호출도 2회→1회 + 타임아웃 고정(연결 3s·읽기 4s·재시도 0) + nginx `/api/v1/auth/` `proxy_read_timeout` 명시 — 퍼널의 목에서 504 가 나면 계정은 생겼는데 재가입도 막힌다.
   ⚠️ 온보딩 3종은 **아직 한 번도 안 돌았다**(대상 회원 없음). 첫 실증은 새 가입자 발생 후 D1.
 
+- **블로그 자동화 Phase 1 + LLM 관문 통합 (2026-08-02 · PR #52·#54·#55 머지)** — 설계 정본 `docs/CONTENT_ENGINE.md` §10(자동화 로드맵).
+  ① **SEO 갭 4건**(#52): 얇은 주 데이터스토리 자동발행 방어(`BLOG_MIN_WEEKLY_RECORDS`=30 미만이면 **초안 자체를 안 만든다** — 유예 자동발행이 검수를 건너뛰므로 발행이 아니라 **생성 단계**에서 막아야 한다) · `blocks_json.faq` → `FAQPage` JSON-LD · 엔진 글 `hero` 자동 설정(og:image 누락 해소) · LLM 키 게이트 단일화.
+  ② **자동 검수 게이트 — 그림자 모드**(#54, 마이그 `e6b3d0c5a419`): `content_review.py` 가 초안을 PASS/WARN/FAIL 판정해 `review_json` 에 기록. 결정적 검사 5종(금칙어·출처없는수치·중복도·구조·이미지경로) + LLM 심판(**반박 관점**, 생성과 다른 프롬프트). ⚠️ **판정은 발행을 막지 않는다** — 검증 안 된 게이트로 자동발행을 켜는 건 도박이라, 사람 판단과의 일치율을 먼저 모은다. 측정 = `GET /admin/blog/review-stats`(FAIL×published = 거짓경보). Phase 2 착수 조건 = 거짓경보 0 수렴 + 표본 축적.
+  ③ **OpenAI 직결 폐지**(#55): `content_llm.py` → **`llm_gateway.py`** 로 일반화. 요약·독소조항(`llm_agent`)·심층분석(`ai_analyzer`)·챗봇(`support`)·블로그 전부 OpenRouter 한 관문 경유. 관문이 흡수하는 것 = 키 게이트 단일화 · 빈 응답 감지 · ```json 펜스 제거 · temperature 분기(Claude 는 400 거부). `OPENAI_API_KEY` 필드는 **남겨둠**(pydantic `extra=forbid` 라 서버 env 에 남은 키로 기동이 깨지는 걸 막기 위함, 코드는 안 읽음).
+  ④ **정본 모델 = Sonnet 5 유지 확정** — 7종 동일 주제 비교 실측(비용 $0.64). 근거·수치는 메모리 `blog-model-bakeoff-2026-08`.
+  ⑤ **§5.1 시각물 워크플로 전 구간 관통** — K2 히어로·도식을 힉스필드로 실제 생성→눈검수→배치→주석해제→게이트 PASS. 한글 라벨 정확 렌더 재확인. **글=OpenRouter / 그림=힉스필드** 로 외부 유료 서비스 2개 정리.
+  **교훈(반복 금지): 테스트 통과 ≠ 작동.** 605건이 전부 green 인 상태에서 ⓐ 정본 모델(Sonnet 5)은 **한 번도 성공한 적이 없었고**(추론형 reasoning 이 max_tokens 를 다 써 빈 응답 + Claude 의 ```json 펜스) ⓑ 검수 게이트는 실발행 상록수 4편을 **100% 오탐**했으며(문장분리가 `89.745%` 를 쪼갬) ⓒ Deep 분석은 `max_tokens=4096` 탓에 폴백으로만 돌고 있었다. 셋 다 **실호출로만** 드러났다 — 새 LLM 연동은 목킹 테스트로 끝내지 말 것.
+
 ### ⏳ 대기 중인 외부 작업 (코드 아님, 사용자/제3자 처리)
 | 항목 | 상태 |
 |---|---|
 | **AWS SES** | ✅ **완전 가동**(2026-07-30). 프로덕션 승인 GRANTED(50,000통/일·14통/초, ap-northeast-2) + 도메인 Verified·DKIM 3종 SUCCESS·SPF·DMARC + **발송 전용 IAM `bideasy-ses-sender`** + 서버 env 설정 + **실발송 1통 성공**(Delivery 1·Bounce 0). 남은 건 코드(반송 억제·시퀀스) |
 | **루트 액세스 키 폐기** | 🚨 **미완 — 우선 처리**. 루트 액세스 키는 MFA 로도 제한 못 하는 전권이라 존재 자체가 위험. 콘솔 → 보안 자격 증명에서 폐기. **절차 = `docs/SECRET_ROTATION.md` §3-1.** ⚠️ 2026-08-01 정정: `[default]` 사본은 **구 PC(t14s) 기준**이고 현 PC(x1)에는 `[bideasy]` 프로필만 있으며 aws CLI 도 미설치 — 즉 로컬 조치는 불필요하고 **계정 차원의 폐기**만 남았다 |
-| **`CONTENT_LLM_*` 미설정** | ⚠️ 서버 `.env.production` 에 `CONTENT_LLM_MODEL/BASE_URL/API_KEY` 가 **없다**(2026-07-30 실측). 즉 블로그 정본이 Sonnet 5(OpenRouter)가 아니라 기본값 `gpt-4o`(OpenAI 직결)로 생성돼 왔을 가능성 — CLAUDE.md 구버전의 "적용 완료" 기술과 불일치. 다음 세션에서 확인·설정 |
+| **🚨 LLM 키 (배포 차단)** | **2026-08-02 OpenAI 직결 폐지로 격상.** 이제 이 키가 없으면 블로그뿐 아니라 **AI 분석·Deep 분석·챗봇이 전부 멈춘다**(전에는 블로그만). 서버 `.env.production` 에 `LLM_API_KEY`+`LLM_BASE_URL=https://openrouter.ai/api/v1` 필요. 단 기존 `CONTENT_LLM_API_KEY/BASE_URL` 이 이미 OpenRouter 면 **그대로 두면 됨**(호환 경로 유지). ⚠️ 2026-07-30 실측으로는 `CONTENT_LLM_*` 가 **없었다** → **배포 전 반드시 확인**: `grep -E "^(LLM\|CONTENT_LLM)_API_KEY=" ~/Bideasy/infra/.env.production` |
 | **카카오 알림톡** | ❌ 채널 없음(2026-07-29 확인) → 개설 필요. **리드타임 2~3주**(일반 채널 즉시 → 비즈니스 채널 전환 3~5일 → 발신프로필 심사 영업일 최대 10일 → 템플릿 심사 2~3일). 그래서 **이메일이 먼저**, 알림톡은 마감·매칭 알림용 후행 |
 | **Google Search Console** | 사이트맵 재제출(30초, 선택 — robots.txt 로도 발견됨) |
 | **토스 MID 심사** | 진행 중 — 페이플 운영 라이브(6/17)로 긴급성 낮음, 병행 가능 |
 | **Chrome 웹스토어** | ASO 개정판 검토 제출(6/20). ⚠️ **listing 가격 문구 24,900→19,900 갱신 필요**(런칭 기념가). 재제출 대기 |
 | **익스텐션 코드 정리** | `plan→tier` 파라미터 정리 + 포인트 버튼 처리 → 다음 재제출에 포함. **지금은 웹 checkout이 흡수해 급하지 않음** |
 | **익스텐션 A값 Tier1 활성화** | 웹스토어 승인 후 |
-| **OpenAI 키·POSTGRES_PASSWORD 로테이션** | ⚠️ 미완 — 6/19 감사에서 노출 확인, 사용자 처리 필요. **절차 = `docs/SECRET_ROTATION.md` §3-2·§3-3** (Postgres 는 `.env` 만 고치면 안 되고 DB 안에서 `ALTER USER` 가 먼저다 — 흔한 사고). ⛔ 같은 문서 §4: `BILLING_ENC_KEY` 는 **로테이션 대상이 아니다** |
+| **OpenAI 키·POSTGRES_PASSWORD 로테이션** | ⚠️ 미완 — 6/19 감사에서 노출 확인. **OpenAI 쪽은 2026-08-02 로 성격이 바뀜**: 코드가 더 이상 안 읽으므로 재발급 불요, **폐기만** 하면 된다(로컬 시스템 환경변수의 구 키는 이미 401 무효). Postgres 는 그대로 유효 — **절차 = `docs/SECRET_ROTATION.md` §3-2·§3-3**(`.env` 만 고치면 안 되고 DB 안에서 `ALTER USER` 가 먼저다). ⛔ 같은 문서 §4: `BILLING_ENC_KEY` 는 **로테이션 대상이 아니다** |
 
 ### 2차 = 고객 검증 (GTM 진행 중 — 상세: 메모리 `bideasy-gtm-strategy`)
 - **비치헤드 확정** (2026-07-07): 전문건설(전기공사 먼저) 1~10인, **월 10건+ 직접 투찰**(빈도 기준). 훅=자격필터 / 지갑=안전 투찰. 물품은 하한선 없어 안전게임 아님(제외).
@@ -111,6 +120,8 @@
   ① **2026-08-04(화) 08:00** `nurture.send_lead_matches` — E2E 로 만든 `lead_id=1`(hosicompany@gmail.com)이 그대로 대상이라 메일이 오면 성공. 그 뒤 수신거부 링크까지 눌러보면 전 구간이 닫힌다.
   ② **새 가입자 발생 후 D1(10:10)** `trial.send_onboarding_sequence` — 대상 회원이 없어 아직 한 번도 안 돌았다.
   둘 다 안 오면 `celery_beat` 스케줄 등록을 의심한다(`deploy.sh` 가 force-recreate 하도록 돼 있으나 실측된 적 없음). 확인처 = `/admin/outbound` 원장.
+- **블로그 배포 + 검수 게이트 관측 (2026-08-02 작업의 후속)** — ⚠️ **배포 전 LLM 키 확인 필수**(위 대기표 🚨). 배포 후 ① Deep 분석이 실제로 `gpt-5-nano` 로 도는지 로그 확인(그동안 폴백으로만 돌았을 가능성) ② `/admin-blog` 에서 K-큐 초안을 만들며 **검수 판정과 본인 판단이 맞는지** 눈으로 대조. 수 주 뒤 `GET /admin/blog/review-stats` 로 일치율을 보고 **Phase 2(판정 연동 자동발행)** 착수 여부 판단 — 거짓경보(FAIL×published)가 0 에 수렴해야 한다.
+- **블로그 자동화 Phase 3 후보 (병목 해소)** — 주제 24개 중 실제 발행은 K1 뿐이었다. 병목은 생성이 아니라 ① **이미지 수동 작업** ② **주제가 코드에 박혀 있음**(`TOPIC_SEEDS` → 큐 보충 = 배포). ①의 해법 판단: **§5.1 이 눈검수를 요구하는 이유는 '한글 라벨 오렌더'인데 히어로는 프롬프트가 `no text` 라 검수할 글자가 없다** → 히어로만 자동 생성·배치하고 도식은 선택 사항으로 강등하면 글당 수동 작업이 사실상 0 이 된다. 상세 = `docs/CONTENT_ENGINE.md` §10.3.
 - **카카오 알림톡 채널 개설** — 리드타임 2~3주(사용자 대기). 게이트(`consent.py`)는 그대로 재사용하고 어댑터만 추가.
 - **랜딩 미니계산기 슬라이더 범위** (작음, PR #37 잔여) — `index.html` `DEMO_MIN/MAX = 86.5/90.5` → 계산기 본페이지처럼 `85/92` 로. 현재 하한 89.745% 에서 안전 구간이 0.755%p 뿐이라 게이지가 거의 빨강 = 첫인상 손해.
 - **유입 효과 판정 (2주 뒤 = 2026-08-13 경)** — 서치콘솔 색인 페이지 수·서치어드바이저 수집 현황·GA4 오가닉 세션. 판정 기준·킬 기준은 `docs/GROWTH_STRATEGY.md` §7 에 **사전 등록**돼 있음(사후 합리화 금지).
@@ -150,13 +161,17 @@
 16-1. **가입 응답 경로의 메일은 1통을 넘기지 말 것** — `/auth/register` 는 퍼널의 목이다. SES 가 한 번 느려지면 가입이 504 로 실패하는데 계정은 이미 커밋돼 재시도하면 "이미 등록된 이메일"이 된다. 동의자는 확인 메일만 받고 웰컴은 확인 직후(`optin.py`)에 보낸다. `mailer` 의 SES 타임아웃(연결 3초·읽기 4초·재시도 0)과 nginx `/api/v1/auth/` 의 `proxy_read_timeout` 도 이 이유로 고정돼 있다.
 16-2. **인앱 알림은 메일보다 먼저 커밋할 것** — 발송 실패 시 `db.rollback()` 이 아직 pending 인 `Notification` 까지 지운다. 체험 알림의 대상 쿼리는 '하루짜리 창'이라 다음 날엔 창 밖 — 그 사용자는 영영 알림을 못 받고 카운터는 성공으로 집계된다(`trial_tasks._notify_then_mail`).
 17. **발송 배치는 리드 단위로 예외를 가둘 것** — 데이터 결함 1건(제목에 섞인 개행 등)이 배치를 끊으면 매주 같은 지점에서 전원이 조용히 메일을 못 받는다(beat 는 실패를 알리지 않는다). 실패는 원장에 `failed` + **`dedupe_key` 를 놓은 상태**로 남아야 재시도가 가능하다.
+18. **LLM 은 목킹 테스트로 끝내지 말 것 — 반드시 실호출로 확인** (2026-08-02, 3연속 실증). 테스트 605건이 전부 green 인데 정본 모델은 한 번도 성공한 적이 없었다. 최신 모델은 **거의 전부 추론형**이라 두 함정이 기본값이 됐다: ⓐ **reasoning 이 `max_tokens` 를 먼저 먹어 본문이 빈 채로 온다**(Claude 5 는 4,000 중 2,143 을 reasoning 에 씀 → `content=None`). 긴 출력이 필요하면 12,000~16,000 을 잡을 것. ⓑ **Claude 계열은 `response_format=json_object` 를 줘도 ```json 펜스로 감싼다**(→ `Expecting value: line 1 column 1`). 둘 다 `llm_gateway.py` 가 처리하므로 **LLM 호출은 반드시 이 관문을 지날 것**(직접 `OpenAI()` 를 만들지 말 것). 참고: Claude 계열은 `temperature` 를 400 으로 거부한다.
+19. **검수 게이트의 화이트리스트는 단일 소스에서 끌어올 것** — 하한율을 게이트에 하드코딩했더니 요율 개정분(`87.745`·`86.745`)이 전부 '출처 없는 수치'로 잡혀 **실발행 4편을 100% 오탐**했다. `lower_limits.py` 를 따라가게 해서 드리프트를 없앴다. 문장 분리도 **숫자 사이 마침표를 자르면 안 된다**(`89.745%` → `89`/`745%`).
+20. **힉스필드 CLI 는 워크스페이스 선택이 안 되면 전부 실패한다** — 인증 토큰이 멀쩡해도 `generate` 계열이 "No workspace selected" 로 죽는다(`higgsfield workspace set <id>`, 설정은 유지됨). ⚠️ 에러 힌트가 `hf ...` 라고 안내하는데 **이 PC의 `hf` 는 huggingface_hub** 이니 `higgsfield`/`higgs` 를 쓸 것. 생성물은 2752x1536·4MB 로 나오므로 **리사이즈(1376x768)+양자화가 필수**(독자가 모바일 중심).
 
 ---
 
 ## 2. 기술 스택
 
 - **백엔드**: FastAPI(async) + SQLAlchemy + Alembic. **PostgreSQL(prod) / SQLite(test·로컬)**. Celery + Redis(beat 스케줄). Jinja2(SSR).
-- **AI**: OpenAI `gpt-4o-mini`(요약·독소조항), 심층분석 `gpt-5-nano`→`gpt-4o-mini` 폴백. **기본 "팁"은 규칙기반**(`tips_generator`, 비-LLM). LLM은 **공고 본문(content)이 있을 때만** 발동.
+- **AI**: **전부 OpenRouter 경유 — 단일 관문 `services/llm_gateway.py`**(2026-08-02 OpenAI 직결 폐지). 모델은 설정으로 교체: 요약·독소조항 `LLM_MODEL_ANALYSIS`(openai/gpt-4o-mini) · 심층분석 `LLM_MODEL_DEEP`(openai/gpt-5-nano) · 챗봇 `LLM_MODEL_SUPPORT` · 블로그 정본 `CONTENT_LLM_MODEL`(anthropic/claude-sonnet-5). **기본 "팁"은 규칙기반**(`tips_generator`, 비-LLM). LLM은 **공고 본문(content)이 있을 때만** 발동.
+- **이미지**: **힉스필드**(`nano_banana_pro`) — LLM 과 별개 서비스·별개 CLI. 앱 코드는 이미지를 **생성하지 않는다**(엔진은 프롬프트만 만들고, 생성·눈검수·배치는 사람/세션). §5.1.
 - **웹 프론트**: **vanilla HTML + nginx 정적** (프레임워크 없음). 공통 `assets/nav.js`·`api()`·`getToken()` 재사용. 공개 페이지는 SEO 위해 SPA 금지.
 - **모바일 앱**: Flutter(Riverpod) — `frontend/`. *현재 주력은 익스텐션+웹. Flutter 앱은 부차.*
 - **익스텐션**: TypeScript (별도 레포 `Bideasy-Extension/`).
@@ -328,7 +343,7 @@ python -m ruff check backend/ # CI lint 와 동일 — 미사용 import 하나�
 
 ## 9. 🔒 보안 규칙 (반드시 준수)
 
-1. **비밀키는 코드/git에 절대 없음.** 실값은 **서버 `infra/.env.production`에만** (git 제외). 토스/페이플/PUBLIC_DATA/OPENAI/JWT 키 전부.
+1. **비밀키는 코드/git에 절대 없음.** 실값은 **서버 `infra/.env.production`에만** (git 제외). 토스/페이플/PUBLIC_DATA/**LLM(OpenRouter)**/JWT 키 전부. 로컬 개발용은 `backend/.env`(`.gitignore` 등재됨).
    - 단, `config.py`의 페이플 값은 **공개 테스트 샌드박스 기본값**(실 운영키 아님).
    - `JWT_SECRET_KEY`는 `.env.production`에 **고정**해야 함(미설정 시 배포마다 전원 로그아웃).
 2. **`PATENT.md` 절대 커밋·푸시 금지** (내부 IP). `.gitignore`에 `**/PATENT.md` 등록됨. `MORNING_CHECKLIST.md`·`OVERNIGHT_REPORT.md`도 동일.
@@ -382,5 +397,5 @@ textMain #191F28   textSub #8B95A1   safe #34C759   danger #FF3B30
 - **Do**: 공고 요약(3줄), 독소조항 탐지, 과거데이터 팩트분석. **Don't**: 낙찰가 예측.
 - 출력은 JSON 스키마(`summary_3_lines`, `risk_factors[type/content/severity]`, `overall_sentiment: SAFE|CAUTION|DANGER`).
 - `temperature=0`(일관성). 결과는 `AIAnalysisLog` 캐싱(LLM 비용 절감, 단 자격블록 제외).
-- **전제**: `OPENAI_API_KEY` 미설정 시 LLM 전부 실패 → 사실상 규칙기반만 동작.
+- **전제**: LLM 키(`LLM_API_KEY` 또는 구 `CONTENT_LLM_API_KEY`) 미설정 시 LLM 전부 실패 → 사실상 규칙기반만 동작. **`OPENAI_API_KEY` 는 더 이상 읽지 않는다**(2026-08-02 폐지).
 ```
