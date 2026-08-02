@@ -285,6 +285,8 @@ class TestContentLlmGate:
             return {"instagram_cards": [{"kind": "cover"}]}
 
         monkeypatch.setattr(llm_gateway, "chat_json", fake)
-        monkeypatch.setattr(llm_gateway.settings, "OPENAI_API_KEY", "sk-x")
+        # 게이트 키를 **명시적으로** 켠다. OPENAI_API_KEY 로는 더 이상 열리지 않고,
+        # 로컬 .env 에 기대면 CI(키 없음)에서만 깨진다 — 실제로 그렇게 깨졌다.
+        monkeypatch.setattr(llm_gateway.settings, "LLM_API_KEY", "sk-test")
         ce.derive_channel_assets({"hook": "훅"})
         assert seen["model"] == "gpt-4o-mini"
