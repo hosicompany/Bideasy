@@ -14,7 +14,7 @@ import pytest
 
 from app.db import models
 from app.services import content_engine as ce
-from app.services import content_llm
+from app.services import llm_gateway
 from app.services import data_story
 
 
@@ -38,6 +38,13 @@ def _clean(db):
     db.query(models.OpeningResult).delete()
     db.query(models.BlogPost).delete()
     db.commit()
+
+
+def _no_gateway_key(monkeypatch):
+    """LLM 게이트웨이 키를 전부 비운다 (신·구 설정 모두)."""
+    monkeypatch.setattr(llm_gateway.settings, "LLM_API_KEY", "")
+    monkeypatch.setattr(llm_gateway.settings, "CONTENT_LLM_API_KEY", "")
+    monkeypatch.setattr(llm_gateway.settings, "OPENAI_API_KEY", "")
 
 
 # ─── ① 얇은 주 게이트 ─────────────────────────────────────────
@@ -227,24 +234,34 @@ class TestEngineHero:
 
 class TestContentLlmGate:
     def test_dedicated_key_alone_counts_as_available(self, monkeypatch):
-        """OpenRouter 전용 구성(OPENAI_API_KEY 없음)에서도 콘텐츠 기능이 살아있어야 한다."""
-        monkeypatch.setattr(content_llm.settings, "OPENAI_API_KEY", "")
-        monkeypatch.setattr(content_llm.settings, "CONTENT_LLM_API_KEY", "sk-or-test")
-        assert content_llm.available() is True
-        assert content_llm.primary_key() == "sk-or-test"
+        """OpenRouter 전용 구성(OPENAI_API_KEY 없음)에서도 기능이 살아있어야 한다."""
+        monkeypatch.setattr(llm_gateway.settings, "OPENAI_API_KEY", "")
+        monkeypatch.setattr(llm_gateway.settings, "LLM_API_KEY", "")
+        monkeypatch.setattr(llm_gateway.settings, "CONTENT_LLM_API_KEY", "sk-or-test")
+        assert llm_gateway.available() is True
+        assert llm_gateway.api_key() == "sk-or-test"
 
-    def test_openai_key_alone_still_works(self, monkeypatch):
-        monkeypatch.setattr(content_llm.settings, "CONTENT_LLM_API_KEY", "")
-        monkeypatch.setattr(content_llm.settings, "OPENAI_API_KEY", "sk-openai")
-        assert content_llm.available() is True
-        assert content_llm.primary_key() == "sk-openai"
+    def test_new_key_takes_precedence(self, monkeypatch):
+        """LLM_API_KEY 가 구 설정(CONTENT_LLM_API_KEY)보다 우선."""
+        monkeypatch.setattr(llm_gateway.settings, "LLM_API_KEY", "sk-new")
+        monkeypatch.setattr(llm_gateway.settings, "CONTENT_LLM_API_KEY", "sk-old")
+        assert llm_gateway.api_key() == "sk-new"
+
+    def test_openai_key_alone_is_no_longer_enough(self, monkeypatch):
+        """★ OpenAI 직결 폐지(2026-08-02) — OPENAI_API_KEY 만으로는 동작하지 않는다.
+
+        폐지의 핵심이 이것이다. 이 테스트가 깨지면 어딘가에서 OpenAI 키를 다시 읽고 있다는 뜻.
+        """
+        monkeypatch.setattr(llm_gateway.settings, "LLM_API_KEY", "")
+        monkeypatch.setattr(llm_gateway.settings, "CONTENT_LLM_API_KEY", "")
+        monkeypatch.setattr(llm_gateway.settings, "OPENAI_API_KEY", "sk-openai")
+        assert llm_gateway.available() is False
 
     def test_no_keys_means_unavailable(self, monkeypatch):
-        monkeypatch.setattr(content_llm.settings, "CONTENT_LLM_API_KEY", "")
-        monkeypatch.setattr(content_llm.settings, "OPENAI_API_KEY", "")
-        assert content_llm.available() is False
+        _no_gateway_key(monkeypatch)
+        assert llm_gateway.available() is False
         with pytest.raises(RuntimeError):
-            content_llm.chat_json("sys", "user")
+            llm_gateway.chat_json("sys", "user")
 
     @pytest.mark.parametrize("fn", [
         lambda: ce.derive_channel_assets({"hook": "훅"}),
@@ -254,21 +271,22 @@ class TestContentLlmGate:
     ])
     def test_all_content_calls_share_one_gate(self, monkeypatch, fn):
         """네 호출부가 **같은** 게이트를 쓴다 — 하나만 조용히 죽는 일이 없도록."""
-        monkeypatch.setattr(content_llm.settings, "CONTENT_LLM_API_KEY", "")
-        monkeypatch.setattr(content_llm.settings, "OPENAI_API_KEY", "")
+        _no_gateway_key(monkeypatch)
         assert fn() is None
 
     def test_cheap_model_used_for_light_calls(self, monkeypatch):
         """정본 외 호출은 저가 모델로 — 리팩터링이 비용을 올리지 않았는지 고정."""
-        monkeypatch.setattr(content_llm.settings, "CONTENT_LLM_CHEAP_MODEL", "gpt-4o-mini")
-        monkeypatch.setattr(content_llm.settings, "CONTENT_LLM_MODEL", "gpt-4o")
+        monkeypatch.setattr(llm_gateway.settings, "CONTENT_LLM_CHEAP_MODEL", "gpt-4o-mini")
+        monkeypatch.setattr(llm_gateway.settings, "CONTENT_LLM_MODEL", "gpt-4o")
         seen = {}
 
         def fake(system, user, *, max_tokens=2000, temperature=0.4, model=None):
             seen["model"] = model
             return {"instagram_cards": [{"kind": "cover"}]}
 
-        monkeypatch.setattr(content_llm, "chat_json", fake)
-        monkeypatch.setattr(content_llm.settings, "OPENAI_API_KEY", "sk-x")
+        monkeypatch.setattr(llm_gateway, "chat_json", fake)
+        # 게이트 키를 **명시적으로** 켠다. OPENAI_API_KEY 로는 더 이상 열리지 않고,
+        # 로컬 .env 에 기대면 CI(키 없음)에서만 깨진다 — 실제로 그렇게 깨졌다.
+        monkeypatch.setattr(llm_gateway.settings, "LLM_API_KEY", "sk-test")
         ce.derive_channel_assets({"hook": "훅"})
         assert seen["model"] == "gpt-4o-mini"

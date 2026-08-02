@@ -3,25 +3,30 @@
 AI Document Analyzer - Deep analysis of bid attachments using OpenAI
 Analyzes full document text for toxic clauses, qualification requirements, etc.
 """
-import json
 from typing import Dict, Optional
-from openai import OpenAI
+
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.services import llm_gateway
 
 logger = get_logger(__name__)
 
 
 class DocumentAnalyzer:
-    """
-    OpenAI를 사용한 첨부파일 심층 분석
-    Long-Context 방식으로 문서 전체 텍스트를 분석
+    """첨부파일 심층 분석 (Pro+). Long-Context 방식으로 문서 전체를 분석.
+
+    2026-08-02: OpenAI 직결 → llm_gateway(OpenRouter) 경유.
+    함께 고친 것 — `max_tokens=4096` 은 추론형 모델(gpt-5-nano)에 부족해 본문이
+    빈 채로 와서 **매번 폴백으로만 돌고 있었을 가능성이 높다**. LLM_MAX_TOKENS_DEEP 로 상향.
     """
 
-    def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = "gpt-5-nano"
-        self.fallback_model = "gpt-4o-mini"
+    @property
+    def model(self) -> str:
+        return settings.LLM_MODEL_DEEP
+
+    @property
+    def fallback_model(self) -> str:
+        return settings.CONTENT_LLM_CHEAP_MODEL
 
     def analyze_attachment(
         self,
@@ -44,52 +49,21 @@ class DocumentAnalyzer:
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(document_text, bid_info)
 
+        if not llm_gateway.available():
+            return self._empty_result("분석 실패: LLM 키가 설정되지 않았습니다.")
         try:
-            logger.info(f"심층 분석 시작 (모델: {self.model})")
-            logger.info(f"문서 길이: {len(document_text)} 문자")
-
-            response = self.client.chat.completions.create(
+            logger.info(f"심층 분석 시작 (모델: {self.model}, 문서 {len(document_text)}자)")
+            result = llm_gateway.chat_json(
+                system_prompt, user_prompt,
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                response_format={"type": "json_object"},
+                fallback=self.fallback_model,   # 게이트웨이가 1차 실패 시 자동 폴백
+                max_tokens=settings.LLM_MAX_TOKENS_DEEP,
                 temperature=0,
-                max_tokens=4096
             )
-
-            result_json = response.choices[0].message.content
-            result = json.loads(result_json)
-
             logger.info("분석 완료")
             return self._validate_result(result)
-
         except Exception as e:
-            logger.error(f"기본 모델 실패: {e}")
-
-            # Fallback to gpt-4o-mini
-            if self.model != self.fallback_model:
-                try:
-                    logger.info(f"폴백 모델 시도: {self.fallback_model}")
-                    response = self.client.chat.completions.create(
-                        model=self.fallback_model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        response_format={"type": "json_object"},
-                        temperature=0,
-                        max_tokens=4096
-                    )
-
-                    result_json = response.choices[0].message.content
-                    result = json.loads(result_json)
-                    return self._validate_result(result)
-
-                except Exception as fallback_e:
-                    logger.error(f"폴백 모델도 실패: {fallback_e}")
-
+            logger.error(f"심층 분석 실패(폴백 포함): {e}")
             return self._empty_result(f"분석 실패: {str(e)}")
 
     def _build_system_prompt(self) -> str:
