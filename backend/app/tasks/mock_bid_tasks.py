@@ -36,12 +36,24 @@ def register_mock_bids(window_hours: int = 2, limit: int = 2000) -> dict:
 
 @celery_app.task(name="mock_bid.score")
 def score_mock_bids(limit: int = 5000) -> dict:
-    """마감이 지난 미채점 등록분을 개찰결과와 대조해 채점."""
-    from app.services.mock_bidding import score_pending
+    """마감이 지난 미채점 등록분을 개찰결과와 대조해 채점.
+
+    채점 뒤에 등수 백필을 이어 돈다 — 참가자 크롤(19:00)이 채점 대상보다
+    늦게 붙은 건(적격검사 지연 등)의 등수를 새 scoring_rev 로 채운다(§0.5-3).
+    """
+    from app.services.mock_bidding import backfill_participant_ranks, score_pending
 
     db = SessionLocal()
     try:
-        return score_pending(db, limit=limit)
+        result = score_pending(db, limit=limit)
+        # 등수 백필 실패가 채점 결과를 가리지 않도록 분리해서 잡는다
+        try:
+            result["rank_backfill"] = backfill_participant_ranks(db, limit=limit)
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            logger.error(f"[mock_bid.score] rank backfill error: {e}", exc_info=True)
+            result["rank_backfill"] = {"error": str(e)}
+        return result
     except Exception as e:  # noqa: BLE001
         db.rollback()
         logger.error(f"[mock_bid.score] error: {e}", exc_info=True)

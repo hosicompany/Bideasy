@@ -1,6 +1,6 @@
 from sqlalchemy import (
     BigInteger, Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text,
-    Boolean, UniqueConstraint,
+    Boolean, Index, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import TypeDecorator
@@ -239,6 +239,39 @@ class OpeningResult(Base):
 
     participants_count = Column(Integer)
 
+    crawled_at = Column(DateTime, default=_utcnow)
+
+
+class OpeningParticipant(Base):
+    """개찰 참가자 행 — 모의투찰 등록 공고(`mock_bids.bid_no`)에 한해 저장.
+
+    개찰 API 는 참가자 전원의 순위·투찰가를 주지만 기존 크롤러는 낙찰자 행만
+    남기고 버렸다. 이 테이블이 있어야 "우리가 몇 등이었는지"(설계 §4-3)를
+    재구성할 수 있다.
+
+    ⚠️ 전수 저장 금지(설계 §P4) — 공사 개찰은 하루 169k행 규모라 전수는 함정.
+    등록한 공고만 담으면 데이터량이 수십분의 1로 떨어지면서 얻을 건 다 얻는다.
+
+    (bid_no, rank) 를 UNIQUE 로 걸지 않은 이유: 개찰 API 가 동가(같은 투찰가)
+    참가자에게 동순위를 줄 가능성을 배제할 수 없다. 대신 비유니크 인덱스만
+    걸고, 재크롤 시 공고 단위 삭제 후 재삽입으로 중복을 막는다
+    (`opening_result_crawler._save_participants`).
+    """
+
+    __tablename__ = "opening_participants"
+    __table_args__ = (
+        Index("ix_opening_participants_bid_no_rank", "bid_no", "rank"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    bid_no = Column(String(100), index=True, nullable=False)
+    rank = Column(Integer)                  # opengRank (1 = 최저가)
+    company = Column(String(255))           # bidprcCorpNm
+    # BigInteger 필수 — 공사 기초금액 실측 최대 6,203억. int4(21.4억)면
+    # 대형 공고 참가자 행이 NumericValueOutOfRange 로 죽는다(mock_bids 에서 실제로 겪음).
+    bid_price = Column(BigInteger)          # bidprcAmt
+    bid_rate = Column(Float)                # bidprcRt
+    sucsf_yn = Column(String(5))            # 'Y' = 낙찰(적격검사 통과)
     crawled_at = Column(DateTime, default=_utcnow)
 
 

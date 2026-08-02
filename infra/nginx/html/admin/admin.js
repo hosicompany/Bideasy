@@ -1005,15 +1005,27 @@ const MB_ARM_LABEL = {
   aggressive: 'aggressive (−12%)',
 };
 const MB_ARM_ORDER = ['standard', 'active', 'frontier_c5', 'frontier_c10', 'aggressive'];
+// arm 색은 화면 전체에서 고정 — 차트끼리 색이 다르면 비교가 안 된다.
+const MB_ARM_COLOR = {
+  standard: '#8B95A1',
+  active: '#3182F6',
+  frontier_c5: '#34C759',
+  frontier_c10: '#22A06B',
+  aggressive: '#FF3B30',
+};
 
 function mbPct(v) { return v === null || v === undefined ? '—' : v + '%'; }
 
 pages.mockbidding = async function (content) {
   content.innerHTML = '<div class="card">불러오는 중...</div>';
 
-  let sum;
+  let sum, charts;
   try {
-    sum = await api('/admin/mock-bidding/summary');
+    // 차트 집계 실패가 성적표까지 막지 않도록 분리해서 잡는다
+    [sum, charts] = await Promise.all([
+      api('/admin/mock-bidding/summary'),
+      api('/admin/mock-bidding/charts').catch(() => null),
+    ]);
   } catch (e) {
     content.innerHTML = '<div class="card">오류: ' + e.message + '</div>';
     return;
@@ -1060,6 +1072,61 @@ pages.mockbidding = async function (content) {
           <div style="font-size:24px;font-weight:800;">${fmtNumber(reach.scored)}</div></div>
         <div><div style="font-size:12px;color:#8B95A1;">도달률 (기준 ${gate}%)</div>
           <div style="font-size:24px;font-weight:800;color:${gateColor};">${mbPct(reachPct)}</div></div>
+      </div>
+    </div>
+
+    <!-- 시각화 — 순서는 설계 §0.2 지표 우선순위 그대로: 무효율(1차·가장 크게) →
+         적중률(2차) → 등수(3차) → 격차 → 사정률 오차(4차) → 오답노트 → 세그먼트 -->
+    <div class="card">
+      <h3>① arm 별 무효율 — 1차 지표</h3>
+      <p style="color:var(--color-text-muted);font-size:13px;">
+        무효(DROPOUT)는 입찰 자체가 없던 일이 됩니다. 브랜드 KPI 는 유효율 —
+        이 막대가 낮을수록 좋습니다.
+      </p>
+      <div style="position:relative;height:300px;"><canvas id="mb-ch-dropout"></canvas></div>
+    </div>
+
+    <div class="chart-grid-2">
+      <div class="card">
+        <h3>② arm 별 적중률 (내부 참고)</h3>
+        <p style="color:var(--color-text-muted);font-size:13px;">대외 표기 금지(전역 규칙 §4-2).</p>
+        <div class="chart-wrap"><canvas id="mb-ch-win"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>③ 등수 분포 — 우리가 몇 등에 몰리는지</h3>
+        <p style="color:var(--color-text-muted);font-size:13px;">
+          참가자 데이터(Phase 2)가 붙은 채점 건만. 등수는 무효 참가자 포함 순위입니다.
+        </p>
+        <div class="chart-wrap"><canvas id="mb-ch-rank"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-grid-2">
+      <div class="card">
+        <h3>④ 낙찰가 대비 격차 분포</h3>
+        <p style="color:var(--color-text-muted);font-size:13px;">
+          (우리가격−낙찰가)/낙찰가. 0~0.5% 구간이 "아깝게 놓친" 건입니다.
+        </p>
+        <div class="chart-wrap"><canvas id="mb-ch-gap"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>⑤ 사정률 예측 오차 추이 (active)</h3>
+        <p style="color:var(--color-text-muted);font-size:13px;">
+          개별 승패는 추첨 노이즈가 크지만 이 오차는 모델의 순수 신호입니다(§0.2 4차).
+        </p>
+        <div class="chart-wrap"><canvas id="mb-ch-err"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-grid-2">
+      <div class="card">
+        <h3>⑥ 오답노트 — 태그별 무효율</h3>
+        <div class="chart-wrap"><canvas id="mb-ch-tags"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>⑦ 세그먼트 교차표 (입찰방법 × 금액대, active)</h3>
+        <p style="color:var(--color-text-muted);font-size:13px;">셀 = 채점 건수 / 무효율.</p>
+        <div id="mb-seg" style="overflow-x:auto;">—</div>
       </div>
     </div>
 
@@ -1122,6 +1189,8 @@ pages.mockbidding = async function (content) {
       <div id="mb-res" style="overflow-x:auto;">불러오는 중...</div>
     </div>`;
 
+  renderMockBiddingCharts(charts);
+
   document.getElementById('mb-reload').addEventListener('click', async () => {
     const m = document.getElementById('mb-method').value;
     location.hash = '#/mockbidding';
@@ -1173,14 +1242,16 @@ pages.mockbidding = async function (content) {
     if (!el) return;
     if (!d.items || !d.items.length) { el.innerHTML = '<span style="color:#8B95A1;">아직 채점된 건이 없습니다.</span>'; return; }
     const color = { WIN: '#34C759', DROPOUT: '#FF3B30', LOST: '#8B95A1', NO_RESULT: '#8B95A1' };
-    el.innerHTML = `<table style="width:100%;font-size:12px;min-width:760px;">
+    el.innerHTML = `<table style="width:100%;font-size:12px;min-width:820px;">
       <thead><tr><th style="text-align:left;">공고번호</th><th style="text-align:left;">arm</th>
-      <th style="text-align:left;">판정</th><th style="text-align:left;">우리가격</th>
+      <th style="text-align:left;">판정</th><th style="text-align:left;">등수/참여</th>
+      <th style="text-align:left;">우리가격</th>
       <th style="text-align:left;">낙찰가</th><th style="text-align:left;">하한선</th>
       <th style="text-align:left;">낙찰가 대비</th><th style="text-align:left;">태그</th></tr></thead><tbody>
       ${d.items.map((x) => `<tr>
         <td>${x.bid_no}</td><td>${x.arm}</td>
         <td style="font-weight:700;color:${color[x.outcome] || '#191F28'};">${x.outcome}</td>
+        <td>${x.estimated_rank ? x.estimated_rank + '위 / ' + (x.participants_count ?? '?') + '명' : '—'}</td>
         <td>${fmtNumber(x.our_price)}</td>
         <td>${x.actual_winner_price ? fmtNumber(x.actual_winner_price) : '—'}</td>
         <td>${x.actual_lower_limit ? fmtNumber(Math.round(x.actual_lower_limit)) : '—'}</td>
@@ -1189,6 +1260,140 @@ pages.mockbidding = async function (content) {
       </tbody></table>`;
   }).catch(() => {});
 };
+
+// ─── 모의투찰 차트 렌더 — 순서는 §0.2 지표 우선순위, 라이브러리는
+//     대시보드와 동일한 Chart.js(admin.html 이 이미 로드) 재사용. CDN 추가 금지.
+
+function mbChartEmpty(canvasId, msg) {
+  const cv = document.getElementById(canvasId);
+  if (!cv || !cv.parentElement) return;
+  cv.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8B95A1;font-size:13px;">' + msg + '</div>';
+}
+
+function renderMockBiddingCharts(charts) {
+  const noData = '아직 채점 데이터가 없습니다.';
+  const allIds = ['mb-ch-dropout', 'mb-ch-win', 'mb-ch-rank', 'mb-ch-gap', 'mb-ch-err', 'mb-ch-tags'];
+  if (!charts) {
+    allIds.forEach((id) => mbChartEmpty(id, '차트 집계를 불러오지 못했습니다.'));
+    return;
+  }
+  const base = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } };
+  const legendBottom = { ...base, plugins: { legend: { display: true, position: 'bottom' } } };
+
+  // ①② arm 별 무효율(1차)·적중률(2차) — 같은 arm 은 항상 같은 색
+  const arms = MB_ARM_ORDER.filter((a) => (charts.arms || {})[a] && charts.arms[a].judged > 0);
+  if (!arms.length) {
+    mbChartEmpty('mb-ch-dropout', noData);
+    mbChartEmpty('mb-ch-win', noData);
+  } else {
+    const colors = arms.map((a) => MB_ARM_COLOR[a] || '#3182F6');
+    new Chart(document.getElementById('mb-ch-dropout'), {
+      type: 'bar',
+      data: { labels: arms, datasets: [{ data: arms.map((a) => charts.arms[a].dropout_rate ?? 0), backgroundColor: colors }] },
+      options: { ...base, scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + '%' } } } },
+    });
+    new Chart(document.getElementById('mb-ch-win'), {
+      type: 'bar',
+      data: { labels: arms, datasets: [{ data: arms.map((a) => charts.arms[a].win_rate ?? 0), backgroundColor: colors }] },
+      options: { ...base, scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + '%' } } } },
+    });
+  }
+
+  // ③ 등수 분포 히스토그램 (3차 — Phase 2 산출물)
+  const rd = charts.rank_distribution || {};
+  const rankArms = MB_ARM_ORDER.filter((a) => rd[a]);
+  if (!rankArms.length) {
+    mbChartEmpty('mb-ch-rank', '참가자 데이터가 붙은 채점 건이 아직 없습니다.');
+  } else {
+    const cap = charts.rank_histogram_cap || 10;
+    const labels = [];
+    for (let i = 1; i <= cap; i++) labels.push(String(i));
+    labels.push((cap + 1) + '+');
+    new Chart(document.getElementById('mb-ch-rank'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: rankArms.map((a) => ({ label: a, data: labels.map((l) => rd[a][l] || 0), backgroundColor: MB_ARM_COLOR[a] })),
+      },
+      options: { ...legendBottom, scales: { y: { beginAtZero: true } } },
+    });
+  }
+
+  // ④ 낙찰가 대비 격차 분포
+  const gd = charts.gap_distribution || {};
+  const gapArms = MB_ARM_ORDER.filter((a) => gd[a]);
+  if (!gapArms.length) {
+    mbChartEmpty('mb-ch-gap', noData);
+  } else {
+    const labels = charts.gap_buckets || [];
+    new Chart(document.getElementById('mb-ch-gap'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: gapArms.map((a) => ({ label: a, data: labels.map((l) => gd[a][l] || 0), backgroundColor: MB_ARM_COLOR[a] })),
+      },
+      options: { ...legendBottom, scales: { y: { beginAtZero: true } } },
+    });
+  }
+
+  // ⑤ 사정률 예측 오차 추이 (4차)
+  const trend = charts.ratio_error_trend || [];
+  if (!trend.length) {
+    mbChartEmpty('mb-ch-err', noData);
+  } else {
+    new Chart(document.getElementById('mb-ch-err'), {
+      type: 'line',
+      data: {
+        labels: trend.map((t) => (t.date || '').slice(5)),
+        datasets: [{
+          data: trend.map((t) => t.mean_error),
+          borderColor: '#3182F6',
+          backgroundColor: 'rgba(49, 130, 246, 0.1)',
+          tension: 0.3,
+          fill: true,
+        }],
+      },
+      options: { ...base, scales: { y: { beginAtZero: true } } },
+    });
+  }
+
+  // ⑥ 오답노트 태그별 무효율 (막대)
+  const tags = charts.failure_tags || {};
+  const tagNames = Object.keys(tags).filter((t) => tags[t].dropout_rate !== null && tags[t].dropout_rate !== undefined);
+  if (!tagNames.length) {
+    mbChartEmpty('mb-ch-tags', noData);
+  } else {
+    new Chart(document.getElementById('mb-ch-tags'), {
+      type: 'bar',
+      data: { labels: tagNames, datasets: [{ data: tagNames.map((t) => tags[t].dropout_rate), backgroundColor: '#FF8A00' }] },
+      options: { ...base, indexAxis: 'y', scales: { x: { beginAtZero: true, ticks: { callback: (v) => v + '%' } } } },
+    });
+  }
+
+  // ⑦ 세그먼트 교차표 — 금액대 경계는 autocalibrate 와 동일 어휘(small~xxlarge)
+  const segEl = document.getElementById('mb-seg');
+  if (segEl) {
+    const seg = charts.segments || [];
+    if (!seg.length) {
+      segEl.innerHTML = '<span style="color:#8B95A1;">' + noData + '</span>';
+    } else {
+      const brackets = ['small', 'medium', 'large', 'xlarge', 'xxlarge'];
+      const bracketLabel = { small: '~1억', medium: '1~5억', large: '5~10억', xlarge: '10~50억', xxlarge: '50억~' };
+      const byMethod = {};
+      seg.forEach((s) => { (byMethod[s.bid_method] = byMethod[s.bid_method] || {})[s.bracket] = s; });
+      segEl.innerHTML = `<table style="width:100%;font-size:12px;min-width:420px;">
+        <thead><tr><th style="text-align:left;">입찰방법</th>
+        ${brackets.map((b) => '<th style="text-align:left;">' + bracketLabel[b] + '</th>').join('')}</tr></thead><tbody>
+        ${Object.keys(byMethod).map((m) => `<tr><td style="white-space:nowrap;">${m}</td>
+          ${brackets.map((b) => {
+            const c = byMethod[m][b];
+            if (!c) return '<td style="color:#B0B8C1;">—</td>';
+            return `<td>${fmtNumber(c.judged)}건<br><span style="font-weight:700;color:${c.dropout_rate > 10 ? '#FF3B30' : '#191F28'};">${mbPct(c.dropout_rate)}</span></td>`;
+          }).join('')}</tr>`).join('')}
+        </tbody></table>`;
+    }
+  }
+}
 
 // ─── 부팅 ────────────────────────────────────────────────────
 

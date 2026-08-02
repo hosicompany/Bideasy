@@ -3,6 +3,7 @@ import time
 
 import pytest
 
+from app.db import models
 from app.services import opening_result_crawler as crawler
 from app.tasks import verification_tasks
 
@@ -219,6 +220,130 @@ def test_crawl_fails_instead_of_committing_when_page_cap_is_full(monkeypatch):
     assert db.committed is False
     assert db.rolled_back is True
     assert db.closed is True
+
+
+# ── Phase 2 — 참가자 수집 (모의투찰 등록 공고 한정, 설계 §P4) ──
+
+
+def _make_mock_bid(bid_no):
+    from datetime import timedelta
+
+    from app.services.mock_bidding import now_kst
+
+    return models.MockBid(
+        bid_no=bid_no, arm="standard",
+        registered_at=now_kst() - timedelta(hours=1),
+        deadline_at=now_kst() + timedelta(hours=1),
+        price=97_500_000, snapshot_basic_price=100_000_000,
+        status="REGISTERED",
+    )
+
+
+class TestParticipantParsing:
+    def test_parses_participant_row(self):
+        """낙찰자 판별(_parse_item_to_kwargs)이 버리는 참가자 행을 여기서 줍는다."""
+        p = crawler._parse_participant_kwargs({
+            "bidNtceNo": "P-1", "bidNtceOrd": "000",
+            "opengRank": "2", "bidprcAmt": "91000000", "bidprcRt": "91.0",
+            "bidprcCorpNm": "비낙찰건설", "sucsfYn": "N",
+        })
+        assert p["bid_no"] == "P-1-000"
+        assert p["rank"] == 2
+        assert p["bid_price"] == 91_000_000
+        assert p["sucsf_yn"] == "N"
+
+    def test_winner_row_is_also_a_participant(self):
+        p = crawler._parse_participant_kwargs({
+            "bidNtceNo": "P-2", "opengRank": "1", "bidprcAmt": "90000000",
+            "bidprcCorpNm": "낙찰건설", "sucsfYn": "Y", "fnlSucsfAmt": "90000000",
+        })
+        assert p is not None and p["sucsf_yn"] == "Y"
+
+    def test_skips_row_without_price(self):
+        """투찰가 없는 행은 등수 재구성에 쓸 수 없다."""
+        assert crawler._parse_participant_kwargs({"bidNtceNo": "P-3", "opengRank": "1"}) is None
+
+    def test_missing_rank_is_tolerated(self):
+        p = crawler._parse_participant_kwargs({"bidNtceNo": "P-4", "bidprcAmt": "80000000"})
+        assert p is not None and p["rank"] is None
+
+
+class TestParticipantSave:
+    def test_resave_replaces_not_duplicates(self, db_session):
+        """재크롤 시 공고 단위 삭제-재삽입 — (bid_no, rank) UNIQUE 대신 쓰는 방식.
+
+        적격검사 진행 중 sucsfYn 이 N→Y 로 바뀌므로 갈아끼우는 편이 정확하다.
+        """
+        rows = [
+            {"bid_no": "PSAVE-1-000", "rank": 1, "company": "A", "bid_price": 90_000_000,
+             "bid_rate": 90.0, "sucsf_yn": "N"},
+            {"bid_no": "PSAVE-1-000", "rank": 2, "company": "B", "bid_price": 91_000_000,
+             "bid_rate": 91.0, "sucsf_yn": "N"},
+        ]
+        crawler._save_participants(db_session, {"PSAVE-1-000": rows})
+        rows[0]["sucsf_yn"] = "Y"  # 적격검사 통과 반영된 재크롤
+        r = crawler._save_participants(db_session, {"PSAVE-1-000": rows})
+
+        saved = (db_session.query(models.OpeningParticipant)
+                 .filter_by(bid_no="PSAVE-1-000").all())
+        assert r["participant_rows"] == 2
+        assert len(saved) == 2  # 중복 없이 교체
+        assert {p.sucsf_yn for p in saved if p.rank == 1} == {"Y"}
+
+    def test_bigint_price_fits(self, db_session):
+        """공사 투찰가는 int4(21.4억)를 넘는다 — mock_bids 에서 실제로 겪은 사고."""
+        from sqlalchemy import BigInteger
+
+        assert isinstance(models.OpeningParticipant.__table__.c.bid_price.type, BigInteger)
+
+        crawler._save_participants(db_session, {"PSAVE-2-000": [
+            {"bid_no": "PSAVE-2-000", "rank": 1, "company": "대형건설",
+             "bid_price": 620_348_000_000, "bid_rate": 89.7, "sucsf_yn": "Y"},
+        ]})
+        row = (db_session.query(models.OpeningParticipant)
+               .filter_by(bid_no="PSAVE-2-000").first())
+        assert row.bid_price > 2_147_483_647
+
+
+def test_crawl_saves_participants_only_for_registered(monkeypatch, engine):
+    """전수 저장 금지(§P4) — 등록된 공고의 참가자만 담고 나머지는 버린다."""
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(_make_mock_bid("PCRAWL-1-000"))
+    s.commit()
+    s.close()
+
+    items = [
+        # 등록된 공고 — 낙찰자 + 참가자 2행 모두 저장돼야 한다
+        {"bidNtceNo": "PCRAWL-1", "bidNtceOrd": "000", "opengRank": "1",
+         "bidprcAmt": "90000000", "bidprcRt": "90.0", "bidprcCorpNm": "A건설",
+         "sucsfYn": "Y", "fnlSucsfAmt": "90000000", "fnlSucsfRt": "90.0",
+         "presmptPrce": "100000000", "rsrvtnPrce": "100000000", "opengDate": "2026-07-10"},
+        {"bidNtceNo": "PCRAWL-1", "bidNtceOrd": "000", "opengRank": "2",
+         "bidprcAmt": "91000000", "bidprcCorpNm": "B건설", "sucsfYn": "N"},
+        # 미등록 공고 — 참가자를 저장하면 안 된다 (전수 저장 함정)
+        {"bidNtceNo": "PCRAWL-2", "bidNtceOrd": "000", "opengRank": "1",
+         "bidprcAmt": "80000000", "bidprcCorpNm": "C건설", "sucsfYn": "Y",
+         "fnlSucsfAmt": "80000000", "presmptPrce": "100000000"},
+    ]
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda start, end, page=1, num_rows=999: items if page == 1 else [])
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["ok"] is True
+    assert result["participant_bids"] == 1
+    assert result["participant_rows"] == 2
+
+    s = Session()
+    try:
+        assert s.query(models.OpeningParticipant).filter_by(bid_no="PCRAWL-1-000").count() == 2
+        assert s.query(models.OpeningParticipant).filter_by(bid_no="PCRAWL-2-000").count() == 0
+    finally:
+        s.close()
 
 
 def test_daily_crawl_task_fails_when_crawler_reports_failure(monkeypatch):
