@@ -33,6 +33,47 @@ def _opening(bid_no="MB-1", *, basic=100_000_000, reserved=100_000_000,
     )
 
 
+# ── 시간대 (배포 직후 실제로 터진 버그) ────────────────────────
+
+class TestTimezone:
+    """`Notice.end_date` 는 opengDt(KST 표기)를 naive 로 저장한 값인데
+    운영 컨테이너 TZ 는 UTC 다. `datetime.now()` 로 비교하면 9시간 어긋나
+    등록 후보가 0건이 되고, 더 나쁘게는 마감이 지난 공고를 등록하게 된다.
+    """
+
+    def test_now_kst_is_utc_plus_9(self):
+        """로컬(KST)에서든 CI(UTC)에서든 항상 성립해야 하는 회귀 가드."""
+        from datetime import timezone
+
+        utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+        diff_h = (mb.now_kst() - utc_naive).total_seconds() / 3600
+        assert 8.9 < diff_h < 9.1
+
+    def test_register_uses_kst_not_local_clock(self, db_session):
+        """KST 기준 1시간 뒤 마감 공고가 후보로 잡혀야 한다.
+
+        컨테이너가 UTC 인 CI 에서 실제 검증력을 갖는다 — now_kst 가 없으면
+        9시간 어긋나 이 공고를 놓친다.
+        """
+        n = _notice("MB-TZ-1")
+        n.end_date = mb.now_kst() + timedelta(hours=1)
+        db_session.add(n)
+        db_session.commit()
+
+        r = mb.register_due_notices(db_session, window_hours=2)
+        assert r["registered"] == 5
+
+    def test_deadline_check_uses_kst(self, db_session):
+        """KST 기준 이미 지난 마감은 등록되지 않아야 한다."""
+        n = _notice("MB-TZ-2")
+        n.end_date = mb.now_kst() - timedelta(minutes=30)
+        db_session.add(n)
+        db_session.commit()
+
+        r = mb.register_notice(db_session, n)
+        assert r["skipped"] == "deadline_passed"
+
+
 # ── §3 등록 대상 규칙 ─────────────────────────────────────────
 
 class TestEligibility:

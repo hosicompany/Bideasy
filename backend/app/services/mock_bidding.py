@@ -18,6 +18,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -47,6 +48,23 @@ EXCLUDED_NOTICE_KINDS = frozenset({"취소공고"})
 REGISTER_WINDOW_HOURS = 2
 
 ARMS = ("standard", "active", "frontier_c5", "frontier_c10", "aggressive")
+
+_KST = ZoneInfo("Asia/Seoul")
+
+
+def now_kst() -> datetime:
+    """KST naive 현재시각 — 이 모듈의 모든 시각 비교·기록에 이것만 쓴다.
+
+    `Notice.end_date` 는 공고 API 의 `opengDt`(KST 표기 문자열)를 그대로 naive
+    로 저장한 값이다. 그런데 운영 컨테이너 TZ 는 UTC 라 `datetime.now()` 를
+    쓰면 **두 값이 9시간 어긋난다**. 실제로 배포 직후 이 버그로 등록 후보가
+    0건이었고, 더 나쁘게는 '마감 2시간 전' 창이 이미 지난 시각(KST 새벽)을
+    가리켜 **마감이 지난 공고를 등록**할 수 있었다 — §0.5-1 불변식 위반.
+
+    ⚠️ `deadline_tasks` 등 다른 태스크도 같은 오차를 갖고 있으나(일 단위라
+    드러나지 않았다) 그 수정은 이 모듈 밖의 별도 과제다.
+    """
+    return datetime.now(_KST).replace(tzinfo=None)
 
 # 평평한(세그먼트 무관) arm 의 사정률 — 벤치마크 §0.2 와 동일 정의
 STANDARD_RATE = -2.5
@@ -207,7 +225,7 @@ def register_notice(db: Session, notice: models.Notice, now: datetime | None = N
 
     **마감이 지났으면 등록하지 않는다** — 사후 등록은 이 실험을 무의미하게 만든다.
     """
-    now = now or datetime.now()
+    now = now or now_kst()
     ok, reason = is_eligible(notice)
     if not ok:
         return {"registered": 0, "skipped": reason}
@@ -259,7 +277,7 @@ def register_notice(db: Session, notice: models.Notice, now: datetime | None = N
 def register_due_notices(db: Session, window_hours: int = REGISTER_WINDOW_HOURS,
                          limit: int = 2000, now: datetime | None = None) -> dict:
     """마감 임박(window_hours 이내) 미등록 공고를 일괄 등록."""
-    now = now or datetime.now()
+    now = now or now_kst()
     horizon = now + timedelta(hours=window_hours)
 
     candidates = (
@@ -357,6 +375,7 @@ def score_mock_bid(db: Session, mb: models.MockBid,
             return None  # 이미 NO_RESULT 로 기록됨 — 매번 새 행을 쌓지 않는다
         res = models.MockBidResult(
             mock_bid_id=mb.id, scoring_rev=1, outcome="NO_RESULT",
+            scored_at=now_kst(),
         )
         db.add(res)
         return res
@@ -402,6 +421,7 @@ def score_mock_bid(db: Session, mb: models.MockBid,
         ratio_error=(round(abs(ratio_actual - ratio_pred), 6)
                      if ratio_actual and ratio_pred else None),
         failure_tags=tags or None,
+        scored_at=now_kst(),
     )
     db.add(res)
     mb.status = "SCORED"   # 상태 플래그만 갱신 — 등록 내용(가격·스냅샷)은 불변
@@ -410,7 +430,7 @@ def score_mock_bid(db: Session, mb: models.MockBid,
 
 def score_pending(db: Session, limit: int = 5000) -> dict:
     """마감이 지난 미채점 등록분을 일괄 채점."""
-    now = datetime.now()
+    now = now_kst()
     pending = (
         db.query(models.MockBid)
         .filter(models.MockBid.status == "REGISTERED",
