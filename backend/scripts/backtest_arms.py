@@ -30,7 +30,10 @@ def main() -> int:
         print(res.get("reason", "데이터 없음"))
         return 1
 
+    excluded = res.get("n_excluded_base_mismatch", 0)
     print(f"레코드 {res['n_records']}건 · 슬라이스 {res['slice_sizes']}")
+    if excluded:
+        print(f"⚠️ 금액 기준 불일치 {excluded}건 제외 (불러온 {res['n_loaded']}건 중)")
 
     def row(name: str, m: dict) -> str:
         return (f"  {name:14s} 무효 {m['dropout_rate']:6.2f}%  "

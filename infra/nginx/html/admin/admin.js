@@ -1016,6 +1016,8 @@ const ARM_LABEL_BT = {
   frontier_c5: 'frontier_c5', frontier_c10: 'frontier_c10', aggressive: 'aggressive',
 };
 const ARM_SEQ = ['standard', 'active', 'frontier_c5', 'frontier_c10', 'aggressive'];
+// arm_backtest.MIN_METHOD_N 과 같은 값 — 방법별 표의 최소 표본
+const MIN_METHOD_N_LABEL = 30;
 
 function renderArms(box, d) {
   const names = ARM_SEQ.filter((a) => d.arms[a]);
@@ -1034,6 +1036,31 @@ function renderArms(box, d) {
   }).join('');
 
   const sz = d.slice_sizes || {};
+  const msz = d.method_sizes || {};
+  const mNames = Object.keys(msz);
+
+  // 방법별 표 — "전체" 한 칸이 낙찰하한 체계가 다른 방법들을 뭉갠다는 걸 드러낸다
+  const methodRows = mNames.length ? names.map((a) => {
+    const bm = d.arms[a].by_method || {};
+    return `<tr${a === 'active' ? ' style="background:#E8F1FE;"' : ''}>
+      <td style="text-align:left;"><b>${ARM_LABEL_BT[a]}</b></td>
+      ${mNames.map((m) => {
+        const t = bm[m];
+        return t
+          ? `<td style="font-weight:700;color:${t.dropout_rate > 10 ? '#FF3B30' : 'inherit'};">${t.dropout_rate.toFixed(2)}%</td>`
+          : '<td>—</td>';
+      }).join('')}
+    </tr>`;
+  }).join('') : '';
+
+  const excluded = d.n_excluded_base_mismatch || 0;
+  const exclBanner = excluded ? `
+    <div style="margin-top:10px;font-size:12.5px;color:#7A2E2E;background:#FFF1F0;border:1px solid #FFC9C6;border-radius:10px;padding:10px 12px;">
+      🚫 <b>${fmtNumber(excluded)}건 제외</b> — 불러온 ${fmtNumber(d.n_loaded)}건 중 기초금액과 ${gl('예정가격')}의
+      기준이 어긋난 행입니다(${gl('사정률')} 0.94~1.06 밖). 개찰 크롤러가 부가세 제외 금액을 저장해 생긴 문제로,
+      섞어서 집계하면 무효율이 실제보다 크게 부풀려집니다.
+    </div>` : '';
+
   box.innerHTML = `
     <div class="card">
       <h3>5-arm 비교 — 과거 데이터</h3>
@@ -1041,6 +1068,7 @@ function renderArms(box, d) {
         모의투찰과 <b>같은 5개 ${gl('arm')}</b>을 과거 개찰 ${fmtNumber(d.n_records)}건에 적용한 결과입니다.
         1차 지표는 ${gl('무효율')}이며, ${gl('적중률')}은 내부 참고용입니다.
       </p>
+      ${exclBanner}
       ${(d.caveats || []).map((c) => `<div style="margin-top:10px;font-size:12.5px;color:#4E5968;background:#FFF7E6;border:1px solid #FFE0A3;border-radius:10px;padding:10px 12px;">⚠️ ${esc(c)}</div>`).join('')}
       <div style="overflow-x:auto;margin-top:14px;">
         <table style="width:100%;font-size:13px;min-width:680px;text-align:right;">
@@ -1056,7 +1084,28 @@ function renderArms(box, d) {
           <tbody>${rows}</tbody>
         </table>
       </div>
+      <p style="margin-top:10px;font-size:12px;color:#8B95A1;">
+        ※ '전체' 열은 낙찰하한 체계가 서로 다른 입찰방법을 한데 모은 값입니다.
+        arm 사이의 우열은 아래 방법별 표나 ${gl('적격심사제')} holdout 으로 판단하세요.
+      </p>
     </div>
+
+    ${mNames.length ? `
+    <div class="card">
+      <h3>입찰방법별 무효율 — active 기준선</h3>
+      <p style="color:var(--color-text-muted);font-size:13px;">
+        방법마다 ${gl('낙찰하한율')} 체계가 달라 같은 arm 이어도 결과가 갈립니다.
+        표본 ${MIN_METHOD_N_LABEL}건 이상인 방법만 표시합니다.
+      </p>
+      <div style="overflow-x:auto;margin-top:12px;">
+        <table style="width:100%;font-size:13px;min-width:560px;text-align:right;">
+          <thead><tr><th style="text-align:left;">arm</th>
+            ${mNames.map((m) => `<th>${esc(m)}<br><span style="font-size:11px;color:#8B95A1;font-weight:400;">n=${fmtNumber(msz[m])}</span></th>`).join('')}
+          </tr></thead>
+          <tbody>${methodRows}</tbody>
+        </table>
+      </div>
+    </div>` : ''}
 
     <div class="card">
       <h3>안전 ↔ 적중 트레이드오프</h3>
