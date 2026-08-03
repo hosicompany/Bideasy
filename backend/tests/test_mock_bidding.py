@@ -650,3 +650,58 @@ class TestChartAggregates:
             assert r["bracket"] in BRACKETS
         # 기초금액 1억 = medium (1e8 은 small 상한 밖)
         assert any(r["bracket"] == "medium" and r["bid_method"] == "적격심사제" for r in rows)
+
+
+class TestScoringBacklogOrder:
+    """잔량이 limit 을 넘을 때의 계약 (2026-08-03 발견).
+
+    낙찰자 확정에 며칠 걸리는 동안 NO_RESULT 등록분이 매일 다시 대상이 된다.
+    하루 등록이 1,400건 규모라 나흘이면 limit(5000)에 닿는데, 정렬이 없으면
+    잘려 나간 쪽이 매일 같은 자리에 남아 **영영 채점되지 않는다**.
+    로그는 `scored: 5000` 이라 정상처럼 보이므로 조용히 샌다.
+    """
+
+    def _register_with_deadline(self, db_session, bid_no, hours_ago):
+        n = _notice(bid_no)
+        db_session.add(n)
+        db_session.flush()
+        mb.register_notice(db_session, n)
+        db_session.flush()
+        for row in db_session.query(models.MockBid).filter_by(bid_no=bid_no).all():
+            row.deadline_at = mb.now_kst() - timedelta(hours=hours_ago)
+        db_session.flush()
+
+    def test_oldest_deadline_is_scored_first(self, db_session):
+        """마감이 오래된 것부터 — 잘려도 다음 회차에 이어서 잡히도록."""
+        self._register_with_deadline(db_session, "MB-ORD-NEW", hours_ago=1)
+        self._register_with_deadline(db_session, "MB-ORD-OLD", hours_ago=72)
+
+        r = mb.score_pending(db_session, limit=5)
+        assert r["pending"] == 5
+
+        scored_ids = {res.mock_bid_id for res in db_session.query(models.MockBidResult).all()}
+        old_ids = {row.id for row in
+                   db_session.query(models.MockBid).filter_by(bid_no="MB-ORD-OLD").all()}
+        assert old_ids <= scored_ids, "마감이 오래된 등록분이 먼저 채점돼야 한다"
+
+    def test_deferred_count_is_reported(self, db_session):
+        """잘린 잔량을 반환값에 남긴다 — 조용한 절삭 금지.
+
+        다른 테스트가 커밋한 행이 섞이므로(픽스처는 rollback 만 한다) 절대값이
+        아니라 '대상 − 처리' 로 검증한다.
+        """
+        self._register_with_deadline(db_session, "MB-ORD-A", hours_ago=10)
+        self._register_with_deadline(db_session, "MB-ORD-B", hours_ago=9)
+
+        due = (db_session.query(models.MockBid)
+               .filter(models.MockBid.status == "REGISTERED",
+                       models.MockBid.deadline_at < mb.now_kst())
+               .count())
+        r = mb.score_pending(db_session, limit=5)
+        assert r["pending"] == 5
+        assert r["deferred"] == due - 5, r
+
+    def test_no_deferred_when_all_fit(self, db_session):
+        self._register_with_deadline(db_session, "MB-ORD-C", hours_ago=3)
+        r = mb.score_pending(db_session, limit=100)
+        assert r["deferred"] == 0
