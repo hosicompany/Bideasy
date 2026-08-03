@@ -73,8 +73,11 @@ class BidRecord:
 def _load_db_records(db, existing_bid_nos: set) -> list[BidRecord]:
     """누적 opening_results 테이블(매일 크롤 적재)에서 BidRecord 생성.
 
-    정적 파일과 중복(bid_no)은 제외. OpeningResult 는 공사 개찰결과라
-    lower_limit_rate=87.745(공사) 기본. estimated_price 는 reserved_price 로 대체.
+    정적 파일과 중복(bid_no)은 제외. estimated_price 는 reserved_price 로 대체.
+
+    하한율은 `lower_limits` 단일 소스에서 금액대·공고일로 조회한다. 예전에는
+    87.745 를 상수로 박아 두었는데, 2026-01-30 요율 개정(10억 미만 공사
+    89.745% 등) 이후로는 그 값이 실제 하한선과 달라 판정이 통째로 어긋난다.
     """
     out: list[BidRecord] = []
     try:
@@ -90,11 +93,19 @@ def _load_db_records(db, existing_bid_nos: set) -> list[BidRecord]:
         )
     except Exception:
         return out
+    from app.services.lower_limits import get_lower_limit_rate
+
     for r in rows:
         if not r.bid_no or r.bid_no in existing_bid_nos:
             continue
         existing_bid_nos.add(r.bid_no)
-        year = r.open_date.year if getattr(r, "open_date", None) else 0
+        open_dt = getattr(r, "open_date", None)
+        year = open_dt.year if open_dt else 0
+        llr = get_lower_limit_rate(
+            "CONSTRUCTION",
+            basic_price=float(r.basic_price),
+            bid_date=open_dt.date() if open_dt else None,
+        )
         out.append(BidRecord(
             bid_no=r.bid_no,
             title="",
@@ -105,7 +116,7 @@ def _load_db_records(db, existing_bid_nos: set) -> list[BidRecord]:
             reserved_price=float(r.reserved_price),
             winner_price=float(r.winner_price),
             winner_rate=float(r.winner_rate or 0),
-            lower_limit_rate=87.745,
+            lower_limit_rate=llr,
             year=year,
         ))
     return out

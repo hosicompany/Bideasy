@@ -11,6 +11,7 @@ import math
 import pytest
 
 from app.services import arm_backtest as ab
+from app.services.autocalibrate import dataset as ds
 from app.services.autocalibrate.dataset import BidRecord
 from app.services.mock_bidding import judge
 
@@ -105,6 +106,90 @@ class TestTallyMatchesJudge:
         recs = [_rec("A"), _rec("B", winner=85_000_000), _rec("C", winner=99_000_000)]
         m = ab.tally(recs, lambda _r: 90_000_000)
         assert m["win_rate"] + m["dropout_rate"] + m["lost_rate"] == pytest.approx(100.0, abs=0.01)
+
+
+class TestBaseConsistencyGuard:
+    """금액 기준(부가세 포함 여부)이 섞인 행을 걸러내는 가드.
+
+    2026-08-03 실측: 개찰 크롤러가 `presmptPrce`(부가세 제외)를 basic_price 로
+    저장해, 운영 DB 행 97건 중 93건의 사정률이 1.10 부근이었다. 이 행을 섞어
+    집계하니 active 무효율이 5% → 50% 로 튀었다. 가드가 없으면 화면이 전략
+    실패로 오독된다.
+    """
+
+    def test_normal_ratio_passes(self):
+        assert ab.base_is_consistent(_rec(basic=100_000_000, reserved=100_500_000))
+
+    def test_vat_excluded_basic_is_rejected(self):
+        """예정가격 ÷ 기초금액 ≈ 1.1 = 부가세 기준이 다른 행."""
+        assert not ab.base_is_consistent(_rec(basic=100_000_000, reserved=110_000_000))
+
+    def test_zero_price_is_rejected(self):
+        """0 으로 나누지 않고 조용히 거른다."""
+        zero_basic = BidRecord(
+            bid_no="Z1", title="", org="", bid_method="적격심사제",
+            basic_price=0, estimated_price=0, reserved_price=100_000_000,
+            winner_price=92_000_000, winner_rate=0, lower_limit_rate=87.745, year=2025,
+        )
+        assert not ab.base_is_consistent(zero_basic)
+        assert not ab.base_is_consistent(_rec(basic=100_000_000, reserved=0))
+
+    def test_static_dataset_all_passes(self):
+        """정본 정적 데이터는 한 건도 걸러지면 안 된다 — 밴드가 좁으면 실측이 사라진다."""
+        recs = ds.load_records(db=None)
+        if not recs:
+            pytest.skip("정적 개찰 데이터 없음")
+        assert all(ab.base_is_consistent(r) for r in recs)
+
+    def test_run_excludes_and_reports_count(self, monkeypatch):
+        """제외는 하되 **몇 건인지 반드시 알린다** — 조용한 절삭 금지."""
+        good = [_rec(f"G{i}", basic=100_000_000, reserved=100_500_000) for i in range(60)]
+        bad = [_rec(f"B{i}", basic=100_000_000, reserved=110_000_000) for i in range(40)]
+        monkeypatch.setattr(ab.ds, "load_records", lambda db=None: good + bad)
+
+        res = ab.run()
+        assert res["available"] is True
+        assert res["n_loaded"] == 100
+        assert res["n_records"] == 60
+        assert res["n_excluded_base_mismatch"] == 40
+        assert any("40" in c and "제외" in c for c in res["caveats"])
+
+    def test_run_unavailable_when_all_mismatched(self, monkeypatch):
+        bad = [_rec(f"B{i}", basic=100_000_000, reserved=110_000_000) for i in range(10)]
+        monkeypatch.setattr(ab.ds, "load_records", lambda db=None: bad)
+        res = ab.run()
+        assert res["available"] is False
+        assert "10" in res["reason"]
+
+
+class TestMethodBreakdown:
+    """'전체' 한 칸이 낙찰하한 체계가 다른 방법들을 뭉개는 것을 드러내기 위함."""
+
+    def test_by_method_present_for_large_methods(self, monkeypatch):
+        a = [_rec(f"A{i}", method="적격심사제") for i in range(ab.MIN_METHOD_N)]
+        b = [_rec(f"B{i}", method="소액수의견적") for i in range(ab.MIN_METHOD_N)]
+        monkeypatch.setattr(ab.ds, "load_records", lambda db=None: a + b)
+
+        res = ab.run()
+        assert set(res["method_sizes"]) == {"적격심사제", "소액수의견적"}
+        for entry in res["arms"].values():
+            assert set(entry["by_method"]) == {"적격심사제", "소액수의견적"}
+
+    def test_small_method_is_omitted(self, monkeypatch):
+        """표본이 작은 방법은 비율이 요동쳐 오해를 부르므로 빼되, 집계에는 남는다."""
+        big = [_rec(f"A{i}", method="적격심사제") for i in range(ab.MIN_METHOD_N)]
+        tiny = [_rec("T1", method="수의시담")]
+        monkeypatch.setattr(ab.ds, "load_records", lambda db=None: big + tiny)
+
+        res = ab.run()
+        assert "수의시담" not in res["method_sizes"]
+        assert res["n_records"] == ab.MIN_METHOD_N + 1
+
+    def test_overall_caveat_warns_about_mixing(self, monkeypatch):
+        recs = [_rec(f"A{i}") for i in range(40)]
+        monkeypatch.setattr(ab.ds, "load_records", lambda db=None: recs)
+        res = ab.run()
+        assert any("입찰방법" in c for c in res["caveats"])
 
 
 class TestBuildArms:

@@ -168,3 +168,46 @@ def test_load_records_merges_db(db_session):
     assert any(r.bid_no == "OPRTEST-1" for r in merged)
     # 무효 데이터(가격 0)는 제외
     assert all(r.basic_price > 0 and r.winner_price > 0 for r in merged)
+
+
+def test_db_records_use_lower_limits_single_source(db_session):
+    """DB 병합분의 하한율은 `lower_limits` 에서 온다 — 상수 하드코딩 금지.
+
+    예전에는 87.745 를 박아 두었다. 2026-01-30 요율 개정(10억 미만 공사
+    89.745%) 이후로는 그 값이 실제 하한선과 달라, 판정이 통째로 어긋난다.
+    """
+    from datetime import datetime
+    from app.db import models
+    from app.services.autocalibrate.dataset import load_records
+    from app.services.lower_limits import get_lower_limit_rate
+
+    db_session.add(models.OpeningResult(
+        bid_no="LLRTEST-1", organization="A기관", bid_method="적격심사제",
+        open_date=datetime(2026, 6, 1),          # 개정 이후
+        basic_price=5e8,                          # 3억~10억 → 89.745%
+        reserved_price=5.02e8, winner_price=4.5e8, winner_rate=90.0,
+    ))
+    db_session.commit()
+
+    rec = next(r for r in load_records(db=db_session) if r.bid_no == "LLRTEST-1")
+    expected = get_lower_limit_rate("CONSTRUCTION", 5e8, datetime(2026, 6, 1).date())
+    assert rec.lower_limit_rate == expected
+    assert rec.lower_limit_rate != 87.745, "구 상수로 회귀했다"
+
+
+def test_db_records_pre_revision_keeps_old_rate(db_session):
+    """개정 전 공고는 구 요율을 그대로 써야 한다 — 날짜를 무시하면 과거가 왜곡된다."""
+    from datetime import datetime
+    from app.db import models
+    from app.services.autocalibrate.dataset import load_records
+
+    db_session.add(models.OpeningResult(
+        bid_no="LLRTEST-2", organization="B기관", bid_method="적격심사제",
+        open_date=datetime(2025, 6, 1),          # 개정 이전
+        basic_price=5e8,
+        reserved_price=5.02e8, winner_price=4.5e8, winner_rate=90.0,
+    ))
+    db_session.commit()
+
+    rec = next(r for r in load_records(db=db_session) if r.bid_no == "LLRTEST-2")
+    assert rec.lower_limit_rate == 87.745

@@ -44,6 +44,27 @@ ARM_DESC = {
 }
 ARM_ORDER = ("standard", "active", "frontier_c5", "frontier_c10", "aggressive")
 
+# 사정률(예정가격÷기초금액) 허용 범위 — 금액 기준이 섞인 행을 걸러내는 가드.
+#
+# 예정가격은 기초금액 ±3% 의 복수예비가격에서 뽑히므로 사정률은 구조적으로
+# 0.97~1.03 을 벗어날 수 없다(정적 4,854건 실측 0.978~1.022). 실제로 벗어나는
+# 행은 시장 신호가 아니라 **기준이 다른 금액**이 섞인 것이다 — 개찰 크롤러가
+# 저장하는 basic_price 는 부가세 제외분이라 사정률이 1.10 부근으로 나온다.
+# 그 행을 그대로 집계하면 가격이 9% 낮게 잡혀 무효율이 99% 로 튄다.
+# 관측 범위의 2배를 여유로 잡되 1.10 은 확실히 배제되도록 한다.
+BASE_RATIO_MIN, BASE_RATIO_MAX = 0.94, 1.06
+
+# 방법별 표를 낼 최소 표본 — 이보다 작으면 비율이 요동쳐 오해를 부른다
+MIN_METHOD_N = 30
+
+
+def base_is_consistent(r: ds.BidRecord) -> bool:
+    """기초금액과 예정가격이 같은 기준(부가세 포함 여부)인지 검사."""
+    if r.basic_price <= 0 or r.reserved_price <= 0:
+        return False
+    ratio = r.reserved_price / r.basic_price
+    return BASE_RATIO_MIN <= ratio <= BASE_RATIO_MAX
+
 
 def wilson_ci(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     """이항 비율의 Wilson 95% 신뢰구간 (%).
@@ -135,14 +156,28 @@ def run(db=None, bid_method: str | None = None) -> dict:
 
     db 를 주면 누적 개찰결과(opening_results)도 병합한다.
     """
-    records = ds.load_records(db=db)
-    if not records:
+    loaded = ds.load_records(db=db)
+    if not loaded:
         return {"available": False, "reason": "과거 개찰 데이터가 없습니다.", "arms": {}}
 
     if bid_method:
-        records = [r for r in records if r.bid_method == bid_method]
-        if not records:
+        loaded = [r for r in loaded if r.bid_method == bid_method]
+        if not loaded:
             return {"available": False, "reason": "조건에 맞는 데이터가 없습니다.", "arms": {}}
+
+    # 금액 기준이 어긋난 행은 집계에서 뺀다 — 다만 **몇 건을 뺐는지 반드시 알린다**.
+    # 조용히 잘라내면 화면은 "전수를 봤다"고 읽히는데 실제로는 아니다.
+    records = [r for r in loaded if base_is_consistent(r)]
+    excluded = len(loaded) - len(records)
+    if not records:
+        return {
+            "available": False,
+            "reason": (
+                f"금액 기준이 맞는 데이터가 없습니다 "
+                f"(사정률 {BASE_RATIO_MIN}~{BASE_RATIO_MAX} 밖 {excluded}건 제외)."
+            ),
+            "arms": {},
+        }
 
     _, holdout = ds.split_by_year(records, HOLDOUT_YEARS)
     qual = [r for r in records if r.bid_method == "적격심사제"]
@@ -155,19 +190,42 @@ def run(db=None, bid_method: str | None = None) -> dict:
         "qualification_holdout": qual_hold,
     }
 
+    # 방법별 표본 — "전체" 한 칸은 낙찰하한 체계가 다른 방법들을 뭉뚱그린 값이라
+    # 그것만 보면 오해한다. 방법별로 갈라서 함께 보여준다.
+    by_method_recs: dict[str, list] = {}
+    for r in records:
+        by_method_recs.setdefault(r.bid_method or "(미상)", []).append(r)
+    method_names = sorted(
+        (m for m, rs in by_method_recs.items() if len(rs) >= MIN_METHOD_N),
+        key=lambda m: -len(by_method_recs[m]),
+    )
+
     arms_fn = build_arms()
+    caveats = [
+        "백테스트는 사후 재구성이라 자가보정이 파라미터를 바꾸면 과거 수치도 함께 변한다 — 참고용이지 증거가 아니다.",
+        "frontier_c5/c10 은 2021~2024 로 학습해 2025 를 holdout 으로 잡은 파라미터라, 전체 기간 열에서는 자기 학습 데이터가 섞여 유리하게 편향된다. 공정한 비교는 holdout 열이다.",
+        "적중률은 내부 참고용이며 대외 표기는 금지(전역 규칙 §4-2).",
+        "'전체' 열은 낙찰하한 체계가 서로 다른 입찰방법을 한데 모은 값이다 — arm 사이의 우열은 방법별 표나 적격심사제 holdout 으로 판단할 것.",
+    ]
+    if excluded:
+        caveats.insert(0, (
+            f"금액 기준이 어긋난 {excluded:,}건을 집계에서 제외했다"
+            f"(사정률이 {BASE_RATIO_MIN}~{BASE_RATIO_MAX} 밖 — 개찰 크롤러가 저장하는 "
+            f"basic_price 가 부가세 제외분이라 기초금액과 기준이 다르다). "
+            f"원인 수정 전까지 이 표는 정적 개찰 데이터에 가깝다."
+        ))
+
     out: dict = {
         "available": True,
         "n_records": len(records),
+        "n_loaded": len(loaded),
+        "n_excluded_base_mismatch": excluded,
         "holdout_years": list(HOLDOUT_YEARS),
         "slice_sizes": {k: len(v) for k, v in slices.items()},
+        "method_sizes": {m: len(by_method_recs[m]) for m in method_names},
         "arms": {},
         # 화면이 이 경고를 반드시 함께 보여줘야 오해가 없다
-        "caveats": [
-            "백테스트는 사후 재구성이라 자가보정이 파라미터를 바꾸면 과거 수치도 함께 변한다 — 참고용이지 증거가 아니다.",
-            "frontier_c5/c10 은 2021~2024 로 학습해 2025 를 holdout 으로 잡은 파라미터라, 전체 기간 열에서는 자기 학습 데이터가 섞여 유리하게 편향된다. 공정한 비교는 holdout 열이다.",
-            "적중률은 내부 참고용이며 대외 표기는 금지(전역 규칙 §4-2).",
-        ],
+        "caveats": caveats,
     }
 
     for name, fn in arms_fn.items():
@@ -179,6 +237,9 @@ def run(db=None, bid_method: str | None = None) -> dict:
         for r in records:
             by_year.setdefault(r.year, []).append(r)
         entry["by_year"] = {str(y): tally(rs, fn) for y, rs in sorted(by_year.items())}
+        entry["by_method"] = {
+            m: tally(by_method_recs[m], fn) for m in method_names
+        }
         out["arms"][name] = entry
 
     return out
