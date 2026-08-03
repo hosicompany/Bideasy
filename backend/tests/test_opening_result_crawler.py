@@ -355,3 +355,83 @@ def test_daily_crawl_task_fails_when_crawler_reports_failure(monkeypatch):
 
     with pytest.raises(RuntimeError, match="public API failure"):
         verification_tasks.daily_crawl_opening_results(days_back=2)
+
+
+# ─────────────────────────────────────────────────────────────
+# 금액 기준 회귀 가드 (2026-08-03)
+#
+# `presmptPrce` 는 추정가격(부가세 제외)이고 기초금액은 `bssAmt` 다.
+# 예전 매핑 탓에 정적 개찰 파일과 기준이 섞여 백테스트 무효율이 99% 로
+# 튀었다. 경위: docs/PRICE_BASE_DEFECT.md
+# ─────────────────────────────────────────────────────────────
+
+def _opening_item(**over):
+    item = {
+        "bidNtceNo": "R26BK99999999",
+        "bidNtceOrd": "000",
+        "bssAmt": "60929200",        # 기초금액
+        "presmptPrce": "55390182",   # 추정가격 (= 기초금액 / 1.1)
+        "rsrvtnPrce": "60990925",    # 예정가격
+        "sucsfLwstlmtRt": "89.745",
+        "fnlSucsfAmt": "55037188",
+        "fnlSucsfRt": "90.238",
+        "fnlSucsfCorpNm": "다건기업",
+        "bidwinrDcsnMthdNm": "소액수의견적",
+        "ntceInsttNm": "부경대학교",
+        "opengDate": "2026-07-31",
+        "opengTm": "13:00",
+    }
+    item.update(over)
+    return item
+
+
+class TestBasisAmountMapping:
+    def test_basic_price_is_bss_amt_not_presmpt(self):
+        kw = crawler._parse_item_to_kwargs(_opening_item())
+        assert kw["basic_price"] == 60929200.0
+        assert kw["basic_price"] != 55390182.0, "추정가격으로 회귀했다"
+
+    def test_ratio_lands_in_plausible_band(self):
+        """정정 후 사정률은 기초금액 ±3% 안이어야 한다 — 이게 판정의 전제다."""
+        kw = crawler._parse_item_to_kwargs(_opening_item())
+        ratio = kw["reserved_price"] / kw["basic_price"]
+        assert 0.94 <= ratio <= 1.06, f"사정률 {ratio}"
+
+    def test_lower_limit_rate_is_stored(self):
+        kw = crawler._parse_item_to_kwargs(_opening_item())
+        assert kw["lower_limit_rate"] == 89.745
+
+    def test_missing_lower_limit_rate_is_none_not_zero(self):
+        """0 으로 저장하면 '하한율 0%' 라는 거짓이 된다 — None 이라야 폴백이 돈다."""
+        kw = crawler._parse_item_to_kwargs(_opening_item(sucsfLwstlmtRt=""))
+        assert kw["lower_limit_rate"] is None
+
+    def test_row_without_bss_amt_is_skipped(self):
+        """기초금액이 없으면 추정가격으로 대체하지 않고 버린다 — 기준 혼입 방지."""
+        assert crawler._parse_item_to_kwargs(_opening_item(bssAmt="")) is None
+
+    def test_winner_rate_fallback_uses_reserved_price(self):
+        """API 가 낙찰률을 안 줄 때도 기준은 예정가격 — 정적 파일과 같아야 한다."""
+        kw = crawler._parse_item_to_kwargs(_opening_item(fnlSucsfRt="", bidprcRt=""))
+        expected = round(55037188 / 60990925 * 100, 4)
+        assert kw["winner_rate"] == expected
+
+
+def test_db_records_prefer_stored_lower_limit_rate(db_session):
+    """공고가 명시한 하한율이 있으면 금액대 테이블보다 그것을 쓴다."""
+    from app.services.autocalibrate.dataset import load_records
+
+    db_session.add(models.OpeningResult(
+        bid_no="LLRSTORE-1", organization="A기관", bid_method="적격심사제",
+        open_date=datetime(2026, 6, 1),
+        basic_price=5e8,                 # 테이블상으로는 89.745%
+        lower_limit_rate=86.745,         # 공고는 86.745% 라고 말한다
+        reserved_price=5.02e8, winner_price=4.5e8, winner_rate=90.0,
+    ))
+    # commit 이 아니라 flush — db_session 픽스처는 rollback 만 하므로 커밋한 행은
+    # 뒤 테스트로 새고, 건수를 세는 테스트를 깨뜨린다. flush 면 같은 세션의
+    # 쿼리에는 보이면서 teardown 에서 사라진다.
+    db_session.flush()
+
+    rec = next(r for r in load_records(db=db_session) if r.bid_no == "LLRSTORE-1")
+    assert rec.lower_limit_rate == 86.745

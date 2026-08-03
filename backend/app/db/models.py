@@ -229,8 +229,13 @@ class OpeningResult(Base):
     region = Column(String(100), index=True)
 
     open_date = Column(DateTime, index=True)
+    # ⚠️ 기초금액(부가세 포함) — API `bssAmt`. `presmptPrce`(추정가격)를 여기에
+    # 넣으면 정적 개찰 파일과 기준이 섞인다(docs/PRICE_BASE_DEFECT.md).
     basic_price = Column(Float)
     reserved_price = Column(Float)
+    # 공고가 명시한 낙찰하한율 — API `sucsfLwstlmtRt`. 금액대 테이블로 역산하지
+    # 않고 실제 값을 쓰기 위함(요율 개정 시 테이블이 뒤처져도 안전).
+    lower_limit_rate = Column(Float)
     bid_method = Column(String(100))
 
     winner_company = Column(String(255))
