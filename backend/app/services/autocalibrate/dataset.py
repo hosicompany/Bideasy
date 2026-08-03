@@ -75,7 +75,8 @@ def _load_db_records(db, existing_bid_nos: set) -> list[BidRecord]:
 
     정적 파일과 중복(bid_no)은 제외. estimated_price 는 reserved_price 로 대체.
 
-    하한율은 `lower_limits` 단일 소스에서 금액대·공고일로 조회한다. 예전에는
+    하한율은 **공고가 명시한 값(`OpeningResult.lower_limit_rate`)을 먼저** 쓰고,
+    없을 때만 `lower_limits` 단일 소스에서 금액대·공고일로 조회한다. 예전에는
     87.745 를 상수로 박아 두었는데, 2026-01-30 요율 개정(10억 미만 공사
     89.745% 등) 이후로는 그 값이 실제 하한선과 달라 판정이 통째로 어긋난다.
     """
@@ -101,7 +102,8 @@ def _load_db_records(db, existing_bid_nos: set) -> list[BidRecord]:
         existing_bid_nos.add(r.bid_no)
         open_dt = getattr(r, "open_date", None)
         year = open_dt.year if open_dt else 0
-        llr = get_lower_limit_rate(
+        stored_llr = float(getattr(r, "lower_limit_rate", None) or 0)
+        llr = stored_llr if stored_llr > 0 else get_lower_limit_rate(
             "CONSTRUCTION",
             basic_price=float(r.basic_price),
             bid_date=open_dt.date() if open_dt else None,

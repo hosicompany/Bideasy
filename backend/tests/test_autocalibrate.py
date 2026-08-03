@@ -187,7 +187,7 @@ def test_db_records_use_lower_limits_single_source(db_session):
         basic_price=5e8,                          # 3억~10억 → 89.745%
         reserved_price=5.02e8, winner_price=4.5e8, winner_rate=90.0,
     ))
-    db_session.commit()
+    db_session.flush()   # 커밋하면 뒤 테스트로 샌다 (픽스처는 rollback 만 한다)
 
     rec = next(r for r in load_records(db=db_session) if r.bid_no == "LLRTEST-1")
     expected = get_lower_limit_rate("CONSTRUCTION", 5e8, datetime(2026, 6, 1).date())
@@ -207,7 +207,7 @@ def test_db_records_pre_revision_keeps_old_rate(db_session):
         basic_price=5e8,
         reserved_price=5.02e8, winner_price=4.5e8, winner_rate=90.0,
     ))
-    db_session.commit()
+    db_session.flush()   # 커밋하면 뒤 테스트로 샌다 (픽스처는 rollback 만 한다)
 
     rec = next(r for r in load_records(db=db_session) if r.bid_no == "LLRTEST-2")
     assert rec.lower_limit_rate == 87.745

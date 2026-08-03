@@ -143,12 +143,27 @@ def _parse_item_to_kwargs(item: dict) -> dict | None:
         # 낙찰자 row 가 아님 (참가자 row 또는 검사 진행중) → skip
         return None
 
-    basic_price = _f(item.get("presmptPrce"))   # 기초금액
+    # ⚠️ `presmptPrce` 는 추정가격(부가세 제외)이지 기초금액이 아니다.
+    # 기초금액은 `bssAmt` 로 따로 온다(실측 2,000건 중 1,998건 제공).
+    # 예전에 presmptPrce 를 basic_price 로 저장한 탓에 정적 개찰 파일(기초금액
+    # 기준)과 기준이 섞여, 사정률이 1.10 으로 나오고 무효율이 99% 로 튀었다.
+    # 자세한 경위: docs/PRICE_BASE_DEFECT.md
+    basic_price = _f(item.get("bssAmt"))        # 기초금액 (부가세 포함)
     reserved_price = _f(item.get("rsrvtnPrce")) # 예정가격
+    lower_limit_rate = _f(item.get("sucsfLwstlmtRt"))  # 낙찰하한율 — 레코드별 제공
 
-    # 낙찰률 계산 fallback (기초금액 대비)
-    if (not winner_rate or winner_rate <= 0) and basic_price and basic_price > 0:
-        winner_rate = round(winner_price / basic_price * 100, 4)
+    # 기초금액이 없으면 추정가격으로 대체하지 않는다. 대체하면 기준이 다시
+    # 섞이고, 그 행은 조용히 9% 낮은 가격으로 판정된다.
+    if not basic_price or basic_price <= 0:
+        logger.warning(f"opening_crawler: bssAmt 없음 — skipped ({bid_no})")
+        return None
+
+    # 낙찰률 fallback — **예정가격 대비**로 계산한다.
+    # API 의 fnlSucsfRt·bidprcRt 도 예정가격 기준이고, 정적 개찰 파일의
+    # winner_rate 도 예정가격 기준이다(실측 확인). 여기서만 기초금액 대비로
+    # 계산하면 결측 건에서 기준이 갈린다.
+    if (not winner_rate or winner_rate <= 0) and reserved_price and reserved_price > 0:
+        winner_rate = round(winner_price / reserved_price * 100, 4)
 
     # Sanity check — 단가계약·데이터오류 등으로 winner/basic 비율이 비정상이면 skip
     # 정상 입찰의 사정률은 거의 항상 70~120% 사이. 그 외는 API 데이터 품질 의심.
@@ -181,6 +196,7 @@ def _parse_item_to_kwargs(item: dict) -> dict | None:
         "open_date": parsed_open_dt,
         "basic_price": basic_price,
         "reserved_price": reserved_price,
+        "lower_limit_rate": lower_limit_rate or None,
         "bid_method": item.get("bidwinrDcsnMthdNm") or item.get("cntrctCnclsMthdNm") or "",
         "winner_company": winner_company,
         "winner_price": winner_price,
