@@ -260,7 +260,7 @@ gh pr list --state open # 0건
 | 로컬 개발 키 | `Bideasy/backend/.env` | 동일 |
 | 운영 키 구버전 스냅샷 | `Bideasy/infra/.env.production.local` | 동일 (⚠️ §2.1 — 서버를 이걸로 덮지 말 것) |
 | **Lightsail SSH 키** | `~/.ssh/lightsail_bideasy.pem` | `~/.ssh/` + **`chmod 600` 필수** (§7-3) |
-| **Claude 메모리 12개** | `~/.claude/projects/C--dev-bideasy-suite-Bideasy/memory/` | **키가 바뀝니다** (§7-3) |
+| ~~Claude 메모리 12개~~ | — | ✅ **손으로 옮기지 않습니다** — `bideasy-agent/claude-memory/` 가 정본, `./sync.sh pull` (§7-3) |
 | 전역 규칙 | `~/.claude/CLAUDE.md`·`GLOBAL_RULES_HOSI.md` 등 | `~/.claude/` |
 | 힉스필드 인증 | `~/.config/higgsfield` | 동일. 안 되면 재로그인 + `workspace set`(함정 20) |
 
@@ -275,9 +275,13 @@ gh pr list --state open # 0건
 2. **Claude 프로젝트 키가 바뀝니다** — 저장 폴더명이 프로젝트 **절대경로에서 파생**됩니다.
    `C:\dev\bideasy-suite\Bideasy` → `C--dev-bideasy-suite-Bideasy`
    `/Users/<id>/dev/bideasy-suite/Bideasy` → `-Users-<id>-dev-bideasy-suite-Bideasy`
-   **자동으로 안 따라옵니다.** 새 키 폴더를 만들어 `memory/` 12개를 복사하지 않으면
-   경쟁사 분석·가격 결정 근거·함정 기록이 전부 사라진 채로 시작합니다.
-   경로는 `~/dev/bideasy-suite/Bideasy` 를 권장합니다(구조 동일 → 워크스페이스 상대경로 유효).
+   **자동으로 안 따라옵니다.** → **2026-08-04 해소**: 메모리 정본을 private 레포로 승격했습니다.
+   손으로 복사하지 말고 아래 한 줄을 돌리세요(키 파생은 스크립트가 양 플랫폼에서 처리합니다).
+   ```bash
+   cd ~/dev/bideasy-suite/bideasy-agent/claude-memory && ./sync.sh pull
+   ```
+   경로는 `~/dev/bideasy-suite/Bideasy` 를 권장합니다 — 구조가 같아야 워크스페이스 상대경로와
+   `sync.sh` 의 형제 폴더 자동 탐지가 그대로 삽니다.
 
 3. **venv 활성화 경로** — `source .venv/bin/activate` 입니다(Windows 의 `Scripts/` 아님).
 
@@ -296,7 +300,7 @@ python -m ruff check .
 - [ ] 레포 4개 clone, `git status` clean (= `.gitignore` 정상 = 비공개 파일 복원됨)
 - [ ] `gh auth login` → `gh pr list` 동작
 - [ ] `ssh -i ~/.ssh/lightsail_bideasy.pem ubuntu@api.bideasy.kr 'echo ok'` (권한 600 확인)
-- [ ] `~/.claude/projects/<새 키>/memory/` 에 12개 파일
+- [ ] `bideasy-agent/claude-memory/./sync.sh status` → **차이 없음 ✅** (메모리 동기화 확인)
 - [ ] `curl -s https://api.bideasy.kr/health` → `status:ok`·`database:connected`
 - [ ] 전역 `~/.claude/CLAUDE.md` §5 의 BidEasy 정본 경로를 **맥 경로로 수정**
       (현재 `C:\Project\Bideasy\CLAUDE.md` 로 적혀 있어 이미 실제와 어긋나 있습니다)
