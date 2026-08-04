@@ -344,6 +344,35 @@ python -m ruff check backend/ # CI lint 와 동일 — 미사용 import 하나�
 - 아웃바운드: `tests/test_consent.py`(20건 — 증적 기록·구버전 경로·2년 만료·SQL필터↔단건판정 일치·**화면↔서버 문구 드리프트 가드**), `tests/test_optin.py`(10건 — 가입 확인 전 광고 차단·GET 프리페치 무확인·**토큰 용도 분리**), `tests/test_trial_sequence.py`(13건 — 만료 고지는 전원·할인은 확인자만·**메일 실패가 인앱 알림을 지우지 않음**·유료 전환자 제외), `tests/test_nurture.py`(32건 — 게이트 차단 시 실제 미발송·"(광고)" 표기·원클릭 헤더·멱등·실패 시 키 해제·토큰 위조/용도 전용·**수신거부 결과 통지**[광고 아님·재동의 유도 없음·통지 실패해도 해지 성공]), `tests/test_lead_nurture.py`(21건 — **제3자 주소 광고 차단**·GET 프리페치 무확인·철회자 부활 방지·개행 리드가 배치를 안 죽임·같은 사람 재진단 시 1통).
 - 그 외 feed/calculator/qualification/favorites/deadline/ai 등.
 
+### 8-1. LLM 실호출 검증 (pytest 로는 못 잡는다)
+
+모킹은 "우리 코드가 부르더라"까지만 증명한다. 키·모델명·토큰 예산이 맞는지는 **진짜 부를 때만**
+드러난다 — 2026-08-02 에 테스트가 전부 green 인 상태로 정본 모델이 한 번도 성공한 적이 없었고
+Deep 이 폴백으로만 돌던 게 그래서였다(§함정 18). `llm_gateway` 나 모델 설정을 건드리면 배포 후
+아래를 돌린다:
+
+```bash
+# 로컬에서 프로덕션 컨테이너로 스크립트를 흘려보낸다 (서버에 파일을 남기지 않는다)
+ssh -i ~/.ssh/lightsail_bideasy.pem ubuntu@api.bideasy.kr \
+    'docker exec -i bideasy_app python -' < probe.py
+```
+
+`docker exec` 여야 한다 — `docker compose exec` 는 지금의 `--env-file` 을 새로 주입해서
+재배포 전에도 "반영됨"으로 보인다(§함정 21).
+
+probe 가 지켜야 할 것 둘:
+- **폴백을 끄고 primary 만 부른다.** 폴백을 켜면 "돌긴 도네"로 보여서 정본 모델의 실패가 그대로 숨는다.
+- **`resp.model` 을 찍어 요청 모델과 실응답 모델을 대조한다.** OpenRouter 는 라우팅을 바꿀 수 있다.
+
+대상은 4개 용도 전부: `LLM_MODEL_ANALYSIS` · `LLM_MODEL_DEEP` · `LLM_MODEL_SUPPORT` ·
+`CONTENT_LLM_MODEL` (`cheap_model()` 은 보통 `LLM_MODEL_ANALYSIS` 와 같은 모델이라 함께 커버된다).
+
+**2026-08-03 실측 = 4/4 성공**, 전부 요청 모델과 실응답 모델 일치:
+`gpt-4o-mini`(2.8s) · `gpt-5-nano`(3.2s, **폴백 아님**) · `gpt-4o-mini`(0.7s) · `claude-sonnet-5`(2.7s).
+⚠️ `gpt-5-nano` 는 **출력 265토큰 중 192토큰(72%)을 추론에 썼다.** 추론형 모델을 짧은 예산으로
+부르면 본문이 빈 채로 온다 — Deep 은 `LLM_MAX_TOKENS_DEEP=16000` 이라 안전하지만, 새 호출부를
+만들 때 `max_tokens` 를 아끼면 그 자리에서 재현된다.
+
 ---
 
 ## 9. 🔒 보안 규칙 (반드시 준수)
