@@ -55,6 +55,9 @@ def _notice_brief(n: models.Notice) -> dict:
         "title": n.title or "",
         "organization": n.organization or "",
         "end_date_label": n.end_date.strftime("%m/%d") if n.end_date else "",
+        # 메일에서 공고 상세(/bid/{no})로 바로 보내기 위한 키. 없으면 템플릿이
+        # 링크 없이 제목만 렌더한다(깨진 링크를 만들지 않는다).
+        "bid_no": n.bid_no or "",
     }
 
 

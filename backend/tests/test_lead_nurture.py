@@ -433,3 +433,77 @@ class TestLeadMatchesTask:
         assert result["sent"] == 0
         assert result["skipped_no_match"] == 1
         assert captured_mail == []
+
+
+class TestLeadMatchLinks:
+    """매칭 메일의 링크 계약 (2026-08-04).
+
+    실제 첫 발송에서 드러난 문제: 메일이 "24건"이라 말하면서 5건만 보여주고,
+    「전체 목록 보기」는 **빈 진단 폼**으로 보냈다. 나머지를 보려면 업종·지역을
+    다시 입력해야 했다 — 약속한 목록을 주지 못한 것이다.
+
+    지키려는 사실:
+      1) 공고마다 상세 페이지 링크가 있다(HTML·텍스트 양쪽 — HTML 차단 클라이언트에서
+         링크 없는 목록으로 전락하지 않게).
+      2) 목록 링크는 조건을 실어 보내 **클릭 한 번에** 결과가 뜬다.
+      3) 모든 링크에 UTM 이 붙는다 — 없으면 이 메일의 유입이 direct 로 뭉개져
+         효과를 측정할 수 없다.
+      4) bid_no 가 없는 공고는 **깨진 링크 대신** 제목만 렌더한다.
+    """
+
+    CTX = {
+        "region": "부산",
+        "industry": "전기공사",
+        "new_count": 24,
+        "capped": False,
+        "notices": [
+            {"title": "가로등 정비공사", "organization": "부산시", "end_date_label": "08/12",
+             "bid_no": "R26BK01661537-000"},
+            {"title": "청사 전기설비 보수", "organization": "부산교육청", "end_date_label": "08/15",
+             "bid_no": "R26BK01661538-000"},
+        ],
+    }
+
+    def _render(self, ctx=None):
+        return email_templates.render(
+            "lead_new_matches", ctx or self.CTX, unsubscribe_url="https://bideasy.kr/unsubscribe?t=x"
+        )
+
+    def test_each_notice_links_to_its_detail_page(self):
+        r = self._render()
+        for no in ("R26BK01661537-000", "R26BK01661538-000"):
+            assert f"/bid/{no}" in r.html, f"{no} 상세 링크가 HTML 에 없다"
+            assert f"/bid/{no}" in r.text, f"{no} 상세 링크가 텍스트 판본에 없다"
+
+    def test_list_cta_carries_conditions_and_autoruns(self):
+        r = self._render()
+        # 조건이 실려야 클릭 한 번에 24건이 뜬다. 한글은 URL 인코딩된 형태로 들어간다.
+        assert "/diagnose?" in r.html
+        assert "auto=1" in r.html
+        from urllib.parse import quote
+        assert quote("전기공사") in r.html
+        assert quote("부산") in r.html
+
+    def test_all_links_carry_utm(self):
+        r = self._render()
+        import re
+        links = re.findall(r'https://[^"\s<)]+', r.html + " " + r.text)
+        targets = [u for u in links if "/bid/" in u or "/diagnose" in u]
+        assert targets, "검사할 링크가 없다"
+        for u in targets:
+            assert "utm_source=email" in u and "utm_campaign=lead_new_matches" in u, u
+
+    def test_notice_without_bid_no_renders_without_link(self):
+        ctx = dict(self.CTX)
+        ctx["notices"] = [{"title": "공고번호 없는 건", "organization": "어딘가",
+                           "end_date_label": "08/20", "bid_no": ""}]
+        r = self._render(ctx)
+        assert "공고번호 없는 건" in r.html
+        assert "/bid/" not in r.html          # 깨진 링크를 만들지 않는다
+        assert "/bid/" not in r.text
+
+    def test_still_an_ad_with_legal_markers(self):
+        """링크를 붙였다고 법정 표기가 사라지면 안 된다."""
+        r = self._render()
+        assert r.subject.startswith(email_templates.AD_PREFIX)
+        assert "unsubscribe" in r.html
