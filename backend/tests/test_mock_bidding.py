@@ -94,9 +94,14 @@ class TestEligibility:
         ok, reason = mb.is_eligible(_notice(contract_type="SERVICE"))
         assert ok is False and reason == "not_construction"
 
-    def test_no_basic_price_excluded(self):
+    def test_no_basis_amount_excluded(self):
+        """금액 기준을 못 구하면 등록하지 않는다.
+
+        시행 전(BASIS_AMOUNT_ENFORCE=False)에는 basic_price 가 그 역할을 하고,
+        시행 후에는 basis_amount 가 없으면 같은 사유로 제외된다.
+        """
         ok, reason = mb.is_eligible(_notice(basic_price=0))
-        assert ok is False and reason == "no_basic_price"
+        assert ok is False and reason == "no_basis_amount"
 
 
 # ── §0.3 arm 구성 ─────────────────────────────────────────────

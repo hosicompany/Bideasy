@@ -193,6 +193,12 @@ class Settings(BaseSettings):
     # 킬스위치: False 면 실제 전송 없이 dry-run 로그만 남긴다(기본값 — 오발송 방지).
     # SES 프로덕션 액세스 승인 + 도메인 DKIM 인증이 끝난 뒤에만 True 로 켠다.
     OUTBOUND_EMAIL_ENABLED: bool = False
+
+    # 기초금액 시행 스위치 (docs/PRICE_BASE_DEFECT.md 2층-B).
+    # OFF 면 기존 동작(추정가격을 기초금액처럼 사용). ON 이면 확인된 기초금액만
+    # 쓰고, 없는 공고는 "기초금액 미확인"으로 **안전 판정을 보류**한다.
+    # 수집이 며칠 쌓여 커버리지가 안정된 뒤 켠다 — 지금 켜면 대부분이 미확인이다.
+    BASIS_AMOUNT_ENFORCE: bool = False
     AWS_REGION: str = "ap-northeast-2"
     # 자격증명은 IAM 역할이 있으면 비워둔다(boto3 기본 체인). Lightsail 은 키 주입 필요.
     AWS_ACCESS_KEY_ID: str = ""
