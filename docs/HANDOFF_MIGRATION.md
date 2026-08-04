@@ -1,5 +1,7 @@
 # BidEasy — PC 이관 인수인계서
 
+> **맥북으로 옮기는 중이라면 → §7 로 바로 가세요.** (2026-08-04 신설. §1~§6은 Windows→Windows 기록이며, 절차의 뼈대는 그대로 유효합니다.)
+>
 > **작성 2026-08-01.** 개발 PC(Windows, `C:\Project\`)가 포맷 예정이라 새 PC에서 작업을 이어받기 위한 문서입니다.
 > 이관이 끝나면 역할을 다합니다 — 체크리스트(§6)를 통과하면 이 문서는 더 볼 필요 없습니다.
 > **작업 맥락의 정본은 언제나 `CLAUDE.md`** 입니다. 이 문서는 "환경을 옮기는 방법"만 다룹니다.
@@ -216,3 +218,91 @@ pytest                                                   # ← 508건 통과해�
 
 > 참고: `preserve/*` 브랜치는 clone/bundle에 포함돼 있습니다. 익스텐션의 `security/audit-2026-06-19` 는
 > 원격 추적 브랜치(`origin/security/audit-2026-06-19`)로 존재하므로 `git switch -c` 로 언제든 꺼낼 수 있습니다.
+
+---
+
+## 7. 맥북 이관 (Windows → macOS, 2026-08-04 작성)
+
+§1~§6은 Windows→Windows 기록입니다. macOS 로 옮길 때 **달라지는 것만** 여기 정리합니다.
+절차의 뼈대(§1 clone·§2 비공개 파일·§3 환경)는 그대로 유효합니다.
+
+### 7-0. 착수 조건
+
+이관은 **작업이 걸려 있지 않을 때** 합니다. 착수 전 아래가 전부 참이어야 합니다:
+
+```bash
+git status -sb          # 4개 레포 전부 미커밋 0
+gh pr list --state open # 0건
+```
+
+그리고 **다른 Claude 세션이 이 레포에 푸시 중이면 먼저 정리하세요.** 2026-08-03~04 에
+병렬 세션이 하루 9커밋(#65~#73)을 밀어 같은 문서를 두 세션이 동시에 고친 일이 있었습니다.
+이관 중에 그러면 어느 쪽이 정본인지 판정이 어려워집니다.
+
+### 7-1. 옮기지 않아도 되는 것
+
+| 항목 | 이유 |
+|---|---|
+| 레포 4개 | GitHub 에 있음 — `git clone` 이면 끝 |
+| 배포 권한 | GitHub Actions 버튼(§7 배포). **로컬 SSH 불요** |
+| 서버 설정 | `.env.production` 은 서버에만 존재 |
+| `backend/bideasy.db`·`test.db` | 재생성됨 |
+| venv | **재생성할 것** — `pyvenv.cfg` 에 절대경로가 박혀 있어 옮기면 깨집니다 |
+
+### 7-2. 반드시 손으로 옮길 것
+
+`.gitignore` 되어 있거나 PC 로컬에만 있어 **clone 으로 안 따라오는** 것들입니다.
+
+| 항목 | 현 위치 (Windows) | 맥 위치 |
+|---|---|---|
+| 🔒 `PATENT.md` | `Bideasy/backend/app/services/autocalibrate/` | 동일 상대경로 |
+| 내부 문서 2종 | `Bideasy/MORNING_CHECKLIST.md`·`OVERNIGHT_REPORT.md` | 동일 |
+| 로컬 개발 키 | `Bideasy/backend/.env` | 동일 |
+| 운영 키 구버전 스냅샷 | `Bideasy/infra/.env.production.local` | 동일 (⚠️ §2.1 — 서버를 이걸로 덮지 말 것) |
+| **Lightsail SSH 키** | `~/.ssh/lightsail_bideasy.pem` | `~/.ssh/` + **`chmod 600` 필수** (§7-3) |
+| **Claude 메모리 12개** | `~/.claude/projects/C--dev-bideasy-suite-Bideasy/memory/` | **키가 바뀝니다** (§7-3) |
+| 전역 규칙 | `~/.claude/CLAUDE.md`·`GLOBAL_RULES_HOSI.md` 등 | `~/.claude/` |
+| 힉스필드 인증 | `~/.config/higgsfield` | 동일. 안 되면 재로그인 + `workspace set`(함정 20) |
+
+> 익스텐션·에이전트·정책 레포에는 비공개 파일이 **없습니다**(실측). 챙길 건 `Bideasy` 하나뿐입니다.
+
+### 7-3. macOS 에서만 걸리는 함정 4가지
+
+1. **`.pem` 권한** — 현재 파일이 `644` 입니다. Windows 는 ACL 로 보호돼 동작하지만
+   **macOS·Linux 의 ssh 는 644 키를 거부**합니다(`UNPROTECTED PRIVATE KEY FILE`).
+   복사 후 반드시 `chmod 600 ~/.ssh/lightsail_bideasy.pem`.
+
+2. **Claude 프로젝트 키가 바뀝니다** — 저장 폴더명이 프로젝트 **절대경로에서 파생**됩니다.
+   `C:\dev\bideasy-suite\Bideasy` → `C--dev-bideasy-suite-Bideasy`
+   `/Users/<id>/dev/bideasy-suite/Bideasy` → `-Users-<id>-dev-bideasy-suite-Bideasy`
+   **자동으로 안 따라옵니다.** 새 키 폴더를 만들어 `memory/` 12개를 복사하지 않으면
+   경쟁사 분석·가격 결정 근거·함정 기록이 전부 사라진 채로 시작합니다.
+   경로는 `~/dev/bideasy-suite/Bideasy` 를 권장합니다(구조 동일 → 워크스페이스 상대경로 유효).
+
+3. **venv 활성화 경로** — `source .venv/bin/activate` 입니다(Windows 의 `Scripts/` 아님).
+
+4. **PowerShell 훅은 못 씁니다** — 익스텐션 레포의 검증 훅이 PowerShell 기반입니다.
+   맥에선 sh 로 재작성해야 합니다. 참고: 그 훅은 `& npm` shim 문제로 한동안 무동작이었습니다(§잔여 5).
+
+### 7-4. 이관 후 검증
+
+```bash
+cd ~/dev/bideasy-suite/Bideasy/backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt && pytest        # 통과 건수는 CLAUDE.md §8 기준
+python -m ruff check .
+```
+
+- [ ] 레포 4개 clone, `git status` clean (= `.gitignore` 정상 = 비공개 파일 복원됨)
+- [ ] `gh auth login` → `gh pr list` 동작
+- [ ] `ssh -i ~/.ssh/lightsail_bideasy.pem ubuntu@api.bideasy.kr 'echo ok'` (권한 600 확인)
+- [ ] `~/.claude/projects/<새 키>/memory/` 에 12개 파일
+- [ ] `curl -s https://api.bideasy.kr/health` → `status:ok`·`database:connected`
+- [ ] 전역 `~/.claude/CLAUDE.md` §5 의 BidEasy 정본 경로를 **맥 경로로 수정**
+      (현재 `C:\Project\Bideasy\CLAUDE.md` 로 적혀 있어 이미 실제와 어긋나 있습니다)
+
+### 7-5. 옮기지 말 것
+
+- **`infra/.env.production`** — 서버에만 존재합니다. 로컬 스냅샷(`.local`)으로 서버를 덮지 마세요.
+- **`BILLING_ENC_KEY`** — 이관을 이유로 재생성하는 일이 없어야 합니다. 변경 시 고객 빌링키 전부 복호화 불가.
+- **AWS 자격증명** — 새 PC 로 복사하지 말고 필요할 때 IAM 콘솔에서 새로 발급하는 편이 안전합니다(구 키 폐기).
