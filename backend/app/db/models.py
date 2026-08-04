@@ -156,9 +156,30 @@ class Notice(Base):
     notice_kind = Column(String(50))          # ntceKindNm (등록공고/변경공고/취소공고)
     re_notice_yn = Column(String(10))         # reNtceYn (재공고 여부)
 
+    # ── 기초금액 (2026-08-04 추가, docs/PRICE_BASE_DEFECT.md 2층-B) ──
+    # ⚠️ `basic_price` 는 `presmptPrce`(추정가격, 부가세 제외)다. 기초금액이
+    # 아니다. 목록 API 는 기초금액을 주지 않고, 전용 오퍼레이션
+    # `getBidPblancListInfoCnstwkBsisAmount` 가 `bssamt` 로 준다.
+    #
+    # **`basic_price` 에 덮어쓰지 말 것** — 커버리지가 80% 라, 확인된 건만
+    # 덮으면 한 컬럼에 또 두 기준이 섞인다(그게 이번 사고의 원인이다).
+    # 확인된 건만 여기에 넣고, 없으면 NULL 로 둔 채 "기초금액 미확인"으로
+    # 다룬다. 추정해서 채우지 않는다.
+    basis_amount = Column(Float)               # bssamt (부가세 포함)
+    basis_amount_at = Column(DateTime)         # bssamtOpenDt — 공개 시각
+    # 복수예비가격 범위 — ±3% 고정이 아니다(실측 ±2% 공고 존재)
+    prdprc_range_bgn = Column(Float)           # rsrvtnPrceRngBgnRate (예: -2)
+    prdprc_range_end = Column(Float)           # rsrvtnPrceRngEndRate (예: +2)
+
     # Calculator Fields
     a_value = Column(Integer, default=0)
     net_cost = Column(Integer, default=0)
+    # A값 출처 — tier0(공고 API) | tier1(익스텐션) | tier2(첨부파싱) | none.
+    # tier0 는 조달청이 공고에 실어 주는 값이라 가장 신뢰도가 높다.
+    a_value_source = Column(String(10))
+    # bidPrceCalclAYn — 투찰금액 A값 산정 대상 여부. N 이면 A값 0 이 정상이다
+    # (결측과 구분해야 계산기가 "A값을 못 찾았다"고 잘못 말하지 않는다).
+    a_value_applicable = Column(String(10))
 
     # Relationships
     bids = relationship("UserBid", back_populates="notice")

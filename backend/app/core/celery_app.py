@@ -90,6 +90,13 @@ celery_app.conf.beat_schedule = {
         "task": "notices.backfill_avalue",
         "schedule": crontab(hour=6, minute=30),
     },
+    # 10-1) 매일 06:40 — 공사 기초금액 수집 (목록 API 가 안 주는 bssamt + A값 tier0).
+    # 공고 수집(06:00) 뒤에 둔다 — 대상 Notice 가 있어야 반영된다.
+    # 기초금액은 개찰 직전 공개되는 건도 있어 3일 겹쳐 읽는다(멱등).
+    "daily-basis-amount": {
+        "task": "notices.crawl_basis_amount",
+        "schedule": crontab(hour=6, minute=40),
+    },
     # 11) 매주 월요일 08:00 — Track B 데이터스토리 주간 초안 생성(유예 publish_at 부여)
     "weekly-data-story-draft": {
         "task": "content.weekly_data_story",
