@@ -151,3 +151,15 @@ def purge_old_notices(days: int = PURGE_AFTER_DAYS) -> dict:
         return {"error": str(e)}
     finally:
         db.close()
+
+
+@celery_app.task(name="notices.crawl_basis_amount")
+def crawl_basis_amount(days_back: int = 3) -> dict:
+    """공사 기초금액 수집 — 목록 API 가 안 주는 `bssamt` 를 전용 오퍼레이션에서.
+
+    같은 응답에 A값 구성요소도 있어 tier0 로 함께 채운다.
+    상세·주의사항: `services/basis_amount_crawler.py`
+    """
+    from app.services.basis_amount_crawler import crawl_recent
+
+    return crawl_recent(days_back=days_back)
