@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import escape
 from typing import Callable, Optional
+from urllib.parse import quote, urlencode
 
 from app.core.config import settings
 
@@ -20,6 +21,9 @@ SENDER_NAME = "BidEasy (호시컴퍼니)"
 SENDER_CONTACT = "support@bideasy.kr"
 
 AD_PREFIX = "(광고)"
+
+# UTM 캠페인 이름 — 템플릿 이름과 같게 유지한다(원장·GA4 대조가 쉬워진다).
+CAMPAIGN_LEAD_MATCHES = "lead_new_matches"
 
 
 @dataclass
@@ -48,6 +52,18 @@ def category_of(name: str) -> str:
     if name not in _REGISTRY:
         raise UnknownTemplate(name)
     return _REGISTRY[name][0]
+
+
+def utm(path: str, campaign: str, **params: str) -> str:
+    """메일 안의 링크에 UTM 을 붙인다 — 붙이지 않으면 GA4·`/admin/stats/attribution`
+    에서 이 메일이 만든 유입이 direct 로 뭉개져 **효과를 영영 측정할 수 없다.**
+
+    `path` 는 사이트 루트 기준 경로("/bid/xxx"). 값은 전부 URL 인코딩하므로
+    한글 업종·지역을 그대로 넘겨도 된다.
+    """
+    q = {k: v for k, v in params.items() if v}
+    q.update({"utm_source": "email", "utm_medium": "nurture", "utm_campaign": campaign})
+    return f"{settings.PUBLIC_WEB_URL}{path}?{urlencode(q)}"
 
 
 def _btn(href: str, label: str) -> str:
@@ -184,8 +200,18 @@ def _lead_new_matches(ctx: dict) -> tuple[str, str, str]:
     region = ctx.get("region") or ""
     industry = ctx.get("industry") or "우리 회사"
     count = int(ctx.get("new_count") or 0)
-    notices = ctx.get("notices") or []          # [{title, organization, end_date_label}]
-    web = settings.PUBLIC_WEB_URL
+    notices = ctx.get("notices") or []          # [{title, organization, end_date_label, bid_no}]
+
+    # 「전체 목록 보기」는 조건을 실어 보내 **클릭 한 번에** 결과가 뜨게 한다.
+    # 빈 `/diagnose` 로 보내면 "24건"이라 말해 놓고 업종·지역을 다시 입력시키는 셈이라,
+    # 목록의 나머지(노출 상한 밖 건)를 사실상 볼 수 없다.
+    list_url = utm("/diagnose", CAMPAIGN_LEAD_MATCHES, industry=industry, region=region, auto="1")
+
+    def _notice_url(n: dict) -> str:
+        """공고 상세는 로그인 없이 열리는 공개 SSR 이다. 마감된 건도 404 가 아니라
+        '마감된 공고' 배지를 단 200 이라, 메일이 며칠 뒤에 열려도 안전하다."""
+        no = (n.get("bid_no") or "").strip()
+        return utm(f"/bid/{quote(no, safe='')}", CAMPAIGN_LEAD_MATCHES) if no else ""
     # 매칭 상한(MATCH_LIMIT)에 걸린 값이면 실제로는 더 많다 — 진단 화면의 `capped` 와
     # 같은 정직성 장치. 상한값을 딱 떨어지게 말하면 사실과 다른 수를 말하게 된다.
     label = f"{count}건+" if ctx.get("capped") else f"{count}건"
@@ -200,33 +226,43 @@ def _lead_new_matches(ctx: dict) -> tuple[str, str, str]:
         due = n.get("end_date_label") or ""
         org = n.get("organization") or ""
         lines.append(f"· {n.get('title') or ''}" + (f" ({org}, 마감 {due})" if org or due else ""))
+        # 텍스트 판본에도 링크를 넣는다 — HTML 을 막아 둔 클라이언트에서 본문이
+        # 링크 없는 목록으로 전락하면 개별 공고로 가는 길이 사라진다.
+        if _notice_url(n):
+            lines.append(f"  {_notice_url(n)}")
     lines += [
         "",
-        f"전체 목록 보기: {web}/diagnose",
+        f"전체 목록 보기: {list_url}",
         "",
         "※ 자격 요건이 맞는지까지만 확인해 드립니다. 낙찰 여부를 예측하지는 않아요.",
         "",
     ]
     text = "\n".join(lines)
 
-    items = "".join(
-        '<li style="font-size:15px;line-height:1.7;color:#191F28;margin:0 0 8px;">'
-        f"<b>{escape(n.get('title') or '')}</b>"
-        + (
+    def _item(n: dict) -> str:
+        title = escape(n.get("title") or "")
+        url = _notice_url(n)
+        # bid_no 가 없으면(옛 데이터·수집 누락) 링크 없이 제목만 — 깨진 링크보다 낫다.
+        head = (
+            f'<a href="{escape(url)}" style="color:#191F28;text-decoration:underline;">{title}</a>'
+            if url else f"<b>{title}</b>"
+        )
+        return (
+            '<li style="font-size:15px;line-height:1.7;color:#191F28;margin:0 0 8px;">'
+            f"<b>{head}</b>"
             '<br><span style="font-size:13px;color:#8B95A1;">'
             f"{escape(n.get('organization') or '')}"
             + (f" · 마감 {escape(n.get('end_date_label') or '')}" if n.get("end_date_label") else "")
-            + "</span>"
+            + "</span></li>"
         )
-        + "</li>"
-        for n in notices
-    )
+
+    items = "".join(_item(n) for n in notices)
     html = (
         f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, 진단해 드린 조건'
         f'(<b>{escape(region)} {escape(industry)}</b>)에 맞는 공고가 새로 '
         f'<b style="color:#3182F6;">{escape(label)}</b> 올라왔어요.</p>'
         f'<ul style="padding-left:18px;margin:0 0 20px;">{items}</ul>'
-        f"{_btn(f'{web}/diagnose', '전체 목록 보기')}"
+        f"{_btn(list_url, '전체 목록 보기')}"
         '<p style="font-size:13px;line-height:1.6;color:#8B95A1;margin:18px 0 0;">'
         "자격 요건이 맞는지까지만 확인해 드립니다. 낙찰 여부를 예측하지는 않아요.</p>"
     )

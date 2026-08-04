@@ -357,6 +357,41 @@
       document.querySelectorAll('[data-ev]').forEach(function (el) {
         el.addEventListener('click', function () { try { gtag('event', this.getAttribute('data-ev')); } catch (e) {} });
       });
+
+      // ── 메일에서 온 방문자: 조건 프리필 + 자동 진단 (?industry=&region=&auto=1) ──
+      // 육성 메일이 "새 공고 24건"이라 말하면서 빈 폼으로 보내면, 받는 사람은 업종·지역을
+      // 처음부터 다시 입력해야 나머지를 볼 수 있다. 약속한 목록을 한 번의 클릭으로 준다.
+      // auto 가 없으면 값만 채우고 실행하지 않는다(사람이 직접 고른 것과 구분).
+      (function prefillFromQuery() {
+        var q = new URLSearchParams(location.search);
+        var ind = (q.get('industry') || '').trim();
+        var reg = (q.get('region') || '').trim();
+        if (!ind && !reg) return;
+
+        if (ind) {
+          var hit = Array.prototype.filter.call(tradesEl.children, function (c) {
+            return c.textContent === ind;
+          })[0];
+          if (hit) {
+            hit.click();                       // 칩의 기존 핸들러가 state 를 채운다
+          } else {
+            // 목록에 없는 업종(직접 입력분)은 '기타' 경로로 흘려보낸다.
+            var other = Array.prototype.filter.call(tradesEl.children, function (c) {
+              return c.getAttribute('data-key') === '__other';
+            })[0];
+            if (other) { other.click(); otherInput.value = ind; state.licenses = ind; }
+          }
+        }
+        if (reg) {
+          // 옵션에 없는 값을 넣으면 select 가 빈 값이 되어 "소재지를 선택해 주세요"로 막힌다.
+          var ok = Array.prototype.some.call(regionEl.options, function (o) { return o.value === reg; });
+          if (ok) regionEl.value = reg;
+        }
+
+        if (q.get('auto') === '1' && (state.industry || state.licenses) && regionEl.value) {
+          document.getElementById('dg-run').click();
+        }
+      })();
     })();
   </script>
 </body>
