@@ -473,17 +473,38 @@ def score_mock_bid(db: Session, mb: models.MockBid,
 
 
 def score_pending(db: Session, limit: int = 5000) -> dict:
-    """마감이 지난 미채점 등록분을 일괄 채점."""
+    """마감이 지난 미채점 등록분을 일괄 채점.
+
+    ⚠️ 잔량은 계속 쌓인다. 낙찰자 확정에 며칠 걸리는 동안 `NO_RESULT` 로 남은
+    등록분이 매일 다시 대상이 되고, 하루 등록이 1,400건 규모라 **나흘이면
+    limit 에 닿는다**. 그래서 두 가지를 지킨다:
+
+    1. **마감이 오래된 것부터** 채점한다. 정렬이 없으면 DB 가 주는 임의 순서라,
+       잘려 나간 쪽이 매일 같은 자리에 남아 영영 채점되지 않을 수 있다.
+    2. 잘린 잔량을 **로그와 반환값에 남긴다**. `scored: 5000` 만 보면 정상처럼
+       보이는데 실제로는 데이터가 새고 있는 상황이 조용히 지나간다.
+    """
     now = now_kst()
+    base = db.query(models.MockBid).filter(
+        models.MockBid.status == "REGISTERED",
+        models.MockBid.deadline_at < now,
+    )
+    total_due = base.count()
     pending = (
-        db.query(models.MockBid)
-        .filter(models.MockBid.status == "REGISTERED",
-                models.MockBid.deadline_at < now)
+        base.order_by(models.MockBid.deadline_at.asc(), models.MockBid.id.asc())
         .limit(limit)
         .all()
     )
     if not pending:
-        return {"pending": 0, "scored": 0, "outcomes": {}}
+        return {"pending": 0, "scored": 0, "outcomes": {}, "deferred": 0}
+
+    deferred = max(0, total_due - len(pending))
+    if deferred:
+        logger.warning(
+            f"[mock_bidding.score] 채점 대상 {total_due}건 중 {len(pending)}건만 처리 "
+            f"— {deferred}건이 이번 회차에서 밀렸다(limit={limit}). "
+            f"마감 오래된 순으로 처리하므로 다음 회차에 이어서 잡힌다."
+        )
 
     bid_nos = list({mb.bid_no for mb in pending})
     actuals = {
@@ -512,7 +533,8 @@ def score_pending(db: Session, limit: int = 5000) -> dict:
         outcomes[res.outcome] = outcomes.get(res.outcome, 0) + 1
     db.commit()
 
-    result = {"pending": len(pending), "scored": scored, "outcomes": outcomes}
+    result = {"pending": len(pending), "scored": scored, "outcomes": outcomes,
+              "deferred": deferred}
     logger.info(f"[mock_bidding.score] {result}")
     return result
 
@@ -533,6 +555,9 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
         .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
         .filter(models.MockBidResult.outcome.in_(("WIN", "LOST", "DROPOUT")),
                 models.MockBidResult.estimated_rank.is_(None))
+        # score_pending 과 같은 이유로 순서를 고정한다 — 정렬 없이 자르면
+        # 잘려 나간 쪽이 매일 같은 자리에 남아 등수가 영영 안 채워질 수 있다.
+        .order_by(models.MockBidResult.mock_bid_id.asc())
         .limit(limit)
         .all()
     )
