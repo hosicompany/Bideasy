@@ -144,18 +144,26 @@ def resolve_lower_limit_rate(notice: models.Notice) -> tuple[float, str]:
     공고가 명시한 값(`sucsfbidLwltRate`, 진행중 공고의 92.6%)이 금액대 테이블
     추정보다 정확하므로 우선한다. 결측 시에만 테이블 폴백.
     """
+    from app.services import basis as basis_svc
+
     llr = getattr(notice, "lower_limit_rate", None)
     if llr and llr > 0:
         return float(llr), "notice"
+    # 금액대 티어는 **기초금액** 기준이다. 추정가격을 넣으면 한 티어 아래로
+    # 떨어져 하한율이 틀린다(예: 10억 경계).
     return (
-        get_lower_limit_rate(notice.contract_type or "CONSTRUCTION", notice.basic_price),
+        get_lower_limit_rate(notice.contract_type or "CONSTRUCTION",
+                             basis_svc.confirmed_basis(notice)),
         "table",
     )
 
 
 def _a_value_of(notice: models.Notice) -> tuple[int, str]:
     a = int(getattr(notice, "a_value", 0) or 0)
-    return (a, "tier2" if a > 0 else "none")
+    src = getattr(notice, "a_value_source", None)
+    if a > 0:
+        return (a, src or "tier2")
+    return (0, src or "none")
 
 
 # ── arm 별 가격 산출 ──────────────────────────────────────────
@@ -165,7 +173,10 @@ def compute_arm_prices(notice: models.Notice) -> list[ArmPrice]:
 
     파라미터를 못 구한 arm 은 **건너뛴다**(빈 값으로 등록하지 않는다).
     """
-    bp = float(notice.basic_price or 0)
+    from app.services import basis as basis_svc
+
+    # ⚠️ notice.basic_price 를 직접 쓰지 말 것 — 추정가격이다(부가세 제외).
+    bp = basis_svc.confirmed_basis(notice) or 0.0
     if bp <= 0:
         return []
 
@@ -210,8 +221,13 @@ def is_eligible(notice: models.Notice) -> tuple[bool, str]:
     """§3 등록 대상 규칙. (통과여부, 사유)"""
     if (notice.contract_type or "") != "CONSTRUCTION":
         return False, "not_construction"
-    if not notice.basic_price or notice.basic_price <= 0:
-        return False, "no_basic_price"
+    # 기초금액이 확인된 공고만 등록한다. 추정가격으로 등록하면 가격이 9% 낮게
+    # 잡혀 전량 무효가 되고, 그 표본은 많아도 결론을 오염시킬 뿐이다.
+    # (시행 전에는 basis.confirmed_basis 가 기존 동작대로 basic_price 를 준다)
+    from app.services import basis as basis_svc
+
+    if not basis_svc.confirmed_basis(notice):
+        return False, "no_basis_amount"
     if not notice.end_date:
         return False, "no_deadline"
     if (notice.notice_kind or "") in EXCLUDED_NOTICE_KINDS:
@@ -226,6 +242,8 @@ def register_notice(db: Session, notice: models.Notice, now: datetime | None = N
 
     **마감이 지났으면 등록하지 않는다** — 사후 등록은 이 실험을 무의미하게 만든다.
     """
+    from app.services import basis as basis_svc
+
     now = now or now_kst()
     ok, reason = is_eligible(notice)
     if not ok:
@@ -261,7 +279,7 @@ def register_notice(db: Session, notice: models.Notice, now: datetime | None = N
             bid_rate=ap.bid_rate,
             adjustment=ap.adjustment,
             margin=ap.margin,
-            snapshot_basic_price=float(notice.basic_price),
+            snapshot_basic_price=float(basis_svc.confirmed_basis(notice) or 0),
             snapshot_a_value=a_value,
             a_value_source=a_src,
             snapshot_lower_limit_rate=llr,

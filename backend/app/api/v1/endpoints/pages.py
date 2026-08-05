@@ -78,15 +78,23 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
     # 200 + noindex 는 soft-404 로 취급되므로 실제 404 를 준다.
     is_closed = bool(notice and notice.end_date and notice.end_date <= _current_naive_kst())
 
+    # 기초금액은 `basis` 단일 소스로만 판단한다. 여기서 basic_price(추정가격)로
+    # 폴백하면 틀린 하한선으로 "안전"이라고 말하게 된다 — 그게 이번 사고다.
+    from app.services import basis as basis_svc
+
+    _basis_amount, _basis_status = basis_svc.display_basis(notice)
+    _basis_unconfirmed = _basis_status == basis_svc.UNCONFIRMED
+
     ctx = {
         "request": request,
         "found": bool(notice),
+        "basis_unconfirmed": _basis_unconfirmed,
         "bid_no": bid_no,
         "title": (notice.title if (notice and notice.title) else bid_no),
         "organization": getattr(notice, "organization", None) if notice else None,
         "demand_organization": getattr(notice, "demand_organization", None) if notice else None,
         "region": getattr(notice, "region", None) if notice else None,
-        "basic_price": int(notice.basic_price or 0) if notice else 0,
+        "basic_price": _basis_amount,
         "budget_amount": int(getattr(notice, "budget_amount", 0) or 0) if notice else 0,
         "contract_type": ct,
         "contract_type_label": _CT_LABEL.get(ct, "기타"),
@@ -96,8 +104,12 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
         "deadline_iso": deadline_iso,
         "detail_url": getattr(notice, "content", None) if notice else None,
         "a_value": int(getattr(notice, "a_value", 0) or 0) if notice else 0,
-        # 공사는 금액대·시행일 티어드 (단일 소스: lower_limits) — notice 없으면 legacy 폴백
-        "lower_limit_pct": get_lower_limit_rate(ct, float(notice.basic_price or 0) if notice else None),
+        # 공사는 금액대·시행일 티어드 (단일 소스: lower_limits) — notice 없으면 legacy 폴백.
+        # 기초금액 미확인이면 금액대를 모르니 하한율도 확정할 수 없다 → None.
+        "lower_limit_pct": (
+            None if _basis_unconfirmed
+            else get_lower_limit_rate(ct, float(_basis_amount) if _basis_amount else None)
+        ),
         "is_closed": is_closed,
         "site_url": SITE_URL,
         "api_base": API_BASE,
