@@ -24,21 +24,40 @@ PURGE_AFTER_DAYS = 90  # 마감 지난 지 90일 넘으면 정리 대상
 
 
 @celery_app.task(name="notices.crawl_daily")
-def crawl_daily_notices(pages: int = 5) -> dict:
+def crawl_daily_notices(pages: int | None = None, max_pages: int = 60) -> dict:
     """공사/용역/물품 신규 공고를 카테고리별로 긁어 누적 DB 에 적재.
 
-    pages: 카테고리당 조회 페이지 수 (page당 100건). 3 × pages × 100 상한.
-    save_notices 가 bid_no 로 중복 스킵하므로 신규분만 적재.
+    ⚠️ **페이지를 고정 개수로 자르면 안 된다** (2026-08-05 실측).
+    이 API 는 **오래된 순**으로 준다:
+
+        p1  = 2026-07-31 07:48   ← 이미 다 갖고 있는 구간
+        p16 = 2026-08-05 16:22   ← 오늘 신규
+
+    예전엔 5페이지(500건)에서 잘랐는데, 조회창(최근 5일) 실제 물량이 공사만
+    1,600건이라 **가장 오래된 500건만 매일 반복 수집**하고 신규는 한 번도
+    못 가져왔다(`construction: {'fetched': 500, 'saved': 0}`).
+    그 여파로 기초금액 매칭이 `no_notice` 로 새고, 모의투찰 후보도 줄었다.
+
+    그래서 **소진할 때까지** 페이지를 넘긴다. 페이지 간 중복은 없고(실측),
+    17페이지로 전량이 나온다. `max_pages` 는 폭주 방지용 상한이며, 상한에
+    닿으면 **로그로 알린다** — 조용한 절삭 금지.
+
+    Args:
+        pages: (구) 카테고리당 고정 페이지 수. 주면 그만큼만 읽는다(수동 조회용).
+        max_pages: 소진 모드의 안전 상한.
     """
     db = SessionLocal()
     result = {"fetched": 0, "saved": 0, "by_cat": {}}
     new_bid_nos: list[str] = []
     try:
+        limit = pages if pages else max_pages
         for cat in CRAWL_CATEGORIES:
             cat_fetched = cat_saved = 0
-            for page in range(1, pages + 1):
+            exhausted = False
+            for page in range(1, limit + 1):
                 items = CrawlerService.fetch_notices(page=page, size=100, category=cat)
                 if not items:
+                    exhausted = True
                     break  # 더 없음 → 다음 카테고리
                 cat_fetched += len(items)
                 # 적재 전 기존 bid_no 를 확인해 "이번에 새로 생긴 것"만 추린다.
@@ -52,7 +71,19 @@ def crawl_daily_notices(pages: int = 5) -> dict:
                 } if incoming else set()
                 cat_saved += CrawlerService.save_notices(db, items)
                 new_bid_nos.extend(b for b in incoming if b not in existing)
-            result["by_cat"][cat] = {"fetched": cat_fetched, "saved": cat_saved}
+                # 마지막 페이지는 size 미만으로 온다 — 소진 신호
+                if len(items) < 100:
+                    exhausted = True
+                    break
+            if not exhausted:
+                # 상한에 닿았다 = 아직 남았는데 못 읽었다. 조용히 넘기지 않는다.
+                logger.warning(
+                    f"[notices.crawl_daily] {cat}: {limit}페이지 상한에 닿았다 "
+                    f"— 남은 공고를 못 읽었을 수 있다(fetched={cat_fetched})."
+                )
+            result["by_cat"][cat] = {
+                "fetched": cat_fetched, "saved": cat_saved, "exhausted": exhausted,
+            }
             result["fetched"] += cat_fetched
             result["saved"] += cat_saved
         logger.info(f"[notices.crawl_daily] {result}")
