@@ -407,3 +407,89 @@ class TestAdminOutbound:
         assert resp.status_code == 200
         assert resp.json()["status"] == "skipped"
         assert resp.json()["reason"] == "no_consent"
+
+
+class TestTemplateSamples:
+    """미리보기 표본은 템플릿과 함께 자라야 한다.
+
+    관리자 미리보기/테스트 발송이 공용 ctx 하나를 돌려쓰던 시절, 공고 목록·확인 링크를
+    읽는 템플릿은 알맹이가 빈 채로 렌더돼 **정작 점검이 필요한 부분을 볼 수 없었다.**
+    여기서 막는 것은 그 재발이다.
+    """
+
+    # ctx 를 하나도 읽지 않아 표본이 필요 없는 템플릿. 새 템플릿을 표본 없이 등록하면
+    # 이 집합과 어긋나 실패한다 — 예외를 이름으로 못 박아 두는 것이 목적이다.
+    NO_CTX = {"trial_extension_guide"}
+
+    def test_every_template_declares_a_sample(self):
+        missing = {n for n in email_templates.template_names() if not email_templates.sample_ctx(n)}
+        assert missing == self.NO_CTX, (
+            f"표본 없는 템플릿: {missing - self.NO_CTX} — register(..., sample={{...}}) 를 채울 것"
+        )
+
+    def test_sample_actually_changes_the_render(self):
+        """표본이 있는데 렌더가 빈 ctx 와 똑같다면, 그 표본은 키 이름이 틀린 것이다."""
+        for name in email_templates.template_names():
+            if name in self.NO_CTX:
+                continue
+            sample = email_templates.render(name, email_templates.sample_ctx(name))
+            empty = email_templates.render(name, {})
+            assert (sample.subject, sample.text) != (empty.subject, empty.text), name
+
+    def test_no_template_leaks_none_into_copy(self):
+        for name in email_templates.template_names():
+            r = email_templates.render(name, email_templates.sample_ctx(name))
+            assert r.subject and r.text and r.html, name
+            assert "None" not in r.subject and "None" not in r.text, name
+
+    def test_notice_templates_render_every_notice_with_a_link(self):
+        ctx = email_templates.sample_ctx("lead_new_matches")
+        r = email_templates.render("lead_new_matches", ctx)
+        for n in ctx["notices"]:
+            assert n["title"] in r.text
+            assert f"/bid/{n['bid_no']}" in r.text   # 텍스트 판본에도 링크가 있어야 한다
+            assert f"/bid/{n['bid_no']}" in r.html
+
+    def test_winback_sample_matches_the_real_price(self):
+        """표본이 실제 청구액과 다른 금액을 보여주면 문구 점검의 의미가 없다."""
+        from app.schemas import subscription
+
+        expected = subscription.MONTHLY_PRICES[subscription.TIER_PRO] * 50 // 100
+        assert f"{expected:,}원" in email_templates.render(
+            "trial_winback", email_templates.sample_ctx("trial_winback")
+        ).text
+
+
+class TestAdminPreviewUsesRealNotices:
+    def test_preview_fills_notices_with_real_bid_no(self, admin_client, db_session):
+        """가짜 공고번호로는 /bid/{no} 가 404 라 링크를 눌러 확인할 수 없다."""
+        from datetime import timedelta
+
+        from app.db import models
+
+        db_session.add(models.Notice(
+            bid_no="20260899999-00", title="○○ 전기공사",
+            organization="부산광역시", region="부산광역시",
+            end_date=datetime.now() + timedelta(days=7),
+        ))
+        db_session.commit()
+
+        body = admin_client.get(
+            "/api/v1/admin/outbound/preview", params={"template": "lead_new_matches"}
+        ).json()
+        # 순서는 마감 임박순이라 고정하지 않는다 — 확인할 것은 "정적 표본이 아니라
+        # DB 의 진짜 공고번호가 실렸는가" 하나다.
+        assert "/bid/20260899999-00" in body["text"]
+        assert "20260899999-00" in {n["bid_no"] for n in body["ctx"]["notices"]}
+
+    def test_preview_always_has_notices_to_show(self, admin_client):
+        """DB 상태와 무관하게 목록이 비지 않는다 — 공고가 없으면 정적 표본으로 폴백."""
+        body = admin_client.get(
+            "/api/v1/admin/outbound/preview", params={"template": "lead_new_matches"}
+        ).json()
+        assert body["ctx"]["notices"]
+        assert body["subject"].startswith(email_templates.AD_PREFIX)
+
+    def test_templates_list_covers_every_template(self, admin_client):
+        items = admin_client.get("/api/v1/admin/outbound/templates").json()["items"]
+        assert {i["template"] for i in items} == set(email_templates.template_names())
