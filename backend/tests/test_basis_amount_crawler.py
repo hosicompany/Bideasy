@@ -144,3 +144,52 @@ class TestSanity:
         """
         kw = bac.parse_item(_item())
         assert 1.05 < kw["basis_amount"] / 135_350_000.0 < 1.15
+
+
+class TestBatchIsolation:
+    """한 건의 결함이 하루치를 날리지 않는다 (2026-08-05 실측 사고).
+
+    `apply_to_notice` 는 세션에 얹기만 하고 오류는 `commit()` 에서 난다.
+    A값 하나(21.7억, int4 초과)가 그날치 287건을 통째로 롤백시켰다.
+    """
+
+    def test_bad_row_does_not_lose_the_batch(self, db_session, monkeypatch):
+        # 대상 공고는 **커밋된** 행이어야 한다 — 운영과 같은 조건.
+        # flush 만 하면 롤백이 픽스처 자체를 지워 재시도가 대상을 못 찾는다.
+        nos = ["R26BK00000001-000", "R26BK00000002-000"]
+        db_session.add_all([_notice(no) for no in nos])
+        db_session.commit()
+        try:
+            kws = [bac.parse_item(_item(bidNtceNo=no.split("-")[0])) for no in nos]
+
+            calls = {"n": 0}
+            real_commit = db_session.commit
+
+            def flaky_commit():
+                calls["n"] += 1
+                if calls["n"] == 1:      # 일괄 커밋만 실패시킨다
+                    raise RuntimeError("integer out of range")
+                return real_commit()
+
+            monkeypatch.setattr(db_session, "commit", flaky_commit)
+
+            stats = {"updated": 0, "unchanged": 0, "no_notice": 0, "failed": 0}
+            bac._apply_batch(db_session, kws, stats)
+
+            # 일괄 실패 후 건별 재시도로 두 건 모두 살아난다
+            assert stats["updated"] == 2, stats
+            assert stats["failed"] == 0, stats
+        finally:
+            monkeypatch.undo()
+            db_session.query(models.Notice).filter(
+                models.Notice.bid_no.in_(nos)).delete(synchronize_session=False)
+            db_session.commit()
+
+    def test_a_value_column_is_bigint(self):
+        """A값은 21.4억(int4 상한)을 넘는다 — 실측 2,168,128,646."""
+        from sqlalchemy import BigInteger
+
+        from app.db import models
+
+        assert isinstance(models.Notice.__table__.c.a_value.type, BigInteger)
+        assert isinstance(models.Notice.__table__.c.net_cost.type, BigInteger)
