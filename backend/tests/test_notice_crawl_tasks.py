@@ -78,3 +78,91 @@ def test_purge_keeps_referenced_and_recent(db_session):
     assert "PURGE-OLD-KEEP" in ids         # 관심 참조 → 보존
     assert "PURGE-RECENT" in ids           # 진행중 → 보존
     assert r["deleted"] >= 1
+
+
+# ─────────────────────────────────────────────────────────────
+# 페이지 소진 (2026-08-05 발견)
+#
+# 공고 목록 API 는 **오래된 순**으로 준다. 5페이지에서 자르면 가장 오래된
+# 500건만 매일 반복 수집하고 신규는 한 번도 못 가져온다 — 운영에서
+# `construction: {'fetched': 500, 'saved': 0}` 로 드러났다.
+# ─────────────────────────────────────────────────────────────
+
+def _paged_fetch(total_pages):
+    """total_pages 만큼 꽉 찬 페이지를 주고 그 뒤엔 빈 페이지."""
+    seen = []
+
+    def fake_fetch(page=1, size=100, category=None, **k):
+        seen.append((category, page))
+        if page > total_pages:
+            return []
+        return [
+            CrawlerService._map_item(
+                {"bidNtceNo": f"{category}-{page}-{i}", "bidNtceOrd": "00",
+                 "bidNtceNm": "공고", "opengDt": "2026-12-31 10:00:00"},
+                "CONSTRUCTION")
+            for i in range(size)
+        ]
+
+    return fake_fetch, seen
+
+
+def test_crawl_pages_until_exhausted(db_session):
+    """고정 5페이지가 아니라 소진할 때까지 넘긴다."""
+    from app.tasks.notice_crawl_tasks import crawl_daily_notices
+
+    fake_fetch, seen = _paged_fetch(total_pages=12)
+    with _patch_session(db_session), \
+         patch("app.tasks.notice_crawl_tasks.CrawlerService.fetch_notices", fake_fetch):
+        r = crawl_daily_notices()
+
+    pages_for_cat = [p for c, p in seen if c == "construction"]
+    assert max(pages_for_cat) >= 12, f"12페이지까지 못 읽었다: {max(pages_for_cat)}"
+    assert r["by_cat"]["construction"]["exhausted"] is True
+
+
+def test_short_page_stops_early(db_session):
+    """마지막 페이지(size 미만)를 만나면 멈춘다 — 빈 페이지까지 안 가도 된다."""
+    from app.tasks.notice_crawl_tasks import crawl_daily_notices
+
+    def fake_fetch(page=1, size=100, category=None, **k):
+        n = size if page < 3 else 7      # 3페이지가 마지막
+        return [
+            CrawlerService._map_item(
+                {"bidNtceNo": f"{category}-{page}-{i}", "bidNtceOrd": "00",
+                 "bidNtceNm": "공고", "opengDt": "2026-12-31 10:00:00"},
+                "CONSTRUCTION")
+            for i in range(n)
+        ]
+
+    with _patch_session(db_session), \
+         patch("app.tasks.notice_crawl_tasks.CrawlerService.fetch_notices", fake_fetch):
+        r = crawl_daily_notices()
+
+    assert r["by_cat"]["construction"]["fetched"] == 100 + 100 + 7
+    assert r["by_cat"]["construction"]["exhausted"] is True
+
+
+def test_cap_is_reported_not_silent(db_session):
+    """상한에 닿으면 exhausted=False 로 알린다 — 조용한 절삭 금지."""
+    from app.tasks.notice_crawl_tasks import crawl_daily_notices
+
+    fake_fetch, _ = _paged_fetch(total_pages=999)
+    with _patch_session(db_session), \
+         patch("app.tasks.notice_crawl_tasks.CrawlerService.fetch_notices", fake_fetch):
+        r = crawl_daily_notices(max_pages=3)
+
+    assert r["by_cat"]["construction"]["exhausted"] is False
+    assert r["by_cat"]["construction"]["fetched"] == 300
+
+
+def test_explicit_pages_still_honored(db_session):
+    """수동 조회용으로 pages 를 주면 그만큼만 읽는다."""
+    from app.tasks.notice_crawl_tasks import crawl_daily_notices
+
+    fake_fetch, _ = _paged_fetch(total_pages=999)
+    with _patch_session(db_session), \
+         patch("app.tasks.notice_crawl_tasks.CrawlerService.fetch_notices", fake_fetch):
+        r = crawl_daily_notices(pages=2)
+
+    assert r["by_cat"]["construction"]["fetched"] == 200
