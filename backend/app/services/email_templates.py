@@ -9,12 +9,14 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import copy
+from dataclasses import dataclass, field
 from html import escape
 from typing import Callable, Optional
 from urllib.parse import quote, urlencode
 
 from app.core.config import settings
+from app.schemas import subscription
 
 # 발신자 법정 표기 — 광고·거래 메일 모두 하단에 노출한다.
 SENDER_NAME = "BidEasy (호시컴퍼니)"
@@ -37,13 +39,37 @@ class UnknownTemplate(KeyError):
     """등록되지 않은 템플릿 이름."""
 
 
-_REGISTRY: dict[str, tuple[str, Callable[[dict], tuple[str, str, str]]]] = {}
+@dataclass(frozen=True)
+class _Template:
+    category: str
+    fn: Callable[[dict], tuple[str, str, str]]
+    sample: dict = field(default_factory=dict)
 
 
-def register(name: str, category: str):
-    """템플릿 등록 데코레이터. category = marketing | transactional."""
+_REGISTRY: dict[str, _Template] = {}
+
+# 미리보기 표본에 쓰는 가짜 공고. **실제 데이터가 없을 때만** 쓰인다 — 관리자 API 는
+# 가능하면 DB 의 진짜 공고로 갈아끼운다(가짜 공고번호로는 /bid/{no} 가 404 라 링크
+# 점검이 불가능하다). 제목에 [샘플] 을 박아 미리보기를 진짜 발송분으로 오인하지 않게 한다.
+SAMPLE_NOTICES = [
+    {"title": "[샘플] ○○초등학교 전기 개선공사", "organization": "부산광역시교육청",
+     "end_date_label": "08/12", "bid_no": "00000000000-00"},
+    {"title": "[샘플] △△청사 조명설비 교체공사", "organization": "부산광역시 해운대구",
+     "end_date_label": "08/14", "bid_no": "00000000000-01"},
+]
+
+
+def register(name: str, category: str, *, sample: Optional[dict] = None):
+    """템플릿 등록 데코레이터. category = marketing | transactional.
+
+    `sample` = 이 템플릿이 **실제로 읽는 ctx 키를 빠짐없이 채운** 미리보기용 표본.
+
+    왜 표본이 템플릿 옆에 있나: 관리자 미리보기·테스트 발송이 공용 ctx 하나를 돌려쓰면,
+    그 ctx 에 없는 키를 읽는 템플릿(공고 목록·확인 링크 등)은 **알맹이가 빈 채로** 렌더돼
+    점검이 반쪽이 된다. 본문을 고치는 사람 눈에 표본이 같이 들어오게 두어 드리프트를 막는다.
+    """
     def _wrap(fn: Callable[[dict], tuple[str, str, str]]):
-        _REGISTRY[name] = (category, fn)
+        _REGISTRY[name] = _Template(category=category, fn=fn, sample=dict(sample or {}))
         return fn
     return _wrap
 
@@ -51,7 +77,19 @@ def register(name: str, category: str):
 def category_of(name: str) -> str:
     if name not in _REGISTRY:
         raise UnknownTemplate(name)
-    return _REGISTRY[name][0]
+    return _REGISTRY[name].category
+
+
+def template_names() -> list[str]:
+    """등록된 템플릿 이름 전체(정렬)."""
+    return sorted(_REGISTRY)
+
+
+def sample_ctx(name: str) -> dict:
+    """미리보기용 표본 ctx의 **복사본**(호출자가 실제 데이터로 덮어써도 원본 불변)."""
+    if name not in _REGISTRY:
+        raise UnknownTemplate(name)
+    return copy.deepcopy(_REGISTRY[name].sample)
 
 
 def utm(path: str, campaign: str, **params: str) -> str:
@@ -111,8 +149,9 @@ def render(name: str, ctx: Optional[dict] = None, *, unsubscribe_url: Optional[s
     """템플릿 렌더 + 법정 표기 부착. 광고 카테고리면 제목에 "(광고)" 를 강제한다."""
     if name not in _REGISTRY:
         raise UnknownTemplate(name)
-    category, fn = _REGISTRY[name]
-    subject, text_body, html_body = fn(ctx or {})
+    tpl = _REGISTRY[name]
+    category = tpl.category
+    subject, text_body, html_body = tpl.fn(ctx or {})
 
     is_ad = category == "marketing"
     if is_ad and not subject.startswith(AD_PREFIX):
@@ -127,7 +166,9 @@ def render(name: str, ctx: Optional[dict] = None, *, unsubscribe_url: Optional[s
 
 
 # ─────────────────────────── 템플릿 ───────────────────────────
-@register("lead_welcome", "marketing")
+@register("lead_welcome", "marketing", sample={
+    "region": "부산광역시", "industry": "전기공사", "matched_count": 24, "capped": False,
+})
 def _lead_welcome(ctx: dict) -> tuple[str, str, str]:
     """무료 자격 진단 직후 웰컴 — 진단 결과를 다시 손에 쥐어준다."""
     region = ctx.get("region") or ""
@@ -156,7 +197,11 @@ def _lead_welcome(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
-@register("lead_optin_confirm", "transactional")
+@register("lead_optin_confirm", "transactional", sample={
+    # 표본 토큰은 일부러 유효하지 않다 — 미리보기가 진짜 동의를 확정시키면 안 된다.
+    "confirm_url": f"{settings.PUBLIC_WEB_URL}/optin?t=SAMPLE",
+    "region": "부산광역시", "industry": "전기공사",
+})
 def _lead_optin_confirm(ctx: dict) -> tuple[str, str, str]:
     """더블 옵트인 확인 요청 — 주소 소유자에게 "정말 신청하셨나요"를 묻는다.
 
@@ -190,7 +235,10 @@ def _lead_optin_confirm(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
-@register("lead_new_matches", "marketing")
+@register("lead_new_matches", "marketing", sample={
+    "region": "부산광역시", "industry": "전기공사", "new_count": 24, "capped": False,
+    "notices": SAMPLE_NOTICES,
+})
 def _lead_new_matches(ctx: dict) -> tuple[str, str, str]:
     """주기 육성 — 진단 이후 **새로** 올라온 공고 중 조건에 맞는 것만 추린다.
 
@@ -269,7 +317,9 @@ def _lead_new_matches(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
-@register("signup_optin_confirm", "transactional")
+@register("signup_optin_confirm", "transactional", sample={
+    "confirm_url": f"{settings.PUBLIC_WEB_URL}/optin?t=SAMPLE",
+})
 def _signup_optin_confirm(ctx: dict) -> tuple[str, str, str]:
     """가입 시 수신동의한 회원의 더블 옵트인 확인 요청.
 
@@ -296,7 +346,9 @@ def _signup_optin_confirm(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
-@register("unsub_result", "transactional")
+@register("unsub_result", "transactional", sample={
+    "email": "sample@example.com", "processed_at": "2026-01-01 09:00:00",
+})
 def _unsub_result(ctx: dict) -> tuple[str, str, str]:
     """수신거부 처리 결과 통지 — 정보통신망법 제50조가 요구하는 **법정 고지**.
 
@@ -339,7 +391,9 @@ def _unsub_result(ctx: dict) -> tuple[str, str, str]:
 # 카테고리 배치가 이 시퀀스의 핵심이다. **체험 종료 고지는 거래**(동의 불요, 전원 대상)이고
 # **할인·권유는 광고**(동의 필요)다. 하나의 메일에 섞으면 그 메일 전체가 광고물이 되어,
 # 미동의자에게 보낸 순간 위법 발송이 된다(CLAUDE.md 함정 #10).
-@register("trial_welcome", "transactional")
+@register("trial_welcome", "transactional", sample={
+    "trial_days": 14, "needs_profile": True,
+})
 def _trial_welcome(ctx: dict) -> tuple[str, str, str]:
     """D0 — 체험 시작 안내 + 프로필 완성 유도.
 
@@ -374,7 +428,9 @@ def _trial_welcome(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
-@register("trial_daily_matches", "marketing")
+@register("trial_daily_matches", "marketing", sample={
+    "matched_count": 24, "capped": False, "notices": SAMPLE_NOTICES,
+})
 def _trial_daily_matches(ctx: dict) -> tuple[str, str, str]:
     """D1 — 자격 PASS 공고를 처음 보여준다(첫 가치 경험)."""
     count = int(ctx.get("matched_count") or 0)
@@ -411,7 +467,12 @@ def _trial_daily_matches(ctx: dict) -> tuple[str, str, str]:
 
 @register("trial_extension_guide", "marketing")
 def _trial_extension_guide(ctx: dict) -> tuple[str, str, str]:
-    """D3 — 아직 안 써본 분에게 익스텐션 안내(습관화)."""
+    """D3 — 아직 안 써본 분에게 익스텐션 안내(습관화).
+
+    ctx 를 하나도 읽지 않는 유일한 템플릿이라 표본이 없다(`tests/test_nurture.py`
+    `TestTemplateSamples` 가 이 예외를 이름으로 못 박아, 새 템플릿이 표본 없이
+    등록되면 실패한다).
+    """
     web = settings.PUBLIC_WEB_URL
 
     subject = "나라장터 화면에서 바로 확인하는 방법"
@@ -430,7 +491,9 @@ def _trial_extension_guide(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
-@register("trial_value_recap", "marketing")
+@register("trial_value_recap", "marketing", sample={
+    "check_count": 7, "favorite_count": 3,
+})
 def _trial_value_recap(ctx: dict) -> tuple[str, str, str]:
     """D7 — 체험 절반 시점의 사용 요약(가치 각인).
 
@@ -459,7 +522,15 @@ def _trial_value_recap(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
-@register("trial_winback", "marketing")
+@register("trial_winback", "marketing", sample={
+    # 금액·유예일은 표본에서도 상수에서 파생시킨다 — 미리보기가 실제 청구액과 다른
+    # 금액을 보여주면 문구 점검이라는 목적 자체가 무너진다(trial_tasks 와 같은 규칙).
+    "discount_price": "{:,}원".format(
+        subscription.MONTHLY_PRICES[subscription.TIER_PRO]
+        * (100 - subscription.WINBACK_DISCOUNT_PCT) // 100
+    ),
+    "grace_days": subscription.WINBACK_GRACE_DAYS,
+})
 def _trial_winback(ctx: dict) -> tuple[str, str, str]:
     """체험 만료 직후 — 할인 안내. **광고다**(할인은 그 자체로 광고성 정보).
 
@@ -489,7 +560,7 @@ def _trial_winback(ctx: dict) -> tuple[str, str, str]:
     return subject, text, html
 
 
-@register("trial_expiry", "transactional")
+@register("trial_expiry", "transactional", sample={"days_left": 3})
 def _trial_expiry(ctx: dict) -> tuple[str, str, str]:
     """체험 만료 안내 — 거래 관련 고지라 광고 동의와 무관하게 **전원에게** 발송한다.
 

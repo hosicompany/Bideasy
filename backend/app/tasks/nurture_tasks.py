@@ -50,17 +50,6 @@ def _recipient_key(email: str) -> str:
     return hashlib.sha1((email or "").strip().lower().encode("utf-8")).hexdigest()[:16]
 
 
-def _notice_brief(n: models.Notice) -> dict:
-    return {
-        "title": n.title or "",
-        "organization": n.organization or "",
-        "end_date_label": n.end_date.strftime("%m/%d") if n.end_date else "",
-        # 메일에서 공고 상세(/bid/{no})로 바로 보내기 위한 키. 없으면 템플릿이
-        # 링크 없이 제목만 렌더한다(깨진 링크를 만들지 않는다).
-        "bid_no": n.bid_no or "",
-    }
-
-
 @celery_app.task(name="nurture.send_lead_matches")
 def send_lead_matches() -> dict:
     """동의한 리드에게 조건에 맞는 신규 공고를 주 1회 알린다."""
@@ -135,7 +124,7 @@ def send_lead_matches() -> dict:
                         "industry": lead.industry,
                         "new_count": len(matched),
                         "capped": len(matched) >= lead_matching.MATCH_LIMIT,
-                        "notices": [_notice_brief(n) for n in matched[:_LIST_N]],
+                        "notices": [lead_matching.notice_brief(n) for n in matched[:_LIST_N]],
                     },
                     dedupe_key=f"lead_new_matches:email:{_recipient_key(lead.email)}:{period}",
                 )

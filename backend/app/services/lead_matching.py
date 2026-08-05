@@ -51,6 +51,22 @@ def pseudo_profile(industry: Optional[str], licenses: Optional[str], region: Opt
     return SimpleNamespace(location=(region or ""), licenses=(licenses or industry or ""))
 
 
+def notice_brief(n: models.Notice) -> dict:
+    """메일 템플릿이 읽는 공고 요약 형태 — 발송 배치와 관리자 미리보기의 **공용 소스**.
+
+    각자 만들면 미리보기에만 `bid_no` 가 빠지는 식으로 갈라져, 정작 점검해야 할
+    링크가 미리보기에서만 사라진다(실제로 있었던 일).
+    """
+    return {
+        "title": n.title or "",
+        "organization": n.organization or "",
+        "end_date_label": n.end_date.strftime("%m/%d") if n.end_date else "",
+        # 메일에서 공고 상세(/bid/{no})로 바로 보내기 위한 키. 없으면 템플릿이
+        # 링크 없이 제목만 렌더한다(깨진 링크를 만들지 않는다).
+        "bid_no": n.bid_no or "",
+    }
+
+
 def match_notices(
     db: Session,
     industry: Optional[str],
