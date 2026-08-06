@@ -38,6 +38,25 @@ _URL = ("https://apis.data.go.kr/1230000/ad/BidPublicInfoService/"
         "getBidPblancListInfoCnstwkBsisAmount")
 _PAGE_SIZE = 500
 
+# 조회 창 기본값 — **실측으로 정한 값이다**(2026-08-06, 오늘 마감 공사 356건 기준).
+#
+# 기초금액 API 는 **공개일** 로 필터한다(마감일이 아니다). 그래서 창이 짧으면
+# 이미 며칠 전에 공개된 건을 영영 못 잡는다. 창을 넓히며 잰 누적 매칭률:
+#
+#     3일  →  33건 ( 9.3%)   ← 예전 기본값. 대부분을 놓치고 있었다
+#     7일  → 189건 (53.1%)
+#    14일  → 268건 (75.3%)   ← 채택
+#    31일  → 270건 (75.8%)   ← 14일 대비 +0.5%p 뿐
+#
+# 공개 시점(마감 D-n) 분포도 D-6 에 144건으로 몰린다(D-7 32, D-8 39).
+# 14일이면 그 봉우리를 다 덮고, 그 이상은 비용만 는다.
+# 남는 ~24% 는 기초금액 공고 자체가 없는 건이라 창을 늘려도 안 잡힌다.
+DEFAULT_LOOKBACK_DAYS = 14
+
+# 등록 직전 갱신용 짧은 창 — 역할이 다르다. 6~8일 전 공개분은 일일 배치가
+# 이미 잡아뒀고, 여기서는 "오늘 새로 공개된 것"만 주우면 된다.
+REFRESH_LOOKBACK_DAYS = 2
+
 # A값 구성요소 — 사후정산 비목. 합계가 곧 A값이다.
 # (국민연금·건강보험·노인장기요양·퇴직공제부금·산업안전보건관리비·안전관리비·
 #  품질관리비·환경보전비·안전점검비·하도급대금지급보증수수료)
@@ -191,11 +210,12 @@ def _apply_batch(db: Session, kws: list[dict], stats: dict) -> None:
             logger.warning(f"[basis_amount] 건별 실패 {kw['bid_no']}: {type(e).__name__}: {e}")
 
 
-def crawl_recent(days_back: int = 3) -> dict:
+def crawl_recent(days_back: int = DEFAULT_LOOKBACK_DAYS) -> dict:
     """최근 N일 기초금액 공고 수집 → Notice 갱신.
 
-    days_back 기본 3 — 기초금액은 개찰 직전에 공개되는 경우가 있어 하루만 보면
-    놓친다. 물량이 하루 150~200건이라 겹쳐 읽어도 부담이 없다(멱등).
+    조회 창은 **기초금액 공개일** 기준이다(마감일이 아니다). 오늘 마감 공고의
+    기초금액이 6~8일 전에 공개됐다면 짧은 창으로는 영영 못 잡는다.
+    근거·수치는 `DEFAULT_LOOKBACK_DAYS` 주석 참조. 멱등이라 겹쳐 읽어도 된다.
     """
     end = datetime.now()
     start = end - timedelta(days=days_back)

@@ -129,3 +129,92 @@ class TestNoticeDetailPage:
 
         assert "기초금액 미확인" not in html
         assert "110,000,000원" in html
+
+
+class TestOpeningAsBasisSource:
+    """개찰이 끝나면 기초금액을 안다 (2026-08-06 실측: 마감 공고 4,343건).
+
+    개찰 API 는 `bssAmt` 를 주므로, 공고 단계에서 못 구한 건도 개찰 후엔
+    확정된다. 이걸 안 보면 "알면서 모른다"고 말하는 화면이 된다.
+    """
+
+    def _opening(self, basic=110_000_000.0, reserved=110_500_000.0, winner=99_000_000.0):
+        return models.OpeningResult(
+            bid_no="T-1", basic_price=basic, reserved_price=reserved,
+            winner_price=winner, winner_rate=89.6, winner_company="가나건설",
+        )
+
+    def test_opening_confirms_basis(self, enforce):
+        n = _notice(basic=100_000_000.0, basis_amount=None)
+        op = self._opening()
+        assert basis.basis_status(n, op) == basis.CONFIRMED
+        assert basis.confirmed_basis(n, op) == 110_000_000.0
+
+    def test_opening_wins_over_notice(self, enforce):
+        """개찰 실값이 공고 단계 값보다 확실하다."""
+        n = _notice(basis_amount=108_000_000.0)
+        assert basis.confirmed_basis(n, self._opening()) == 110_000_000.0
+
+    def test_inconsistent_opening_row_is_rejected(self, enforce):
+        """백필 안 된 옛 행(추정가격 기준)은 쓰지 않는다 — 기준이 다시 섞인다.
+
+        사정률 110,000,000/100,000,000 = 1.10 → 부가세 기준이 다른 행.
+        """
+        n = _notice(basis_amount=None)
+        bad = self._opening(basic=100_000_000.0, reserved=110_000_000.0)
+        assert basis.confirmed_basis(n, bad) is None
+        assert basis.basis_status(n, bad) == basis.UNCONFIRMED
+
+    def test_opening_without_reserved_is_accepted(self, enforce):
+        """예정가격이 없으면 검증은 못 하지만 기초금액 자체는 쓴다."""
+        n = _notice(basis_amount=None)
+        op = self._opening(reserved=0)
+        assert basis.confirmed_basis(n, op) == 110_000_000.0
+
+
+class TestClosedNoticePage:
+    """마감 후 화면은 '얼마 넣을까'가 아니라 '얼마에 됐나'를 답해야 한다."""
+
+    def _seed(self, db_session, bid_no, *, basis_amount=None, with_result=True):
+        from datetime import datetime, timedelta
+
+        n = models.Notice(
+            bid_no=bid_no, title="마감공사", content="",
+            basic_price=100_000_000.0, contract_type="CONSTRUCTION",
+            start_date=datetime.now() - timedelta(days=10),
+            end_date=datetime.now() - timedelta(days=2),   # 이미 마감
+            organization="A기관", bid_method="적격심사제",
+        )
+        n.basis_amount = basis_amount
+        db_session.add(n)
+        if with_result:
+            db_session.add(models.OpeningResult(
+                bid_no=bid_no, basic_price=110_000_000.0, reserved_price=110_500_000.0,
+                winner_price=99_000_000.0, winner_rate=89.593,
+                winner_company="가나건설", open_date=datetime.now() - timedelta(days=1),
+            ))
+        db_session.flush()
+
+    def test_result_card_replaces_unconfirmed(self, client, db_session, enforce):
+        self._seed(db_session, "PAGE-CLOSED-1")
+        html = client.get("/bid/PAGE-CLOSED-1").text
+
+        assert "개찰 결과" in html
+        assert "99,000,000원" in html          # 낙찰가
+        assert "가나건설" in html               # 낙찰자
+        assert "110,000,000원" in html          # 개찰이 알려준 기초금액
+        assert "기초금액 미확인" not in html     # 알면서 모른다고 하지 않는다
+
+    def test_reserved_ratio_shown(self, client, db_session, enforce):
+        """사정률은 마감 후에만 알 수 있는 값 — 다음 투찰의 감을 잡는 근거."""
+        self._seed(db_session, "PAGE-CLOSED-2")
+        html = client.get("/bid/PAGE-CLOSED-2").text
+        assert "사정률" in html
+        assert "100.455%" in html   # 110,500,000 / 110,000,000
+
+    def test_closed_without_result_still_unconfirmed(self, client, db_session, enforce):
+        """개찰결과가 아직 없으면 여전히 모른다고 말한다."""
+        self._seed(db_session, "PAGE-CLOSED-3", with_result=False)
+        html = client.get("/bid/PAGE-CLOSED-3").text
+        assert "개찰 결과" not in html
+        assert "기초금액 미확인" in html
