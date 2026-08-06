@@ -156,6 +156,41 @@ def apply_to_notice(db: Session, kwargs: dict) -> str:
     return "updated" if changed else "unchanged"
 
 
+def _apply_batch(db: Session, kws: list[dict], stats: dict) -> None:
+    """하루치를 한 번에 커밋하고, 실패하면 **건별로 격리 재시도**한다.
+
+    `apply_to_notice` 는 세션에 값을 얹기만 하고 실제 오류는 `commit()` 에서
+    난다. 한 건만 잘못돼도 그날치 전체가 롤백되는 구조라, 실측에서 A값
+    하나(21.7억, int4 초과)가 하루치를 통째로 날렸다(2026-08-05).
+    실패는 그 한 건에 가둔다.
+    """
+    marks: list[str] = []
+    for kw in kws:
+        try:
+            marks.append(apply_to_notice(db, kw))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[basis_amount] 반영 실패 {kw['bid_no']}: {e}")
+            marks.append("failed")
+    try:
+        db.commit()
+        for m in marks:
+            stats[m] = stats.get(m, 0) + 1
+        return
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning(f"[basis_amount] 일괄 커밋 실패 — 건별 재시도로 전환: {e}")
+
+    for kw in kws:
+        try:
+            m = apply_to_notice(db, kw)
+            db.commit()
+            stats[m] = stats.get(m, 0) + 1
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            stats["failed"] = stats.get("failed", 0) + 1
+            logger.warning(f"[basis_amount] 건별 실패 {kw['bid_no']}: {type(e).__name__}: {e}")
+
+
 def crawl_recent(days_back: int = 3) -> dict:
     """최근 N일 기초금액 공고 수집 → Notice 갱신.
 
@@ -165,23 +200,16 @@ def crawl_recent(days_back: int = 3) -> dict:
     end = datetime.now()
     start = end - timedelta(days=days_back)
     db = SessionLocal()
-    stats = {"fetched": 0, "parsed": 0, "updated": 0, "unchanged": 0, "no_notice": 0}
+    stats = {"fetched": 0, "parsed": 0, "updated": 0, "unchanged": 0,
+             "no_notice": 0, "failed": 0}
     try:
         d = start.date()
         while d <= end.date():
             items = fetch_day(d.strftime("%Y%m%d"))
             stats["fetched"] += len(items)
-            for it in items:
-                kw = parse_item(it)
-                if kw is None:
-                    continue
-                stats["parsed"] += 1
-                try:
-                    stats[apply_to_notice(db, kw)] += 1
-                except Exception as e:  # noqa: BLE001
-                    # 한 건의 결함이 배치를 끊지 않는다
-                    logger.warning(f"[basis_amount] 반영 실패 {kw['bid_no']}: {e}")
-            db.commit()
+            kws = [kw for kw in (parse_item(it) for it in items) if kw]
+            stats["parsed"] += len(kws)
+            _apply_batch(db, kws, stats)
             d += timedelta(days=1)
     except Exception as e:  # noqa: BLE001
         db.rollback()

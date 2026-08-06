@@ -172,8 +172,11 @@ class Notice(Base):
     prdprc_range_end = Column(Float)           # rsrvtnPrceRngEndRate (예: +2)
 
     # Calculator Fields
-    a_value = Column(Integer, default=0)
-    net_cost = Column(Integer, default=0)
+    # ⚠️ BigInteger 필수 — A값은 대형 공사에서 21.4억(int4 상한)을 넘는다.
+    # 실측: 기초금액 298억 공고의 A값 2,168,128,646 (2026-08-05, 배치가
+    # NumericValueOutOfRange 로 죽고 그날치 커밋이 통째로 롤백됐다).
+    a_value = Column(BigInteger, default=0)
+    net_cost = Column(BigInteger, default=0)
     # A값 출처 — tier0(공고 API) | tier1(익스텐션) | tier2(첨부파싱) | none.
     # tier0 는 조달청이 공고에 실어 주는 값이라 가장 신뢰도가 높다.
     a_value_source = Column(String(10))
