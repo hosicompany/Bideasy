@@ -36,17 +36,50 @@ def enforcing() -> bool:
     return bool(getattr(settings, "BASIS_AMOUNT_ENFORCE", False))
 
 
-def basis_status(notice) -> str:
+# 사정률(예정가격÷기초금액) 허용 범위 — arm_backtest.BASE_RATIO_MIN/MAX 와 같은 근거.
+# 개찰결과 행 중 아직 정정 안 된 것(추정가격 기준)이 남아 있어, 이 검사를
+# 통과한 행만 기초금액 소스로 인정한다. 아니면 두 기준이 다시 섞인다.
+_RATIO_MIN, _RATIO_MAX = 0.94, 1.06
+
+
+def _basis_from_opening(opening) -> float | None:
+    """개찰결과에서 얻는 기초금액. 기준이 어긋난 행은 쓰지 않는다.
+
+    개찰 API 는 `bssAmt`(기초금액)를 주므로 **개찰이 끝나면 기초금액을 안다.**
+    공고 단계에서 못 구한 건도 여기서 확정된다(실측: 마감 공고 4,343건이
+    이 경로로 '미확인'에서 벗어난다).
+    """
+    if opening is None:
+        return None
+    bp = float(getattr(opening, "basic_price", 0) or 0)
+    rp = float(getattr(opening, "reserved_price", 0) or 0)
+    if bp <= 0:
+        return None
+    # 예정가격이 있으면 사정률로 기준 일치를 검증한다(백필 안 된 옛 행 배제)
+    if rp > 0 and not (_RATIO_MIN <= rp / bp <= _RATIO_MAX):
+        return None
+    return bp
+
+
+def basis_status(notice, opening=None) -> str:
     """이 공고의 기초금액 상태."""
     if not enforcing():
         return LEGACY
+    if _basis_from_opening(opening) is not None:
+        return CONFIRMED
     if notice is not None and (getattr(notice, "basis_amount", None) or 0) > 0:
         return CONFIRMED
     return UNCONFIRMED
 
 
-def confirmed_basis(notice) -> float | None:
-    """계산에 써도 되는 기초금액. 확인 안 됐으면 None — 추정하지 않는다."""
+def confirmed_basis(notice, opening=None) -> float | None:
+    """계산에 써도 되는 기초금액. 확인 안 됐으면 None — 추정하지 않는다.
+
+    개찰결과가 있으면 그쪽을 먼저 본다. 개찰 시점의 실값이라 가장 확실하다.
+    """
+    from_opening = _basis_from_opening(opening)
+    if from_opening is not None:
+        return from_opening
     if notice is None:
         return None
     if not enforcing():
@@ -57,9 +90,9 @@ def confirmed_basis(notice) -> float | None:
     return float(v) if v > 0 else None
 
 
-def display_basis(notice) -> tuple[int, str]:
+def display_basis(notice, opening=None) -> tuple[int, str]:
     """화면 표기용 (금액, 상태). 미확인이면 금액 0 — 틀린 숫자를 보여주지 않는다."""
-    st = basis_status(notice)
+    st = basis_status(notice, opening)
     if st == UNCONFIRMED:
         return 0, st
-    return int(confirmed_basis(notice) or 0), st
+    return int(confirmed_basis(notice, opening) or 0), st

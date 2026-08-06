@@ -21,23 +21,21 @@ logger = get_logger(__name__)
 def _refresh_basis_amounts() -> dict:
     """등록 직전 기초금액 갱신 — 실패해도 등록을 막지 않는다.
 
-    **왜 등록 직전인가** (2026-08-06 실측):
-    기초금액 공개는 09~11시에 몰린다(46·50·36건). 그런데 수집 배치는 매일
-    06:40 한 번이라, **공개분의 대부분이 우리 수집 이후에 나온다.** 오늘
-    09시에 공개된 기초금액은 내일 06:40 에야 들어오는데 그 공고 마감은 오늘
-    11~12시다 — 구조적으로 항상 늦는다.
+    **역할은 "오늘 새로 공개된 것 줍기"** 다(창 = `REFRESH_LOOKBACK_DAYS`).
 
-    그 탓에 등록이 `no_basis_amount` 로 대량 스킵됐다(신규 후보의 50~98%).
-    제도가 안 알려줘서가 아니라 **우리 수집 주기가 병목**이었다.
-    등록이 매시 :15 에 도니 그 직전에 당일분을 당겨오면 가용률이 실측
-    수준(등록 시점 기준 75.7%)으로 회복된다.
+    기초금액은 마감 **6~8일 전**에 몰려 공개되므로(실측 D-6 에 144건) 그 몫은
+    일일 배치(`DEFAULT_LOOKBACK_DAYS` = 14일 창)가 이미 잡아 둔다. 여기서 같은
+    긴 창을 매시 도는 건 낭비다.
 
-    하루 물량이 150~300건이라 매시 호출해도 API 콜 몇 번이면 끝난다(멱등).
+    ⚠️ 한때 "수집 주기(06:40)가 병목"이라고 진단했으나 틀렸다. 그때 본 것은
+    **하루 안의 시각 분포**(09~11시 집중)였고, 실제 병목은 **조회 창**이었다
+    — 창 3일이면 매칭 9.3%, 14일이면 75.3%. 두 축을 혼동한 오진이었다.
+    경위: docs/PRICE_BASE_DEFECT.md
     """
-    from app.services.basis_amount_crawler import crawl_recent
+    from app.services.basis_amount_crawler import REFRESH_LOOKBACK_DAYS, crawl_recent
 
     try:
-        return crawl_recent(days_back=1)
+        return crawl_recent(days_back=REFRESH_LOOKBACK_DAYS)
     except Exception as e:  # noqa: BLE001
         # 갱신 실패는 등록을 되돌리지 않는다 — 기존 보유분으로 진행한다
         logger.warning(f"[mock_bid.register] 기초금액 갱신 실패(등록은 계속): {e}")

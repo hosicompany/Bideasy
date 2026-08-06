@@ -78,12 +78,40 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
     # 200 + noindex 는 soft-404 로 취급되므로 실제 404 를 준다.
     is_closed = bool(notice and notice.end_date and notice.end_date <= _current_naive_kst())
 
+    # 개찰이 끝났으면 개찰결과가 기초금액·예정가격·낙찰가를 다 갖고 있다.
+    # 이걸 안 보면 "알면서 모른다"고 말하는 화면이 된다(실측 4,343건).
+    opening = (
+        db.query(models.OpeningResult)
+        .filter(models.OpeningResult.bid_no == notice.bid_no).first()
+        if notice else None
+    )
+
     # 기초금액은 `basis` 단일 소스로만 판단한다. 여기서 basic_price(추정가격)로
     # 폴백하면 틀린 하한선으로 "안전"이라고 말하게 된다 — 그게 이번 사고다.
     from app.services import basis as basis_svc
 
-    _basis_amount, _basis_status = basis_svc.display_basis(notice)
+    _basis_amount, _basis_status = basis_svc.display_basis(notice, opening)
     _basis_unconfirmed = _basis_status == basis_svc.UNCONFIRMED
+
+    # 개찰 결과 블록 — 사정률은 마감 후에만 알 수 있는 값이라 특히 유용하다
+    _result = None
+    if opening is not None and (opening.winner_price or 0) > 0:
+        _bp = float(opening.basic_price or 0)
+        _rp = float(opening.reserved_price or 0)
+        _wp = float(opening.winner_price)
+        _result = {
+            "basic_price": int(_bp) if _bp > 0 else None,
+            "reserved_price": int(_rp) if _rp > 0 else None,
+            # 사정률 = 예정가격 ÷ 기초금액. 기준이 어긋난 옛 행은 표기하지 않는다.
+            "reserved_ratio": (round(_rp / _bp * 100, 3)
+                               if _bp > 0 and _rp > 0 and 0.94 <= _rp / _bp <= 1.06 else None),
+            "winner_price": int(_wp),
+            "winner_rate": round(opening.winner_rate, 3) if opening.winner_rate else None,
+            "winner_company": opening.winner_company or None,
+            "open_date": (opening.open_date.strftime("%Y-%m-%d %H:%M")
+                          if opening.open_date else None),
+            "participants": opening.participants_count or None,
+        }
 
     ctx = {
         "request": request,
@@ -111,6 +139,7 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
             else get_lower_limit_rate(ct, float(_basis_amount) if _basis_amount else None)
         ),
         "is_closed": is_closed,
+        "result": _result,
         "site_url": SITE_URL,
         "api_base": API_BASE,
     }

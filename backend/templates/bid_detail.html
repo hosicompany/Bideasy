@@ -106,6 +106,31 @@
       {% if opening_date %}<div class="row"><span class="k">개찰일시</span><span class="v">{{ opening_date }}</span></div>{% endif %}
     </div>
 
+    {% if result %}
+    {# 개찰 결과 — 마감 후엔 사용자의 관심이 "얼마 넣을까"에서 "얼마에 됐나"로 바뀐다.
+       사정률은 마감 후에만 알 수 있는 값이라 다음 투찰의 감을 잡는 데 가장 유용하다. #}
+    <div class="card">
+      <h2>개찰 결과</h2>
+      {% if result.open_date %}<div class="muted" style="margin-bottom:10px;">{{ result.open_date }} 개찰</div>{% endif %}
+      <div class="muted">낙찰가</div>
+      <div class="price">{{ "{:,}".format(result.winner_price) }}원</div>
+      {% if result.winner_company %}
+      <div class="row" style="margin-top:8px;"><span class="k">낙찰자</span><span class="v">{{ result.winner_company }}</span></div>
+      {% endif %}
+      {% if result.winner_rate %}<div class="row"><span class="k">낙찰률 <span class="muted">(예정가격 대비)</span></span><span class="v">{{ result.winner_rate }}%</span></div>{% endif %}
+      {% if result.basic_price %}<div class="row"><span class="k">기초금액</span><span class="v">{{ "{:,}".format(result.basic_price) }}원</span></div>{% endif %}
+      {% if result.reserved_price %}<div class="row"><span class="k">예정가격</span><span class="v">{{ "{:,}".format(result.reserved_price) }}원</span></div>{% endif %}
+      {% if result.reserved_ratio %}
+      <div class="row"><span class="k">사정률 <span class="muted">(예정÷기초)</span></span><span class="v">{{ result.reserved_ratio }}%</span></div>
+      {% endif %}
+      {% if result.participants %}<div class="row"><span class="k">참여</span><span class="v">{{ result.participants }}개사</span></div>{% endif %}
+      <p class="muted" style="margin-top:12px;font-size:12px;line-height:1.6;">
+        예정가격은 개찰 순간 복수예비가격 추첨으로 정해져요. 같은 기관이라도 매번 달라지니
+        사정률은 <b>참고 범위</b>로만 보세요.
+      </p>
+    </div>
+    {% endif %}
+
     <div class="card">
       <h2>가격 정보</h2>
       {% if basis_unconfirmed %}
