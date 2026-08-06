@@ -18,14 +18,49 @@ from app.db.session import SessionLocal
 logger = get_logger(__name__)
 
 
+def _refresh_basis_amounts() -> dict:
+    """등록 직전 기초금액 갱신 — 실패해도 등록을 막지 않는다.
+
+    **왜 등록 직전인가** (2026-08-06 실측):
+    기초금액 공개는 09~11시에 몰린다(46·50·36건). 그런데 수집 배치는 매일
+    06:40 한 번이라, **공개분의 대부분이 우리 수집 이후에 나온다.** 오늘
+    09시에 공개된 기초금액은 내일 06:40 에야 들어오는데 그 공고 마감은 오늘
+    11~12시다 — 구조적으로 항상 늦는다.
+
+    그 탓에 등록이 `no_basis_amount` 로 대량 스킵됐다(신규 후보의 50~98%).
+    제도가 안 알려줘서가 아니라 **우리 수집 주기가 병목**이었다.
+    등록이 매시 :15 에 도니 그 직전에 당일분을 당겨오면 가용률이 실측
+    수준(등록 시점 기준 75.7%)으로 회복된다.
+
+    하루 물량이 150~300건이라 매시 호출해도 API 콜 몇 번이면 끝난다(멱등).
+    """
+    from app.services.basis_amount_crawler import crawl_recent
+
+    try:
+        return crawl_recent(days_back=1)
+    except Exception as e:  # noqa: BLE001
+        # 갱신 실패는 등록을 되돌리지 않는다 — 기존 보유분으로 진행한다
+        logger.warning(f"[mock_bid.register] 기초금액 갱신 실패(등록은 계속): {e}")
+        return {"error": str(e)}
+
+
 @celery_app.task(name="mock_bid.register")
-def register_mock_bids(window_hours: int = 2, limit: int = 2000) -> dict:
-    """마감 임박 공고를 5 arm 으로 사전 등록."""
+def register_mock_bids(window_hours: int = 2, limit: int = 2000,
+                       refresh_basis: bool = True) -> dict:
+    """마감 임박 공고를 5 arm 으로 사전 등록.
+
+    등록 전에 기초금액을 갱신한다(`refresh_basis=False` 로 끌 수 있다).
+    """
     from app.services.mock_bidding import register_due_notices
+
+    basis_stats = _refresh_basis_amounts() if refresh_basis else None
 
     db = SessionLocal()
     try:
-        return register_due_notices(db, window_hours=window_hours, limit=limit)
+        result = register_due_notices(db, window_hours=window_hours, limit=limit)
+        if basis_stats is not None:
+            result["basis_refresh"] = basis_stats
+        return result
     except Exception as e:  # noqa: BLE001
         db.rollback()
         logger.error(f"[mock_bid.register] error: {e}", exc_info=True)
