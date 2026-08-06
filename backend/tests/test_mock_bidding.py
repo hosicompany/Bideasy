@@ -710,3 +710,68 @@ class TestScoringBacklogOrder:
         self._register_with_deadline(db_session, "MB-ORD-C", hours_ago=3)
         r = mb.score_pending(db_session, limit=100)
         assert r["deferred"] == 0
+
+
+class TestRegisterRefreshesBasis:
+    """등록 직전 기초금액 갱신 (2026-08-06 실측 근거).
+
+    기초금액 공개는 09~11시에 몰리는데 수집 배치는 매일 06:40 한 번이라,
+    공개분 대부분이 우리 수집 이후에 나온다. 그 탓에 등록이 no_basis_amount
+    로 대량 스킵됐다 — 제도가 아니라 **우리 수집 주기가 병목**이었다.
+    """
+
+    def test_refresh_runs_before_registration(self, monkeypatch):
+        from app.tasks import mock_bid_tasks as t
+
+        order = []
+        monkeypatch.setattr(t, "_refresh_basis_amounts",
+                            lambda: (order.append("refresh"), {"updated": 3})[1])
+        monkeypatch.setattr(t, "SessionLocal", lambda: _NullDB())
+        monkeypatch.setattr(
+            "app.services.mock_bidding.register_due_notices",
+            lambda db, **k: (order.append("register"), {"registered": 5})[1])
+
+        r = t.register_mock_bids()
+
+        assert order == ["refresh", "register"], "갱신이 등록보다 먼저여야 한다"
+        assert r["basis_refresh"] == {"updated": 3}
+
+    def test_refresh_failure_does_not_block_registration(self, monkeypatch):
+        """갱신 실패가 등록을 되돌리면 안 된다 — 보유분으로라도 등록한다."""
+        from app.tasks import mock_bid_tasks as t
+
+        def boom(*a, **k):
+            raise RuntimeError("API 500")
+
+        monkeypatch.setattr("app.services.basis_amount_crawler.crawl_recent", boom)
+        monkeypatch.setattr(t, "SessionLocal", lambda: _NullDB())
+        monkeypatch.setattr("app.services.mock_bidding.register_due_notices",
+                            lambda db, **k: {"registered": 7})
+
+        r = t.register_mock_bids()
+
+        assert r["registered"] == 7
+        assert "error" in r["basis_refresh"]
+
+    def test_can_be_disabled(self, monkeypatch):
+        from app.tasks import mock_bid_tasks as t
+
+        called = []
+        monkeypatch.setattr(t, "_refresh_basis_amounts",
+                            lambda: called.append(1))
+        monkeypatch.setattr(t, "SessionLocal", lambda: _NullDB())
+        monkeypatch.setattr("app.services.mock_bidding.register_due_notices",
+                            lambda db, **k: {"registered": 0})
+
+        r = t.register_mock_bids(refresh_basis=False)
+
+        assert called == []
+        assert "basis_refresh" not in r
+
+
+class _NullDB:
+    def rollback(self):
+        pass
+
+    def close(self):
+        pass
