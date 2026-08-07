@@ -80,3 +80,41 @@ def get_lower_limit_fraction(
 ) -> float:
     """소수 비율(0.87745 형식) 버전 — simulation_service 호환용."""
     return get_lower_limit_rate(contract_type, basic_price, bid_date) / 100.0
+
+
+# ---------------------------------------------------------------------------
+# 금액대 밴드 — 누적 개찰 통계(`opening_stats`)의 집계 축
+# ---------------------------------------------------------------------------
+# 경계를 위 하한율 테이블과 **같은 지점**으로 잡는다. 하한율이 바뀌는 곳이 곧
+# 게임이 바뀌는 곳이라, 다른 경계로 묶으면 성격이 다른 표본이 한 셀에 섞인다.
+# 경계를 통계 쪽에 따로 적으면 요율 개정 때 두 소스가 갈라진다 — 여기 한 곳에만 둔다.
+# (100억 이상과 50~100억은 하한율이 같지만 밴드는 나눈다. 규모가 다르면 참여
+#  양상이 다르고, 합칠 일이 생기면 조회 쪽에서 합치는 편이 되돌리기 쉽다.)
+AMOUNT_BANDS: list[tuple[int, str, str]] = [
+    (10_000_000_000, "GE_100E", "100억 이상"),
+    (5_000_000_000, "50E_100E", "50억~100억"),
+    (1_000_000_000, "10E_50E", "10억~50억"),
+    (300_000_000, "3E_10E", "3억~10억"),
+    (0, "LT_3E", "3억 미만"),
+]
+
+_BAND_LABELS = {code: label for _, code, label in AMOUNT_BANDS}
+
+
+def get_amount_band(basic_price: float | None) -> str:
+    """기초금액 → 금액대 밴드 코드. 금액을 모르면 빈 문자열.
+
+    ⚠️ 인자는 **기초금액**이다. `Notice.basic_price` 는 추정가격이라 여기 넣으면
+    밴드가 한 칸씩 밀린다(docs/PRICE_BASE_DEFECT.md).
+    """
+    if not basic_price or basic_price <= 0:
+        return ""
+    for threshold, code, _label in AMOUNT_BANDS:
+        if basic_price >= threshold:
+            return code
+    return AMOUNT_BANDS[-1][1]
+
+
+def amount_band_label(code: str) -> str:
+    """밴드 코드 → 사람이 읽는 라벨. 모르는 코드는 그대로 돌려준다."""
+    return _BAND_LABELS.get(code or "", code or "")

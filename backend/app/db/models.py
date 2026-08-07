@@ -304,6 +304,73 @@ class OpeningParticipant(Base):
     crawled_at = Column(DateTime, default=_utcnow)
 
 
+class OpeningStat(Base):
+    """누적 개찰 통계 — 원장이 아니라 **집계**를 남긴다.
+
+    왜 집계인가
+    -----------
+    개찰 원장을 전수로 쌓으면 공사만 하루 169k행이다(연 6천만 행). 그런데
+    사용자가 실제로 묻는 건 "이 기관 이 방식이면 보통 몇 %에서 낙찰되나"
+    한 줄이다. 축을 묶어 집계만 남기면 연 수천 행으로 같은 질문에 답한다.
+
+    축을 이렇게 고른 근거 (2026-08-07 운영 실측 4,984행)
+    --------------------------------------------------
+    - **지역은 축이 아니다** — 개찰 API 가 `region` 을 안 준다(실측 100% 공백).
+    - **기관 축은 성기다** — 기관×방법 셀 1,393개 중 n>=10 은 94개(행의 40%).
+      그래서 기관 없는 집계(`organization=''`)를 항상 함께 만든다. 기관 표본이
+      모자라면 화면이 그쪽으로 물러설 수 있어야 한다.
+    - **금액대 경계는 `lower_limits` 를 따른다** — 낙찰하한율이 바뀌는 지점이
+      곧 게임이 바뀌는 지점이다. 경계를 따로 정의하면 두 소스가 갈라진다.
+
+    ⚠️ 저장하는 것은 **분위수**다. 평균이 아니다.
+    사정률(예정가격÷기초금액) 평균은 실측상 전 기관이 99.84~100.05% 로
+    사실상 신호가 없다 — 예정가격은 복수예비가격 추첨이라 기초금액 주변에서
+    랜덤이기 때문이다. 의미가 있는 건 **분포의 폭**뿐이다. 평균을 저장해 두면
+    언젠가 화면이 그걸 "이 기관 사정률은 99.84%" 로 읽어 **낙찰가 예측처럼**
+    보이게 만든다. 그래서 아예 안 담는다.
+
+    ⚠️ '낙찰률' 이라는 이름을 쓰지 않는다 — 여기 `winner_rate_*` 는 낙찰자의
+    **투찰률**(낙찰가÷기초금액)이지 이길 확률이 아니다. 두 뜻이 섞이면
+    "낙찰률 90%" 같은 거짓 지표가 만들어진다.
+    """
+
+    __tablename__ = "opening_stats"
+    __table_args__ = (
+        UniqueConstraint("organization", "bid_method", "amount_band",
+                         name="uq_opening_stats_axis"),
+        Index("ix_opening_stats_lookup", "bid_method", "amount_band"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # 축. 기관 무관 집계는 NULL 이 아니라 빈 문자열 — Postgres 는 UNIQUE 에서
+    # NULL 을 서로 다른 값으로 보므로, NULL 을 쓰면 중복 행이 조용히 쌓인다.
+    organization = Column(String(255), nullable=False, default="", index=True)
+    bid_method = Column(String(100), nullable=False, default="")
+    amount_band = Column(String(20), nullable=False, default="")
+
+    n = Column(Integer, nullable=False, default=0)          # 표본 수
+    period_start = Column(DateTime)                          # 실제 표본 기간
+    period_end = Column(DateTime)
+
+    # 낙찰 투찰률 = 낙찰가 ÷ 기초금액 × 100 (%)
+    winner_rate_p10 = Column(Float)
+    winner_rate_p50 = Column(Float)
+    winner_rate_p90 = Column(Float)
+
+    # 사정률 = 예정가격 ÷ 기초금액 × 100 (%)
+    reserved_ratio_p10 = Column(Float)
+    reserved_ratio_p50 = Column(Float)
+    reserved_ratio_p90 = Column(Float)
+
+    # 경쟁 강도
+    participants_p50 = Column(Integer)
+    participants_max = Column(Integer)
+    participants_n = Column(Integer)  # 참여사수를 아는 표본 수 (n 과 다를 수 있다)
+
+    computed_at = Column(DateTime, default=_utcnow)
+
+
 class AIAnalysisLog(Base):
     __tablename__ = "ai_analysis_logs"
 

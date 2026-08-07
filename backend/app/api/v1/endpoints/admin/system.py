@@ -17,6 +17,7 @@ _TRIGGERABLE = {
     "notices.purge_old": "오래된 공고 정리",
     "verification.daily_crawl_opening_results": "개찰결과 크롤",
     "verification.daily_verify_predictions": "예측 검증",
+    "opening_stats.rebuild": "누적 개찰 통계 재집계",
     "trial.send_expiry_reminders": "체험 만료 알림",
     "deadline.send_reminders": "마감 리마인더",
     "recommend.send_matches": "맞춤 추천 알림",

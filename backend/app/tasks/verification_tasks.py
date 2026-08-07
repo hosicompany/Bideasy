@@ -34,6 +34,28 @@ def daily_crawl_opening_results(days_back: int = 2) -> dict:
     return result
 
 
+@celery_app.task(name="opening_stats.rebuild")
+def rebuild_opening_stats(window_days: int = 365) -> dict:
+    """매일 19:30 KST — 누적 개찰 통계 재집계.
+
+    개찰 크롤(19:00) 뒤에 둔다. 앞이 실패해도 이건 어제까지의 원장으로 돌아
+    통계가 통째로 비지는 않는다(원장이 곧 소스라 재집계는 언제 돌려도 안전).
+    """
+    from app.services.opening_stats import rebuild
+
+    db = SessionLocal()
+    try:
+        result = rebuild(db, window_days=window_days)
+        logger.info(f"[opening_stats] {result}")
+        return result
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.error(f"[opening_stats] error: {e}", exc_info=True)
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    finally:
+        db.close()
+
+
 @celery_app.task(name="verification.daily_verify_predictions")
 def daily_verify_predictions(days_back: int = 30, limit: int = 500) -> dict:
     """매일 20:00 KST — 최근 N일 개찰 지난 notices 에 대해 추천 vs 실 결과 비교."""

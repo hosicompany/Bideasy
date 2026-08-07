@@ -435,3 +435,57 @@ def test_db_records_prefer_stored_lower_limit_rate(db_session):
 
     rec = next(r for r in load_records(db=db_session) if r.bid_no == "LLRSTORE-1")
     assert rec.lower_limit_rate == 86.745
+
+
+class TestParticipantCount:
+    """참여사수 — API 가 참가자당 행 하나를 주므로 '행 수'가 곧 참여사수다.
+
+    추가 API 호출 0. 그런데 2026-08-07 실측에서 `participants_count` 보유율이
+    **0%** 였다 — 파서가 `None` 을 박아 놓고 아무도 안 채웠기 때문이다.
+    """
+
+    def test_apply_fills_count_even_when_winner_price_exists(self, db_session):
+        """낙찰가가 이미 있는 행도 채워져야 한다.
+
+        `_upsert_opening_result` 는 낙찰가가 있으면 갱신을 건너뛴다(실 결과는
+        안 바뀐다는 규칙). 그 경로에 얹으면 기존 행은 영영 0 으로 남는다.
+        """
+        db_session.add(models.OpeningResult(
+            bid_no="PC-1", organization="A기관", bid_method="적격심사제",
+            open_date=datetime(2026, 7, 1),
+            basic_price=1e8, reserved_price=1.01e8,
+            winner_price=9e7, winner_rate=90.0,
+        ))
+        db_session.flush()
+
+        updated = crawler._apply_participant_counts(db_session, {"PC-1": 37})
+
+        assert updated == 1
+        row = db_session.query(models.OpeningResult).filter_by(bid_no="PC-1").one()
+        assert row.participants_count == 37
+
+    def test_apply_ignores_unknown_bid_and_zero(self, db_session):
+        """모르는 공고·0건은 건드리지 않는다 — 없는 행을 만들어 내지 않는다."""
+        assert crawler._apply_participant_counts(db_session, {"NOPE-1": 5}) == 0
+        assert crawler._apply_participant_counts(db_session, {}) == 0
+
+    def test_apply_is_idempotent(self, db_session):
+        """같은 값 재적용은 변경으로 세지 않는다(재크롤 시 잡음 방지)."""
+        db_session.add(models.OpeningResult(
+            bid_no="PC-2", basic_price=1e8, reserved_price=1.01e8,
+            winner_price=9e7, participants_count=12,
+        ))
+        db_session.flush()
+
+        assert crawler._apply_participant_counts(db_session, {"PC-2": 12}) == 0
+        assert crawler._apply_participant_counts(db_session, {"PC-2": 13}) == 1
+
+    def test_parse_participant_accepts_row_without_rank(self):
+        """순위가 없어도 참가자 한 명이다 — 세는 데는 투찰가만 있으면 된다."""
+        p = crawler._parse_participant_kwargs(
+            _opening_item(bidprcAmt="55000000", opengRank=""))
+        assert p is not None
+        assert p["rank"] is None
+
+    def test_parse_participant_rejects_row_without_price(self):
+        assert crawler._parse_participant_kwargs(_opening_item()) is None

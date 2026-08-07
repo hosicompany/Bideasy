@@ -201,7 +201,10 @@ def _parse_item_to_kwargs(item: dict) -> dict | None:
         "winner_company": winner_company,
         "winner_price": winner_price,
         "winner_rate": winner_rate,
-        "participants_count": None,  # 본 API 직접 노출 안 됨 (rank 카운트로 추정 가능)
+        # 참여사수는 여기서 못 채운다 — item 하나는 참가자 한 명이라 행 수를
+        # 세야 한다. 창 전체를 훑은 뒤 `_apply_participant_counts` 가 채운다.
+        # (None 이면 upsert 가 기존 값을 안 지운다 — `_upsert_opening_result`)
+        "participants_count": None,
         "crawled_at": datetime.now(timezone.utc),
     }
 
@@ -292,6 +295,35 @@ def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
     return {"participant_bids": saved_bids, "participant_rows": saved_rows}
 
 
+def _apply_participant_counts(db: Session, counts: dict[str, int]) -> int:
+    """창 안에서 센 참가자 행 수를 `OpeningResult.participants_count` 에 반영.
+
+    **왜 따로 도나**: API 는 참가자 한 명당 item 하나를 주므로 참여사수는
+    "그 공고의 행이 몇 개였나"다. item 하나만 보는 `_parse_item_to_kwargs` 는
+    셀 수 없고, `_upsert_opening_result` 는 낙찰가가 이미 있는 행을 건드리지
+    않으므로(실 결과는 안 바뀐다는 규칙) 그 경로로도 못 채운다.
+
+    ⚠️ 이 값은 **그 조회 창에서 API 가 준 행 수**다. 창 전체를 다 훑었을
+    때만 참이며, 페이지 상한에 걸리면 크롤이 RuntimeError 로 멈추므로
+    잘린 채 저장되지는 않는다.
+
+    추가 API 호출은 0 이다 — 이미 받아 온 응답을 세기만 한다.
+    """
+    if not counts:
+        return 0
+    updated = 0
+    for bid_no, cnt in counts.items():
+        row = db.query(models.OpeningResult).filter(
+            models.OpeningResult.bid_no == bid_no
+        ).first()
+        if row is None or cnt <= 0:
+            continue
+        if row.participants_count != cnt:
+            row.participants_count = cnt
+            updated += 1
+    return updated
+
+
 def _upsert_opening_result(db: Session, kwargs: dict, seen: set[str]) -> bool:
     """OpeningResult upsert. 반환: 신규 삽입 True / 업데이트 False.
 
@@ -343,6 +375,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     # API 는 참가자별로 row 를 쪼개 주므로, 낙찰자 판별과 별개로 여기서 줍는다.
     registered_bid_nos = _load_registered_bid_nos(db)
     participants_by_bid: dict[str, list[dict]] = {}
+    counted = 0
 
     try:
         for window_start, window_end in _daily_windows(start_dt, end_dt):
@@ -351,6 +384,9 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             window_inserted = 0
             window_updated = 0
             window_skipped = 0
+            # 참여사수 = 이 창에서 그 공고로 온 참가자 행 수. 창 단위로 세고
+            # 창 단위로 반영한다(창을 넘겨 누적하면 재크롤 겹침에서 부풀어 오른다).
+            window_counts: dict[str, int] = {}
             logger.info(f"opening_crawler: window {start_str} ~ {end_str}")
             for page in range(1, max_pages + 1):
                 items = _fetch_page(start_str, end_str, page=page)
@@ -358,9 +394,11 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                 if not items:
                     break
                 for item in items:
-                    if registered_bid_nos:
-                        p = _parse_participant_kwargs(item)
-                        if p and p["bid_no"] in registered_bid_nos:
+                    p = _parse_participant_kwargs(item)
+                    if p:
+                        # 세는 건 전 공고, 저장은 등록 공고만(설계 §P4).
+                        window_counts[p["bid_no"]] = window_counts.get(p["bid_no"], 0) + 1
+                        if p["bid_no"] in registered_bid_nos:
                             participants_by_bid.setdefault(p["bid_no"], []).append(p)
                     kwargs = _parse_item_to_kwargs(item)
                     if kwargs is None:
@@ -378,6 +416,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                     f"page limit reached with a full page: {start_str}~{end_str} "
                     f"(max_pages={max_pages})"
                 )
+            counted += _apply_participant_counts(db, window_counts)
             db.commit()
             inserted += window_inserted
             updated += window_updated
@@ -412,6 +451,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
         "inserted": inserted,
         "updated": updated,
         "skipped": skipped,
+        "participants_counted": counted,
         **p_summary,
     }
     logger.info(f"opening_crawler: {summary}")

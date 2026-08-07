@@ -51,6 +51,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=19, minute=0),
         "kwargs": {"days_back": 2},
     },
+    # 개찰 크롤(19:00) 뒤 — 누적 개찰 통계 재집계 (docs/OPENING_STATS_DESIGN.md)
+    "daily-opening-stats-rebuild": {
+        "task": "opening_stats.rebuild",
+        "schedule": crontab(hour=19, minute=30),
+    },
     "daily-verify-predictions": {
         "task": "verification.daily_verify_predictions",
         "schedule": crontab(hour=20, minute=0),
