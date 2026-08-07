@@ -1,7 +1,18 @@
 # 배포 자동화 (GitHub Actions 수동 버튼)
 
-> 작성 2026-07-27 · 상태: **워크플로 구현 완료 / 서버 1회 설정 대기(사용자 작업)**
+> 작성 2026-07-27 · 최종 확인 2026-08-08 · 상태: **운영 적용 완료**
 > 목적: `ssh → cd ~/Bideasy/infra → ./deploy.sh deploy` 를 매번 손으로 하는 대신, GitHub 화면의 **Run workflow 버튼 한 번**으로 끝낸다. 배포 타이밍은 사람이 정한다(자동 배포 아님).
+
+### 현재 프로덕션 인프라 (2026-08-08)
+
+| 항목 | 현재 값 |
+|---|---|
+| Lightsail 인스턴스 | `BidEasy-prod-2gb` (2GB RAM / 2 vCPU / 60GB SSD, 월 $12 플랜) |
+| 고정 IP | `43.203.66.120` |
+| 이전 인스턴스 | `BidEasy-prod`(4GB) — 전환 검증 후 삭제 완료 |
+| 롤백 스냅샷 | `BidEasy-prod-pre-downsize-20260808` — 2026-08-15까지 보관 후 수동 삭제 대상 |
+
+인스턴스 교체 후 앱·PostgreSQL·Redis·Celery와 라이브 헬스체크를 확인했고, GitHub Actions 배포도 성공했다. 고정 IP는 유지했지만 SSH 호스트 키는 바뀌었으므로 아래 `DEPLOY_KNOWN_HOSTS` 값이 정본이다.
 
 ---
 
@@ -88,10 +99,10 @@ ssh -i ~/.ssh/bideasy_deploy_ci ubuntu@43.203.66.120 'cat ~/Bideasy/infra/.env.p
 | `DEPLOY_KNOWN_HOSTS` | 아래 한 줄 |
 
 ```
-43.203.66.120 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBnpxPcjVmwcWBuMhd9NY9dFBnnXuXBcVquhXX41Z9kr
+43.203.66.120 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPOIehGVT4T5J+7chcFuu2/hZdhVu0AIbUHqWrj44Fov
 ```
 
-> 이 호스트키는 2026-07-27 이 PC에서 실제 접속해 받은 값이며 지문은 `SHA256:speKkfMU1CxrynIGuAikWImSZRWi81jtkLvGmMfm4V4` 이다. 서버 콘솔에서 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 로 **한 번 대조**한 뒤 등록하는 것을 권한다(중간자 공격 방지의 유일한 지점).
+> 이 호스트키는 2026-08-08 새 인스턴스 전환 때 확인해 등록한 값이며 지문은 `SHA256:e1QMNImP/O7GluKo9T3fB0zFiJBmPEHXM0PRtnWzELs` 이다. 서버 콘솔에서 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 로 **한 번 대조**한 뒤 등록하는 것을 권한다(중간자 공격 방지의 유일한 지점).
 
 ### (선택) 승인 게이트
 **Settings → Environments → New environment → `production`** 을 만들고 *Required reviewers* 에 본인을 넣으면, 버튼을 눌러도 승인 클릭 전까지 배포가 대기한다. 워크플로는 이미 `environment: production` 을 쓰므로 환경만 만들면 적용된다.
