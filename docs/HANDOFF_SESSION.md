@@ -81,8 +81,11 @@ git clone https://github.com/hosicompany/Bideasy.git
 cd Bideasy
 pip install -r backend/requirements.txt      # Python 3.12
 cd backend && pytest                          # 824건 통과해야 정상 (약 2분)
-python -m ruff check backend/                 # CI lint 와 동일
+pip install ruff && python -m ruff check .    # ⚠️ ruff 는 requirements.txt 에 없다 (CI 도 따로 깐다)
 ```
+
+> macOS 는 `python3.12 -m venv .venv && source .venv/bin/activate` (Windows 의 `Scripts/` 아님).
+> 실측 참고: Apple Silicon 에서 `pytest` 824건이 **23초**(Windows 128초).
 
 - **서버 SSH 키는 없어도 됩니다.** 배포는 GitHub Actions 버튼(§6).
 - `backend/.env`·`backend/bideasy.db` 는 git 에 없습니다 — 테스트는 in-memory 라 없어도 통과합니다.
