@@ -371,11 +371,17 @@ clone 은 **원격에 있는 것만** 가져옵니다. 로컬에만 있는 것�
 ### 7-4. 이관 후 검증
 
 ```bash
+# ⚠️ macOS 의 python3 은 버전이 제각각이라 3.12 를 명시한다 (없으면 brew install python@3.12)
 cd ~/dev/bideasy-suite/Bideasy/backend
-python -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate    # Windows 의 Scripts/ 아님
 pip install -r requirements.txt && pytest        # 통과 건수는 CLAUDE.md §8 기준
-python -m ruff check .
+
+# ⚠️ ruff 는 requirements.txt 에 없다 — CI 도 `pip install ruff` 로 따로 깐다(.github/workflows)
+pip install ruff && python -m ruff check .
 ```
+
+> **2026-08-08 실측(`apples-MacBook-Pro`, Apple Silicon)**: 전부 휠로 설치돼 컴파일 0,
+> `pytest` **824 passed / 23초**. 같은 코드가 Windows 에서 128초였다 — **5.5배** 빠르다.
 
 - [ ] 레포 4개 clone, `git status` clean (= `.gitignore` 정상 = 비공개 파일 복원됨)
 - [ ] **4개가 `/Users/hoseungkang/dev/bideasy-suite/` 아래 형제 폴더**인지 — 워크스페이스 상대경로와 `sync.sh` 자동탐지가 여기 의존
