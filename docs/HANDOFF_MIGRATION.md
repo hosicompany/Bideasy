@@ -226,14 +226,38 @@ pytest                                                   # ← 508건 통과해�
 §1~§6은 Windows→Windows 기록입니다. macOS 로 옮길 때 **달라지는 것만** 여기 정리합니다.
 절차의 뼈대(§1 clone·§2 비공개 파일·§3 환경)는 그대로 유효합니다.
 
-### 7-0. 착수 조건
+### 7-0. 착수 조건 — ✅ **2026-08-08 전수 점검 완료**
 
 이관은 **작업이 걸려 있지 않을 때** 합니다. 착수 전 아래가 전부 참이어야 합니다:
 
 ```bash
 git status -sb          # 4개 레포 전부 미커밋 0
 gh pr list --state open # 0건
+
+# ★ clone 으로 안 따라오는 것을 먼저 원격에 올린다 (아래 7-0-1)
+for r in Bideasy bideasy-agent Bideasy-Extension bideasy-policy; do
+  cd ~/dev/bideasy-suite/$r
+  for b in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
+    n=$(git rev-list --count $b --not --remotes)
+    [ "$n" -gt 0 ] && echo "미푸시 $r/$b: ${n}건"
+  done
+done
 ```
+
+#### 7-0-1. ⚠️ 떠나기 전에 반드시 — 이걸 빠뜨리면 **조용히 유실됩니다**
+
+clone 은 **원격에 있는 것만** 가져옵니다. 로컬에만 있는 것을 먼저 올려야 합니다.
+2026-08-08 실측에서 **셋 다 실제로 걸렸습니다**:
+
+| 대상 | 그때 상태 | 조치 |
+|---|---|---|
+| **Claude 메모리** | 레포 13건 / 로컬 **15건** — 갈라져 있었다 | `cd bideasy-agent/claude-memory && ./sync.sh push` → **커밋·푸시** |
+| `feature/mock-bidding-phase2` | 원격에 없는 커밋 1 | `git push origin <브랜치>` |
+| `preserve/ext-toolbar-icons` (익스텐션) | 원격 브랜치가 `[gone]`, 로컬 전용 커밋 1 | 〃 |
+
+> 🚨 **`sync.sh pull` 은 `push` 가 선행돼야 의미가 있습니다.** 이 순서를 뒤집으면
+> 맥에서 pull 하는 순간 이 PC 에만 있던 메모리가 사라지고, **사라진 줄도 모릅니다.**
+> (메모리 폴더명은 프로젝트 절대경로에서 파생돼 기기마다 다릅니다 — §7-3 ②)
 
 그리고 **다른 Claude 세션이 이 레포에 푸시 중이면 먼저 정리하세요.** 2026-08-03~04 에
 병렬 세션이 하루 9커밋(#65~#73)을 밀어 같은 문서를 두 세션이 동시에 고친 일이 있었습니다.
@@ -253,18 +277,38 @@ gh pr list --state open # 0건
 
 `.gitignore` 되어 있거나 PC 로컬에만 있어 **clone 으로 안 따라오는** 것들입니다.
 
-| 항목 | 현 위치 (Windows) | 맥 위치 |
-|---|---|---|
-| 🔒 `PATENT.md` | `Bideasy/backend/app/services/autocalibrate/` | 동일 상대경로 |
-| 내부 문서 2종 | `Bideasy/MORNING_CHECKLIST.md`·`OVERNIGHT_REPORT.md` | 동일 |
-| 로컬 개발 키 | `Bideasy/backend/.env` | 동일 |
-| 운영 키 구버전 스냅샷 | `Bideasy/infra/.env.production.local` | 동일 (⚠️ §2.1 — 서버를 이걸로 덮지 말 것) |
-| **Lightsail SSH 키** | `~/.ssh/lightsail_bideasy.pem` | `~/.ssh/` + **`chmod 600` 필수** (§7-3) |
-| ~~Claude 메모리 12개~~ | — | ✅ **손으로 옮기지 않습니다** — `bideasy-agent/claude-memory/` 가 정본, `./sync.sh pull` (§7-3) |
-| 전역 규칙 | `~/.claude/CLAUDE.md`·`GLOBAL_RULES_HOSI.md` 등 | `~/.claude/` |
-| 힉스필드 인증 | `~/.config/higgsfield` | 동일. 안 되면 재로그인 + `workspace set`(함정 20) |
+2026-08-08 `--ignored` 전수 조사로 확정한 목록입니다(크기·수정일 실측).
+
+| 항목 | 현 위치 (Windows) | 크기 | 맥 위치 |
+|---|---|---|---|
+| 🔒 `PATENT.md` | `Bideasy/backend/app/services/autocalibrate/` | 40K | 동일 상대경로 |
+| 내부 문서 2종 | `Bideasy/MORNING_CHECKLIST.md`·`OVERNIGHT_REPORT.md` | 8K·12K | 동일 (⚠️ 내용은 2026-05-15 시점 — **이미 낡았습니다.** 이력용) |
+| 로컬 개발 키 | `Bideasy/backend/.env` | 4K | 동일 |
+| 운영 키 구버전 스냅샷 | `Bideasy/infra/.env.production.local` | 8K | 동일 (⚠️ 아래 경고) |
+| **Lightsail SSH 키** | `~/.ssh/lightsail_bideasy.pem` | 1.6K | `~/.ssh/` + **`chmod 600` 필수** (§7-3) |
+| ~~Claude 메모리~~ | — | — | ✅ **손으로 옮기지 않습니다** — `bideasy-agent/claude-memory/` 가 정본, `./sync.sh pull` (§7-3). **단 떠나기 전 `push` 선행**(§7-0-1) |
+| 전역 규칙 | `~/.claude/CLAUDE.md`·`GLOBAL_RULES_HOSI.md` 등 | | `~/.claude/` |
+| 힉스필드 인증 | `~/.config/higgsfield` | | 동일. 안 되면 재로그인 + `workspace set`(함정 20) |
 
 > 익스텐션·에이전트·정책 레포에는 비공개 파일이 **없습니다**(실측). 챙길 건 `Bideasy` 하나뿐입니다.
+> (익스텐션의 `bideasy-extension-v1.1.0.zip` 은 `npm run release` 로 재생성됩니다.)
+
+#### ⚠️ `.env` 2종을 옮길 때 — 전송 방법이 중요합니다
+
+2026-08-08 사용자 판단으로 **둘 다 옮깁니다.** 다만 `infra/.env.production.local` 은
+**구버전 운영키 스냅샷**이라는 점을 알고 다루세요. 실측 내용:
+
+- 들어 있는 것: `OPENAI_API_KEY`(164자)·`PUBLIC_DATA_KEY`·`KAKAO_*`·`NAVER_*`·
+  `TOSS_WEBHOOK_SECRET`·`POSTGRES_PASSWORD`(32자)·`JWT_SECRET_KEY`
+- **없는 것**: `LLM_API_KEY`·`AWS_*`·`PAYPLE_*`·`BILLING_ENC_KEY`
+  → 즉 **페이플·LLM 관문 이전의 오래된 판**입니다. 현재 운영 `.env.production` 과 다릅니다.
+
+전송 규칙:
+- ⛔ **메일·카카오톡·클라우드 드라이브·채팅에 붙여넣지 마세요.** 평문 키가 영구히 남습니다
+- ✅ USB 직결, 또는 `scp`/Tailscale 로 기기 간 직접 전송
+- 옮긴 뒤 **두 기기 모두에 평문 키가 존재**하게 됩니다. `POSTGRES_PASSWORD`·`OPENAI_API_KEY` 는
+  어차피 로테이션 대기 항목이니(`docs/SECRET_ROTATION.md` §3-2·§3-3) 이관을 계기로 정리하는 편이 낫습니다
+- ⛔ 이 파일로 **서버 `.env.production` 을 덮지 마세요**(§2.1). 덮으면 결제·LLM·발송이 한 번에 죽습니다
 
 ### 7-3. macOS 에서만 걸리는 함정 4가지
 
@@ -298,9 +342,11 @@ python -m ruff check .
 ```
 
 - [ ] 레포 4개 clone, `git status` clean (= `.gitignore` 정상 = 비공개 파일 복원됨)
+- [ ] **4개가 `~/dev/bideasy-suite/` 아래 형제 폴더**인지 — 워크스페이스 상대경로와 `sync.sh` 자동탐지가 여기 의존
 - [ ] `gh auth login` → `gh pr list` 동작
 - [ ] `ssh -i ~/.ssh/lightsail_bideasy.pem ubuntu@api.bideasy.kr 'echo ok'` (권한 600 확인)
 - [ ] `bideasy-agent/claude-memory/./sync.sh status` → **차이 없음 ✅** (메모리 동기화 확인)
+- [ ] 메모리 **건수**가 떠나기 전과 같은지 (2026-08-08 기준 **15건**). 줄었으면 §7-0-1 을 빠뜨린 것
 - [ ] `curl -s https://api.bideasy.kr/health` → `status:ok`·`database:connected`
 - [ ] 전역 `~/.claude/CLAUDE.md` §5 의 BidEasy 정본 경로를 **맥 경로로 수정**
       (현재 `C:\Project\Bideasy\CLAUDE.md` 로 적혀 있어 이미 실제와 어긋나 있습니다)
@@ -309,4 +355,11 @@ python -m ruff check .
 
 - **`infra/.env.production`** — 서버에만 존재합니다. 로컬 스냅샷(`.local`)으로 서버를 덮지 마세요.
 - **`BILLING_ENC_KEY`** — 이관을 이유로 재생성하는 일이 없어야 합니다. 변경 시 고객 빌링키 전부 복호화 불가.
-- **AWS 자격증명** — 새 PC 로 복사하지 말고 필요할 때 IAM 콘솔에서 새로 발급하는 편이 안전합니다(구 키 폐기).
+- **AWS 자격증명**(`~/.aws/credentials`) — 새 PC 로 복사하지 말고 필요할 때 IAM 콘솔에서 새로 발급하세요.
+  🚨 특히 지금은 **운영 서버가 루트 키로 돌고 있는 상태**라(`CLAUDE.md` §대기 항목 최상단) 자격증명을
+  기기에 퍼뜨릴 때가 아닙니다. 교체가 먼저입니다 — `docs/SECRET_ROTATION.md` §3-1.
+- **로컬 SQLite**(`bideasy.db`·`backend/bideasy.db`, 합계 ~700K) — 재생성됩니다. 테스트는 in-memory 라 없어도 통과.
+- **`node_modules`·`.venv`·`__pycache__`·`dist`** — 재설치. venv 는 `pyvenv.cfg` 에 절대경로가 박혀 있어 옮기면 깨집니다.
+- **orca 워크트리**(`~/orca/workspaces/Bideasy/*`) — 2026-08-08 기준 3개(`master`·`work`·`infra-cost-analysis-lightsail`).
+  브랜치 내용은 전부 원격에 있으므로 clone 으로 복원됩니다. 단 `blog` 워크트리의 untracked
+  `_content_review/`(7.8MB, 32파일)는 **생성 부산물**이라 옮기지 않습니다 — 필요하면 재생성하세요.
