@@ -18,7 +18,7 @@
 
 | 키 | 위험도 | 다운타임 | 비고 |
 |---|---|---|---|
-| **AWS 루트 액세스 키** | 🔴 유출 시 계정 전체 장악 | 없음 | 폐기만 하면 됨(대체 불필요 — 서버는 발송 전용 IAM 사용) |
+| **AWS 루트 액세스 키** | 🔴 유출 시 계정 전체 장악 | **먼저 지우면 메일 전면 중단** | ⚠️ **폐기만 하면 되는 게 아니다** — 운영 서버가 이 키로 SES 를 부르고 있다(2026-08-08 실측). 반드시 **교체 후 폐기**(§3-1) |
 | **`POSTGRES_PASSWORD`** | 🔴 절차 틀리면 앱이 DB 접속 불가 | **수십 초** | DB 안에서 먼저 바꿔야 한다(§3-2 함정) |
 | **`OPENAI_API_KEY`** | 🟠 유출 시 과금 | 없음 | 실패해도 AI 기능만 멈춤 |
 | `JWT_SECRET_KEY` | 🟠 바꾸면 **전원 로그아웃** | 없음 | 침해 정황이 있을 때만. 평시 로테이션 대상 아님 |
@@ -51,20 +51,70 @@ curl -s https://api.bideasy.kr/health
 
 ## 3. 절차
 
-### 3-1. AWS 루트 액세스 키 폐기 🔴
+### 3-1. AWS 루트 액세스 키 **교체** 후 폐기 🔴
 
 루트 키는 **MFA로도 제한할 수 없는 전권**이다. IAM 사용자 키와 달리 권한 축소가 불가능하므로 존재 자체가 위험이다.
 
-1. AWS 콘솔에 **루트 계정으로** 로그인 → 우측 상단 계정명 → **보안 자격 증명**
-2. **액세스 키** 섹션에서 키와 **마지막 사용 시각** 확인
-3. 사용처 점검 — 2026-08-01 기준 확인된 바로는 **없다**:
-   - 서버 `.env.production` 은 발송 전용 IAM `bideasy-ses-sender` 키를 쓴다 → 무관
-   - 개발 PC(`hoseung-thinkpad-x1`)에는 aws CLI 도 `~/.aws/credentials` 의 `[default]` 도 없다 → 무관
-   - (구 PC `t14s` 에 `[default]` 사본이 있었다. 그래서 폐기가 필요하다)
-4. 불안하면 **비활성화(Deactivate) → 2~3일 관찰 → 삭제**. 마지막 사용 시각이 안 올라가면 안전
-5. 같은 화면에서 **루트 계정 MFA** 활성화 여부도 함께 확인
+> 🚨 **2026-08-08 실측 정정 — 이 키는 지금 쓰이고 있다.**
+> 운영 컨테이너(`bideasy_app`·`bideasy_celery`·`bideasy_celery_beat`)의 `AWS_ACCESS_KEY_ID` 가
+> **루트 계정 키** `AKIAY5OAWO54BX…` 다. 즉 SES 발송 전부가 이 키로 나간다.
+> 이 문서의 이전 판은 "서버는 발송 전용 IAM 을 쓰므로 폐기만 하면 된다"고 적었는데 **틀렸다.**
+> 그대로 삭제했다면 체험 만료 고지·수신거부 결과 통지 같은 **법정 고지 메일까지 끊겼다.**
+>
+> 교훈: **"무관하다"는 판단에는 실측 근거를 붙인다.** 당시 근거는 로컬 PC 점검뿐이었고
+> 서버는 아무도 열어보지 않았다.
 
-> `~/.aws/credentials` 의 `[bideasy]` 프로필이 루트인지 IAM 인지 불명이면, 콘솔 IAM → 사용자 목록과 대조한다. 정체불명이고 aws CLI 도 없다면 그 파일은 지워도 잃을 게 없다.
+**순서 (구 것을 먼저 지우지 않는다 — §0 원칙)**
+
+**1) 대체 키 발급** — IAM → 사용자 `bideasy-ses-sender`
+- 없으면 생성(콘솔 액세스 불필요) + 인라인 정책 `BideasySesSendOnly`:
+  ```json
+  { "Version": "2012-10-17",
+    "Statement": [{ "Effect": "Allow",
+      "Action": ["ses:SendEmail", "ses:SendRawEmail"],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "ap-northeast-2" } } }] }
+  ```
+- 보안 자격 증명 탭 → 액세스 키 만들기
+
+**2) 서버 주입** — 값이 화면·셸 히스토리에 남지 않게 `read` 로 받는다:
+```bash
+cd ~/Bideasy/infra
+cp .env.production ~/env.production.bak-$(date +%Y%m%d-%H%M)-awskey
+read -rp  "새 ACCESS_KEY_ID    : " AK && \
+read -rsp "새 SECRET_ACCESS_KEY: " SK && echo && \
+sed -i "s|^AWS_ACCESS_KEY_ID=.*|AWS_ACCESS_KEY_ID=$AK|; s|^AWS_SECRET_ACCESS_KEY=.*|AWS_SECRET_ACCESS_KEY=$SK|" .env.production && \
+unset AK SK && \
+grep -E "^AWS_" .env.production | while IFS== read -r k v; do printf "%-24s len=%s\n" "$k" "${#v}"; done
+# AWS_ACCESS_KEY_ID len=20 / AWS_SECRET_ACCESS_KEY len=40 이어야 한다
+```
+
+**3) 배포 + 검증** — 이게 통과하기 전에는 루트 키를 건드리지 않는다:
+```bash
+./deploy.sh deploy
+# ① 컨테이너 3개가 새 키인지 (AKIAY5OAWO 로 시작하면 실패)
+for c in bideasy_app bideasy_celery bideasy_celery_beat; do
+  printf "%-22s " "$c"
+  docker exec "$c" sh -c 'tr "\0" "\n" < /proc/1/environ | grep ^AWS_ACCESS_KEY_ID= | cut -c1-32'
+done
+# ② 헬스
+curl -s https://api.bideasy.kr/health
+# ③ 실발송 1통 — 어드민 POST /admin/outbound/test-send → 원장이 sent 여야 한다
+```
+> `docker compose exec` 로 확인하면 안 된다 — 지금의 `--env-file` 을 새로 주입해서
+> 재배포 전에도 "반영됨"으로 보인다(`CLAUDE.md` 함정 21).
+
+**4) 루트 키 폐기** — 3)이 전부 통과한 뒤에만:
+- 루트 계정 로그인 → 계정명 → **보안 자격 증명** → 액세스 키
+- **비활성화(Deactivate) → 2~3일 관찰 → 삭제.** 마지막 사용 시각이 안 올라가면 안전
+- 같은 화면에서 **루트 계정 MFA** 활성화 여부도 함께 확인
+
+**5) 로컬 정리** — 개발 PC(`hoseung-thinkpad-x1`)는 aws CLI 미설치이고 `~/.aws/credentials` 에
+`[bideasy]` 프로필만 있다. 정체가 불명이고 CLI 도 없으니 그 파일은 지워도 잃을 게 없다.
+
+**6) 문서 되돌리기** — 교체가 끝나면 이 §3-1 의 🚨 블록, `CLAUDE.md` §9 4-1 과 대기 항목,
+`docs/OUTBOUND_EMAIL.md`·`docs/OUTBOUND_SETUP.md` 의 경고를 함께 정리한다.
+**여섯 곳이 같은 사실을 적고 있으므로 한 곳만 고치면 또 갈라진다.**
 
 ### 3-2. `POSTGRES_PASSWORD` 로테이션 🔴
 
