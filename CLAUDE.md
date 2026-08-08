@@ -118,6 +118,12 @@
 - 남은 검증 코드: 가입 직후 1문항 마이크로 설문(업종·월 투찰수) + 커뮤니티 질문글.
 
 ### 다음 주제
+- **누적 개찰 통계 (S1 구현 완료 2026-08-08, S2 대기)** — 설계 정본 `docs/OPENING_STATS_DESIGN.md`.
+  경쟁 3사 누구도 안 주는 정보인데 우리는 `opening_results` 원장을 이미 갖고 있었다. 축(기관×입찰방법×금액대)으로 묶어 **분위수만** 남기는 `opening_stats` 표 + 매일 19:30 재집계.
+  **착수 전 실측이 설계를 세 군데 바꿨다**: ⓐ `region` 이 개찰 API 미제공이라 **0%** → 지역을 축에서 뺐다 ⓑ 기관×방법 셀 n≥10 이 6.3%뿐 → **기관 무관 셀을 항상 함께** 만든다 ⓒ `participants_count` 보유율이 **0%** 였다(파서가 `None` 을 박고 아무도 안 채움) → 크롤러가 응답 행 수를 세도록 고쳤다(**추가 API 호출 0**).
+  ⛔ **평균을 담지 않는다** — 사정률 평균은 실측상 전 기관이 99.84~100.05% 라 신호가 없는데, 담아 두면 화면이 "이 기관 사정률은 99.84%" 로 읽어 **낙찰가 예측처럼** 보인다. 분위수만 담고 테스트가 평균 컬럼 부재를 강제한다. ⛔ `winner_rate_*` 는 **낙찰자의 투찰률**이지 이길 확률이 아니다 — '낙찰률' 로 부르지 말 것(함정 2).
+  **S2(화면) 게이트 = 드라이런으로 이미 답이 나왔다**: 진행중 공사 공고 1,699건 중 **66.3%가 통계 셀을 찾는다**(기관 셀 10.1% + 기관무관 56.2%, 셀 없음 2.9%). 병목은 통계가 아니라 **기초금액 미확인 30.8%** — 즉 S2 커버리지는 기초금액 커버리지에 거의 종속된다.
+  ⚠️ **예비가격 ±2%/±3% 판정은 아직 하지 않았다** — 관측 사정률 편차 p99 가 2.017% 라 `simulation_service` 의 ±3% 하드코딩보다 훨씬 좁지만, 예정가격이 예비가격 4개의 *평균*이라 ±3% 균등이어도 저절로 좁아진다. 기관별 최대편차로 분류하면 **표본 크기에 속는다**(§2-3).
 - **발송 배치 — ①은 2026-08-04 실증 완료, ②만 남음**
   ① ~~`nurture.send_lead_matches`~~ → ✅ **08-04 08:00 발동, `lead_id=1` 에게 `sent`**(원장 id=6). **beat 스케줄 등록이 이걸로 처음 증명됐다** — `deploy.sh` 의 `celery_beat` force-recreate 가 실제로 동작한다. 남은 건 선택 사항: 수신거부 링크를 눌러 보면 철회→결과통지까지 전 구간이 닫힌다.
   ② **새 가입자 발생 후 D1(10:10)** `trial.send_onboarding_sequence` — 08-04 에 태스크는 돌았으나 `checked=0`(대상 회원 없음). **아직 한 번도 발송된 적 없다.**
@@ -339,7 +345,7 @@ cd ~/Bideasy/infra && ./deploy.sh deploy
 `deploy.sh`가 자동 수행: `git pull origin master` → `dc build app celery_worker` → 롤링 재시작 → 헬스체크 → **`dc exec app alembic upgrade head`**.
 - 기타: `./deploy.sh {status|logs|backup|rollback|ssl-init}`. 프로젝트명 `-p infra` 고정.
 - 마이그레이션만 수동: `docker compose -f docker-compose.prod.yml --env-file .env.production -p infra exec app alembic upgrade head`
-- **현재 마이그레이션 head**: `d4e8b2c96f31` (opening_participants — 모의투찰 참가자). **운영 적용 확인됨**(2026-08-03 `alembic current` 실측). 거슬러 `b9d2f4a71c60`(mock_bid price BigInteger) → `a7e3f9c25b18`(모의투찰 테이블) → `d4a8c1b6e293`(notice 입찰방식 필드) → `e6b3d0c5a419`(블로그 검수 게이트) → `c8e5b1f37d94`(email_suppressions) → `a9d3f5c17e42`(발송 원장) → `f4c1e8a92b37`(수신동의 증적) → `b7e2c4f9a801`(blog blocks) → `d9f3a1b7c204`(leads).
+- **현재 마이그레이션 head**: `f7c4a2e18b53` (opening_stats — 누적 개찰 통계). 거슬러 `b6f1d3a48c27`(notice a_value BigInteger) → `a3e9c7b25f14` → `c2f7a5e91d80` → `d4e8b2c96f31` (opening_participants — 모의투찰 참가자). **운영 적용 확인됨**(2026-08-03 `alembic current` 실측). 거슬러 `b9d2f4a71c60`(mock_bid price BigInteger) → `a7e3f9c25b18`(모의투찰 테이블) → `d4a8c1b6e293`(notice 입찰방식 필드) → `e6b3d0c5a419`(블로그 검수 게이트) → `c8e5b1f37d94`(email_suppressions) → `a9d3f5c17e42`(발송 원장) → `f4c1e8a92b37`(수신동의 증적) → `b7e2c4f9a801`(blog blocks) → `d9f3a1b7c204`(leads).
 
 ---
 
