@@ -59,7 +59,7 @@ C:\dev\
 1. ~~`gh auth login`~~ — ✅ **이미 완료**(실측: `hosicompany` 로그인, scope `repo`·`workflow`)
 2. ~~임시 SSH 키 제거~~ — ✅ **완료**(2026-08-01). `administrators_authorized_keys` 에서 `bideasy-migration-temp-20260801` 줄 삭제, `hermes-mac-to-windows-hosic` 만 남음. 백업 `administrators_authorized_keys.bak-20260801` 에 제거한 키가 들어 있으니 **이상 없음 확인 후 삭제 권장**
 3. ~~OneDrive `_BIDEASY_이관\` 꾸러미 삭제~~ — ✅ 로컬에 폴더 없음 확인. 단 **웹 휴지통에 남아 있을 수 있어** 한 번 확인 권장(평문 API 키)
-4. **OpenAI 키·`POSTGRES_PASSWORD` 로테이션** (권고) — 🔴 **미처리**. 2026-06-19 감사 이후 그대로. 로컬 `~/.aws/credentials` `[default]` 루트 액세스 키 폐기도 함께(`CLAUDE.md` §대기 항목)
+4. **AWS 루트 키 교체 · OpenAI 키·`POSTGRES_PASSWORD` 로테이션** — 🔴 **미처리**. 2026-06-19 감사 이후 그대로. 🚨 특히 **AWS 루트 키는 운영 서버가 지금 쓰고 있다**(2026-08-08 실측) — 폐기가 아니라 **교체**가 먼저다(`docs/SECRET_ROTATION.md` §3-1). 로컬 PC 는 무관하다(aws CLI 미설치)
 5. ~~익스텐션 문서 3커밋 머지 판단~~ — ✅ **머지 완료**(2026-08-01, `main` `198f736`). 머지하면서 하네스의 구 경로 하드코딩(`C:\Project\...`)을 새 경로로 고치고 `$PSScriptRoot` 역산으로 견고화. **`& npm test` 가 `npm.ps1` shim 에서 인자가 깨져(`Unknown command: "pm"`) 게이트가 한 번도 동작한 적이 없던 것**도 함께 수정(`npm.cmd` 고정)
 
 ---

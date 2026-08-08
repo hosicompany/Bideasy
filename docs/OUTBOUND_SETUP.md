@@ -32,7 +32,7 @@
 | DNS: DKIM CNAME 3개 | ✅ 등록·권위 NS 확인 |
 | SES 도메인 인증 | ✅ **Verified** (DKIM SUCCESS) |
 | SES 프로덕션 액세스 | ✅ **GRANTED**(2026-07-30 확인) — 50,000통/일·14통/초 |
-| 발송용 IAM 키(앱) | ✅ `bideasy-ses-sender` + `BideasySesSendOnly`(`ses:SendRawEmail`·`SendEmail`, 서울 한정). 서버 `.env.production` 적용·**실발송 1통 성공**(Delivery 1·Bounce 0) |
+| 발송용 IAM 키(앱) | 🚨 **미적용**(2026-08-08 실측). 실발송은 성공하지만 자격증명이 **AWS 루트 계정 키**다 — `bideasy-ses-sender` 로 **교체 후 폐기** 필요(`docs/SECRET_ROTATION.md` §3-1). 먼저 지우면 법정 고지 메일까지 끊긴다 |
 | 카카오톡 채널 / 중계사 / 템플릿 | ⬜ 미착수 — 리드타임 2~3주 |
 | 발송 코드(동의 증적·게이트·원장·수신거부) | ✅ PR #47 머지·배포·라이브 검증(런북 `OUTBOUND_EMAIL.md`) |
 
