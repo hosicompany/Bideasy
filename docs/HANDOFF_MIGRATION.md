@@ -236,7 +236,7 @@ gh pr list --state open # 0건
 
 # ★ clone 으로 안 따라오는 것을 먼저 원격에 올린다 (아래 7-0-1)
 for r in Bideasy bideasy-agent Bideasy-Extension bideasy-policy; do
-  cd ~/Dev/bideasy-suite/$r
+  cd ~/dev/bideasy-suite/$r
   for b in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     n=$(git rev-list --count $b --not --remotes)
     [ "$n" -gt 0 ] && echo "미푸시 $r/$b: ${n}건"
@@ -321,25 +321,44 @@ clone 은 **원격에 있는 것만** 가져옵니다. 로컬에만 있는 것�
    | 기기 | 프로젝트 경로 | 파생 키 |
    |---|---|---|
    | Windows (현재) | `C:\dev\bideasy-suite\Bideasy` | `C--dev-bideasy-suite-Bideasy` |
-   | **맥북 (확정)** | `/Users/hoseungkang/Dev/bideasy-suite/Bideasy` | `-Users-hoseungkang-Dev-bideasy-suite-Bideasy` |
+   | **맥북 (확정)** | `/Users/hoseungkang/dev/bideasy-suite/Bideasy` | `-Users-hoseungkang-dev-bideasy-suite-Bideasy` |
 
    **자동으로 안 따라옵니다.** → **2026-08-04 해소**: 메모리 정본을 private 레포로 승격했습니다.
    손으로 복사하지 말고 아래 한 줄을 돌리세요(키 파생은 스크립트가 양 플랫폼에서 처리합니다).
    ```bash
-   cd ~/Dev/bideasy-suite/bideasy-agent/claude-memory && ./sync.sh pull
+   cd ~/dev/bideasy-suite/bideasy-agent/claude-memory && ./sync.sh pull
    ```
 
-   > 🚨 **`Dev` 의 대문자 D 를 지킬 것.** 이건 취향이 아니라 **조용한 실패의 원인**입니다.
-   > macOS 기본 파일시스템(APFS)은 대소문자를 구분하지 않아 `cd ~/dev/...` 도 **성공합니다.**
-   > 그런데 `pwd` 는 입력한 그대로를 돌려주므로 키가 갈라집니다(2026-08-08 실측):
+   > 🚨 **대소문자를 섞지 마세요 — 폴더의 실제 이름과 입력하는 이름이 같아야 합니다.**
+   > 취향 문제가 아니라 **조용한 실패의 원인**입니다.
    >
+   > Claude 키는 경로 **문자열**에서 파생되므로 대소문자를 가립니다(2026-08-08 `sync.sh` 실측):
    > ```
-   > ~/Dev/…  → -Users-hoseungkang-Dev-bideasy-suite-Bideasy   ← 정상
-   > ~/dev/…  → -Users-hoseungkang-dev-bideasy-suite-Bideasy   ← 빈 폴더를 봅니다
+   > /Users/hoseungkang/dev/…  →  -Users-hoseungkang-dev-bideasy-suite-Bideasy   ← 정본
+   > /Users/hoseungkang/Dev/…  →  -Users-hoseungkang-Dev-bideasy-suite-Bideasy   ← 다른 폴더
    > ```
+   > 그런데 macOS 기본 파일시스템(APFS)은 대소문자를 **구분하지 않고 보존**합니다. 그래서
+   > 이름이 어긋나도 `cd` 는 **에러 없이 성공**하고, 메모리 0건인 새 프로젝트가 조용히 열립니다.
+   > "안 보인다"와 "없다"가 구분되지 않는 그 실패 모드입니다(§7-0-1 과 같은 부류).
    >
-   > 소문자로 들어가면 **에러 없이** 메모리가 0건인 새 프로젝트가 열립니다. 눈치채기 어렵습니다.
-   > 셸 앨리어스나 IDE 최근 폴더 목록에 소문자가 섞이지 않도록 하고, 의심되면 `pwd` 로 확인하세요.
+   > **2026-08-08 결정: 소문자 `dev` 로 통일합니다.** 원래 `~/Dev` 였던 것을 사용자가 `~/dev` 로
+   > rename 했습니다 — 앞으로 생길 다른 프로젝트까지 고려하면 오타 여지가 적은 쪽이 낫다는 판단.
+   >
+   > ⚠️ **rename 했다면 Claude 키 폴더도 함께 옮겨야 합니다.** 폴더 안에 있던 다른 프로젝트 중
+   > 맥에서 Claude Code 로 열어본 적이 있는 것들은 옛 대문자 키에 기록이 남아 있습니다.
+   > (레포·venv 는 무사합니다 — git 은 상대경로, venv 는 대소문자 무시로 그대로 찾아갑니다.)
+   > ```bash
+   > ls ~/.claude/projects/ | grep -- '-Users-hoseungkang-Dev-'   # 없으면 조치 불필요
+   >
+   > cd ~/.claude/projects
+   > for d in -Users-hoseungkang-Dev-*; do
+   >   [ -e "$d" ] || continue
+   >   new="${d/-Dev-/-dev-}"
+   >   if [ -e "$new" ]; then echo "⚠️ 양쪽 존재, 수동 확인: $d vs $new"
+   >   else mv -- "$d" "$d.tmp" && mv -- "$d.tmp" "$new" && echo "✅ $d → $new"; fi
+   > done
+   > ```
+   > `mv` 를 두 번 나누는 이유: 대소문자만 바뀌는 rename 은 같은 파일로 취급돼 무시될 수 있습니다.
 
    경로 구조(`bideasy-suite/` 아래 형제 4개)도 그대로 지켜야 워크스페이스 상대경로와
    `sync.sh` 의 형제 폴더 자동 탐지가 삽니다.
@@ -352,22 +371,22 @@ clone 은 **원격에 있는 것만** 가져옵니다. 로컬에만 있는 것�
 ### 7-4. 이관 후 검증
 
 ```bash
-cd ~/Dev/bideasy-suite/Bideasy/backend
+cd ~/dev/bideasy-suite/Bideasy/backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt && pytest        # 통과 건수는 CLAUDE.md §8 기준
 python -m ruff check .
 ```
 
 - [ ] 레포 4개 clone, `git status` clean (= `.gitignore` 정상 = 비공개 파일 복원됨)
-- [ ] **4개가 `/Users/hoseungkang/Dev/bideasy-suite/` 아래 형제 폴더**인지 — 워크스페이스 상대경로와 `sync.sh` 자동탐지가 여기 의존
-- [ ] `cd ~/Dev/bideasy-suite/Bideasy && pwd` → **`/Users/hoseungkang/Dev/...` (대문자 D)** 로 나오는지 (§7-3 ②)
+- [ ] **4개가 `/Users/hoseungkang/dev/bideasy-suite/` 아래 형제 폴더**인지 — 워크스페이스 상대경로와 `sync.sh` 자동탐지가 여기 의존
+- [ ] `cd ~/dev/bideasy-suite/Bideasy && pwd` → **`/Users/hoseungkang/dev/...` (대문자 D)** 로 나오는지 (§7-3 ②)
 - [ ] `gh auth login` → `gh pr list` 동작
 - [ ] `ssh -i ~/.ssh/lightsail_bideasy.pem ubuntu@api.bideasy.kr 'echo ok'` (권한 600 확인)
 - [ ] `bideasy-agent/claude-memory/./sync.sh status` → **차이 없음 ✅** (메모리 동기화 확인)
 - [ ] 메모리 **건수**가 떠나기 전과 같은지 (2026-08-08 기준 **15건**). 줄었으면 §7-0-1 을 빠뜨린 것
 - [ ] `curl -s https://api.bideasy.kr/health` → `status:ok`·`database:connected`
 - [ ] 전역 `~/.claude/CLAUDE.md` §5 의 BidEasy 정본 경로를
-      **`/Users/hoseungkang/Dev/bideasy-suite/Bideasy/CLAUDE.md`** 로 수정
+      **`/Users/hoseungkang/dev/bideasy-suite/Bideasy/CLAUDE.md`** 로 수정
       (현재 `C:\Project\Bideasy\CLAUDE.md` 로 적혀 있어 **윈도우에서도 이미 틀린 경로**입니다)
 
 ### 7-5. 옮기지 말 것
