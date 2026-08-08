@@ -33,16 +33,17 @@
 
 ```
 Windows : C:\dev\bideasy-suite\                 (Claude 키 C--dev-bideasy-suite-Bideasy)
-macOS   : /Users/hoseungkang/Dev/bideasy-suite/ (Claude 키 -Users-hoseungkang-Dev-bideasy-suite-Bideasy)
+macOS   : /Users/hoseungkang/dev/bideasy-suite/ (Claude 키 -Users-hoseungkang-dev-bideasy-suite-Bideasy)
 ├── Bideasy/                     ★ 메인. backend + infra + 웹 정적 + 문서. PUBLIC 레포
 ├── Bideasy-Extension/           크롬 익스텐션 (TypeScript). 별도 레포
 ├── bideasy-agent/               운영 에이전트 + Claude 메모리 정본. PRIVATE
 └── bideasy-policy/              개인정보처리방침 등 정책 문서
 ```
 
-> 🚨 **맥에서 `Dev` 는 반드시 대문자 D.** APFS 가 대소문자를 구분하지 않아 `cd ~/dev/...` 도
-> 성공하지만, `pwd` 는 입력한 그대로를 돌려주므로 **Claude 메모리 키가 갈라져 빈 폴더를 봅니다.**
-> 에러가 안 나서 눈치채기 어렵습니다 — `docs/HANDOFF_MIGRATION.md` §7-3 ②.
+> 🚨 **맥은 소문자 `dev` 로 통일합니다**(2026-08-08 결정, 원래 `~/Dev` 를 rename).
+> Claude 키는 경로 **문자열**에서 파생돼 대소문자를 가리는데, APFS 는 대소문자를 **구분하지 않아**
+> 이름이 어긋나도 `cd` 가 에러 없이 성공합니다 → **메모리 0건인 새 프로젝트가 조용히 열립니다.**
+> 폴더의 실제 이름과 입력하는 이름을 항상 같게 두세요 — `docs/HANDOFF_MIGRATION.md` §7-3 ②.
 
 `Bideasy\bideasy.code-workspace` 를 열면 4개가 한 창에 붙습니다(상대경로 참조 — 폴더를 옮기면 이 파일도 함께 고칠 것).
 
