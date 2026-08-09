@@ -83,20 +83,20 @@
 |---|---|
 | 프로덕션 액세스 | ✅ GRANTED · 50,000통/일 · 14통/초 · `EnforcementStatus: HEALTHY` |
 | 도메인 `bideasy.kr` | ✅ Verified · DKIM SUCCESS · SPF·DMARC 등록됨 (DNS 는 카페24 수동 관리) |
-| 발송 전용 IAM | 🚨 **서버에 적용돼 있지 않다**(2026-08-08 실측). 정책 `BideasySesSendOnly` 는 설계돼 있으나, 운영 컨테이너가 실제로 쓰는 건 **AWS 루트 계정 액세스 키**(`AKIAY5OAWO54BX…`)다 |
+| 발송 전용 IAM | ✅ **서버에 적용돼 있다**(2026-08-09 실측 — 컨테이너 키 끝 4자 `VHTO` = `bideasy-ses-sender`). 08-08 의 "루트 키" 판정은 같은 계정 키의 공통 접두사(`AKIAY5OAWO54`)만 보고 내린 **오경보**였다 |
 | 관리용 IAM | `bideasy-ses-admin`(`ses:*`) — **콘솔 작업 전용, 서버에 두지 않는다** |
 | Configuration Set | ⬜ 미생성 — 반송·불만 이벤트 추적 붙일 때 만든다 |
 
-> 🚨 **운영 SES 발송이 루트 키로 나가고 있다.** 교체 절차 = `docs/SECRET_ROTATION.md` §3-1.
-> ⚠️ **먼저 지우지 말 것** — 이 키를 지우면 광고뿐 아니라 체험 만료 고지·수신거부 결과 통지 같은
-> **법정 고지 메일까지 전면 중단**된다. 반드시 발송 전용 IAM 키로 **교체·검증한 뒤** 폐기한다.
+> ✅ 2026-08-09 재정정: **운영 SES 발송은 발송 전용 IAM 키로 나간다**(끝 4자 `VHTO` 실측 + 해당 키의
+> 마지막 사용 = 08-04 `ses`/서울). 루트 키는 서버와 무관 — 남은 일은 루트 키 자체의 폐기(맥북 소비자
+> 이전 후)다. `docs/SECRET_ROTATION.md` §3-1 참조.
 
 ### 3-2. 서버 (`infra/.env.production`) — ✅ 적용됨
 실제로 추가한 것은 **3줄뿐**이다. 나머지(`AWS_REGION`·`SES_FROM_EMAIL`·`SES_FROM_NAME`·`SES_REPLY_TO`·
 `PUBLIC_WEB_URL`·`PUBLIC_API_URL`)는 `config.py` 기본값이 이미 운영값과 같아 넣지 않았다.
 ```bash
 OUTBOUND_EMAIL_ENABLED=true
-AWS_ACCESS_KEY_ID=AKIA…            # 🚨 현재 값은 루트 키다. bideasy-ses-sender 로 교체 예정(SECRET_ROTATION §3-1)
+AWS_ACCESS_KEY_ID=AKIA…            # bideasy-ses-sender 의 발송 전용 키 (2026-08-09 끝 4자 실측 확인)
 AWS_SECRET_ACCESS_KEY=…
 ```
 백업: `~/env.production.bak-20260730-outbound`. 값을 바꾼 뒤에는 **배포(컨테이너 재생성)** 를 해야 반영된다.

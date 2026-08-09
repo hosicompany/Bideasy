@@ -59,7 +59,7 @@ C:\dev\
 1. ~~`gh auth login`~~ — ✅ **이미 완료**(실측: `hosicompany` 로그인, scope `repo`·`workflow`)
 2. ~~임시 SSH 키 제거~~ — ✅ **완료**(2026-08-01). `administrators_authorized_keys` 에서 `bideasy-migration-temp-20260801` 줄 삭제, `hermes-mac-to-windows-hosic` 만 남음. 백업 `administrators_authorized_keys.bak-20260801` 에 제거한 키가 들어 있으니 **이상 없음 확인 후 삭제 권장**
 3. ~~OneDrive `_BIDEASY_이관\` 꾸러미 삭제~~ — ✅ 로컬에 폴더 없음 확인. 단 **웹 휴지통에 남아 있을 수 있어** 한 번 확인 권장(평문 API 키)
-4. **AWS 루트 키 교체 · OpenAI 키·`POSTGRES_PASSWORD` 로테이션** — 🔴 **미처리**. 2026-06-19 감사 이후 그대로. 🚨 특히 **AWS 루트 키는 운영 서버가 지금 쓰고 있다**(2026-08-08 실측) — 폐기가 아니라 **교체**가 먼저다(`docs/SECRET_ROTATION.md` §3-1). 로컬 PC 는 무관하다(aws CLI 미설치)
+4. **AWS 루트 키 폐기 · OpenAI 키·`POSTGRES_PASSWORD` 로테이션** — 🔴 **미처리**. 2026-06-19 감사 이후 그대로. ✅ 08-09 재정정: "운영 서버가 루트 키를 쓴다"(08-08)는 **오경보** — 서버는 발송 전용 IAM 키를 쓴다(끝 4자 `VHTO` 실측). 루트 키의 실제 소비자는 **맥북 `~/.aws` [default] + aws-mcp 도구** — 이전 후 폐기(`docs/SECRET_ROTATION.md` §3-1)
 5. ~~익스텐션 문서 3커밋 머지 판단~~ — ✅ **머지 완료**(2026-08-01, `main` `198f736`). 머지하면서 하네스의 구 경로 하드코딩(`C:\Project\...`)을 새 경로로 고치고 `$PSScriptRoot` 역산으로 견고화. **`& npm test` 가 `npm.ps1` shim 에서 인자가 깨져(`Unknown command: "pm"`) 게이트가 한 번도 동작한 적이 없던 것**도 함께 수정(`npm.cmd` 고정)
 
 ---
@@ -400,8 +400,8 @@ pip install ruff && python -m ruff check .
 - **`infra/.env.production`** — 서버에만 존재합니다. 로컬 스냅샷(`.local`)으로 서버를 덮지 마세요.
 - **`BILLING_ENC_KEY`** — 이관을 이유로 재생성하는 일이 없어야 합니다. 변경 시 고객 빌링키 전부 복호화 불가.
 - **AWS 자격증명**(`~/.aws/credentials`) — 새 PC 로 복사하지 말고 필요할 때 IAM 콘솔에서 새로 발급하세요.
-  🚨 특히 지금은 **운영 서버가 루트 키로 돌고 있는 상태**라(`CLAUDE.md` §대기 항목 최상단) 자격증명을
-  기기에 퍼뜨릴 때가 아닙니다. 교체가 먼저입니다 — `docs/SECRET_ROTATION.md` §3-1.
+  ✅ 08-09 재정정: "운영 서버가 루트 키로 돈다"(08-08)는 오경보였습니다(서버 = `bideasy-ses-sender`).
+  다만 **맥북 `~/.aws` [default] 가 루트 키**로 확인돼, 소비자(aws-mcp) 이전 후 폐기 대상입니다 — `docs/SECRET_ROTATION.md` §3-1.
 - **로컬 SQLite**(`bideasy.db`·`backend/bideasy.db`, 합계 ~700K) — 재생성됩니다. 테스트는 in-memory 라 없어도 통과.
 - **`node_modules`·`.venv`·`__pycache__`·`dist`** — 재설치. venv 는 `pyvenv.cfg` 에 절대경로가 박혀 있어 옮기면 깨집니다.
 - **orca 워크트리**(`~/orca/workspaces/Bideasy/*`) — 2026-08-08 기준 3개(`master`·`work`·`infra-cost-analysis-lightsail`).
