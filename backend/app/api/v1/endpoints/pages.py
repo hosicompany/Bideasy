@@ -19,6 +19,7 @@ from app.core.logging import get_logger
 from app.core.config import settings
 from app.api.v1.endpoints.bids import _lookup_notice, get_bid_context
 from app.services import blog as blog_svc
+from app.services.bid_data_quality import base_is_consistent
 from app.services.lower_limits import get_lower_limit_rate
 
 logger = get_logger(__name__)
@@ -104,7 +105,7 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
             "reserved_price": int(_rp) if _rp > 0 else None,
             # 사정률 = 예정가격 ÷ 기초금액. 기준이 어긋난 옛 행은 표기하지 않는다.
             "reserved_ratio": (round(_rp / _bp * 100, 3)
-                               if _bp > 0 and _rp > 0 and 0.94 <= _rp / _bp <= 1.06 else None),
+                               if base_is_consistent(_bp, _rp) else None),
             "winner_price": int(_wp),
             "winner_rate": round(opening.winner_rate, 3) if opening.winner_rate else None,
             "winner_company": opening.winner_company or None,

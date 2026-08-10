@@ -53,6 +53,7 @@ import requests  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.db import models  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
+from app.services.bid_data_quality import base_is_consistent  # noqa: E402
 
 _URL = ("https://apis.data.go.kr/1230000/ad/BidPublicInfoService/"
         "getBidPblancListInfoCnstwkBsisAmount")
@@ -60,11 +61,6 @@ _PAGE = 500
 
 # 기초금액 공개는 개찰보다 앞선다. 개찰일 최솟값에서 이만큼 더 거슬러 훑는다.
 _LOOKBACK_DAYS = 45
-
-# 사정률 허용 범위 — arm_backtest.BASE_RATIO_MIN/MAX 와 같은 근거.
-# 정정 후에도 벗어나면 API 쪽 이상이므로 덮지 않고 남긴다.
-_RATIO_MIN, _RATIO_MAX = 0.94, 1.06
-
 
 def _f(v) -> float:
     if v in (None, ""):
@@ -142,7 +138,7 @@ def main() -> int:
                 skipped += 1
                 continue
             rsv = _f(row.reserved_price)
-            if rsv > 0 and not (_RATIO_MIN <= rsv / bss <= _RATIO_MAX):
+            if rsv > 0 and not base_is_consistent(bss, rsv):
                 print(f"  ! {bid_no} 정정 후에도 사정률 {rsv / bss:.4f} — 건너뜀")
                 skipped += 1
                 continue

@@ -3,8 +3,24 @@
     "tasks": [
         {
             "label": "Start Backend",
-            "type": "shell",
-            "command": "cd backend && python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000",
+            "type": "process",
+            "command": "${workspaceFolder}/backend/.venv/bin/python",
+            "windows": {
+                "command": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe"
+            },
+            "args": [
+                "-m",
+                "uvicorn",
+                "main:app",
+                "--reload",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/backend"
+            },
             "isBackground": true,
             "problemMatcher": {
                 "owner": "python",

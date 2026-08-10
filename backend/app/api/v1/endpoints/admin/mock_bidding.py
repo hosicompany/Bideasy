@@ -21,14 +21,21 @@ def summary(
     db: Session = Depends(get_db),
     _admin=Depends(require_admin),
 ):
-    """arm 별 성적표 + G-A(채점 도달률) + 오답노트 태그 통계."""
+    """arm 별 성적표 + G-A/G-B/G-C + 오답노트 태그 통계."""
     from app.services import mock_bidding as mb
 
+    gates = mb.evaluate_gates(db)
     return {
         "arms": mb.summarize(db, bid_method=bid_method),
-        "scoring_reach": mb.scoring_reach(db),
+        "scoring_reach": gates["g_a"],
+        "gates": gates,
+        "queue_health": mb.score_queue_health(db),
+        "sample_validity": mb.sample_validity(db, bid_method=bid_method),
         "failure_tags": mb.failure_tag_stats(db),
-        "note": "1차 지표는 dropout_rate(무효율). 대외 낙찰률 표기 금지.",
+        "note": (
+            "성능 지표는 기초금액 일관성 검사를 통과한 표본만 사용. "
+            "1차 지표는 dropout_rate(무효율). 대외 낙찰률 표기 금지."
+        ),
     }
 
 
@@ -45,8 +52,13 @@ def charts(
     """
     from app.services import mock_bidding as mb
 
+    gates = mb.evaluate_gates(db)
     return {
         "arms": mb.summarize(db),
+        "scoring_reach": gates["g_a"],
+        "gates": gates,
+        "queue_health": mb.score_queue_health(db),
+        "sample_validity": mb.sample_validity(db),
         "rank_distribution": mb.rank_distribution(db),
         "rank_histogram_cap": mb.RANK_HISTOGRAM_CAP,
         "gap_distribution": mb.gap_distribution(db),
@@ -55,7 +67,10 @@ def charts(
         "failure_tags": mb.failure_tag_stats(db),
         "segments": mb.segment_stats(db, arm=arm),
         "trend_arm": arm,
-        "note": "1차 지표는 dropout_rate(무효율). 대외 낙찰률 표기 금지.",
+        "note": (
+            "성능 지표는 기초금액 일관성 검사를 통과한 표본만 사용. "
+            "1차 지표는 dropout_rate(무효율). 대외 낙찰률 표기 금지."
+        ),
     }
 
 

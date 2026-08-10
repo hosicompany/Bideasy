@@ -1,6 +1,6 @@
 # 세션 인수인계 — 다른 IDE·다른 에이전트로 이어받기
 
-> 작성 2026-08-08 · 갱신 2026-08-09. 기준: master `99199f9` (#90) / 운영 `99199f9`(#90 은 08-08 15:35 KST 배포 완료 — 08-09 확인).
+> 작성 2026-08-08 · 갱신 2026-08-10. 기준: draft PR #98 `fix/mock-bidding-recovery` (원격 `6b9b841` + 리뷰 보완 로컬 변경, 미push·미머지·미배포) / 운영 `bacda36`.
 > **대상**: Claude Code 가 아닌 다른 IDE·에이전트(Cursor / VS Code Copilot / Codex / 다른 세션)로
 > 작업을 이어받는 사람.
 >
@@ -16,7 +16,7 @@
 포지션은 **"낙찰가를 예측하지 않는다"** — 대신 요약·독소조항·자격·안전 계산으로 *잃지 않게* 지킨다.
 
 지금 상태를 한 문장으로: **코드와 인프라는 앞서 있고, 실사용자가 없다.**
-(테스트 824건 green · 그런데 리드 1명 / 회원 2명)
+(테스트 847건 green · 그런데 리드 1명 / 회원 2명)
 
 그래서 다음 작업의 우선순위는 이렇게 갈립니다:
 
@@ -24,8 +24,22 @@
 |---|---|---|
 | 1 | ~~🚨 AWS 루트 키 교체~~ → **루트 키 폐기** | 08-09 재정정: 서버는 발송 전용 키를 쓴다 — 오경보였다 (§3) |
 | 2 | ~~#90 배포~~ ✅ 완료 | 08-08 15:35 KST 배포됨 — 08-09 확인 (§6) |
-| 3 | 기초금액 커버리지 관찰 | 방금 고친 것이 실제로 듣는지 (§5-A) |
-| 4 | 유입 / 고객 검증 | 진짜 병목. 코드로 풀 문제가 아닐 수 있다 (§5-C) |
+| 3 | 모의투찰 큐 수정 배포·G-A 복구 관찰 | G-A 27.98%, 유효 표본 59공고라 성능 해석 차단 중 |
+| 4 | 기초금액 커버리지 관찰 | 방금 고친 것이 실제로 듣는지 (§5-A) |
+| 5 | 유입 / 고객 검증 | 진짜 병목. 코드로 풀 문제가 아닐 수 있다 (§5-C) |
+
+### 2026-08-10 모의투찰 정정
+
+종전 “SCORED 2,275건이므로 2026 G2 400건 충족”은 틀렸다. `mock_bids` 한 공고에
+5 arm 행이 생기는데 이를 표본 5개로 셌고, 기초금액 기준 불일치도 제거하지 않았다.
+운영 재실측은 **1,773공고 등록 / 496공고 확정 / G-A 27.98% / 유효 59공고 /
+적격 유효 2공고**다. G-B·G2 모두 아직 `NOT_READY`다.
+
+로컬 변경은 큐 우선순위, 데이터 품질 가드, G-A/B/C 자동 판정, 관리자 잠금,
+월 21:00 주간 리포트, 2026 G2 CLI까지 구현했다. **아직 운영에는 없으므로** 다음
+세션이 서버 수치가 그대로라고 코드를 실패로 판정하면 안 된다. 사용자 승인 후 배포하고
+`queue_health`의 결과도착/최초확인 잔량부터 관찰한다. 상세는
+`docs/MOCK_BIDDING_DESIGN.md` §9.
 
 ---
 
@@ -46,6 +60,10 @@ macOS   : /Users/hoseungkang/dev/bideasy-suite/ (Claude 키 -Users-hoseungkang-d
 > 폴더의 실제 이름과 입력하는 이름을 항상 같게 두세요 — `docs/HANDOFF_MIGRATION.md` §7-3 ②.
 
 `Bideasy\bideasy.code-workspace` 를 열면 4개가 한 창에 붙습니다(상대경로 참조 — 폴더를 옮기면 이 파일도 함께 고칠 것).
+Python 인터프리터는 `${workspaceFolder:Bideasy — backend · web · flutter}/backend/.venv`로 OS 중립 지정돼 있고,
+백엔드 task는 macOS `bin/python` / Windows `Scripts\\python.exe`를 각각 사용한다.
+macOS에서 workspace가 `Scripts/python.exe`를 가리키면 시스템 Python 3.14로 폴백해
+`pytest`가 없다고 나오므로 경로를 먼저 확인한다.
 
 > ⚠️ **병렬 세션이 돌고 있을 수 있습니다.** `git worktree list` 로 확인하세요.
 > 2026-08-08 기준 `C:\Users\hosic\orca\workspaces\Bideasy\` 아래에 워크트리 3개(`master`·`work`·
@@ -80,12 +98,12 @@ macOS   : /Users/hoseungkang/dev/bideasy-suite/ (Claude 키 -Users-hoseungkang-d
 git clone https://github.com/hosicompany/Bideasy.git
 cd Bideasy
 pip install -r backend/requirements.txt      # Python 3.12
-cd backend && pytest                          # 824건 통과해야 정상 (약 2분)
+cd backend && pytest                          # 847건 통과해야 정상
 pip install ruff && python -m ruff check .    # ⚠️ ruff 는 requirements.txt 에 없다 (CI 도 따로 깐다)
 ```
 
 > macOS 는 `python3.12 -m venv .venv && source .venv/bin/activate` (Windows 의 `Scripts/` 아님).
-> 실측 참고: Apple Silicon 에서 `pytest` 824건이 **23초**(Windows 128초).
+> 실측 참고: Apple Silicon 에서 `pytest` 847건이 **24초**(2026-08-10).
 
 - **서버 SSH 키는 없어도 됩니다.** 배포는 GitHub Actions 버튼(§6).
 - `backend/.env`·`backend/bideasy.db` 는 git 에 없습니다 — 테스트는 in-memory 라 없어도 통과합니다.
@@ -164,7 +182,18 @@ q("공고", """select count(*), count(basis_amount),
      count(*) filter (where end_date > now()),
      count(*) filter (where end_date > now() and basis_amount is not null) from notices""")
 q("A값출처", "select a_value_source, count(*) from notices where a_value is not null group by 1")
-q("모의투찰", "select status, count(*) from mock_bids group by 1")
+q("모의투찰 arm행", "select status, count(*) from mock_bids group by 1")
+q("모의투찰 공고", """select count(distinct bid_no),
+     count(distinct bid_no) filter (where status='SCORED'),
+     round(100.0 * count(distinct bid_no) filter (where status='SCORED') /
+           nullif(count(distinct bid_no), 0), 2) from mock_bids""")
+q("모의투찰 유효표본", """with latest as (
+     select distinct on (mock_bid_id) mock_bid_id, outcome, actual_reserved_price
+     from mock_bid_results order by mock_bid_id, scoring_rev desc)
+     select count(*) filter (where l.outcome in ('WIN','LOST','DROPOUT')) raw_judged,
+            count(*) filter (where l.outcome in ('WIN','LOST','DROPOUT') and
+              l.actual_reserved_price / nullif(m.snapshot_basic_price,0) between 0.94 and 1.06) valid
+     from mock_bids m join latest l on l.mock_bid_id=m.id where m.arm='active'""")
 q("개찰", "select count(*), min(open_date)::date, max(open_date)::date from opening_results")
 q("리드/회원", "select (select count(*) from leads), (select count(*) from users)")
 q("발송원장", "select status, count(*) from outbound_messages group by 1")
@@ -266,7 +295,7 @@ ssh …  'docker exec bideasy_app alembic current'     # 마이그레이션 head
 ### 코드 변경 후 (예외 없음)
 
 ```bash
-cd backend && pytest              # 824건 기준
+cd backend && pytest              # 847건 기준
 python -m ruff check backend/     # 미사용 import 하나로 CI 가 red 가 된다
 ```
 

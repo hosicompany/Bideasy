@@ -70,7 +70,12 @@ class BidRecord:
         return (self.bid_method, self.bracket)
 
 
-def _load_db_records(db, existing_bid_nos: set) -> list[BidRecord]:
+def _load_db_records(
+    db,
+    existing_bid_nos: set,
+    *,
+    strict: bool = False,
+) -> list[BidRecord]:
     """누적 opening_results 테이블(매일 크롤 적재)에서 BidRecord 생성.
 
     정적 파일과 중복(bid_no)은 제외. estimated_price 는 reserved_price 로 대체.
@@ -93,6 +98,8 @@ def _load_db_records(db, existing_bid_nos: set) -> list[BidRecord]:
             .all()
         )
     except Exception:
+        if strict:
+            raise
         return out
     from app.services.lower_limits import get_lower_limit_rate
 
@@ -128,11 +135,15 @@ def load_records(
     year_range: tuple[int, int] = (2021, 2027),
     data_dir: Path = _DATA_DIR,
     db=None,
+    *,
+    strict_db: bool = False,
 ) -> list[BidRecord]:
     """opening_results_{year}.json 들을 로드·정제 (+ db 제공 시 누적 DB 병합).
 
     유효 조건: basic_price > 0 AND winner_price > 0 AND reserved_price > 0.
     db 전달 시 매일 쌓이는 opening_results 테이블도 합쳐 최신 시장 반영.
+    운영 판정처럼 DB 누락과 빈 표본을 구분해야 하는 호출부는
+    ``strict_db=True``로 조회 오류를 그대로 받는다.
     """
     records: list[BidRecord] = []
     for year in range(year_range[0], year_range[1]):
@@ -172,7 +183,11 @@ def load_records(
             )
     # 누적 DB 병합 (db 제공 시) — 매일 크롤된 최신 개찰결과 포함
     if db is not None:
-        records.extend(_load_db_records(db, {r.bid_no for r in records}))
+        records.extend(_load_db_records(
+            db,
+            {r.bid_no for r in records},
+            strict=strict_db,
+        ))
     return records
 
 

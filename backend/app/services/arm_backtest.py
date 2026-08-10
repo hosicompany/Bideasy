@@ -23,6 +23,12 @@ from pathlib import Path
 
 from app.core.logging import get_logger
 from app.services.autocalibrate import dataset as ds
+from app.services.bid_data_quality import (
+    BASE_RATIO_MAX,
+    BASE_RATIO_MIN,
+    base_is_consistent as prices_are_consistent,
+)
+from app.services.bid_metrics import wilson_ci
 from app.services.mock_bidding import (
     AGGRESSIVE_RATE, STANDARD_RATE, judge,
 )
@@ -52,32 +58,13 @@ ARM_ORDER = ("standard", "active", "frontier_c5", "frontier_c10", "aggressive")
 # 저장하는 basic_price 는 부가세 제외분이라 사정률이 1.10 부근으로 나온다.
 # 그 행을 그대로 집계하면 가격이 9% 낮게 잡혀 무효율이 99% 로 튄다.
 # 관측 범위의 2배를 여유로 잡되 1.10 은 확실히 배제되도록 한다.
-BASE_RATIO_MIN, BASE_RATIO_MAX = 0.94, 1.06
-
 # 방법별 표를 낼 최소 표본 — 이보다 작으면 비율이 요동쳐 오해를 부른다
 MIN_METHOD_N = 30
 
 
 def base_is_consistent(r: ds.BidRecord) -> bool:
     """기초금액과 예정가격이 같은 기준(부가세 포함 여부)인지 검사."""
-    if r.basic_price <= 0 or r.reserved_price <= 0:
-        return False
-    ratio = r.reserved_price / r.basic_price
-    return BASE_RATIO_MIN <= ratio <= BASE_RATIO_MAX
-
-
-def wilson_ci(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    """이항 비율의 Wilson 95% 신뢰구간 (%).
-
-    표본이 작으면 넓어진다. 폭이 겹치는 두 arm 은 우열을 단정할 수 없다.
-    """
-    if n <= 0:
-        return (0.0, 0.0)
-    p = k / n
-    denom = 1 + z * z / n
-    center = (p + z * z / (2 * n)) / denom
-    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
-    return (max(0.0, center - half) * 100.0, min(1.0, center + half) * 100.0)
+    return prices_are_consistent(r.basic_price, r.reserved_price)
 
 
 def price_flat(r: ds.BidRecord, rate_pct: float) -> int:

@@ -448,7 +448,9 @@ class TestSummary:
         assert s["standard"]["dropout_rate"] is not None
 
         reach = mb.scoring_reach(db_session)
-        assert reach["registered"] >= 5
+        notice_count = db_session.query(models.MockBid.bid_no).distinct().count()
+        assert reach["registered"] == notice_count
+        assert reach["unit"] == "notices"
         assert reach["gate_g_a_threshold"] == 60.0
 
     def test_failure_tag_stats(self, db_session):
@@ -467,6 +469,149 @@ class TestSummary:
         stats = mb.failure_tag_stats(db_session)
         assert "A값_결측" in stats
         assert stats["A값_결측"]["total"] >= 1
+
+    def test_base_mismatch_is_excluded_and_reported(self, db_session):
+        """추정가격이 스냅샷에 섞인 구 표본은 원장에 남기되 성적에서 뺀다."""
+        before_arms = mb.summarize(db_session)
+        before_validity = mb.sample_validity(db_session)
+        before_standard = before_arms.get("standard", {})
+
+        n = _notice("MB-SUM-BAD-BASE")
+        db_session.add(n)
+        db_session.commit()
+        mb.register_notice(db_session, n)
+        db_session.commit()
+        # 예정가격/등록 스냅샷 = 1.10 — 기초금액이 아니라 추정가격이 섞인 신호.
+        db_session.add(_opening("MB-SUM-BAD-BASE", reserved=110_000_000,
+                                winner=100_000_000))
+        db_session.commit()
+        for row in db_session.query(models.MockBid).filter_by(bid_no="MB-SUM-BAD-BASE").all():
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
+        db_session.commit()
+        mb.score_pending(db_session)
+
+        after_standard = mb.summarize(db_session)["standard"]
+        after_validity = mb.sample_validity(db_session)
+
+        assert after_standard["raw_judged"] == before_standard.get("raw_judged", 0) + 1
+        assert after_standard["excluded_base_mismatch"] == (
+            before_standard.get("excluded_base_mismatch", 0) + 1
+        )
+        assert after_standard["judged"] == before_standard.get("judged", 0)
+        assert after_validity["registered_notices"] == (
+            before_validity["registered_notices"] + 1
+        )
+        assert after_validity["raw_judged_notices"] == (
+            before_validity["raw_judged_notices"] + 1
+        )
+        assert after_validity["excluded_base_mismatch"] == (
+            before_validity["excluded_base_mismatch"] + 1
+        )
+        assert after_validity["valid_judged_notices"] == (
+            before_validity["valid_judged_notices"]
+        )
+
+    def test_missing_reserved_price_is_reported_as_unknown(self, db_session):
+        before = mb.sample_validity(db_session)
+        n = _notice("MB-SUM-UNKNOWN-BASE")
+        db_session.add(n)
+        db_session.commit()
+        mb.register_notice(db_session, n)
+        db_session.commit()
+        db_session.add(_opening("MB-SUM-UNKNOWN-BASE", reserved=None,
+                                winner=95_000_000))
+        db_session.commit()
+        for row in db_session.query(models.MockBid).filter_by(
+                bid_no="MB-SUM-UNKNOWN-BASE").all():
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
+        db_session.commit()
+        mb.score_pending(db_session)
+
+        after = mb.sample_validity(db_session)
+        assert after["excluded_base_unknown"] == before["excluded_base_unknown"] + 1
+        assert after["valid_judged_notices"] == before["valid_judged_notices"]
+
+
+class TestStrategyGates:
+    @staticmethod
+    def _arm(judged, win, dropout):
+        lo, hi = mb.wilson_ci(win, judged)
+        return {
+            "judged": judged,
+            "win": win,
+            "dropout": dropout,
+            "win_rate": round(win / judged * 100, 3) if judged else None,
+            "dropout_rate": round(dropout / judged * 100, 3) if judged else None,
+            "win_ci95": [round(lo, 3), round(hi, 3)] if judged else None,
+        }
+
+    def test_g_a_blocks_strategy_interpretation(self):
+        gates = mb._evaluate_strategy_gates(
+            {"status": "OBSERVING", "interpretation_allowed": False},
+            {
+                "standard": self._arm(400, 20, 40),
+                "active": self._arm(400, 80, 20),
+                "frontier_c10": self._arm(400, 160, 40),
+            },
+        )
+
+        assert gates["g_b"]["status"] == "BLOCKED_G_A"
+        assert gates["g_c"]["status"] == "LOCKED_G_B"
+
+    def test_g_b_waits_for_400_distinct_notice_samples(self):
+        gates = mb._evaluate_strategy_gates(
+            {"status": "PASS", "interpretation_allowed": True},
+            {
+                "standard": self._arm(399, 20, 40),
+                "active": self._arm(399, 80, 20),
+            },
+        )
+
+        assert gates["g_b"]["sample_notices"] == 399
+        assert gates["g_b"]["sample_requirement_met"] is False
+        assert gates["g_b"]["status"] == "NOT_READY"
+
+    def test_g_b_passes_only_when_dropout_and_wilson_conditions_hold(self):
+        gates = mb._evaluate_strategy_gates(
+            {"status": "PASS", "interpretation_allowed": True},
+            {
+                "standard": self._arm(400, 20, 40),
+                "active": self._arm(400, 80, 20),
+            },
+        )
+
+        assert gates["g_b"]["sample_requirement_met"] is True
+        assert gates["g_b"]["active_dropout_lte_standard"] is True
+        assert gates["g_b"]["active_win_ci_lower_gt_standard_upper"] is True
+        assert gates["g_b"]["status"] == "PASS"
+
+    def test_g_b_fails_when_active_dropout_is_higher(self):
+        gates = mb._evaluate_strategy_gates(
+            {"status": "PASS", "interpretation_allowed": True},
+            {
+                "standard": self._arm(400, 20, 20),
+                "active": self._arm(400, 80, 40),
+            },
+        )
+
+        assert gates["g_b"]["active_win_ci_lower_gt_standard_upper"] is True
+        assert gates["g_b"]["active_dropout_lte_standard"] is False
+        assert gates["g_b"]["status"] == "FAIL"
+
+    def test_g_c_unlocks_after_g_b_and_applies_frontier_conditions(self):
+        gates = mb._evaluate_strategy_gates(
+            {"status": "PASS", "interpretation_allowed": True},
+            {
+                "standard": self._arm(400, 20, 40),
+                "active": self._arm(400, 80, 20),
+                "frontier_c10": self._arm(400, 160, 40),
+            },
+        )
+
+        assert gates["g_b"]["status"] == "PASS"
+        assert gates["g_c"]["frontier_c10_win_ci_lower_gt_active_upper"] is True
+        assert gates["g_c"]["frontier_c10_dropout_condition_met"] is True
+        assert gates["g_c"]["status"] == "PASS"
 
 
 # ── Phase 2 — 참가자 데이터로 등수 재구성 (§4-3) ──────────────
@@ -656,6 +801,29 @@ class TestChartAggregates:
         # 기초금액 1억 = medium (1e8 은 small 상한 밖)
         assert any(r["bracket"] == "medium" and r["bid_method"] == "적격심사제" for r in rows)
 
+    def test_base_mismatch_does_not_enter_chart_aggregates(self, db_session):
+        """성적표뿐 아니라 차트·오답노트도 같은 유효 표본만 써야 한다."""
+        before_segments = mb.segment_stats(db_session, arm="active")
+        before_gaps = mb.gap_distribution(db_session)
+        before_tags = mb.failure_tag_stats(db_session)
+
+        n = _notice("MB-CH-BAD-BASE")
+        db_session.add(n)
+        db_session.commit()
+        mb.register_notice(db_session, n)
+        db_session.commit()
+        db_session.add(_opening("MB-CH-BAD-BASE", reserved=110_000_000,
+                                winner=100_000_000))
+        db_session.commit()
+        for row in db_session.query(models.MockBid).filter_by(bid_no="MB-CH-BAD-BASE").all():
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
+        db_session.commit()
+        mb.score_pending(db_session)
+
+        assert mb.segment_stats(db_session, arm="active") == before_segments
+        assert mb.gap_distribution(db_session) == before_gaps
+        assert mb.failure_tag_stats(db_session) == before_tags
+
 
 class TestScoringBacklogOrder:
     """잔량이 limit 을 넘을 때의 계약 (2026-08-03 발견).
@@ -710,6 +878,69 @@ class TestScoringBacklogOrder:
         self._register_with_deadline(db_session, "MB-ORD-C", hours_ago=3)
         r = mb.score_pending(db_session, limit=100)
         assert r["deferred"] == 0
+
+    def test_unchecked_notice_is_not_starved_by_old_no_result(self, db_session):
+        """오래된 NO_RESULT 가 매번 limit 을 독점해 신규가 영영 밀리면 안 된다.
+
+        1회차에서 OLD 는 NO_RESULT 가 되고, 2회차 직전에 NEW 를 등록한다.
+        단순 deadline 정렬이면 OLD 가 또 선택돼 NEW 는 결과 행조차 못 얻는다.
+        """
+        self._register_with_deadline(db_session, "MB-ORD-STALE", hours_ago=72)
+        first = mb.score_pending(db_session, limit=5)
+        assert first["outcomes"] == {"NO_RESULT": 5}
+
+        self._register_with_deadline(db_session, "MB-ORD-UNCHECKED", hours_ago=1)
+        second = mb.score_pending(db_session, limit=5)
+
+        unchecked_ids = {
+            row.id for row in db_session.query(models.MockBid)
+            .filter_by(bid_no="MB-ORD-UNCHECKED").all()
+        }
+        result_ids = {
+            row.mock_bid_id for row in db_session.query(models.MockBidResult)
+            .filter(models.MockBidResult.mock_bid_id.in_(unchecked_ids)).all()
+        }
+        assert second["outcomes"] == {"NO_RESULT": 5}
+        assert result_ids == unchecked_ids
+
+    def test_available_opening_result_has_first_priority(self, db_session):
+        """개찰결과가 이미 도착한 건은 오래된 NO_RESULT 보다 먼저 확정 채점한다."""
+        self._register_with_deadline(db_session, "MB-ORD-WAIT", hours_ago=72)
+        mb.score_pending(db_session, limit=5)  # WAIT 에 NO_RESULT rev1
+
+        self._register_with_deadline(db_session, "MB-ORD-READY", hours_ago=1)
+        db_session.add(_opening("MB-ORD-READY", winner=95_000_000))
+        db_session.commit()
+
+        r = mb.score_pending(db_session, limit=5)
+
+        assert r["scored"] == 5
+        assert "NO_RESULT" not in r["outcomes"]
+        ready = db_session.query(models.MockBid).filter_by(bid_no="MB-ORD-READY").all()
+        assert {row.status for row in ready} == {"SCORED"}
+
+    def test_queue_health_explains_each_priority_bucket(self, db_session):
+        self._register_with_deadline(db_session, "MB-QH-RETRY", hours_ago=72)
+        mb.score_pending(db_session, limit=5)
+
+        self._register_with_deadline(db_session, "MB-QH-FRESH", hours_ago=2)
+        self._register_with_deadline(db_session, "MB-QH-READY", hours_ago=1)
+        db_session.add(_opening("MB-QH-READY", winner=95_000_000))
+        db_session.commit()
+
+        health = mb.score_queue_health(
+            db_session,
+            bid_nos=["MB-QH-RETRY", "MB-QH-FRESH", "MB-QH-READY"],
+        )
+
+        assert health["due_arm_rows"] == 15
+        assert health["due_notices"] == 3
+        assert health["ready_with_opening_result_arm_rows"] == 5
+        assert health["never_checked_arm_rows"] == 5
+        assert health["retry_no_result_arm_rows"] == 5
+        assert health["priority_order"] == [
+            "ready_with_opening_result", "never_checked", "retry_no_result",
+        ]
 
 
 class TestRegisterRefreshesBasis:
@@ -767,6 +998,73 @@ class TestRegisterRefreshesBasis:
 
         assert called == []
         assert "basis_refresh" not in r
+
+
+class TestWeeklyReport:
+    def test_report_contains_gate_quality_queue_and_notes(self, db_session):
+        report = mb.collect_weekly_report(
+            db_session, now=datetime(2026, 8, 10, 21, 0),
+        )
+
+        assert report["period_key"] == "2026-W33"
+        assert set(report["gates"]) == {"g_a", "g_b", "g_c"}
+        assert "valid_judged_notices" in report["sample_validity"]
+        assert "due_arm_rows" in report["queue_health"]
+        assert isinstance(report["top_failure_tags"], dict)
+
+    def test_task_is_idempotent_per_admin_and_week(self, db_session, monkeypatch):
+        from app.tasks import mock_bid_tasks as t
+
+        email = "mock-weekly-admin@test.com"
+        admin = db_session.query(models.User).filter_by(email=email).first()
+        if admin is None:
+            admin = models.User(
+                email=email, hashed_password="x", is_admin=True, tier="free",
+            )
+            db_session.add(admin)
+            db_session.commit()
+        admin_id = admin.id
+        monkeypatch.setattr(t, "SessionLocal", lambda: db_session)
+        fixed_report = mb.collect_weekly_report(
+            db_session, now=datetime(2026, 8, 10, 21, 0),
+        )
+        monkeypatch.setattr(
+            "app.services.mock_bidding.collect_weekly_report",
+            lambda db: fixed_report,
+        )
+
+        first = t.weekly_mock_bid_report()
+        second = t.weekly_mock_bid_report()
+
+        assert first["ok"] is True
+        assert first["notifications_created"] >= 1
+        assert second["notifications_created"] == 0
+        assert db_session.query(models.Notification).filter(
+            models.Notification.user_id == admin_id,
+            models.Notification.noti_type == "MOCK_BID_WEEKLY_2026-W33",
+        ).count() == 1
+
+    def test_task_failure_retries_and_finishes_as_failure(self, monkeypatch):
+        from app.tasks import mock_bid_tasks as t
+
+        attempts = 0
+
+        def fail_report(db):
+            nonlocal attempts
+            attempts += 1
+            raise RuntimeError("simulated report failure")
+
+        monkeypatch.setattr(t, "SessionLocal", _NullDB)
+        monkeypatch.setattr(
+            "app.services.mock_bidding.collect_weekly_report",
+            fail_report,
+        )
+
+        result = t.weekly_mock_bid_report.apply(throw=False)
+
+        assert result.state == "FAILURE"
+        assert isinstance(result.result, RuntimeError)
+        assert attempts == 4  # 최초 1회 + autoretry 3회
 
 
 class _NullDB:

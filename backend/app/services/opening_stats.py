@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.db import models
+from app.services.bid_data_quality import base_is_consistent
 from app.services.lower_limits import get_amount_band
 
 logger = get_logger(__name__)
@@ -38,10 +39,6 @@ DEFAULT_WINDOW_DAYS = 365
 # **차이**를 주장하려는 것이고, 여기는 분포를 **있는 그대로** 보여주는 것뿐이다.
 # 다만 10 미만은 p10/p90 이 사실상 최소·최대라 분위수라고 부르기 민망하다.
 MIN_SAMPLE = 10
-
-# 사정률(예정가격÷기초금액) 허용 범위 — 기초금액과 예정가격이 같은 기준인지 검사.
-# ★ KEEP IN SYNC: arm_backtest.BASE_RATIO_MIN/MAX (tests/test_opening_stats.py 가 감시)
-RATIO_MIN, RATIO_MAX = 0.94, 1.06
 
 # 기관 무관 집계를 나타내는 값. NULL 이 아니라 빈 문자열인 이유는
 # models.OpeningStat docstring 참고(Postgres UNIQUE 가 NULL 을 안 묶는다).
@@ -118,7 +115,7 @@ def _usable(row) -> tuple[float, float] | None:
     if basic <= 0 or reserved <= 0 or winner <= 0:
         return None
     ratio = reserved / basic
-    if not (RATIO_MIN <= ratio <= RATIO_MAX):
+    if not base_is_consistent(basic, reserved):
         return None
     return winner / basic * 100.0, ratio * 100.0
 

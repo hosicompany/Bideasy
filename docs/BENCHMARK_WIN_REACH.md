@@ -1,6 +1,6 @@
 # 낙찰 도달 성능 벤치마크 (Win-Reach Benchmark)
 
-> 작성 2026-07-17 · 상태: **§0 사전 등록 완료(실험 실행 전 동결)** → 실행 후 §1~§6 채움
+> 작성 2026-07-17 · 갱신 2026-08-10 · 상태: **2025 판정 G3 유지 / 2026 G2 실행 경로 구현 / 유효 표본 미달로 재판정 대기**
 > 배경: 창업자 문제 제기 "낙찰은 최종 목표 — 타사(디마툴즈 자체 공시 63~65%)와 동등 이상 가능한가?" → `C:\Users\hosic\.claude\plans` 승인 계획에 따라 **포지션 불변 상태에서 수치 먼저** 실측.
 > 실행: `cd backend && python scripts/benchmark_win_reach.py --exp all`
 > 관련: `docs/COMPETITIVE_STRATEGY.md`(전략 정본) · `docs/BACKFILL_VALIDATION_DESIGN.md` §2(승률 과적합 정량화 — 본 실험이 실행을 겸함)
@@ -126,6 +126,40 @@
    - 소액수의견적 2025 달성률 ~73% — 2024+ 레짐 데이터 위주 재보정(자가보정 year_weights가 이미 반영 중이나 소액 세그먼트 파라미터 재점검) 여지.
    - 프론티어 무릎(캡 5~10%)을 "안전/균형/공격 3단 프리셋"의 데이터 근거로 활용 가능.
 3. **재판정 조건**: 2026 개찰 누적 ≥400건 시 G2 재실행(`--exp frontier`, holdout=2026). CI 폭이 절반으로 줄어 판정 가능해짐.
+
+### 5-1. 2026 G2 재실행 절차 (2026-08-10 구현)
+
+```bash
+cd backend
+
+# 전체 G2 — 정적 2021~2025 학습, 운영 DB의 2026을 holdout으로 사용
+python scripts/benchmark_win_reach.py \
+  --exp frontier --include-db --holdout-year 2026
+
+# 부칙 1 — 적격심사제만 별도 판정
+python scripts/benchmark_win_reach.py \
+  --exp frontier --include-db --holdout-year 2026 --bid-method 적격심사제
+```
+
+스크립트는 다음을 강제한다.
+
+- DB 병합 행 중 `예정가격 / 기초금액`이 **0.94~1.06** 밖인 알려진 금액 기준
+  불일치 표본을 제외하고 제외 수를 결과에 기록한다.
+- `--include-db` 조회가 실패하면 빈 표본으로 판정하지 않고 실행 자체를 실패시킨다.
+  DB 장애를 `NOT_READY`로 오인한 새 결과를 쓰지 않는다.
+- holdout 400건 미만은 조건 수치가 좋아도 `NOT_READY`다. 400건 이상일 때만
+  cap10의 win Wilson 95% CI 하한을 `max(25%, holdout oracle×80%)`와 비교한다.
+- 2026·DB·방법 필터·quick 실행은 운영 arm이 읽는
+  `benchmark_win_reach_results.json`을 덮어쓸 수 없다. 비정본 결과 파일명에는
+  데이터 소스와 방법을 함께 넣어 서로 덮어쓰지 않는다. 위 두 명령의 기본 출력은
+  각각 `benchmark_g2_2026_db_results.json`,
+  `benchmark_g2_2026_db_qualification_results.json`이다.
+
+**08-10 운영 재실측 판정은 아직 NOT_READY다.** 개찰 누적 행 자체는 5천여 건이지만
+금액 기준 일관성을 통과한 2026 표본은 약 **59건**뿐이다. 종전의 “모의투찰
+SCORED 2,275 arm 행 = G2 400건 충족” 해석은 실험 단위와 데이터 품질을 모두
+잘못 센 것이므로 폐기한다. 수정 배포·백필 후 유효 holdout이 400건에 도달할 때
+위 명령을 실행한다.
 
 ## 6. 한계 (사전 인지)
 

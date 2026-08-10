@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 from app.core.config import settings
+from app.services.bid_data_quality import base_is_consistent
 
 # 판정 결과
 CONFIRMED = "confirmed"      # 기초금액 확인됨 — 정상 계산
@@ -36,12 +37,6 @@ def enforcing() -> bool:
     return bool(getattr(settings, "BASIS_AMOUNT_ENFORCE", False))
 
 
-# 사정률(예정가격÷기초금액) 허용 범위 — arm_backtest.BASE_RATIO_MIN/MAX 와 같은 근거.
-# 개찰결과 행 중 아직 정정 안 된 것(추정가격 기준)이 남아 있어, 이 검사를
-# 통과한 행만 기초금액 소스로 인정한다. 아니면 두 기준이 다시 섞인다.
-_RATIO_MIN, _RATIO_MAX = 0.94, 1.06
-
-
 def _basis_from_opening(opening) -> float | None:
     """개찰결과에서 얻는 기초금액. 기준이 어긋난 행은 쓰지 않는다.
 
@@ -56,7 +51,7 @@ def _basis_from_opening(opening) -> float | None:
     if bp <= 0:
         return None
     # 예정가격이 있으면 사정률로 기준 일치를 검증한다(백필 안 된 옛 행 배제)
-    if rp > 0 and not (_RATIO_MIN <= rp / bp <= _RATIO_MAX):
+    if rp > 0 and not base_is_consistent(bp, rp):
         return None
     return bp
 

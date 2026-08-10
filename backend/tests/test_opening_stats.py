@@ -67,12 +67,11 @@ def test_amount_band_label_roundtrip():
 
 # ---------------------------------------------------------------- 드리프트 가드
 
-def test_ratio_guard_matches_arm_backtest():
-    """기준 일치 검사 범위가 백테스트 쪽과 갈라지면 두 곳의 판정이 달라진다."""
-    from app.services import arm_backtest
+def test_ratio_guard_uses_shared_data_quality_bounds():
+    """개찰 통계가 공통 금액 기준 판정과 갈라지면 성능 표본이 달라진다."""
+    from app.services import bid_data_quality
 
-    assert os_svc.RATIO_MIN == arm_backtest.BASE_RATIO_MIN
-    assert os_svc.RATIO_MAX == arm_backtest.BASE_RATIO_MAX
+    assert os_svc.base_is_consistent is bid_data_quality.base_is_consistent
 
 
 def test_no_mean_columns_on_stat_model():

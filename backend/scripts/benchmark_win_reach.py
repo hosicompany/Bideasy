@@ -16,11 +16,13 @@
   python scripts/benchmark_win_reach.py --exp all
   python scripts/benchmark_win_reach.py --exp audit --quick
   python scripts/benchmark_win_reach.py --exp frontier --wide
+  python scripts/benchmark_win_reach.py --exp frontier --include-db --holdout-year 2026
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -43,6 +45,8 @@ from app.services.autocalibrate.optimizer import (                      # noqa: 
 )
 from app.services.autocalibrate.risk_model import ReservedRatioModel    # noqa: E402
 from app.services.autocalibrate.strategy_store import get_default_store  # noqa: E402
+from app.services.bid_data_quality import base_is_consistent             # noqa: E402
+from app.services.bid_metrics import wilson_ci                           # noqa: E402
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 RESULTS_PATH = DATA_DIR / "benchmark_win_reach_results.json"
@@ -56,24 +60,21 @@ WIDE_MARGIN = [x / 10 for x in range(0, 31)]      # 0.0 ~ 3.0
 
 DROPOUT_CAPS = [2.0, 3.0, 4.0, 5.0, 7.0, 10.0, 15.0, 20.0, 30.0, None]
 MIN_SAMPLE = 10           # optimizer.optimize_all 과 동일한 희소 세그먼트 기준
-HOLDOUT_YEARS = (2025,)
+DEFAULT_HOLDOUT_YEARS = (2025,)
 BASELINE_TOLERANCE = 0.5  # %p — audit 기준선 재현 허용 오차 (사전 등록 부칙 3)
+G2_MIN_HOLDOUT_RECORDS = 400
+
+_METHOD_FILE_LABELS = {
+    "적격심사제": "qualification",
+    "소액수의견적": "small_quote",
+    "제한적최저가(낙찰하한율)": "limited_lowest",
+    "최저가낙찰제": "lowest",
+}
 
 
 # ──────────────────────────────────────────────────────────────
 # §A 공통 인프라
 # ──────────────────────────────────────────────────────────────
-
-def wilson_ci(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    """이항 비율의 Wilson 95% 신뢰구간 (%)."""
-    if n <= 0:
-        return (0.0, 0.0)
-    p = k / n
-    denom = 1 + z * z / n
-    center = (p + z * z / (2 * n)) / denom
-    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
-    return (max(0.0, center - half) * 100.0, min(1.0, center + half) * 100.0)
-
 
 def interval_of(r: ds.BidRecord) -> tuple[float, float] | None:
     """낙찰 가능 투찰률 구간 [L, U] (기초금액 대비 %). None = 낙찰 불가능(역전).
@@ -170,11 +171,69 @@ def dedup_records(records: list[ds.BidRecord]) -> tuple[list[ds.BidRecord], int]
     return deduped, len(records) - len(deduped)
 
 
-def load_all() -> tuple[list[ds.BidRecord], list[ds.BidRecord], int]:
-    """(원본, dedup본, 중복수). 기준선 재현은 원본으로, 실험은 dedup본으로."""
-    raw = ds.load_records(db=None)
+def load_all(include_db: bool = False, bid_method: str | None = None,
+             ) -> tuple[list[ds.BidRecord], list[ds.BidRecord], int, int]:
+    """(유효 원본, dedup본, 중복수, 기준불일치 제외수)를 반환한다.
+
+    `--include-db` 일 때만 운영 `opening_results`를 정적 파일에 병합한다. DB의
+    금액 기준이 섞인 과거 행은 모의투찰 성능 집계와 같은 일관성 가드로 제외해,
+    2026 재판정이 알려진 데이터 결함을 다시 학습하지 않게 한다.
+    """
+    db = None
+    try:
+        if include_db:
+            from app.db.session import SessionLocal
+
+            db = SessionLocal()
+        loaded = ds.load_records(db=db, strict_db=include_db)
+    finally:
+        if db is not None:
+            db.close()
+
+    if bid_method:
+        loaded = [r for r in loaded if r.bid_method == bid_method]
+    raw = [
+        r for r in loaded
+        if base_is_consistent(r.basic_price, r.reserved_price)
+    ]
+    excluded = len(loaded) - len(raw)
     deduped, n_dup = dedup_records(raw)
-    return raw, deduped, n_dup
+    return raw, deduped, n_dup, excluded
+
+
+def result_path_for_run(json_out: str | None, include_db: bool,
+                        holdout_years: tuple[int, ...],
+                        bid_method: str | None, quick: bool = False,
+                        ) -> tuple[Path, bool]:
+    """비정본 재실행이 운영 arm 파라미터 JSON을 덮어쓰지 않게 경로를 격리한다."""
+    canonical = (
+        not include_db
+        and holdout_years == DEFAULT_HOLDOUT_YEARS
+        and bid_method is None
+        and not quick
+    )
+    if json_out:
+        out_path = Path(json_out)
+    elif canonical:
+        out_path = RESULTS_PATH
+    else:
+        years = "_".join(str(y) for y in holdout_years)
+        source = "db" if include_db else "static"
+        method_label = _METHOD_FILE_LABELS.get(bid_method or "")
+        if bid_method and method_label is None:
+            digest = hashlib.sha256(bid_method.encode("utf-8")).hexdigest()[:10]
+            method_label = f"method_{digest}"
+        method_suffix = f"_{method_label}" if method_label else ""
+        prefix = "benchmark_quick" if quick else "benchmark_g2"
+        out_path = DATA_DIR / (
+            f"{prefix}_{years}_{source}{method_suffix}_results.json"
+        )
+    if not canonical and out_path.resolve() == RESULTS_PATH.resolve():
+        raise ValueError(
+            "비정본 재판정 결과는 운영 frontier 파라미터 파일과 다른 "
+            "--json-out 경로에 저장해야 합니다."
+        )
+    return out_path, canonical
 
 
 def quick_sample(records: list[ds.BidRecord], step: int = 10) -> list[ds.BidRecord]:
@@ -480,12 +539,15 @@ def run_frontier(
     train: list[ds.BidRecord],
     holdout: list[ds.BidRecord],
     active_params: dict,
+    holdout_years: tuple[int, ...],
     wide: bool = False,
 ) -> dict:
     adj_range = WIDE_ADJ if wide else GRID_ADJ
     margin_range = WIDE_MARGIN if wide else GRID_MARGIN
     label = "wide" if wide else "standard"
-    print(f"\n=== [frontier] 낙찰 최대화 프론티어 (grid={label}, fit 2021~2024 → holdout 2025) ===")
+    years_label = ",".join(str(y) for y in holdout_years)
+    print(f"\n=== [frontier] 낙찰 최대화 프론티어 "
+          f"(grid={label}, holdout={years_label}) ===")
 
     # 세그먼트별 그리드 1회 계산 (캡별 재계산 없음)
     seg_grids: dict[tuple[str, str], list[dict]] = {}
@@ -544,7 +606,7 @@ def run_frontier(
 
     return {
         "grid": label,
-        "holdout_years": list(HOLDOUT_YEARS),
+        "holdout_years": list(holdout_years),
         "holdout_oracle": holdout_oracle,
         "points": [
             {k: v for k, v in p.items() if k != "params"} for p in points
@@ -562,6 +624,33 @@ def run_frontier(
     }
 
 
+def evaluate_g2(frontier: dict, holdout_n: int) -> dict:
+    """사전 등록한 G2를 cap10 holdout의 Wilson CI 하한으로 판정한다."""
+    cap10 = next(
+        (p for p in frontier.get("points", []) if p.get("dropout_cap_pp") == 10.0),
+        None,
+    )
+    oracle = frontier.get("holdout_oracle") or {}
+    oracle_rate = oracle.get("win_rate")
+    target = max(25.0, oracle_rate * 0.8) if oracle_rate is not None else None
+    ci_lower = (cap10.get("holdout_win_ci95") or [None])[0] if cap10 else None
+    sample_ready = holdout_n >= G2_MIN_HOLDOUT_RECORDS
+    condition_met = bool(
+        target is not None and ci_lower is not None and ci_lower >= target
+    )
+    status = "NOT_READY" if not sample_ready else ("PASS" if condition_met else "FAIL")
+    return {
+        "status": status,
+        "holdout_records": holdout_n,
+        "minimum_records": G2_MIN_HOLDOUT_RECORDS,
+        "sample_requirement_met": sample_ready,
+        "cap10_win_ci95_lower": ci_lower,
+        "target_pct": round(target, 3) if target is not None else None,
+        "condition_met": condition_met,
+        "rule": "cap10 holdout win Wilson CI lower >= max(25%, holdout oracle * 80%)",
+    }
+
+
 # ──────────────────────────────────────────────────────────────
 # 메인
 # ──────────────────────────────────────────────────────────────
@@ -572,11 +661,48 @@ def main() -> None:
                     default="all")
     ap.add_argument("--quick", action="store_true", help="1/10 표본 스모크")
     ap.add_argument("--wide", action="store_true", help="확장 그리드 (frontier)")
-    ap.add_argument("--json-out", default=str(RESULTS_PATH))
+    ap.add_argument(
+        "--holdout-year", dest="holdout_years", action="append", type=int,
+        help="holdout 연도(반복 가능, 기본 2025)",
+    )
+    ap.add_argument(
+        "--include-db", action="store_true",
+        help="정적 파일에 운영 opening_results를 병합(2026 G2 재판정용)",
+    )
+    ap.add_argument(
+        "--bid-method", help="입찰방법 한정(예: 적격심사제 부칙 판정)",
+    )
+    ap.add_argument(
+        "--json-out",
+        help="결과 경로. 비정본 실행은 기본적으로 별도 G2 파일에 저장",
+    )
     args = ap.parse_args()
 
-    print(f"낙찰 도달 벤치마크 — exp={args.exp} quick={args.quick} wide={args.wide}")
-    raw, deduped, n_dup = load_all()
+    holdout_years = tuple(args.holdout_years or DEFAULT_HOLDOUT_YEARS)
+    noncanonical_input = (
+        args.include_db or holdout_years != DEFAULT_HOLDOUT_YEARS
+        or args.bid_method is not None
+    )
+    if noncanonical_input and args.exp in ("audit", "all"):
+        ap.error("audit 기준선 재현은 정본 2025 정적 데이터에서만 실행할 수 있습니다.")
+    try:
+        out_path, canonical_run = result_path_for_run(
+            args.json_out, args.include_db, holdout_years, args.bid_method,
+            quick=args.quick,
+        )
+    except ValueError as e:
+        ap.error(str(e))
+
+    print(f"낙찰 도달 벤치마크 — exp={args.exp} quick={args.quick} wide={args.wide} "
+          f"holdout={holdout_years} include_db={args.include_db} "
+          f"bid_method={args.bid_method or 'ALL'}")
+    raw, deduped, n_dup, excluded = load_all(
+        include_db=args.include_db, bid_method=args.bid_method,
+    )
+    if not deduped:
+        ap.error("선택한 조건의 유효 레코드가 없습니다.")
+    if excluded:
+        print(f"  기초금액 일관성 검사 제외: {excluded}건")
     store = get_default_store()
     active_params = store.load_active().params
 
@@ -588,6 +714,12 @@ def main() -> None:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "quick": args.quick,
         "n_records": len(records),
+        "excluded_base_inconsistent": excluded,
+        "run_config": {
+            "include_db": args.include_db,
+            "holdout_years": list(holdout_years),
+            "bid_method": args.bid_method,
+        },
     }
 
     run_all = args.exp == "all"
@@ -598,8 +730,16 @@ def main() -> None:
     if run_all or args.exp == "oracle":
         results["oracle"] = run_oracle(records)
     if run_all or args.exp == "frontier":
-        train, holdout = ds.split_by_year(records, HOLDOUT_YEARS)
-        results["frontier"] = run_frontier(train, holdout, active_params, wide=args.wide)
+        train, holdout = ds.split_by_year(records, holdout_years)
+        results["frontier"] = run_frontier(
+            train, holdout, active_params, holdout_years, wide=args.wide,
+        )
+        if 2026 in holdout_years:
+            results["g2_2026"] = evaluate_g2(results["frontier"], len(holdout))
+            g2 = results["g2_2026"]
+            print(f"\nG2 2026: {g2['status']} — holdout {g2['holdout_records']}/"
+                  f"{g2['minimum_records']}건, CI 하한 {g2['cap10_win_ci95_lower']}% "
+                  f"vs 기준 {g2['target_pct']}%")
 
     # sanity 1: oracle ≥ 모든 정책/프론티어 win (동일 레코드셋 기준)
     if "oracle" in results and "policies" in results:
@@ -611,11 +751,11 @@ def main() -> None:
         print(f"\nsanity(oracle 상한 {ceiling}% ≥ 모든 정책): OK")
 
     # 부분 실행(--exp 단일) 시 기존 결과의 다른 섹션 보존 (병합 저장)
-    out_path = Path(args.json_out)
     if out_path.exists():
         try:
             existing = json.loads(out_path.read_text(encoding="utf-8"))
-            if existing.get("quick") == args.quick:
+            same_run = canonical_run or existing.get("run_config") == results["run_config"]
+            if existing.get("quick") == args.quick and same_run:
                 merged = {**existing, **results}
                 results = merged
         except (json.JSONDecodeError, OSError):

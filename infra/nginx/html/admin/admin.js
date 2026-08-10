@@ -1273,6 +1273,17 @@ const MB_ARM_COLOR = {
 };
 
 function mbPct(v) { return v === null || v === undefined ? '—' : v + '%'; }
+function mbGateLabel(status) {
+  return ({
+    PASS: '통과', FAIL: '미통과', OBSERVING: '관찰 중', NOT_READY: '표본 대기',
+    BLOCKED_G_A: 'G-A 차단', LOCKED_G_B: 'G-B 잠금',
+  })[status] || status || '—';
+}
+function mbGateColor(status) {
+  if (status === 'PASS') return '#34C759';
+  if (status === 'FAIL') return '#FF3B30';
+  return '#FF9500';
+}
 
 pages.mockbidding = async function (content) {
   content.innerHTML = '<div class="card">불러오는 중...</div>';
@@ -1289,12 +1300,27 @@ pages.mockbidding = async function (content) {
     return;
   }
 
-  const reach = sum.scoring_reach || {};
+  const gates = sum.gates || {};
+  const reach = gates.g_a || sum.scoring_reach || {};
+  const gateB = gates.g_b || {};
+  const gateC = gates.g_c || {};
+  const queue = sum.queue_health || {};
   const gate = reach.gate_g_a_threshold || 60;
   const reachPct = reach.reach_pct;
-  const gateOk = reachPct !== null && reachPct !== undefined && reachPct >= gate;
+  const gateOk = reach.interpretation_allowed === true;
   const gateColor = reachPct === null || reachPct === undefined ? '#8B95A1'
     : (gateOk ? '#34C759' : '#FF3B30');
+
+  const validity = sum.sample_validity || {};
+  const validJudged = validity.valid_judged_notices || 0;
+  const validityReady = validJudged > 0;
+  const interpretationBlocked = !gateOk || !validityReady;
+  const blockReasons = [];
+  if (!gateOk) blockReasons.push(`G-A 도달률 ${mbPct(reachPct)}가 기준 ${gate}% 미만`);
+  if (!validityReady) blockReasons.push('기초금액 일관성을 확인한 채점 표본 없음');
+  const metricsStyle = interpretationBlocked
+    ? 'opacity:.32;filter:grayscale(.8);pointer-events:none;user-select:none;'
+    : '';
 
   const arms = sum.arms || {};
   const armRows = MB_ARM_ORDER.filter((a) => arms[a]).map((a) => {
@@ -1330,8 +1356,81 @@ pages.mockbidding = async function (content) {
           <div style="font-size:24px;font-weight:800;">${fmtNumber(reach.scored)}</div></div>
         <div><div style="font-size:12px;color:#8B95A1;">도달률 (기준 ${gate}%)</div>
           <div style="font-size:24px;font-weight:800;color:${gateColor};">${mbPct(reachPct)}</div></div>
+        <div><div style="font-size:12px;color:#8B95A1;">상태</div>
+          <div style="font-size:20px;font-weight:800;color:${mbGateColor(reach.status)};">${mbGateLabel(reach.status)}</div></div>
+      </div>
+      <p style="color:#8B95A1;font-size:12px;margin-top:10px;">
+        마감 도래 코호트 ${fmtNumber(reach.due_scored)} / ${fmtNumber(reach.due_registered)}공고
+        (${mbPct(reach.due_reach_pct)}) · 관찰 ${reach.observation_days || 0}/${reach.observation_window_days || 28}일
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>채점 큐 · 복구 관찰</h3>
+      <p style="color:var(--color-text-muted);font-size:13px;">
+        배치 limit을 실제로 소진하는 arm 행 기준입니다. 개찰결과 도착 → 최초 확인 → NO_RESULT 재시도 순으로 처리합니다.
+      </p>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;align-items:baseline;">
+        <div><div style="font-size:12px;color:#8B95A1;">전체 잔량</div>
+          <div style="font-size:22px;font-weight:800;">${fmtNumber(queue.due_arm_rows)}</div></div>
+        <div><div style="font-size:12px;color:#8B95A1;">결과 도착·즉시 채점</div>
+          <div style="font-size:22px;font-weight:800;color:${(queue.ready_with_opening_result_arm_rows || 0) > 0 ? '#FF3B30' : '#34C759'};">${fmtNumber(queue.ready_with_opening_result_arm_rows)}</div></div>
+        <div><div style="font-size:12px;color:#8B95A1;">최초 확인 대기</div>
+          <div style="font-size:22px;font-weight:800;color:#FF9500;">${fmtNumber(queue.never_checked_arm_rows)}</div></div>
+        <div><div style="font-size:12px;color:#8B95A1;">NO_RESULT 재시도</div>
+          <div style="font-size:22px;font-weight:800;">${fmtNumber(queue.retry_no_result_arm_rows)}</div></div>
+      </div>
+      <p style="color:#8B95A1;font-size:12px;margin-top:10px;">
+        ${fmtNumber(queue.due_notices)}공고 · 최고 연체 ${queue.oldest_overdue_hours === null || queue.oldest_overdue_hours === undefined ? '—' : queue.oldest_overdue_hours + '시간'}
+      </p>
+    </div>
+
+    <div class="chart-grid-2">
+      <div class="card">
+        <h3>G-B · 전략 우열 판정</h3>
+        <div style="font-size:22px;font-weight:800;color:${mbGateColor(gateB.status)};margin:10px 0;">${mbGateLabel(gateB.status)}</div>
+        <p style="color:#4E5968;font-size:13px;line-height:1.7;">
+          적격심사제 유효 표본 ${fmtNumber(gateB.sample_notices)} / ${fmtNumber(gateB.minimum_notices || 400)}공고<br>
+          active 무효율 ≤ standard: ${gateB.active_dropout_lte_standard ? '충족' : '미충족'}<br>
+          active 적중 Wilson CI 하한 &gt; standard 상한: ${gateB.active_win_ci_lower_gt_standard_upper ? '충족' : '미충족'}
+        </p>
+      </div>
+      <div class="card">
+        <h3>G-C · 전략투찰 제품화 판정</h3>
+        <div style="font-size:22px;font-weight:800;color:${mbGateColor(gateC.status)};margin:10px 0;">${mbGateLabel(gateC.status)}</div>
+        <p style="color:#4E5968;font-size:13px;line-height:1.7;">
+          frontier_c10 유효 표본 ${fmtNumber(gateC.sample_notices)}공고<br>
+          frontier_c10 적중 CI 하한 &gt; active 상한: ${gateC.frontier_c10_win_ci_lower_gt_active_upper ? '충족' : '미충족'}<br>
+          frontier_c10 무효율 ≤ ${gateC.frontier_c10_dropout_lte_pct || 11}%: ${gateC.frontier_c10_dropout_condition_met ? '충족' : '미충족'}
+        </p>
       </div>
     </div>
+
+    <div class="card">
+      <h3>성능 표본 유효성 · 공고 기준</h3>
+      <p style="color:var(--color-text-muted);font-size:13px;">
+        5개 arm 행을 중복 집계하지 않고 공고당 active 한 행으로 셉니다.
+        기초금액과 예정가격 비율이 ${(validity.base_ratio_band || [0.94, 1.06]).join('~')}인
+        표본만 아래 성능 지표에 사용합니다. 제외 원장은 삭제하거나 수정하지 않습니다.
+      </p>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;align-items:baseline;">
+        <div><div style="font-size:12px;color:#8B95A1;">원시 확정 채점</div>
+          <div style="font-size:24px;font-weight:800;">${fmtNumber(validity.raw_judged_notices)}</div></div>
+        <div><div style="font-size:12px;color:#8B95A1;">유효 표본</div>
+          <div style="font-size:24px;font-weight:800;color:#34C759;">${fmtNumber(validJudged)}</div></div>
+        <div><div style="font-size:12px;color:#8B95A1;">기준 불일치 제외</div>
+          <div style="font-size:24px;font-weight:800;color:#FF3B30;">${fmtNumber(validity.excluded_base_mismatch)}</div></div>
+        <div><div style="font-size:12px;color:#8B95A1;">판정 불가 제외</div>
+          <div style="font-size:24px;font-weight:800;color:#FF9500;">${fmtNumber(validity.excluded_base_unknown)}</div></div>
+      </div>
+    </div>
+
+    ${interpretationBlocked ? `<div class="card" style="border:2px solid #FF3B30;background:#FFF5F5;">
+      <h3 style="color:#FF3B30;">🔒 성능 해석 보류</h3>
+      <p style="margin-top:8px;color:#4E5968;">${blockReasons.join(' · ')}. 사전 등록한 게이트가 열리기 전에는 아래 수치로 arm 우열을 판단하지 않습니다.</p>
+    </div>` : ''}
+
+    <div id="mb-performance-metrics" aria-disabled="${interpretationBlocked}" style="${metricsStyle}">
 
     <!-- 시각화 — 순서는 설계 §0.2 지표 우선순위 그대로: 무효율(1차·가장 크게) →
          적중률(2차) → 등수(3차) → 격차 → 사정률 오차(4차) → 오답노트 → 세그먼트 -->
@@ -1434,6 +1533,8 @@ pages.mockbidding = async function (content) {
       </div>
     </div>
 
+    </div>
+
     <div class="card">
       <h3>최근 등록 원장</h3>
       <p style="color:var(--color-text-muted);font-size:13px;">
@@ -1456,13 +1557,21 @@ pages.mockbidding = async function (content) {
     c.innerHTML = '<div class="card">조회 중...</div>';
     try {
       const d = await api('/admin/mock-bidding/summary' + (m ? '?bid_method=' + encodeURIComponent(m) : ''));
+      const filteredReach = (d.gates || {}).g_a || d.scoring_reach || {};
+      const filteredValidity = d.sample_validity || {};
+      const filteredReady = filteredReach.interpretation_allowed === true
+        && (filteredValidity.valid_judged_notices || 0) > 0;
       // 필터 결과만 간단 표로 다시 그린다(전체 화면 재구성 대신).
       const rows = MB_ARM_ORDER.filter((a) => (d.arms || {})[a]).map((a) => {
         const x = d.arms[a];
         return `<tr><td>${MB_ARM_LABEL[a] || a}</td><td>${fmtNumber(x.judged)}</td>
           <td style="font-weight:700;">${mbPct(x.dropout_rate)}</td><td>${mbPct(x.win_rate)}</td></tr>`;
       }).join('');
-      c.innerHTML = `<div class="card"><h3>${m || '전체'} — arm 별 성적</h3>
+      c.innerHTML = `${filteredReady ? '' : `<div class="card" style="border:2px solid #FF3B30;background:#FFF5F5;">
+          <h3 style="color:#FF3B30;">🔒 성능 해석 보류</h3>
+          <p style="margin-top:8px;">G-A 기준 또는 유효 표본 조건을 충족하지 못했습니다.</p>
+        </div>`}<div class="card" style="${filteredReady ? '' : 'opacity:.32;filter:grayscale(.8);'}"><h3>${m || '전체'} — arm 별 성적</h3>
+        <p style="color:#8B95A1;font-size:13px;">유효 ${fmtNumber(filteredValidity.valid_judged_notices)}공고 · 기준 불일치 제외 ${fmtNumber(filteredValidity.excluded_base_mismatch)}공고</p>
         <table style="width:100%;font-size:13px;margin-top:10px;">
         <thead><tr><th style="text-align:left;">arm</th><th style="text-align:left;">채점</th>
         <th style="text-align:left;">무효율 ★</th><th style="text-align:left;">적중률</th></tr></thead>

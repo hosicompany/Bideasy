@@ -53,6 +53,10 @@ C:\dev\
 - 빈 `C:\Project`·`C:\Projects` 제거
 
 > ⚠️ 앞으로 폴더를 또 옮긴다면 **반드시 이 3가지를 세트로** 처리하세요: ① venv 재생성 ② `~/.claude/projects/` 키 폴더 rename ③ `bideasy.code-workspace` 의 `path` 확인.
+> 2026-08-10 보강: workspace의 Python은 `${workspaceFolder:Bideasy — backend · web · flutter}/backend/.venv`로
+> OS 중립 지정한다. 실행 task만 macOS `bin/python` / Windows
+> `Scripts\\python.exe`를 OS별 override한다. 공통 설정에 Windows exe를 박으면
+> macOS에서 시스템 Python으로 조용히 폴백한다.
 
 ### ⏳ 잔여 작업 (2026-08-01 세션에서 대부분 종료)
 
