@@ -145,11 +145,15 @@ python scripts/benchmark_win_reach.py \
 
 - DB 병합 행 중 `예정가격 / 기초금액`이 **0.94~1.06** 밖인 알려진 금액 기준
   불일치 표본을 제외하고 제외 수를 결과에 기록한다.
+- `--include-db` 조회가 실패하면 빈 표본으로 판정하지 않고 실행 자체를 실패시킨다.
+  DB 장애를 `NOT_READY`로 오인한 새 결과를 쓰지 않는다.
 - holdout 400건 미만은 조건 수치가 좋아도 `NOT_READY`다. 400건 이상일 때만
   cap10의 win Wilson 95% CI 하한을 `max(25%, holdout oracle×80%)`와 비교한다.
 - 2026·DB·방법 필터·quick 실행은 운영 arm이 읽는
-  `benchmark_win_reach_results.json`을 덮어쓸 수 없다. 기본 출력은
-  `benchmark_g2_2026_results.json`(적격 별도 파일)이다.
+  `benchmark_win_reach_results.json`을 덮어쓸 수 없다. 비정본 결과 파일명에는
+  데이터 소스와 방법을 함께 넣어 서로 덮어쓰지 않는다. 위 두 명령의 기본 출력은
+  각각 `benchmark_g2_2026_db_results.json`,
+  `benchmark_g2_2026_db_qualification_results.json`이다.
 
 **08-10 운영 재실측 판정은 아직 NOT_READY다.** 개찰 누적 행 자체는 5천여 건이지만
 금액 기준 일관성을 통과한 2026 표본은 약 **59건**뿐이다. 종전의 “모의투찰

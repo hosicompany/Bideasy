@@ -1044,6 +1044,28 @@ class TestWeeklyReport:
             models.Notification.noti_type == "MOCK_BID_WEEKLY_2026-W33",
         ).count() == 1
 
+    def test_task_failure_retries_and_finishes_as_failure(self, monkeypatch):
+        from app.tasks import mock_bid_tasks as t
+
+        attempts = 0
+
+        def fail_report(db):
+            nonlocal attempts
+            attempts += 1
+            raise RuntimeError("simulated report failure")
+
+        monkeypatch.setattr(t, "SessionLocal", _NullDB)
+        monkeypatch.setattr(
+            "app.services.mock_bidding.collect_weekly_report",
+            fail_report,
+        )
+
+        result = t.weekly_mock_bid_report.apply(throw=False)
+
+        assert result.state == "FAILURE"
+        assert isinstance(result.result, RuntimeError)
+        assert attempts == 4  # 최초 1회 + autoretry 3회
+
 
 class _NullDB:
     def rollback(self):

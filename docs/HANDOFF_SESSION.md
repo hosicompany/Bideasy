@@ -1,6 +1,6 @@
 # 세션 인수인계 — 다른 IDE·다른 에이전트로 이어받기
 
-> 작성 2026-08-08 · 갱신 2026-08-10. 기준: 로컬 `fix/mock-bidding-recovery` (`bacda36` 위 2개 로컬 커밋, 미push·미배포) / 운영 `bacda36`.
+> 작성 2026-08-08 · 갱신 2026-08-10. 기준: draft PR #98 `fix/mock-bidding-recovery` (원격 `6b9b841` + 리뷰 보완 로컬 변경, 미push·미머지·미배포) / 운영 `bacda36`.
 > **대상**: Claude Code 가 아닌 다른 IDE·에이전트(Cursor / VS Code Copilot / Codex / 다른 세션)로
 > 작업을 이어받는 사람.
 >
@@ -16,7 +16,7 @@
 포지션은 **"낙찰가를 예측하지 않는다"** — 대신 요약·독소조항·자격·안전 계산으로 *잃지 않게* 지킨다.
 
 지금 상태를 한 문장으로: **코드와 인프라는 앞서 있고, 실사용자가 없다.**
-(테스트 844건 green · 그런데 리드 1명 / 회원 2명)
+(테스트 847건 green · 그런데 리드 1명 / 회원 2명)
 
 그래서 다음 작업의 우선순위는 이렇게 갈립니다:
 
@@ -60,7 +60,7 @@ macOS   : /Users/hoseungkang/dev/bideasy-suite/ (Claude 키 -Users-hoseungkang-d
 > 폴더의 실제 이름과 입력하는 이름을 항상 같게 두세요 — `docs/HANDOFF_MIGRATION.md` §7-3 ②.
 
 `Bideasy\bideasy.code-workspace` 를 열면 4개가 한 창에 붙습니다(상대경로 참조 — 폴더를 옮기면 이 파일도 함께 고칠 것).
-Python 인터프리터는 `${workspaceFolder:Bideasy}/backend/.venv`로 OS 중립 지정돼 있고,
+Python 인터프리터는 `${workspaceFolder:Bideasy — backend · web · flutter}/backend/.venv`로 OS 중립 지정돼 있고,
 백엔드 task는 macOS `bin/python` / Windows `Scripts\\python.exe`를 각각 사용한다.
 macOS에서 workspace가 `Scripts/python.exe`를 가리키면 시스템 Python 3.14로 폴백해
 `pytest`가 없다고 나오므로 경로를 먼저 확인한다.
@@ -98,12 +98,12 @@ macOS에서 workspace가 `Scripts/python.exe`를 가리키면 시스템 Python 3
 git clone https://github.com/hosicompany/Bideasy.git
 cd Bideasy
 pip install -r backend/requirements.txt      # Python 3.12
-cd backend && pytest                          # 844건 통과해야 정상
+cd backend && pytest                          # 847건 통과해야 정상
 pip install ruff && python -m ruff check .    # ⚠️ ruff 는 requirements.txt 에 없다 (CI 도 따로 깐다)
 ```
 
 > macOS 는 `python3.12 -m venv .venv && source .venv/bin/activate` (Windows 의 `Scripts/` 아님).
-> 실측 참고: Apple Silicon 에서 `pytest` 844건이 **31초**(2026-08-10).
+> 실측 참고: Apple Silicon 에서 `pytest` 847건이 **24초**(2026-08-10).
 
 - **서버 SSH 키는 없어도 됩니다.** 배포는 GitHub Actions 버튼(§6).
 - `backend/.env`·`backend/bideasy.db` 는 git 에 없습니다 — 테스트는 in-memory 라 없어도 통과합니다.
@@ -295,7 +295,7 @@ ssh …  'docker exec bideasy_app alembic current'     # 마이그레이션 head
 ### 코드 변경 후 (예외 없음)
 
 ```bash
-cd backend && pytest              # 844건 기준
+cd backend && pytest              # 847건 기준
 python -m ruff check backend/     # 미사용 import 하나로 CI 가 red 가 된다
 ```
 

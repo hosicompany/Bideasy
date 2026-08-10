@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -62,6 +63,13 @@ MIN_SAMPLE = 10           # optimizer.optimize_all 과 동일한 희소 세그�
 DEFAULT_HOLDOUT_YEARS = (2025,)
 BASELINE_TOLERANCE = 0.5  # %p — audit 기준선 재현 허용 오차 (사전 등록 부칙 3)
 G2_MIN_HOLDOUT_RECORDS = 400
+
+_METHOD_FILE_LABELS = {
+    "적격심사제": "qualification",
+    "소액수의견적": "small_quote",
+    "제한적최저가(낙찰하한율)": "limited_lowest",
+    "최저가낙찰제": "lowest",
+}
 
 
 # ──────────────────────────────────────────────────────────────
@@ -177,7 +185,7 @@ def load_all(include_db: bool = False, bid_method: str | None = None,
             from app.db.session import SessionLocal
 
             db = SessionLocal()
-        loaded = ds.load_records(db=db)
+        loaded = ds.load_records(db=db, strict_db=include_db)
     finally:
         if db is not None:
             db.close()
@@ -210,9 +218,16 @@ def result_path_for_run(json_out: str | None, include_db: bool,
         out_path = RESULTS_PATH
     else:
         years = "_".join(str(y) for y in holdout_years)
-        method_suffix = "_qualification" if bid_method == "적격심사제" else ""
+        source = "db" if include_db else "static"
+        method_label = _METHOD_FILE_LABELS.get(bid_method or "")
+        if bid_method and method_label is None:
+            digest = hashlib.sha256(bid_method.encode("utf-8")).hexdigest()[:10]
+            method_label = f"method_{digest}"
+        method_suffix = f"_{method_label}" if method_label else ""
         prefix = "benchmark_quick" if quick else "benchmark_g2"
-        out_path = DATA_DIR / f"{prefix}_{years}{method_suffix}_results.json"
+        out_path = DATA_DIR / (
+            f"{prefix}_{years}_{source}{method_suffix}_results.json"
+        )
     if not canonical and out_path.resolve() == RESULTS_PATH.resolve():
         raise ValueError(
             "비정본 재판정 결과는 운영 frontier 파라미터 파일과 다른 "

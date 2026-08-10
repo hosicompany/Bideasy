@@ -59,7 +59,7 @@ class TestG2RunSafety:
         )
 
         assert canonical is False
-        assert path.name == "benchmark_g2_2026_results.json"
+        assert path.name == "benchmark_g2_2026_db_results.json"
         assert path.resolve() != bwr.RESULTS_PATH.resolve()
 
     def test_quick_run_is_also_isolated(self):
@@ -69,7 +69,32 @@ class TestG2RunSafety:
         )
 
         assert canonical is False
-        assert path.name == "benchmark_quick_2025_results.json"
+        assert path.name == "benchmark_quick_2025_static_results.json"
+
+    def test_noncanonical_sources_and_methods_use_distinct_paths(self):
+        configs = [
+            (True, None),
+            (False, None),
+            (True, "적격심사제"),
+            (True, "소액수의견적"),
+        ]
+
+        paths = {
+            bwr.result_path_for_run(
+                None,
+                include_db=include_db,
+                holdout_years=(2026,),
+                bid_method=bid_method,
+            )[0].name
+            for include_db, bid_method in configs
+        }
+
+        assert paths == {
+            "benchmark_g2_2026_db_results.json",
+            "benchmark_g2_2026_static_results.json",
+            "benchmark_g2_2026_db_qualification_results.json",
+            "benchmark_g2_2026_db_small_quote_results.json",
+        }
 
     def test_noncanonical_run_cannot_overwrite_live_arm_params(self):
         with pytest.raises(ValueError, match="다른 --json-out"):
@@ -82,8 +107,10 @@ class TestG2RunSafety:
         monkeypatch.setattr(
             bwr.ds,
             "load_records",
-            lambda db=None: [_record("VALID", 100_000_000),
-                             _record("MISMATCH", 110_000_000)],
+            lambda db=None, strict_db=False: [
+                _record("VALID", 100_000_000),
+                _record("MISMATCH", 110_000_000),
+            ],
         )
 
         raw, deduped, duplicates, excluded = bwr.load_all()
@@ -92,3 +119,19 @@ class TestG2RunSafety:
         assert [r.bid_no for r in deduped] == ["VALID"]
         assert duplicates == 0
         assert excluded == 1
+
+    def test_include_db_propagates_database_failure(self, monkeypatch):
+        class BrokenDB:
+            def query(self, *args, **kwargs):
+                raise RuntimeError("simulated database failure")
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(
+            "app.db.session.SessionLocal",
+            lambda: BrokenDB(),
+        )
+
+        with pytest.raises(RuntimeError, match="simulated database failure"):
+            bwr.load_all(include_db=True)

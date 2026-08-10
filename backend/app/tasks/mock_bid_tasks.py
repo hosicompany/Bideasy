@@ -97,9 +97,20 @@ def score_mock_bids(limit: int = 5000) -> dict:
         db.close()
 
 
-@celery_app.task(name="mock_bid.weekly_report")
+@celery_app.task(
+    name="mock_bid.weekly_report",
+    autoretry_for=(Exception,),
+    retry_backoff=60,
+    retry_backoff_max=900,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 3},
+)
 def weekly_mock_bid_report() -> dict:
-    """월요일 채점 뒤 누적 성적표를 관리자 인앱 알림으로 한 번만 남긴다."""
+    """월요일 채점 뒤 누적 성적표를 관리자 인앱 알림으로 한 번만 남긴다.
+
+    실패를 결과 dict로 삼키면 Celery는 태스크를 성공으로 기록하고 다음 주까지
+    재실행하지 않는다. 예외를 다시 올려 autoretry와 실패 모니터링을 살린다.
+    """
     from app.services.mock_bidding import collect_weekly_report
 
     db = SessionLocal()
@@ -156,6 +167,6 @@ def weekly_mock_bid_report() -> dict:
     except Exception as e:  # noqa: BLE001
         db.rollback()
         logger.error(f"[mock_bid.weekly_report] error: {e}", exc_info=True)
-        return {"ok": False, "error": str(e)}
+        raise
     finally:
         db.close()
