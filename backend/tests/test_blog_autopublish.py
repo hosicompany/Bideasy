@@ -166,3 +166,96 @@ class TestTzAwareNormalization:
         from app.schemas.blog import BlogPostUpdate
         m = BlogPostUpdate(publish_at="2026-07-09T18:00:00+09:00")
         assert m.publish_at.tzinfo is None and m.publish_at.hour == 9
+
+
+class TestKnowledgeGrace:
+    """수요일 K-큐 자동 초안 — 검수 판정 연동 유예 자동발행 (Phase 2, §10.3).
+
+    FAIL(blocking)만 사람을 부르고 PASS/WARN(advisory 뿐)은 유예 뒤 자동 발행.
+    review_json 이 없으면(검수 실패) 판정을 모르므로 예약하지 않는다.
+    """
+
+    def _run(self, db_session, monkeypatch, verdict, grace=48):
+        from app.core.config import settings
+        from app.tasks.content_tasks import weekly_knowledge_draft
+
+        monkeypatch.setattr(settings, "BLOG_KNOWLEDGE_GRACE_HOURS", grace)
+        slug = f"k-grace-{verdict or 'none'}-{grace}"
+        post = _mk_post(db_session, slug)
+        post.review_json = {"verdict": verdict} if verdict else None
+        db_session.commit()
+        topic = {"code": "K99", "title": "테스트 주제", "angle": "a", "keyword": "k", "priority": "P1"}
+        with _patch_session(db_session), \
+                patch("app.services.content_engine.next_unconsumed_topic", lambda db: topic), \
+                patch("app.services.content_engine.create_draft_from_topic",
+                      lambda db, code: (post, "created")), \
+                patch("app.services.content_engine.remaining_topics", lambda db: 10):
+            res = weekly_knowledge_draft()
+        db_session.refresh(post)
+        return res, post
+
+    def test_warn_gets_grace_schedule(self, db_session, monkeypatch):
+        res, post = self._run(db_session, monkeypatch, "WARN", grace=48)
+        assert res["ok"]
+        assert post.publish_at is not None
+        delta = post.publish_at - _naive_utc()
+        assert timedelta(hours=47) < delta <= timedelta(hours=48)
+
+    def test_pass_gets_grace_schedule(self, db_session, monkeypatch):
+        _, post = self._run(db_session, monkeypatch, "PASS", grace=24)
+        assert post.publish_at is not None
+
+    def test_fail_stays_manual(self, db_session, monkeypatch):
+        _, post = self._run(db_session, monkeypatch, "FAIL", grace=48)
+        assert post.publish_at is None  # blocking 실패 — 사람 호출
+
+    def test_no_review_stays_manual(self, db_session, monkeypatch):
+        _, post = self._run(db_session, monkeypatch, None, grace=48)
+        assert post.publish_at is None  # 판정 미상 — 모르면 사람이 본다
+
+    def test_killswitch_zero_stays_manual(self, db_session, monkeypatch):
+        _, post = self._run(db_session, monkeypatch, "WARN", grace=0)
+        assert post.publish_at is None  # 킬스위치: 종전 수동 승인 유지
+
+
+class TestHeroGuardOnPublish:
+    """발행 직전 히어로 파일 확인 — 미배치면 hero 를 비워 깨진 og:image 방지(§5.1)."""
+
+    def _mk_hero_post(self, db, slug):
+        p = _mk_post(db, slug, publish_at=_naive_utc() - timedelta(hours=1))
+        p.hero = f"/assets/blog/{slug}/hero.png"
+        db.commit()
+        db.refresh(p)
+        return p
+
+    @staticmethod
+    def _resp(code):
+        return type("R", (), {"status_code": code})()
+
+    def test_missing_hero_cleared_but_published(self, db_session):
+        p = self._mk_hero_post(db_session, "hero-404")
+        with _patch_session(db_session), \
+                patch("app.tasks.content_tasks.requests.head", return_value=self._resp(404)):
+            res = publish_scheduled_posts()
+        db_session.refresh(p)
+        assert p.status == "published"
+        assert p.hero == "" and "hero-404" in res["no_hero"]
+
+    def test_existing_hero_kept(self, db_session):
+        p = self._mk_hero_post(db_session, "hero-200")
+        with _patch_session(db_session), \
+                patch("app.tasks.content_tasks.requests.head", return_value=self._resp(200)):
+            res = publish_scheduled_posts()
+        db_session.refresh(p)
+        assert p.status == "published"
+        assert p.hero == "/assets/blog/hero-200/hero.png" and res["no_hero"] == []
+
+    def test_check_failure_keeps_hero(self, db_session):
+        """확인 자체가 실패하면(네트워크) 히어로를 지우지도, 발행을 막지도 않는다."""
+        p = self._mk_hero_post(db_session, "hero-err")
+        with _patch_session(db_session), \
+                patch("app.tasks.content_tasks.requests.head", side_effect=OSError("boom")):
+            res = publish_scheduled_posts()
+        db_session.refresh(p)
+        assert p.status == "published"
+        assert p.hero == "/assets/blog/hero-err/hero.png" and res["no_hero"] == []

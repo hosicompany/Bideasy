@@ -177,6 +177,11 @@ class Settings(BaseSettings):
     # doorway/중복 판정 리스크). 정상 주는 수천 건이라 이 값은 '크롤 실패한 주'만 걸러낸다.
     # 0 이하면 게이트 해제.
     BLOG_MIN_WEEKLY_RECORDS: int = 30
+    # 입찰상식(K) 주간 자동 초안에 부여할 유예 시간(시간). 검수 게이트가 FAIL 이 아니면
+    # (blocking 검사 전부 통과) 이 시간 뒤 자동 발행된다 — 그 전에 사람이 이미지를
+    # 배치하거나 예약을 비워 보류할 수 있다. FAIL 초안은 유예를 받지 않는다(사람 호출).
+    # 0 이하면 현행 수동 승인 유지(킬스위치). docs/CONTENT_ENGINE.md §10.3 Phase 2.
+    BLOG_KNOWLEDGE_GRACE_HOURS: int = 48
 
     # === Firebase (FCM Push Notifications) ===
     FIREBASE_CREDENTIALS_JSON: str = ""  # Path to service account JSON file
