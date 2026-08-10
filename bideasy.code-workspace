@@ -18,7 +18,7 @@
     }
   ],
   "settings": {
-    "python.defaultInterpreterPath": "${workspaceFolder:Bideasy — backend · web · flutter}/backend/.venv/Scripts/python.exe",
+    "python.defaultInterpreterPath": "${workspaceFolder:Bideasy — backend · web · flutter}/backend/.venv",
     "python.testing.pytestEnabled": true,
     "python.testing.pytestArgs": ["backend/tests"],
     "files.exclude": {
