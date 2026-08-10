@@ -20,11 +20,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, case, func
+from sqlalchemy import and_, case, exists, func
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.db import models
+from app.services.bid_data_quality import (
+    BASE_RATIO_MAX,
+    BASE_RATIO_MIN,
+    classify_base_consistency,
+)
+from app.services.bid_metrics import wilson_ci
 from app.services.calculator import CalculatorService
 from app.services.lower_limits import get_lower_limit_rate
 
@@ -49,6 +55,13 @@ EXCLUDED_NOTICE_KINDS = frozenset({"취소공고"})
 REGISTER_WINDOW_HOURS = 2
 
 ARMS = ("standard", "active", "frontier_c5", "frontier_c10", "aggressive")
+
+G_A_THRESHOLD_PCT = 60.0
+G_A_OBSERVATION_DAYS = 28
+G_A_KILL_DAYS = 56
+G_B_MIN_QUALIFICATION_NOTICES = 400
+G_C_MAX_DROPOUT_PCT = 11.0
+QUALIFICATION_METHOD = "적격심사제"
 
 _KST = ZoneInfo("Asia/Seoul")
 
@@ -495,33 +508,66 @@ def score_pending(db: Session, limit: int = 5000) -> dict:
 
     ⚠️ 잔량은 계속 쌓인다. 낙찰자 확정에 며칠 걸리는 동안 `NO_RESULT` 로 남은
     등록분이 매일 다시 대상이 되고, 하루 등록이 1,400건 규모라 **나흘이면
-    limit 에 닿는다**. 그래서 두 가지를 지킨다:
+    limit 에 닿는다**. 단순히 마감이 오래된 순으로만 자르면 오래된
+    `NO_RESULT` 가 매일 같은 5,000자리를 독점해, 뒤에 이미 개찰결과가 도착한
+    등록분조차 영영 채점되지 않는다(2026-08-10 운영 실측).
 
-    1. **마감이 오래된 것부터** 채점한다. 정렬이 없으면 DB 가 주는 임의 순서라,
-       잘려 나간 쪽이 매일 같은 자리에 남아 영영 채점되지 않을 수 있다.
-    2. 잘린 잔량을 **로그와 반환값에 남긴다**. `scored: 5000` 만 보면 정상처럼
+    그래서 우선순위를 고정한다:
+
+    1. **현재 개찰결과가 있는 건** — 이미 채점할 수 있으므로 최우선.
+    2. **한 번도 확인하지 않은 건** — 신규 공고가 오래된 `NO_RESULT` 재조회에
+       굶지 않게 한다.
+    3. **기존 `NO_RESULT` 재조회** — 위 둘을 처리하고 남은 용량으로 오래된
+       것부터 다시 본다.
+    4. 잘린 잔량을 **로그와 반환값에 남긴다**. `scored: 5000` 만 보면 정상처럼
        보이는데 실제로는 데이터가 새고 있는 상황이 조용히 지나간다.
     """
     now = now_kst()
+    queue_before = score_queue_health(db, now=now)
     base = db.query(models.MockBid).filter(
         models.MockBid.status == "REGISTERED",
         models.MockBid.deadline_at < now,
     )
     total_due = base.count()
+
+    # correlated EXISTS 로 우선순위만 계산한다. 실제 OpeningResult/Result 행은
+    # 아래에서 배치로 한 번씩 읽어 N+1을 피한다.
+    has_actual = exists().where(and_(
+        models.OpeningResult.bid_no == models.MockBid.bid_no,
+        models.OpeningResult.winner_price.isnot(None),
+        models.OpeningResult.winner_price > 0,
+    ))
+    has_previous_result = exists().where(
+        models.MockBidResult.mock_bid_id == models.MockBid.id
+    )
+    queue_priority = case(
+        (has_actual, 0),
+        (~has_previous_result, 1),
+        else_=2,
+    )
     pending = (
-        base.order_by(models.MockBid.deadline_at.asc(), models.MockBid.id.asc())
+        base.order_by(queue_priority.asc(),
+                      models.MockBid.deadline_at.asc(),
+                      models.MockBid.id.asc())
         .limit(limit)
         .all()
     )
     if not pending:
-        return {"pending": 0, "scored": 0, "outcomes": {}, "deferred": 0}
+        return {
+            "pending": 0,
+            "scored": 0,
+            "outcomes": {},
+            "deferred": 0,
+            "queue_before": queue_before,
+            "queue_after": queue_before,
+        }
 
     deferred = max(0, total_due - len(pending))
     if deferred:
         logger.warning(
             f"[mock_bidding.score] 채점 대상 {total_due}건 중 {len(pending)}건만 처리 "
             f"— {deferred}건이 이번 회차에서 밀렸다(limit={limit}). "
-            f"마감 오래된 순으로 처리하므로 다음 회차에 이어서 잡힌다."
+            f"개찰결과 보유 → 최초 확인 → NO_RESULT 재조회 순으로 처리한다."
         )
 
     bid_nos = list({mb.bid_no for mb in pending})
@@ -552,9 +598,70 @@ def score_pending(db: Session, limit: int = 5000) -> dict:
     db.commit()
 
     result = {"pending": len(pending), "scored": scored, "outcomes": outcomes,
-              "deferred": deferred}
+              "deferred": deferred, "queue_before": queue_before,
+              "queue_after": score_queue_health(db)}
     logger.info(f"[mock_bidding.score] {result}")
     return result
+
+
+def score_queue_health(db: Session, now: datetime | None = None,
+                       bid_nos: list[str] | None = None) -> dict:
+    """채점 큐 잔량을 실제 처리 단위(arm 행)와 공고 수로 분해한다.
+
+    세 우선순위는 `score_pending` 과 반드시 같아야 한다. 카테고리별 arm 행 수의
+    합은 `due_arm_rows` 와 같으며 배치 limit 소진 원인을 바로 설명한다. 공고 수는
+    5-arm 중복 착시를 피하기 위한 보조 지표다. 배치가 arm 묶음 중간에서 잘린
+    예외 상황에는 한 공고가 두 카테고리에 동시에 보일 수 있다.
+    """
+    now = now or now_kst()
+    base = db.query(models.MockBid).filter(
+        models.MockBid.status == "REGISTERED",
+        models.MockBid.deadline_at < now,
+    )
+    if bid_nos is not None:
+        base = base.filter(models.MockBid.bid_no.in_(bid_nos))
+
+    has_actual = exists().where(and_(
+        models.OpeningResult.bid_no == models.MockBid.bid_no,
+        models.OpeningResult.winner_price.isnot(None),
+        models.OpeningResult.winner_price > 0,
+    ))
+    has_previous_result = exists().where(
+        models.MockBidResult.mock_bid_id == models.MockBid.id
+    )
+
+    def _count(*conditions) -> tuple[int, int]:
+        q = base.filter(*conditions)
+        arm_rows = q.count()
+        notices = q.with_entities(
+            func.count(func.distinct(models.MockBid.bid_no))
+        ).scalar() or 0
+        return arm_rows, notices
+
+    due_arm_rows, due_notices = _count()
+    ready_rows, ready_notices = _count(has_actual)
+    unchecked_rows, unchecked_notices = _count(~has_actual, ~has_previous_result)
+    retry_rows, retry_notices = _count(~has_actual, has_previous_result)
+    oldest = base.with_entities(func.min(models.MockBid.deadline_at)).scalar()
+
+    return {
+        "due_arm_rows": due_arm_rows,
+        "due_notices": due_notices,
+        "ready_with_opening_result_arm_rows": ready_rows,
+        "ready_with_opening_result_notices": ready_notices,
+        "never_checked_arm_rows": unchecked_rows,
+        "never_checked_notices": unchecked_notices,
+        "retry_no_result_arm_rows": retry_rows,
+        "retry_no_result_notices": retry_notices,
+        "oldest_deadline_at": oldest.isoformat() if oldest else None,
+        "oldest_overdue_hours": (
+            round(max(0.0, (now - oldest).total_seconds() / 3600.0), 1)
+            if oldest else None
+        ),
+        "priority_order": [
+            "ready_with_opening_result", "never_checked", "retry_no_result",
+        ],
+    }
 
 
 def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
@@ -633,12 +740,36 @@ def _latest_rev_sq(db: Session):
     )
 
 
+def _valid_base_filter():
+    """SQL 집계용 기초금액 일관성 조건 — `bid_data_quality`와 같은 밴드."""
+    # SQL의 AND 평가 순서는 보장되지 않는다. 분모 > 0 조건만 믿으면 손상된 구
+    # 행 하나가 PostgreSQL division-by-zero로 집계 전체를 깨뜨릴 수 있다.
+    ratio = (
+        models.MockBidResult.actual_reserved_price
+        / func.nullif(models.MockBid.snapshot_basic_price, 0)
+    )
+    return and_(
+        models.MockBidResult.actual_reserved_price.isnot(None),
+        models.MockBidResult.actual_reserved_price > 0,
+        models.MockBid.snapshot_basic_price > 0,
+        ratio >= BASE_RATIO_MIN,
+        ratio <= BASE_RATIO_MAX,
+    )
+
+
 def summarize(db: Session, bid_method: str | None = None) -> dict:
-    """arm 별 성적표. 1차 지표는 무효율(dropout) — 낙찰률이 아니다(§0.2)."""
+    """arm 별 **유효 표본** 성적표.
+
+    기초금액 기준이 어긋난 구 등록분은 원장에 그대로 두되 성능 분자·분모에서
+    제외한다. 제외 수를 숨기면 전수를 본 것처럼 읽히므로 arm 마다 함께 돌려준다.
+    1차 지표는 무효율(dropout) — 낙찰률이 아니다(§0.2).
+    """
     sq = _latest_rev_sq(db)
     q = (
         db.query(models.MockBid.arm, models.MockBidResult.outcome,
-                 models.MockBidResult.ratio_error)
+                 models.MockBidResult.ratio_error,
+                 models.MockBid.snapshot_basic_price,
+                 models.MockBidResult.actual_reserved_price)
         .join(models.MockBidResult, models.MockBidResult.mock_bid_id == models.MockBid.id)
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
                        models.MockBidResult.scoring_rev == sq.c.max_rev))
@@ -647,55 +778,302 @@ def summarize(db: Session, bid_method: str | None = None) -> dict:
         q = q.filter(models.MockBid.snapshot_bid_method == bid_method)
 
     per: dict[str, dict] = {}
-    for arm, outcome, ratio_err in q.all():
+    for arm, outcome, ratio_err, basic_price, reserved_price in q.all():
         d = per.setdefault(arm, {"WIN": 0, "LOST": 0, "DROPOUT": 0,
-                                 "NO_RESULT": 0, "VOID": 0, "_err": []})
-        d[outcome] = d.get(outcome, 0) + 1
-        if ratio_err is not None:
-            d["_err"].append(ratio_err)
+                                 "NO_RESULT": 0, "VOID": 0, "_err": [],
+                                 "_raw_judged": 0, "_mismatch": 0,
+                                 "_unknown": 0})
+        if outcome in _JUDGED:
+            d["_raw_judged"] += 1
+            validity = classify_base_consistency(basic_price, reserved_price)
+            if validity == "mismatch":
+                d["_mismatch"] += 1
+                continue
+            if validity == "unknown":
+                d["_unknown"] += 1
+                continue
+            d[outcome] = d.get(outcome, 0) + 1
+            if ratio_err is not None:
+                d["_err"].append(ratio_err)
+        else:
+            d[outcome] = d.get(outcome, 0) + 1
 
     out = {}
     for arm, d in per.items():
         judged = d["WIN"] + d["LOST"] + d["DROPOUT"]
         errs = d.pop("_err")
+        win_ci = wilson_ci(d["WIN"], judged)
         out[arm] = {
             "judged": judged,
             "no_result": d["NO_RESULT"],
             "win": d["WIN"],
             "lost": d["LOST"],
             "dropout": d["DROPOUT"],
+            "raw_judged": d["_raw_judged"],
+            "excluded_base_mismatch": d["_mismatch"],
+            "excluded_base_unknown": d["_unknown"],
             # 1차 지표
             "dropout_rate": round(d["DROPOUT"] / judged * 100, 3) if judged else None,
             "win_rate": round(d["WIN"] / judged * 100, 3) if judged else None,
+            "win_ci95": [round(win_ci[0], 3), round(win_ci[1], 3)] if judged else None,
             "mean_ratio_error": round(sum(errs) / len(errs), 6) if errs else None,
         }
     return out
 
 
-def scoring_reach(db: Session) -> dict:
-    """G-A(파이프라인 건전성) — 등록분의 채점 도달률."""
-    total = db.query(models.MockBid).count()
-    scored = (
-        db.query(models.MockBidResult.mock_bid_id)
-        .filter(models.MockBidResult.outcome.notin_(("NO_RESULT",)))
-        .distinct().count()
+def sample_validity(db: Session, bid_method: str | None = None) -> dict:
+    """성능 표본 품질 — 공고당 한 행인 active arm 기준으로 집계한다.
+
+    5개 arm 행을 합쳐 "표본 5배"로 보이는 착시를 막기 위해 모든 수는
+    distinct 실험 단위인 공고 수와 같은 active 행 수다.
+    """
+    registered_q = db.query(func.count(func.distinct(models.MockBid.bid_no))).filter(
+        models.MockBid.arm == "active"
     )
+    if bid_method:
+        registered_q = registered_q.filter(models.MockBid.snapshot_bid_method == bid_method)
+    registered = registered_q.scalar() or 0
+
+    sq = _latest_rev_sq(db)
+    q = (
+        db.query(models.MockBidResult.outcome,
+                 models.MockBid.snapshot_basic_price,
+                 models.MockBidResult.actual_reserved_price)
+        .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
+        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                       models.MockBidResult.scoring_rev == sq.c.max_rev))
+        .filter(models.MockBid.arm == "active")
+    )
+    if bid_method:
+        q = q.filter(models.MockBid.snapshot_bid_method == bid_method)
+
+    raw_judged = valid = mismatch = unknown = no_result = void = 0
+    for outcome, basic_price, reserved_price in q.all():
+        if outcome == "NO_RESULT":
+            no_result += 1
+            continue
+        if outcome == "VOID":
+            void += 1
+            continue
+        if outcome not in _JUDGED:
+            continue
+        raw_judged += 1
+        state = classify_base_consistency(basic_price, reserved_price)
+        if state == "valid":
+            valid += 1
+        elif state == "mismatch":
+            mismatch += 1
+        else:
+            unknown += 1
+
+    return {
+        "registered_notices": registered,
+        "raw_judged_notices": raw_judged,
+        "valid_judged_notices": valid,
+        "excluded_base_mismatch": mismatch,
+        "excluded_base_unknown": unknown,
+        "no_result_notices": no_result,
+        "void_notices": void,
+        "valid_pct": round(valid / raw_judged * 100, 2) if raw_judged else None,
+        "base_ratio_band": [BASE_RATIO_MIN, BASE_RATIO_MAX],
+        "status": "EMPTY" if raw_judged == 0 else (
+            "CLEAN" if mismatch == 0 and unknown == 0 else "MIXED"
+        ),
+    }
+
+
+def scoring_reach(db: Session) -> dict:
+    """G-A(파이프라인 건전성) — **distinct 공고**의 채점 도달률.
+
+    5개 arm 행을 분모로 세면 표본 수를 5배로 오독하기 쉽다. 비율은 우연히
+    같더라도 화면의 등록/채점 숫자가 게이트 표본처럼 읽히므로 공고 단위로
+    고정한다. 사전 등록한 전체 분모를 게이트 정본으로 유지하고, 아직 마감 전인
+    공고의 영향을 볼 수 있도록 마감 도래 코호트는 보조 지표로 함께 제공한다.
+    """
+    now = now_kst()
+    active_arm = models.MockBid.arm == "active"
+    total = (
+        db.query(func.count(func.distinct(models.MockBid.bid_no)))
+        .filter(active_arm)
+        .scalar() or 0
+    )
+    due = (
+        db.query(func.count(func.distinct(models.MockBid.bid_no)))
+        .filter(active_arm, models.MockBid.deadline_at < now)
+        .scalar() or 0
+    )
+    scored_q = (
+        db.query(func.count(func.distinct(models.MockBid.bid_no)))
+        .join(models.MockBidResult,
+              models.MockBidResult.mock_bid_id == models.MockBid.id)
+        .filter(active_arm, models.MockBidResult.outcome.notin_(("NO_RESULT",)))
+    )
+    scored = scored_q.scalar() or 0
+    due_scored = scored_q.filter(models.MockBid.deadline_at < now).scalar() or 0
+    first_registered = (
+        db.query(func.min(models.MockBid.registered_at))
+        .filter(active_arm)
+        .scalar()
+    )
+    observation_days = (
+        max(0.0, (now - first_registered).total_seconds() / 86400.0)
+        if first_registered else 0.0
+    )
+    reach_pct = round(scored / total * 100, 2) if total else None
+    threshold_met = reach_pct is not None and reach_pct >= G_A_THRESHOLD_PCT
+    window_complete = observation_days >= G_A_OBSERVATION_DAYS
+    kill_window_complete = observation_days >= G_A_KILL_DAYS
+    if not total:
+        status = "NOT_READY"
+    elif threshold_met:
+        status = "PASS"
+    elif window_complete:
+        status = "FAIL"
+    else:
+        status = "OBSERVING"
     return {
         "registered": total,
         "scored": scored,
-        "reach_pct": round(scored / total * 100, 2) if total else None,
-        "gate_g_a_threshold": 60.0,
+        "reach_pct": reach_pct,
+        "due_registered": due,
+        "due_scored": due_scored,
+        "due_reach_pct": round(due_scored / due * 100, 2) if due else None,
+        "unit": "notices",
+        "gate_g_a_threshold": G_A_THRESHOLD_PCT,
+        "threshold_met": threshold_met,
+        "interpretation_allowed": threshold_met,
+        "status": status,
+        "observation_days": round(observation_days, 2),
+        "observation_window_days": G_A_OBSERVATION_DAYS,
+        "observation_window_complete": window_complete,
+        "kill_window_days": G_A_KILL_DAYS,
+        "kill_window_complete": kill_window_complete,
+        "kill_condition_met": kill_window_complete and not threshold_met,
+        "first_registered_at": first_registered.isoformat() if first_registered else None,
+    }
+
+
+def _gate_arm_view(arm: dict | None) -> dict:
+    """게이트 판정에 필요한 arm 필드만 안정된 형태로 정규화한다."""
+    arm = arm or {}
+    return {
+        "judged_notices": int(arm.get("judged") or 0),
+        "win": int(arm.get("win") or 0),
+        "dropout": int(arm.get("dropout") or 0),
+        "win_rate": arm.get("win_rate"),
+        "dropout_rate": arm.get("dropout_rate"),
+        "win_ci95": arm.get("win_ci95"),
+    }
+
+
+def _evaluate_strategy_gates(reach: dict, qualification_arms: dict) -> dict:
+    """사전 등록 §0.4의 G-B/G-C를 결과와 무관한 순수 함수로 판정한다."""
+    standard = _gate_arm_view(qualification_arms.get("standard"))
+    active = _gate_arm_view(qualification_arms.get("active"))
+    frontier = _gate_arm_view(qualification_arms.get("frontier_c10"))
+
+    g_b_n = min(standard["judged_notices"], active["judged_notices"])
+    g_b_sample_ok = g_b_n >= G_B_MIN_QUALIFICATION_NOTICES
+    dropout_ok = (
+        active["dropout_rate"] is not None
+        and standard["dropout_rate"] is not None
+        and active["dropout_rate"] <= standard["dropout_rate"]
+    )
+    active_ci = active["win_ci95"]
+    standard_ci = standard["win_ci95"]
+    win_ci_ok = bool(
+        active_ci and standard_ci and active_ci[0] > standard_ci[1]
+    )
+
+    if not reach.get("interpretation_allowed"):
+        g_b_status = "BLOCKED_G_A"
+    elif not g_b_sample_ok:
+        g_b_status = "NOT_READY"
+    elif dropout_ok and win_ci_ok:
+        g_b_status = "PASS"
+    else:
+        g_b_status = "FAIL"
+
+    g_c_n = min(frontier["judged_notices"], active["judged_notices"])
+    frontier_ci = frontier["win_ci95"]
+    c_win_ci_ok = bool(frontier_ci and active_ci and frontier_ci[0] > active_ci[1])
+    c_dropout_ok = (
+        frontier["dropout_rate"] is not None
+        and frontier["dropout_rate"] <= G_C_MAX_DROPOUT_PCT
+    )
+    if g_b_status != "PASS":
+        g_c_status = "LOCKED_G_B"
+    elif c_win_ci_ok and c_dropout_ok:
+        g_c_status = "PASS"
+    else:
+        g_c_status = "FAIL"
+
+    return {
+        "g_a": reach,
+        "g_b": {
+            "status": g_b_status,
+            "bid_method": QUALIFICATION_METHOD,
+            "sample_notices": g_b_n,
+            "minimum_notices": G_B_MIN_QUALIFICATION_NOTICES,
+            "sample_requirement_met": g_b_sample_ok,
+            "active_dropout_lte_standard": dropout_ok,
+            "active_win_ci_lower_gt_standard_upper": win_ci_ok,
+            "active": active,
+            "standard": standard,
+        },
+        "g_c": {
+            "status": g_c_status,
+            "bid_method": QUALIFICATION_METHOD,
+            "sample_notices": g_c_n,
+            "frontier_c10_win_ci_lower_gt_active_upper": c_win_ci_ok,
+            "frontier_c10_dropout_lte_pct": G_C_MAX_DROPOUT_PCT,
+            "frontier_c10_dropout_condition_met": c_dropout_ok,
+            "frontier_c10": frontier,
+            "active": active,
+        },
+    }
+
+
+def evaluate_gates(db: Session) -> dict:
+    """운영 DB의 최신 유효 표본으로 G-A/G-B/G-C를 자동 판정한다."""
+    reach = scoring_reach(db)
+    qualification_arms = summarize(db, bid_method=QUALIFICATION_METHOD)
+    return _evaluate_strategy_gates(reach, qualification_arms)
+
+
+def collect_weekly_report(db: Session, now: datetime | None = None) -> dict:
+    """누적 모의투찰 성적표를 주간 운영 스냅샷으로 묶는다.
+
+    판정은 누적 유효 표본을 써야 게이트가 주마다 요동하지 않는다. `period_key` 는
+    같은 주 태스크 재실행의 멱등 키로 사용하고, 리포트 본문에는 파이프라인·표본
+    품질·사전 등록 게이트와 빈도 상위 오답노트를 함께 남긴다.
+    """
+    generated_at = now or now_kst()
+    tags = failure_tag_stats(db)
+    return {
+        "period_key": generated_at.strftime("%G-W%V"),
+        "generated_at": generated_at.isoformat(),
+        "gates": evaluate_gates(db),
+        "queue_health": score_queue_health(db, now=generated_at),
+        "sample_validity": sample_validity(db),
+        "qualification_sample_validity": sample_validity(
+            db, bid_method=QUALIFICATION_METHOD,
+        ),
+        "qualification_arms": summarize(db, bid_method=QUALIFICATION_METHOD),
+        "top_failure_tags": dict(list(tags.items())[:10]),
     }
 
 
 def failure_tag_stats(db: Session) -> dict:
-    """오답노트 — 태그별 등장·무효 건수. 여기서 나온 사실이 제품 경고가 된다."""
+    """오답노트 — **유효 표본**의 태그별 등장·무효 건수."""
     sq = _latest_rev_sq(db)
     rows = (
         db.query(models.MockBidResult.failure_tags, models.MockBidResult.outcome)
+        .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
                        models.MockBidResult.scoring_rev == sq.c.max_rev))
-        .filter(models.MockBidResult.failure_tags.isnot(None)).all()
+        .filter(models.MockBidResult.failure_tags.isnot(None),
+                _valid_base_filter()).all()
     )
     stats: dict[str, dict] = {}
     for tags, outcome in rows:
@@ -738,7 +1116,8 @@ def rank_distribution(db: Session) -> dict:
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
                        models.MockBidResult.scoring_rev == sq.c.max_rev))
         .filter(models.MockBidResult.estimated_rank.isnot(None),
-                models.MockBidResult.outcome.in_(_JUDGED))
+                models.MockBidResult.outcome.in_(_JUDGED),
+                _valid_base_filter())
         .group_by(models.MockBid.arm, models.MockBidResult.estimated_rank)
         .all()
     )
@@ -774,7 +1153,8 @@ def gap_distribution(db: Session) -> dict:
         .join(models.MockBidResult, models.MockBidResult.mock_bid_id == models.MockBid.id)
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
                        models.MockBidResult.scoring_rev == sq.c.max_rev))
-        .filter(g.isnot(None), models.MockBidResult.outcome.in_(_JUDGED))
+        .filter(g.isnot(None), models.MockBidResult.outcome.in_(_JUDGED),
+                _valid_base_filter())
         .group_by(models.MockBid.arm, bucket)
         .all()
     )
@@ -801,7 +1181,8 @@ def ratio_error_trend(db: Session, arm: str = "active") -> list[dict]:
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
                        models.MockBidResult.scoring_rev == sq.c.max_rev))
         .filter(models.MockBid.arm == arm,
-                models.MockBidResult.ratio_error.isnot(None))
+                models.MockBidResult.ratio_error.isnot(None),
+                _valid_base_filter())
         .group_by(day)
         .order_by(day)
         .all()
@@ -832,7 +1213,8 @@ def segment_stats(db: Session, arm: str = "active") -> list[dict]:
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
                        models.MockBidResult.scoring_rev == sq.c.max_rev))
         .filter(models.MockBid.arm == arm,
-                models.MockBidResult.outcome.in_(_JUDGED))
+                models.MockBidResult.outcome.in_(_JUDGED),
+                _valid_base_filter())
         .group_by(models.MockBid.snapshot_bid_method, bracket,
                   models.MockBidResult.outcome)
         .all()

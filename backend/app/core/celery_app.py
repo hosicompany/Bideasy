@@ -144,4 +144,9 @@ celery_app.conf.beat_schedule = {
         "task": "mock_bid.score",
         "schedule": crontab(hour=20, minute=30),
     },
+    # 17) 매주 월요일 21:00 — 당일 채점 뒤 모의투찰 누적 성적표·게이트 스냅샷.
+    "weekly-mock-bid-report": {
+        "task": "mock_bid.weekly_report",
+        "schedule": crontab(hour=21, minute=0, day_of_week=1),
+    },
 }
