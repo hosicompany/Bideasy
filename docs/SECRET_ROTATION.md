@@ -115,10 +115,16 @@ curl -s https://api.bideasy.kr/health
 - **비활성화(Deactivate) → 2~3일 관찰 → 삭제.** 마지막 사용 시각이 안 올라가면 안전
 - 같은 화면에서 **루트 계정 MFA** 활성화 여부도 함께 확인
 
-**5) 로컬 정리** — 2026-08-09 실측: **맥북 `~/.aws/credentials` [default] 가 바로 루트 키다**
-(`AKIAY5OAWO54LAO73L7F`, 04-21 생성 · 마지막 사용 08-07 `aws-mcp`/us-east-1). 어떤 AWS MCP 도구가
-이 키를 쓰고 있으므로, **그 도구를 최소 권한 IAM 사용자 키로 이전한 뒤** 이 파일에서 루트 키를 제거한다.
-윈도우 PC(`hoseung-thinkpad-x1`)는 aws CLI 미설치·`[bideasy]` 프로필뿐이라 그 파일은 지워도 잃을 게 없다.
+**5) 로컬 정리** — 2026-08-09 실측·추적으로 소비자가 전부 특정됐다:
+- **Hermes 게이트웨이의 `aws_mcp`**(`~/.hermes/config.yaml` `mcp_servers.aws_mcp` — `mcp-proxy-for-aws`가
+  자격증명 미지정이라 `[default]` 를 집어 씀). **맥북 + Hostinger VPS(KL)** 두 곳에서 돈다(CloudTrail 소스 IP 실측).
+- **backend-api 프로젝트의 aws CLI 작업**(ECS·S3·DynamoDB — 셸 히스토리 실측).
+- ✅ **맥북은 08-09 교체 완료** — IAM 사용자 `hoseung-poweruser`(PowerUserAccess) 발급, `[default]` 교체,
+  `sts get-caller-identity` 로 확인. 구 파일 백업 = `~/.aws/credentials.bak-rootkey-20260809`(루트 키 삭제 후 함께 삭제).
+- ✅ **Hostinger VPS 도 08-10 반영 완료** — 컨테이너(`hermes-agent-each`)의 `/opt/data/.aws/credentials`(볼륨) 교체
+  → 재배포 → 새 키 끝 4자 확인. 함께 발견된 `sessions/request_dump_*.json`(키 ID 포함 덤프)도 삭제.
+- ⏳ 남은 것: **08-11 09:00 스케줄 이후 CloudTrail 로 새 키 사용·루트 키 미사용 확인 → 루트 키 비활성화 → 2~3일 관찰 → 삭제 + 루트 MFA 확인.**
+- 윈도우 PC(`hoseung-thinkpad-x1`)는 aws CLI 미설치·`[bideasy]` 프로필뿐이라 그 파일은 지워도 잃을 게 없다.
 
 **6) 문서 되돌리기** — ✅ 2026-08-09 수행(오경보 재정정 — 6개 문서 일괄). 루트 키 **삭제**까지 끝나면
 `CLAUDE.md` §대기 항목의 "루트 액세스 키 폐기" 행을 닫는다.
