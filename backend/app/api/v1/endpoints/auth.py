@@ -11,6 +11,7 @@ from app.schemas import user as user_schemas
 from app.schemas.point import SIGNUP_BONUS
 from app.schemas.subscription import activate_trial
 from app.services import consent as consent_service
+from app.services.activation import record_profile_completed
 from app.services.lead_conversion import link_leads_to_user
 from app.core.security import (
     verify_password,
@@ -148,6 +149,10 @@ def register(request: Request, user_in: user_schemas.UserCreate, db: Session = D
     # 신규 가입자에게 14일 Pro 체험 자동 부여
     activate_trial(user)
     logger.info(f"Trial activated: user_id={user.id}, expires={user.trial_expires_at}")
+
+    # 활성화 계측: 가입 폼에서 면허·소재지를 함께 채워 온 경우 — PUT /users/me 를
+    # 거치지 않으므로 여기서도 기록해야 한다 (아래 commit 에 편승).
+    record_profile_completed(user)
 
     # 광고성 정보 수신 동의(선택) — 동의한 경우에만 상태+증적 기록.
     # 미동의는 정상 경로다(거래 관련 안내는 동의와 무관하게 나감).
