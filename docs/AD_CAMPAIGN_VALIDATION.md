@@ -11,6 +11,8 @@
 - 브랜치: `feat/customer-validation-202608`
 - 기준점: `origin/master` `16aa0d0` (#101·#102·#103 반영)
 - 선행 의존성: PR #101 활성화 계측과 후속 PR #102 실사용 경로 보완·관리자 화면이 운영 배포됐다.
+- 운영표·인터뷰 질문: `docs/CUSTOMER_VALIDATION_OPERATIONS.md`
+- 승인용 연락 문안·UTM: `docs/CUSTOMER_VALIDATION_MESSAGES.md`
 
 이 브랜치는 광고 랜딩, UTM, 측정, 실행 문서만 다룬다. 네이버 광고 계정, 결제수단, 충전,
 캠페인 생성·활성화와 입찰가·일예산 변경은 Git 바깥의 외부 작업이다. 방향 승인이 있더라도
