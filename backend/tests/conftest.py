@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.core import cache as _cache
+from app.core.config import settings as _settings
 from app.db.base import Base
 from app.db.session import get_db
 from main import app
@@ -15,6 +17,44 @@ from main import app
 # (레이트리밋 동작은 test_rate_limit.py 에서 별도로 명시 검증)
 from app.core.rate_limit import limiter as _limiter
 _limiter.enabled = False
+
+# ── Redis 격리 ──────────────────────────────────────────────────────────────
+# 테스트는 로컬에 떠 있는 Redis 를 **말없이** 잡아 쓴다(`_get_redis()` 는 연결되면
+# 그냥 쓴다). 그러면 두 가지가 깨진다:
+#   ① 개발자의 dev Redis(db 0)를 테스트가 오염시킨다.
+#   ② 카운터가 실행 간에 살아남아 두 번째 전체 실행부터 실패한다 — 일일/시간당
+#      카운터(`bideasy:ai_limit:{user_id}:{날짜}`·`bideasy:lead_rl:capture:{ip}`)는
+#      TTL 이 24시간·1시간이라 다음 실행까지 남는데, DB 는 매 실행 새로 만들어져
+#      user id 가 1부터 다시 매겨진다. 즉 앞 실행에서 한도를 소진한 카운터를 다음
+#      실행의 **다른 사용자**가 물려받아 429 를 받는다.
+# 그래서 전용 DB 인덱스로 갈라 두고, 세션 시작 때 우리 네임스페이스만 비운다.
+# Redis 가 없으면(`_get_redis()` → None) 각 호출부의 in-memory 폴백이 도는데 그건
+# 프로세스마다 초기화되므로 이미 격리돼 있다 — 아래 훅도 조용히 no-op 이 된다.
+TEST_REDIS_DB = 15
+_settings.REDIS_DB = TEST_REDIS_DB
+_cache._redis_client = None  # 이미 dev DB 로 연결됐을 수 있으니 싱글턴 리셋
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_redis():
+    """세션 시작·종료 시 테스트 DB 의 `bideasy:*` 키를 비운다.
+
+    FLUSHDB 대신 접두사 스캔인 이유: 전용 인덱스라도 남의 데이터를 지울 권한은 없다.
+    """
+    def _purge():
+        r = _cache._get_redis()
+        if r is None:
+            return
+        try:
+            keys = list(r.scan_iter(match="bideasy:*", count=500))
+            if keys:
+                r.delete(*keys)
+        except Exception:
+            pass  # Redis 정리 실패가 테스트를 깨뜨리지는 않는다
+
+    _purge()
+    yield
+    _purge()
 
 
 @pytest.fixture(scope="session")
