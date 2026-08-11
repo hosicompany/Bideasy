@@ -34,6 +34,13 @@
 하나의 광고그룹에서 소재만 바꾸지 않고 훅별 광고그룹과 랜딩을 분리한다. 같은 키워드를 두 그룹에
 중복 등록해 귀속을 흐리지 않는다.
 
+⚠️ **훅 구분자는 `utm_campaign` 에 넣는다 — `utm_content` 가 아니다.** 2026-08-11 실측:
+`utm_content` 는 프론트(`assets/app.js` 의 first-touch 저장은 source·medium·campaign 만 읽는다)
+에도, 가입 스키마(`signup_*`)에도, `leads.utm_*` 컬럼에도 **저장되는 곳이 없다.** 두 훅의
+source·medium·campaign 이 같으면 §7 이 1차로 쓰겠다고 한 DB 기록만으로는 훅을 가를 수 없고,
+7일차 판정(한쪽 가치 행동 2배 → 예산 70% 배정)이 성립하지 않는다. 캠페인명을 훅별로 나누면
+기존 `users.signup_campaign`·`leads.utm_campaign` 으로 그대로 갈린다(코드 변경 0).
+
 ### A. 안전 훅
 
 - 키워드 후보: `투찰가 계산`, `투찰가 계산기`, `투찰가 산정`, `낙찰하한율 계산`,
@@ -41,7 +48,7 @@
 - 제목: `투찰 전 위험 확인`
 - 설명: `투찰가와 기준선을 계산하고 위험 구간을 확인하세요.`
 - 랜딩:
-  `https://bideasy.kr/calculator?utm_source=naver&utm_medium=cpc&utm_campaign=validation_202608&utm_content=safety`
+  `https://bideasy.kr/calculator?utm_source=naver&utm_medium=cpc&utm_campaign=validation_202608_safety&utm_content=safety`
 
 ### B. 자격 훅
 
@@ -49,7 +56,7 @@
 - 제목: `입찰자격 빠른 확인`
 - 설명: `업종·지역 조건으로 확인할 공고를 좁혀보세요. 가입 없이 바로 진단해요.`
 - 랜딩:
-  `https://bideasy.kr/diagnose?utm_source=naver&utm_medium=cpc&utm_campaign=validation_202608&utm_content=filter`
+  `https://bideasy.kr/diagnose?utm_source=naver&utm_medium=cpc&utm_campaign=validation_202608_filter&utm_content=filter`
 
 기존 소재의 `실적으로 넣을 수 있는 공고만` 표현은 현재 진단 범위를 넘으므로 사용하지 않는다.
 안전 소재도 결과를 보장하는 표현 대신 계산과 위험 확인이라는 실제 기능만 약속한다.
@@ -71,8 +78,14 @@
 - [x] PR #102 실사용 계산·AI·가입 경로 계측 보완과 관리자 활성화 화면 병합·배포.
 - [x] 운영 SHA `0d74137`, 마이그레이션 `6c034544c26d`, `/admin/stats/activation` 인증 가드 확인.
 - [x] 두 UTM 랜딩 HTTP 200과 query string 유지 확인.
-- [ ] 두 랜딩의 모바일·PC 실제 화면 동작 확인.
-- [x] 실험 표본은 캠페인 시작시각 이후 `utm_campaign=validation_202608` 유입만 포함한다.
+- [x] 두 랜딩의 **PC** 실제 화면 동작 확인(2026-08-11) — 계산기는 안전선 통과 판정·낙찰하한선
+  89.745%·A값 미적용 표기 정상, 진단은 `POST /leads/diagnose` 실호출로 전기공사·부산 50건 매칭
+  확인. `assets/app.js` 의 first-touch 저장이 두 랜딩 모두에서 동작(계산기도 이 스크립트를 읽는다).
+- [ ] 두 랜딩의 **모바일** 실제 화면 확인 — 자동화 도구의 창 리사이즈가 스크린샷에 반영되지 않아
+  미확인. viewport 메타·`theme.css` 미디어쿼리 8개·반응형 레이아웃은 정적으로 확인했으나
+  실제 렌더링은 사람이 폰으로 열어봐야 한다.
+- [x] 실험 표본은 캠페인 시작시각 이후 `utm_campaign` 이 `validation_202608_` 로 시작하는 유입만
+  포함한다(`_safety`·`_filter` 두 값). 훅 판별도 이 컬럼으로 한다.
   기존 사용자 2명과 `e2e_check` 리드 1명은 기준선에서 제외한다.
 - [ ] 네이버 키워드 도구 재확인 후 최종 키워드와 제외 키워드 확정.
 - [x] 광고비 집행 승인(2026-08-11 사용자 지시 `미해결사항 진행`).
@@ -97,13 +110,17 @@
 퍼널은 `랜딩 → 계산/진단 완료 → 연락처 확인 → 가입 → 프로필 완성 → 첫 안전 판정 → 체험/결제`다.
 GA4는 행동 흐름 확인에 사용하고, 가입·프로필·활성화·결제 판정은 DB 기록을 우선한다.
 
+**훅 판별 = `utm_campaign` 접미사**(`_safety`/`_filter`). 조회 대상 컬럼은 가입이
+`users.signup_campaign`, 리드가 `leads.utm_campaign` 이다. `utm_content` 는 GA4 에서만 보이고
+DB 에는 남지 않으므로 판정 근거로 쓰지 않는다(§3 경고).
+
 | 날짜 | 훅 | 비용 | 노출 | 클릭 | 계산/진단 완료 | 확인 리드 | 프로필 | 활성 | 인터뷰 | 결제 | 메모 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | YYYY-MM-DD | safety/filter | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | |
 
 직접 소개는 `utm_source=founder_intro&utm_medium=referral`, 허가된 커뮤니티는 실제 채널명을
-`utm_source`에 쓰고 `utm_medium=community`로 구분한다. `utm_content`는 광고와 동일하게
-`safety` 또는 `filter`를 사용한다.
+`utm_source`에 쓰고 `utm_medium=community`로 구분한다. 훅 구분이 필요하면 광고와 같은 규칙으로
+`utm_campaign=validation_202608_safety` 또는 `_filter` 를 쓴다(`utm_content` 는 보조 표기).
 
 ## 8. 사전 등록 판정 기준
 
