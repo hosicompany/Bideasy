@@ -305,14 +305,17 @@ class OpeningParticipant(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     bid_no = Column(String(100), index=True, nullable=False)
-    rank = Column(Integer)                  # opengRank (1 = 최저가)
+    # opengRank — **유효 투찰(낙찰하한선 이상)에만 부여된다.** 결측 = 무효 투찰
+    # (2026-08-11 실측 47.6%). 등수 계산은 이 값이 있는 행만 센다(설계 §7-8).
+    rank = Column(Integer)
     company = Column(String(255))           # bidprcCorpNm
     # BigInteger 필수 — 공사 기초금액 실측 최대 6,203억. int4(21.4억)면
     # 대형 공고 참가자 행이 NumericValueOutOfRange 로 죽는다(mock_bids 에서 실제로 겪음).
     bid_price = Column(BigInteger)          # bidprcAmt
     bid_rate = Column(Float)                # bidprcRt
     sucsf_yn = Column(String(5))            # 'Y' = 낙찰(적격검사 통과)
-    crawled_at = Column(DateTime, default=_utcnow)
+    # index: `rank_axis_health` 의 시간창 표본용 (마이그 b8e4c1a29f73)
+    crawled_at = Column(DateTime, default=_utcnow, index=True)
 
 
 class OpeningStat(Base):

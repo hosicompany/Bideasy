@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -522,8 +522,8 @@ def score_mock_bid(db: Session, mb: models.MockBid,
         actual_lower_limit=round(lower_limit, 2),
         estimated_rank=est_rank,
         participants_count=participants_count,
-        valid_participants_count=(len(valid_prices)
-                                  if valid_prices and est_rank is not None else None),
+        # 무효 건에도 채운다 — "유효 투찰이 몇 건이었나"는 공고의 성질이다
+        valid_participants_count=len(valid_prices) if valid_prices else None,
         gap_to_winner_pct=round((float(mb.price) - winner) / winner * 100, 4) if winner else None,
         gap_to_limit_pct=(round((float(mb.price) - lower_limit) / lower_limit * 100, 4)
                           if lower_limit else None),
@@ -735,31 +735,30 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
     valid_count = _p_count(_valid)
     estimated_rank = 1 + _p_count(
         _valid, models.OpeningParticipant.bid_price < models.MockBid.price)
+    # 무효(DROPOUT)면 등수가 **없는** 것이 정답이다. 참가자 수는 무효 건에도
+    # 채운다 — 유효 투찰이 몇 건이었나는 그 공고의 성질이지 우리 판정의 성질이
+    # 아니다. 지우면 같은 공고인데 arm 마다 경쟁 규모가 달라 보인다.
+    expected_rank = case(
+        (models.MockBidResult.outcome == "DROPOUT", None),
+        else_=estimated_rank,
+    )
     rows = (
         db.query(models.MockBidResult, models.MockBid)
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
                        models.MockBidResult.scoring_rev == sq.c.max_rev))
         .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
-        .filter(or_(
-            # ① 무효(DROPOUT)가 등수를 갖고 있으면 지우는 rev 를 쌓는다.
-            #    우리가 하한선 미만이면 개찰 순위에 존재하지 않는다 — 참가자에게
-            #    적용하는 규칙과 같다. 두면 "무효인데 1위"가 집계에 남는다.
-            and_(models.MockBidResult.outcome == "DROPOUT",
-                 models.MockBidResult.estimated_rank.isnot(None)),
-            # ② 유효 판정 건은 값이 달라졌을 때만 새 rev.
-            and_(
-                models.MockBidResult.outcome.in_(("WIN", "LOST")),
-                valid_count > 0,
-                or_(
-                    models.MockBidResult.estimated_rank.is_(None),
-                    func.coalesce(models.MockBidResult.participants_count, -1)
-                    != participant_count,
-                    func.coalesce(models.MockBidResult.valid_participants_count, -1)
-                    != valid_count,
-                    models.MockBidResult.estimated_rank != estimated_rank,
-                ),
+        .filter(
+            models.MockBidResult.outcome.in_(("WIN", "LOST", "DROPOUT")),
+            valid_count > 0,
+            or_(
+                func.coalesce(models.MockBidResult.estimated_rank, -1)
+                != func.coalesce(expected_rank, -1),
+                func.coalesce(models.MockBidResult.participants_count, -1)
+                != participant_count,
+                func.coalesce(models.MockBidResult.valid_participants_count, -1)
+                != valid_count,
             ),
-        ))
+        )
         .order_by(models.MockBidResult.mock_bid_id.asc())
         .limit(limit)
         .all()
@@ -770,25 +769,22 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
     participants = _participants_by_bid(db, list({b.bid_no for _, b in rows}))
     backfilled = 0
     for prev, mb in rows:
-        if prev.outcome == "DROPOUT":
-            # 무효는 순위를 갖지 않는다 — 판정·참가자 수는 그대로 두고 등수만 지운다
-            if prev.estimated_rank is None:
-                continue
-            next_rank, next_valid = None, None
-            next_count = prev.participants_count
-        else:
-            priced = [p for p in participants.get(mb.bid_no, [])
-                      if p.bid_price and p.bid_price > 0]
-            valid_prices = _valid_participant_prices(priced)
-            if not valid_prices:
-                continue  # 조회 직후 재크롤로 교체된 극단적 경합 — 다음 실행에서 다시 본다
-            next_rank = estimate_rank(int(mb.price), valid_prices)
-            next_count = len(priced)
-            next_valid = len(valid_prices)
-            if (prev.estimated_rank == next_rank
-                    and prev.participants_count == next_count
-                    and prev.valid_participants_count == next_valid):
-                continue
+        priced = [p for p in participants.get(mb.bid_no, [])
+                  if p.bid_price and p.bid_price > 0]
+        valid_prices = _valid_participant_prices(priced)
+        if not valid_prices:
+            continue  # 조회 직후 재크롤로 교체된 극단적 경합 — 다음 실행에서 다시 본다
+        # 무효는 등수를 갖지 않는다. 참가자 수는 무효 건에도 갱신한다 — 분기를
+        # 나눠 무효를 후보에서 빼면 그 행의 참가자 수가 부분 응답 시점에 영구히
+        # 동결된다(리뷰가 잡은 회귀).
+        next_rank = (None if prev.outcome == "DROPOUT"
+                     else estimate_rank(int(mb.price), valid_prices))
+        next_count = len(priced)
+        next_valid = len(valid_prices)
+        if (prev.estimated_rank == next_rank
+                and prev.participants_count == next_count
+                and prev.valid_participants_count == next_valid):
+            continue
         try:
             db.add(models.MockBidResult(
                 mock_bid_id=mb.id,
@@ -1376,7 +1372,8 @@ RANK_HISTOGRAM_CAP = 10
 GAP_BUCKETS = ("≤-5", "-5~-2", "-2~-0.5", "-0.5~0", "0~0.5", "0.5~1", "1~2", "2~5", ">5")
 
 
-def rank_axis_health(db: Session, sample_notices: int = 300) -> dict:
+def rank_axis_health(db: Session, sample_notices: int = 300,
+                     min_rows: int = 200, window_days: int = 7) -> dict:
     """저장된 `opengRank` 와 우리 재계산 등수가 같은 축인지 상시 감시한다.
 
     **왜 상시로 재는가**: Phase 2 는 "무효 투찰도 순위에 포함된다"는 전제로
@@ -1389,12 +1386,17 @@ def rank_axis_health(db: Session, sample_notices: int = 300) -> dict:
     최근 크롤된 `sample_notices` 개 공고만 본다 — 전수는 어드민 화면 로드마다
     수십만 행을 정렬하게 된다.
     """
+    # 시간창을 먼저 좁힌다. `GROUP BY bid_no ORDER BY max(crawled_at)` 만으로는
+    # PostgreSQL 에 loose index scan 이 없어 전 행을 읽는다 — `LIMIT` 은 집계
+    # **이후**에만 듣는다. 창이 있어야 crawled_at 인덱스가 실제로 쓰인다.
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=window_days)
     recent = (
         db.query(models.OpeningParticipant.bid_no.label("bid_no"))
         # crawled_at 은 저장 시 항상 채우지만, NULL 이 섞이면 PostgreSQL 의
         # `DESC` 기본값(NULLS FIRST)이 그 공고들로 표본을 독점한다. SQLite 는
         # 반대라 테스트가 이 차이를 못 잡는다 — 아예 제외한다.
-        .filter(models.OpeningParticipant.crawled_at.isnot(None))
+        .filter(models.OpeningParticipant.crawled_at.isnot(None),
+                models.OpeningParticipant.crawled_at >= cutoff)
         .group_by(models.OpeningParticipant.bid_no)
         .order_by(func.max(models.OpeningParticipant.crawled_at).desc())
         .limit(sample_notices)
@@ -1430,26 +1432,58 @@ def rank_axis_health(db: Session, sample_notices: int = 300) -> dict:
     total_rows, null_rank = int(total_rows or 0), int(null_rank or 0)
     ranked, mismatch = int(ranked or 0), int(mismatch or 0)
     null_pct = round(100.0 * null_rank / total_rows, 2) if total_rows else None
+    sampled = db.query(func.count()).select_from(recent).scalar() or 0
 
-    healthy = None
-    if total_rows:
+    # 표본이 작으면 판정하지 않는다. 무효가 우연히 0건인 소표본을 "고장"이라고
+    # 외치면, 관리자는 그 오탐을 한 번 겪은 뒤 진짜 경고도 무시한다.
+    healthy, reason = None, None
+    if total_rows >= min_rows:
         # ① 순위가 있는 행끼리 가격순이 맞는가 (전수 실측 기준선 0.054%)
-        axis_ok = (mismatch / ranked < 0.01) if ranked else False
+        if not ranked:
+            healthy, reason = False, "no_rank_at_all"   # 파싱 전면 실패 의심
+        elif mismatch / ranked >= 0.01:
+            healthy, reason = False, "axis_mismatch"
         # ② **결측률 자체가 신호다.** 이번 사고(무효를 유효로 세던 것)는 ① 로는
         #    절대 안 잡힌다 — 순위 있는 행끼리는 항상 가격순이기 때문이다.
-        #    전수 기준선 47.6%. 결측이 사라지거나(API 가 무효에도 순위를 주기
-        #    시작) 전면화하면(필드명 변경 등 파싱 실패) 전제가 깨진 것이다.
-        presence_ok = 5.0 <= (null_pct or 0) <= 90.0
-        healthy = bool(axis_ok and presence_ok)
+        #    전수 기준선 47.6%. 결측이 사라지면 API 가 무효에도 순위를 주기
+        #    시작한 것이고, 전면화하면 파싱이 깨진 것이다.
+        elif not (5.0 <= (null_pct or 0) <= 90.0):
+            healthy, reason = False, "null_rank_anomaly"
+        else:
+            healthy = True
     return {
-        "sample_notices": sample_notices,
+        "sample_notices": sample_notices,   # 요청값
+        "sampled_notices": int(sampled),    # 실제 표본 — 이게 없으면 표본 크기를 모른다
+        "min_rows": min_rows,
         "rows": total_rows,
         "ranked_rows": ranked,
         "mismatch": mismatch,
         "mismatch_pct": round(100.0 * mismatch / ranked, 3) if ranked else None,
         "null_rank_pct": null_pct,          # 기준선 47.6% (무효 투찰 비중)
         "healthy": healthy,
+        "reason": reason,
     }
+
+
+def rank_dropout_excluded(db: Session) -> dict:
+    """`rank_distribution` 이 무효로 제외한 arm 별 건수.
+
+    `summarize` 가 `excluded_base_mismatch` 를 함께 돌려주는 것과 같은 이유다 —
+    **제외 수를 숨기면 전수를 본 것처럼 읽힌다.** 특히 무효율이 높은 arm 일수록
+    많이 빠지므로, 등수 분포를 arm 간 비교에 쓸 때는 반드시 무효율과 함께 봐야
+    한다(무효를 빼면 "유효였을 때"로 조건부인 분포가 된다).
+    """
+    sq = _latest_rev_sq(db)
+    rows = (
+        db.query(models.MockBid.arm, func.count().label("n"))
+        .join(models.MockBidResult, models.MockBidResult.mock_bid_id == models.MockBid.id)
+        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                       models.MockBidResult.scoring_rev == sq.c.max_rev))
+        .filter(models.MockBidResult.outcome == "DROPOUT", _valid_base_filter())
+        .group_by(models.MockBid.arm)
+        .all()
+    )
+    return {arm: int(n) for arm, n in rows}
 
 
 def rank_distribution(db: Session) -> dict:

@@ -1375,11 +1375,18 @@ function mbParticipantText(arm) {
   return total == null ? '참가자 집계 전' : `총 참가 ${fmtNumber(total)}곳`;
 }
 
+// 무효는 개찰 순위를 갖지 않는다. 이걸 '집계 중'으로 두면 판정이 끝난 건인데도
+// 관리자가 오지 않을 숫자를 기다린다.
+function mbRankText(arm, pendingLabel) {
+  if (arm.outcome === 'DROPOUT') return '순위 없음(무효)';
+  return arm.estimated_rank == null
+    ? pendingLabel : `가상 ${fmtNumber(arm.estimated_rank)}위`;
+}
+
 function mbHistoryArmRows(arms) {
   return (arms || []).map((arm) => {
     const meta = mbOutcomeMeta(arm.outcome);
-    const rank = arm.estimated_rank == null
-      ? '—' : `가상 ${fmtNumber(arm.estimated_rank)}위`;
+    const rank = mbRankText(arm, '—');
     return `<tr>
       <td><b>${esc(MB_ARM_FRIENDLY[arm.arm] || arm.arm || '—')}</b><small>${esc(arm.arm || '')}</small></td>
       <td>${fmtNumber(arm.price)}원<small>${mbRateText(arm.bid_rate)}</small></td>
@@ -1395,7 +1402,7 @@ function mbHistoryItem(item) {
   const meta = mbOutcomeMeta(primary.outcome);
   const completed = item.state === 'COMPLETED';
   const rankReady = primary.estimated_rank !== null && primary.estimated_rank !== undefined;
-  const rankText = rankReady ? `가상 ${fmtNumber(primary.estimated_rank)}위` : '집계 중';
+  const rankText = mbRankText(primary, '집계 중');
   const participantText = (primary.participants_count == null
       && primary.valid_participants_count == null)
     ? '참가자 데이터 대기' : mbParticipantText(primary);
@@ -1542,6 +1549,11 @@ pages.mockbidding = async function (content) {
   // 축이 어긋난 상태에서 숫자만 살려두면, 관리자가 차트 경고를 읽고도 바로 위의
   // KPI 를 그대로 보고서에 옮긴다. 해석을 막으려면 숫자도 함께 막아야 한다.
   const axisBroken = ((charts || {}).rank_axis_health || {}).healthy === false;
+  // 제외 수를 숨기면 전수를 본 것처럼 읽힌다. 무효율이 높은 arm 일수록 많이
+  // 빠지므로, arm 간 비교에는 반드시 무효율과 함께 봐야 한다.
+  const dropoutExcluded = Number(((charts || {}).rank_dropout_excluded || {}).active || 0);
+  const dropoutExcludedText = dropoutExcluded
+    ? `무효 ${fmtNumber(dropoutExcluded)}건은 순위가 없어 제외했어요(무효율은 위 지표 참조).` : '';
   const top3Rate = (ranked && !axisBroken) ? Math.round(top3 / ranked * 1000) / 10 : null;
   const top3Label = axisBroken ? '축 점검 중' : '표본 대기';
   const advanced = mbAdvancedTables(sum);
@@ -1592,7 +1604,7 @@ pages.mockbidding = async function (content) {
         <div><span>결과 해석 상태</span><strong>${esc(mbGateLabel(reach.status))}</strong><small>${reach.interpretation_allowed ? '누적 경향을 참고할 수 있어요' : '아직 개별 결과 위주로 보세요'}</small></div>
       </div>
       <div class="mb-simple-charts">
-        <div><h4>가상 순위는 어디에 모였나요?</h4><p>현재 추천 가격을 실제 참가자 사이에 넣어 계산했습니다.</p><div class="chart-wrap"><canvas id="mb-ch-rank-simple"></canvas></div></div>
+        <div><h4>가상 순위는 어디에 모였나요?</h4><p>현재 추천 가격을 <b>유효 투찰</b>(낙찰하한선 이상) 사이에 넣어 계산했습니다. ${dropoutExcludedText}</p><div class="chart-wrap"><canvas id="mb-ch-rank-simple"></canvas></div></div>
         <div><h4>실제 낙찰가와 얼마나 달랐나요?</h4><p>0에 가까울수록 실제 낙찰가에 가까운 가격입니다.</p><div class="chart-wrap"><canvas id="mb-ch-gap-simple"></canvas></div></div>
       </div>
     </section>
@@ -1669,9 +1681,16 @@ function renderMockBiddingOverviewCharts(charts) {
   // Phase 2 는 축이 틀린 채 9일을 돌았고 화면은 그동안 멀쩡히 그려졌다.
   const axis = charts.rank_axis_health;
   if (axis && axis.healthy === false) {
+    // 사유별로 다른 말을 해야 한다. 전부 "N% 어긋남"으로 쓰면 결측률 이상일 때
+    // "0.0% 어긋났습니다" 같은 자기모순 문구가 나온다.
+    const why = {
+      axis_mismatch: `개찰 API 순위와 ${axis.mismatch_pct}% 어긋났습니다.`,
+      null_rank_anomaly: `무효 투찰 비중이 ${axis.null_rank_pct}% 입니다(정상 범위 5~90%). `
+        + 'API 가 순위를 주는 기준이 바뀌었을 수 있어요.',
+      no_rank_at_all: '순위 필드가 한 건도 파싱되지 않았습니다. 필드명 변경을 의심하세요.',
+    }[axis.reason] || '축 점검이 필요합니다.';
     mbChartEmpty('mb-ch-rank-simple',
-      `등수 축 점검이 필요해요 — 개찰 API 순위와 ${axis.mismatch_pct}% 어긋났습니다. `
-      + '원인을 확인할 때까지 등수는 해석하지 마세요.');
+      `등수 축 점검이 필요해요 — ${why} 원인을 확인할 때까지 등수는 해석하지 마세요.`);
   } else if (!rankGroups.some(Boolean)) {
     mbChartEmpty('mb-ch-rank-simple', noData);
   } else {

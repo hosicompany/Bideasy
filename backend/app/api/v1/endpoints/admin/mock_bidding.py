@@ -8,6 +8,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.core.security import require_admin
@@ -62,6 +63,8 @@ def charts(
         "queue_health": mb.score_queue_health(db),
         "sample_validity": mb.sample_validity(db),
         "rank_distribution": mb.rank_distribution(db),
+        # 등수 분포에서 무효로 빠진 수 — 숨기면 전수를 본 것처럼 읽힌다
+        "rank_dropout_excluded": mb.rank_dropout_excluded(db),
         "rank_histogram_cap": mb.RANK_HISTOGRAM_CAP,
         # 등수 축이 개찰 API 와 여전히 같은지 — 어긋나면 등수 해석을 멈춘다(§9)
         "rank_axis_health": mb.rank_axis_health(db),
@@ -157,10 +160,20 @@ def results(
     db: Session = Depends(get_db),
     _admin=Depends(require_admin),
 ):
-    """채점 결과 조회 (최신순). 등록 정보와 조인."""
+    """채점 결과 조회 (최신순). 등록 정보와 조인. **등록 건당 최신 rev 만.**
+
+    최신 rev 로 좁히지 않으면 재채점·등수 백필이 rev 를 쌓을 때마다 같은
+    (공고, arm) 이 여러 줄로 나온다. `scored_at` 은 원 측정 시각을 보존하므로
+    정렬로도 갈라지지 않아, 이걸 CSV 로 뽑으면 구 rev 가 섞인 채 집계된다.
+    """
+    from app.services import mock_bidding as mb
+
+    sq = mb._latest_rev_sq(db)
     q = (
         db.query(models.MockBidResult, models.MockBid)
         .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
+        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                       models.MockBidResult.scoring_rev == sq.c.max_rev))
     )
     if outcome:
         q = q.filter(models.MockBidResult.outcome == outcome)
