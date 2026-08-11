@@ -1,13 +1,11 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
-from app.core.analytics import log_event
 from app.db.session import get_db
 from app.schemas import bid as schemas
+from app.services.activation import record_first_activation
 from app.services.calculator import CalculatorService
 from app.db import models
 from app.core.logging import get_logger
@@ -39,18 +37,8 @@ def calculate_bid(
 
         is_safe = final_price >= limit_price
 
-        # 활성화 계측: 로그인 사용자의 첫 "안전 판정" 시각 기록. best-effort — 실패해도
-        # 계산 결과 응답을 절대 막지 않는다.
-        if current_user is not None:
-            try:
-                if current_user.first_activation_at is None:
-                    current_user.first_activation_at = datetime.now(timezone.utc)
-                    db.add(current_user)
-                    db.commit()
-                    log_event("activation_first_safe_check", user_id=current_user.id, source="bid_calculate")
-            except Exception as e:
-                logger.warning(f"activation first_activation_at hook 실패(non-fatal): {e}")
-                db.rollback()
+        # 활성화 계측: 로그인 사용자의 첫 "안전 판정" 시각 기록 (계산 성공 후에만).
+        record_first_activation(db, current_user, source="bid_calculate")
 
         return schemas.BidCalculationResponse(
             original_price=request.basic_price,
@@ -67,13 +55,21 @@ def calculate_bid(
 
 
 @router.post("/calculate/detailed", response_model=schemas.DetailedBidCalculationResponse)
-def calculate_bid_detailed(request: schemas.BidCalculationRequest):
+def calculate_bid_detailed(
+    request: schemas.BidCalculationRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     """
     상세 투찰가 계산 (Advanced Calculator)
     - 예정가격 범위 (±3%)
     - 낙찰하한선 분석
     - 안전도 레벨 (SAFE/WARNING/DANGER)
     - A값 반영 (고정비용 미적용 보장)
+
+    인증은 선택(익명 계산도 허용). **실사용 계산 경로는 이쪽이다** — 공고상세 SSR
+    (`templates/bid_detail.html`)과 Flutter 앱이 이 엔드포인트를 부른다(`/calculate` 는
+    테스트 외 호출자 없음). 활성화 계측(첫 안전 판정)은 두 곳 모두에 건다.
     """
     try:
         contract_type = request.contract_type or "CONSTRUCTION"
@@ -85,7 +81,10 @@ def calculate_bid_detailed(request: schemas.BidCalculationRequest):
             contract_type=contract_type,
             a_value=a_value
         )
-        
+
+        # 활성화 계측: 로그인 사용자의 첫 "안전 판정" 시각 기록 (계산 성공 후에만).
+        record_first_activation(db, current_user, source="bid_calculate_detailed")
+
         return schemas.DetailedBidCalculationResponse(
             original_price=result.original_price,
             rate=result.rate,

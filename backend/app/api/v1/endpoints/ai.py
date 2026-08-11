@@ -13,6 +13,7 @@ from app.core.cache import _get_redis, cache_key
 from app.db.session import get_db
 from app.db import models
 from app.schemas.subscription import tier_at_least, TIER_PRO_PLUS, get_effective_tier
+from app.services.activation import record_first_activation
 from app.services.tips_generator import generate_tips
 from app.services.scraper import ScraperService
 
@@ -184,18 +185,6 @@ async def analyze_bid(
     logger.info(f"Enhanced analysis request for bid_no={bid_no}")
     log_event("ai_analysis_requested", user_id=current_user.id, bid_no=bid_no)
 
-    # 활성화 계측: 로그인 사용자의 첫 "안전 판정"(AI 분석 요청) 시각 기록. best-effort —
-    # 실패해도 본 분석 기능을 절대 막지 않는다.
-    try:
-        if current_user.first_activation_at is None:
-            current_user.first_activation_at = datetime.now(timezone.utc)
-            db.add(current_user)
-            db.commit()
-            log_event("activation_first_safe_check", user_id=current_user.id, source="ai_analysis")
-    except Exception as e:
-        logger.warning(f"activation first_activation_at hook 실패(non-fatal): {e}")
-        db.rollback()
-
     # Rate limit (B 시나리오: free 3/일, pro 50/일, pro+ 무제한)
     used_count = check_ai_rate_limit(current_user)
     logger.info(f"AI rate check passed: user={current_user.id} tier={current_user.tier} used_today={used_count}")
@@ -213,6 +202,8 @@ async def analyze_bid(
             cnotice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
             c_title = (title or (cnotice.title if cnotice else "")) or ""
             c_region = (region or (getattr(cnotice, "region", "") if cnotice else "")) or ""
+            # 활성화 계측: 캐시 히트도 사용자에겐 성공한 분석이다 — 여기서도 기록.
+            record_first_activation(db, current_user, source="ai_analysis")
             return _apply_qualification(
                 _strip_qualification(cached_log.summary_json), c_title, c_region, bid_no, current_user
             )
@@ -435,6 +426,11 @@ async def analyze_bid(
     except Exception as e:
         logger.warning(f"Cache save error (non-fatal): {e}")
         db.rollback()
+
+    # 활성화 계측: 분석이 성공적으로 만들어진 뒤에만 기록한다 — 400(정보 부족)·429
+    # (레이트리밋)로 끝난 요청을 "활성화"로 세면 안 되고, 캐시 저장 commit/rollback 이
+    # 끝난 시점이라 세션에 pending 변경도 없다.
+    record_first_activation(db, current_user, source="ai_analysis")
 
     # 응답엔 현재 사용자 자격 포함 (analysis_result 는 이미 inline 블록에서 주입됨)
     return analysis_result

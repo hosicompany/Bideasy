@@ -228,7 +228,10 @@ def get_user_stats(
         else:
             status.free_only += 1
 
-    # 신규 가입 시리즈 (trial_started_at fallback — User.created_at 없음)
+    # 신규 가입 시리즈 — trial_started_at 기준. User.created_at 은 활성화 계측
+    # (2026-08-11)부터 채워져 그 이전 가입자는 NULL 이라, 전 기간이 채워진
+    # trial_started_at 을 유지한다. 따라서 /stats/activation(created_at 기준)과는
+    # 계측 이전 가입자만큼 숫자가 다를 수 있다 — 버그가 아니라 분모 차이다.
     series_start = today_start - timedelta(days=days - 1)
     rows = db.query(
         func.date(models.User.trial_started_at).label("d"),

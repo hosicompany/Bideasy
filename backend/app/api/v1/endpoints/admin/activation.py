@@ -10,7 +10,7 @@ Endpoints:
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
@@ -73,8 +73,15 @@ def activation_stats(
         or 0
     )
 
-    # ── 최근 days 일: 일별 가입/프로필완성/활성화 시리즈 (created_at 기준) ──
-    since = _utcnow() - timedelta(days=days)
+    # ── 최근 days 일: 일별 시리즈 — **코호트(가입일) 기준** ──
+    # 세 쿼리 모두 func.date(created_at) 으로 묶는다: 8/1 가입자가 8/20 에 활성화하면
+    # 8/20 이 아니라 8/1 버킷이 소급 +1 된다. 즉 "그날 활성화가 몇 건 있었나"가 아니라
+    # "그날 가입한 코호트가 지금까지 얼마나 전환됐나"를 답한다 — 응답 키 cohort_* 가
+    # 그 계약이다. 시작점은 UTC 자정으로 정규화해 모든 버킷이 온전한 하루가 되게 한다
+    # (지금−N일로 자르면 첫 버킷이 반쪽 하루라 그래프 첫 점이 항상 낮게 찍힌다).
+    today = _utcnow().date()
+    start_date = today - timedelta(days=days - 1)
+    since = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
     signup_rows = (
         db.query(
             func.date(models.User.created_at).label("d"),
@@ -112,17 +119,14 @@ def activation_stats(
     profile_by_date = {str(r.d): int(r.cnt or 0) for r in profile_rows}
     activated_by_date = {str(r.d): int(r.cnt or 0) for r in activated_rows}
 
-    today = _utcnow().date()
-    start_date = (since).date()
-    num_days = (today - start_date).days + 1
     daily = []
-    for i in range(num_days):
+    for i in range(days):
         d = (start_date + timedelta(days=i)).isoformat()
         daily.append({
             "date": d,
             "signups": signups_by_date.get(d, 0),
-            "profile_complete": profile_by_date.get(d, 0),
-            "activated": activated_by_date.get(d, 0),
+            "cohort_profile_complete": profile_by_date.get(d, 0),
+            "cohort_activated": activated_by_date.get(d, 0),
         })
 
     return {

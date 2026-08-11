@@ -917,6 +917,44 @@ pages.autocalibrate = async function(content) {
   }));
 };
 
+// ─── 활성화 계측 (#101 후속) ──────────────────────────────
+pages.activation = async function(content) {
+  content.innerHTML = '<div class="card">불러오는 중...</div>';
+  let d;
+  try { d = await api('/admin/stats/activation?days=30'); }
+  catch (err) { content.innerHTML = `<div class="card"><h3>오류</h3><p>${err.message}</p></div>`; return; }
+  // daily 는 이벤트 발생일이 아니라 **가입일 코호트** 기준이다 — 8/1 가입자가 8/20 에
+  // 활성화하면 8/1 행이 소급해서 오른다. 서버 키가 cohort_* 인 이유이고, 헤더도 그렇게 읽히게 쓴다.
+  const rows = (d.daily || []).filter(r => r.signups || r.cohort_profile_complete || r.cohort_activated).map(r =>
+    `<tr><td>${r.date}</td><td>${r.signups}</td><td>${r.cohort_profile_complete}</td><td>${r.cohort_activated}</td></tr>`).join('');
+  content.innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">계측 대상 가입자</div>
+        <div class="kpi-value">${fmtNumber(d.with_created_at)}</div>
+        <div class="kpi-sub">총 사용자 ${fmtNumber(d.total_users)}명 · 계측 도입 이전 가입자는 분모에서 제외</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">프로필 완성</div>
+        <div class="kpi-value">${d.profile_complete_pct}%</div>
+        <div class="kpi-sub">${fmtNumber(d.profile_complete)}명 — 면허·소재지 입력</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">첫 안전 판정</div>
+        <div class="kpi-value">${d.activated_pct}%</div>
+        <div class="kpi-sub">${fmtNumber(d.activated)}명 — 계산기/AI 분석 첫 사용</div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>최근 30일 — 가입일 코호트</h3>
+      <p style="font-size:12px;color:var(--color-text-muted);margin:-4px 0 10px;">각 행은 <b>그날 가입한 사람들</b>이 지금까지 얼마나 전환했는지를 뜻해요 (전환한 날이 아니라 가입한 날 기준).</p>
+      <table style="width:100%;font-size:13px;">
+        <thead><tr><th style="text-align:left;">가입일</th><th style="text-align:left;">가입</th><th style="text-align:left;">그중 프로필 완성</th><th style="text-align:left;">그중 첫 안전 판정</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" style="color:var(--color-text-muted);">아직 계측된 가입자가 없어요 — 계측 배포 이후의 신규 가입부터 집계됩니다.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+};
+
 // ─── 시스템 (Phase D) ─────────────────────────────────────
 pages.system = async function(content) {
   content.innerHTML = '<div class="card">불러오는 중...</div>';
