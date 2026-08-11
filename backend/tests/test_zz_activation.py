@@ -1,0 +1,223 @@
+"""활성화 계측 테스트.
+
+- PUT /api/v1/users/me — 프로필 완성(면허+소재지) 1회 기록, 이후 재갱신에도 불변
+- GET /api/v1/ai/{bid_no}/analysis — 첫 안전 판정(AI 분석) 1회 기록, 이후 재호출에도 불변
+- GET /api/v1/admin/stats/activation — 응답 스키마 + 비관리자 403
+
+기존 free_client/admin_client 등 공유 픽스처의 기본 사용자는 다른 테스트 파일에서도
+재사용되므로(세션 스코프 engine), 이 파일에서 프로필·활성화 상태를 뒤바꾸는 테스트는
+전용 이메일로 새 사용자를 직접 만들어 부작용을 격리한다 (test_ai_analysis.py 의
+test_qualification_not_leaked_via_cache 와 같은 패턴).
+"""
+from datetime import datetime, timezone
+
+import pytest
+
+from app.core.rate_limit import limiter
+from app.core.security import create_access_token
+from app.db import models
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limiter():
+    """AI 분석 호출이 free 1회/일 제한에 걸리지 않도록(다른 테스트가 True 로 남겼을 수 있음)."""
+    limiter.enabled = False
+    yield
+    limiter.enabled = False
+
+
+def _make_user(db_session, email, **kwargs):
+    user = models.User(email=email, hashed_password="x", tier=kwargs.pop("tier", "pro"), **kwargs)
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+def _auth_headers(user) -> dict:
+    token = create_access_token({"sub": str(user.id)})
+    return {"Authorization": f"Bearer {token}"}
+
+
+class TestProfileCompleteHook:
+    """PUT /api/v1/users/me — 프로필 완성 계측."""
+
+    def test_licenses_and_location_records_once(self, client, db_session):
+        user = _make_user(db_session, "activation-profile-1@test.com")
+        headers = _auth_headers(user)
+
+        resp = client.put(
+            "/api/v1/users/me",
+            json={"licenses": "전기공사업", "location": "서울특별시"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+
+        db_session.refresh(user)
+        assert user.profile_completed_at is not None
+        first_ts = user.profile_completed_at
+
+        # 재갱신(내용 변경)에도 최초 기록 시각은 불변
+        resp2 = client.put(
+            "/api/v1/users/me",
+            json={"licenses": "전기공사업,기계설비공사업", "location": "부산광역시"},
+            headers=headers,
+        )
+        assert resp2.status_code == 200
+        db_session.refresh(user)
+        assert user.profile_completed_at == first_ts
+
+    def test_profile_cleared_does_not_revert_timestamp(self, client, db_session):
+        """완성 기록 후 프로필을 비워도 profile_completed_at 은 되돌아가지 않는다."""
+        user = _make_user(db_session, "activation-profile-2@test.com")
+        headers = _auth_headers(user)
+
+        client.put(
+            "/api/v1/users/me",
+            json={"licenses": "전기공사업", "location": "서울특별시"},
+            headers=headers,
+        )
+        db_session.refresh(user)
+        first_ts = user.profile_completed_at
+        assert first_ts is not None
+
+        client.put("/api/v1/users/me", json={"licenses": "", "location": ""}, headers=headers)
+        db_session.refresh(user)
+        assert user.profile_completed_at == first_ts
+
+    def test_licenses_only_without_location_not_recorded(self, client, db_session):
+        user = _make_user(db_session, "activation-profile-3@test.com")
+        headers = _auth_headers(user)
+
+        resp = client.put(
+            "/api/v1/users/me",
+            json={"licenses": "전기공사업"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        db_session.refresh(user)
+        assert user.profile_completed_at is None
+
+    def test_location_only_without_licenses_not_recorded(self, client, db_session):
+        user = _make_user(db_session, "activation-profile-4@test.com")
+        headers = _auth_headers(user)
+
+        resp = client.put(
+            "/api/v1/users/me",
+            json={"location": "서울특별시"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        db_session.refresh(user)
+        assert user.profile_completed_at is None
+
+
+class TestFirstActivationHookAiAnalysis:
+    """GET /api/v1/ai/{bid_no}/analysis — 첫 안전 판정 계측."""
+
+    def test_first_call_records_activation(self, client, db_session, sample_notice, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.scraper.ScraperService.fetch_page_content",
+            lambda url: None,
+        )
+        user = _make_user(db_session, "activation-ai-1@test.com")
+        headers = _auth_headers(user)
+        assert user.first_activation_at is None
+
+        resp = client.get(
+            "/api/v1/ai/TEST-001/analysis",
+            params={
+                "title": "서울시 강남구 구민회관 리모델링 공사",
+                "basic_price": 500000000,
+                "organization": "강남구청",
+                "contract_type": "CONSTRUCTION",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        db_session.refresh(user)
+        assert user.first_activation_at is not None
+
+    def test_second_call_does_not_change_timestamp(self, client, db_session, sample_notice, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.scraper.ScraperService.fetch_page_content",
+            lambda url: None,
+        )
+        user = _make_user(db_session, "activation-ai-2@test.com")
+        headers = _auth_headers(user)
+        params = {
+            "title": "서울시 강남구 구민회관 리모델링 공사",
+            "basic_price": 500000000,
+            "organization": "강남구청",
+            "contract_type": "CONSTRUCTION",
+        }
+
+        r1 = client.get("/api/v1/ai/TEST-001/analysis", params=params, headers=headers)
+        assert r1.status_code == 200
+        db_session.refresh(user)
+        first_ts = user.first_activation_at
+        assert first_ts is not None
+
+        r2 = client.get("/api/v1/ai/TEST-001/analysis", params=params, headers=headers)
+        assert r2.status_code == 200
+        db_session.refresh(user)
+        assert user.first_activation_at == first_ts
+
+
+class TestAdminActivationStats:
+    """GET /api/v1/admin/stats/activation."""
+
+    def test_non_admin_forbidden(self, free_client):
+        resp = free_client.get("/api/v1/admin/stats/activation")
+        assert resp.status_code == 403
+
+    def test_anonymous_unauthorized(self, client):
+        resp = client.get("/api/v1/admin/stats/activation")
+        assert resp.status_code == 401
+
+    def test_response_schema(self, admin_client):
+        resp = admin_client.get("/api/v1/admin/stats/activation")
+        assert resp.status_code == 200
+        data = resp.json()
+        for key in (
+            "total_users", "with_created_at", "profile_complete", "profile_complete_pct",
+            "activated", "activated_pct", "daily",
+        ):
+            assert key in data
+        assert isinstance(data["daily"], list)
+        if data["daily"]:
+            point = data["daily"][0]
+            for key in ("date", "signups", "profile_complete", "activated"):
+                assert key in point
+
+    def test_pct_uses_with_created_at_as_denominator(self, admin_client, db_session):
+        """계측 이전(created_at=NULL) 레거시 사용자는 분모에서 제외된다."""
+        base = admin_client.get("/api/v1/admin/stats/activation").json()
+
+        # 계측 이전 가입자 시뮬레이션 — insert 후 UPDATE 로 created_at 을 NULL 화
+        # (Column default 는 INSERT 시에만 적용되고 UPDATE 시에는 적용되지 않는다).
+        legacy = _make_user(db_session, "activation-legacy@test.com")
+        legacy.profile_completed_at = datetime.now(timezone.utc)
+        legacy.created_at = None
+        db_session.add(legacy)
+        db_session.commit()
+
+        after_legacy = admin_client.get("/api/v1/admin/stats/activation").json()
+        # 레거시 사용자는 total_users 는 늘리지만 with_created_at/profile_complete 는 불변
+        assert after_legacy["total_users"] == base["total_users"] + 1
+        assert after_legacy["with_created_at"] == base["with_created_at"]
+        assert after_legacy["profile_complete"] == base["profile_complete"]
+
+        # 계측 대상(신규) 가입자 — 프로필 완성까지
+        new_user = _make_user(db_session, "activation-new@test.com")
+        new_user.profile_completed_at = datetime.now(timezone.utc)
+        db_session.add(new_user)
+        db_session.commit()
+
+        after_new = admin_client.get("/api/v1/admin/stats/activation").json()
+        assert after_new["with_created_at"] == after_legacy["with_created_at"] + 1
+        assert after_new["profile_complete"] == after_legacy["profile_complete"] + 1
+        expected_pct = round(
+            after_new["profile_complete"] / after_new["with_created_at"] * 100, 1
+        )
+        assert after_new["profile_complete_pct"] == expected_pct

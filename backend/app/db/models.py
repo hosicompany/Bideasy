@@ -104,6 +104,17 @@ class User(Base):
     consent_ip = Column(String(45), nullable=True)
     consent_user_agent = Column(String(300), nullable=True)
 
+    # === 활성화 계측(activation instrumentation) ===
+    # 신규 가입자의 활성화 2단계(프로필 완성 → 첫 안전 판정)를 서버에서 계측.
+    # created_at 은 이 계측 도입 이후 가입한 행에만 채워진다(기존 행 backfill 안 함
+    # — 과거 가입일을 지어내면 admin 통계 분모가 왜곡된다). index=True 는 admin
+    # 통계의 최근 N일 집계(GROUP BY date(created_at))가 풀스캔하지 않도록.
+    created_at = Column(DateTime, default=_utcnow, index=True, nullable=True)
+    # 프로필(면허·소재지) 최초 완성 시각. 1회만 기록 — 이후 프로필을 비워도 되돌리지 않는다.
+    profile_completed_at = Column(DateTime, nullable=True)
+    # 첫 "안전 판정"(AI 분석 요청 등) 시각. 활성화 퍼널의 두 번째 단계.
+    first_activation_at = Column(DateTime, nullable=True)
+
     bids = relationship("UserBid", back_populates="user")
     point_transactions = relationship("PointTransaction", back_populates="user")
 

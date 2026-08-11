@@ -1,7 +1,11 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Any
 
+from app.core.analytics import log_event
+from app.core.logging import get_logger
 from app.db import models
 from app.schemas import user as user_schemas
 from app.schemas.subscription import (
@@ -12,6 +16,8 @@ from app.schemas.subscription import (
 )
 from app.db.session import get_db
 from app.core.security import get_current_user, verify_password, get_password_hash, create_token_for_user
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -30,6 +36,19 @@ def update_user_me(
     update_data = user_in.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(current_user, field, value)
+
+    # 활성화 계측: 면허·소재지가 모두 채워지면 "프로필 완성" 1회 기록.
+    # 이미 기록된 뒤(profile_completed_at is not None)는 이후 프로필을 비워도 되돌리지 않는다.
+    try:
+        if (
+            current_user.profile_completed_at is None
+            and (current_user.licenses or "").strip()
+            and (current_user.location or "").strip()
+        ):
+            current_user.profile_completed_at = datetime.now(timezone.utc)
+            log_event("profile_complete", user_id=current_user.id)
+    except Exception as e:
+        logger.warning(f"activation profile_complete hook 실패(non-fatal): {e}")
 
     db.add(current_user)
     db.commit()

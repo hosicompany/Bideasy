@@ -184,6 +184,18 @@ async def analyze_bid(
     logger.info(f"Enhanced analysis request for bid_no={bid_no}")
     log_event("ai_analysis_requested", user_id=current_user.id, bid_no=bid_no)
 
+    # 활성화 계측: 로그인 사용자의 첫 "안전 판정"(AI 분석 요청) 시각 기록. best-effort —
+    # 실패해도 본 분석 기능을 절대 막지 않는다.
+    try:
+        if current_user.first_activation_at is None:
+            current_user.first_activation_at = datetime.now(timezone.utc)
+            db.add(current_user)
+            db.commit()
+            log_event("activation_first_safe_check", user_id=current_user.id, source="ai_analysis")
+    except Exception as e:
+        logger.warning(f"activation first_activation_at hook 실패(non-fatal): {e}")
+        db.rollback()
+
     # Rate limit (B 시나리오: free 3/일, pro 50/일, pro+ 무제한)
     used_count = check_ai_rate_limit(current_user)
     logger.info(f"AI rate check passed: user={current_user.id} tier={current_user.tier} used_today={used_count}")
