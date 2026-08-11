@@ -28,7 +28,13 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.add_column('mock_bid_results',
                   sa.Column('valid_participants_count', sa.Integer(), nullable=True))
+    # `rank_axis_health` 가 최근 크롤분을 표본으로 뽑을 때 쓴다. 없으면 어드민
+    # 화면을 열 때마다 참가자 전 행(현재 46만, 보존기간 없음)을 훑는다.
+    op.create_index('ix_opening_participants_crawled_at',
+                    'opening_participants', ['crawled_at'])
 
 
 def downgrade() -> None:
+    op.drop_index('ix_opening_participants_crawled_at',
+                  table_name='opening_participants')
     op.drop_column('mock_bid_results', 'valid_participants_count')

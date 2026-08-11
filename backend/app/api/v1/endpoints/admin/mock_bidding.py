@@ -181,6 +181,9 @@ def results(
                 "actual_lower_limit": r.actual_lower_limit,
                 "estimated_rank": r.estimated_rank,
                 "participants_count": r.participants_count,
+                # 등수의 분모. 이걸 빼면 CSV 로 뽑아 백분위를 낼 때 분모가
+                # 2배(무효 47.6% 포함)가 되어 오독이 재생산된다.
+                "valid_participants_count": r.valid_participants_count,
                 "gap_to_winner_pct": r.gap_to_winner_pct,
                 "gap_to_limit_pct": r.gap_to_limit_pct,
                 "ratio_error": r.ratio_error,

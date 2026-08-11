@@ -1365,10 +1365,12 @@ function mbResultInsight(primary) {
 function mbParticipantText(arm) {
   const valid = arm.valid_participants_count;
   const total = arm.participants_count;
+  // "N곳 기준"으로 쓰면 분모 선언으로 읽혀 "2곳 기준인데 3위" 같은 모순이 된다.
+  // 등수는 우리를 끼워 넣은 값이라 최대 N+1 이다 — 서술형으로 적는다.
   if (valid != null) {
     return total != null && total !== valid
-      ? `유효 투찰 ${fmtNumber(valid)}곳 기준 · 총 참가 ${fmtNumber(total)}곳`
-      : `유효 투찰 ${fmtNumber(valid)}곳 기준`;
+      ? `유효 투찰 ${fmtNumber(valid)}곳 사이 순위 · 총 참가 ${fmtNumber(total)}곳`
+      : `유효 투찰 ${fmtNumber(valid)}곳 사이 순위`;
   }
   return total == null ? '참가자 집계 전' : `총 참가 ${fmtNumber(total)}곳`;
 }
@@ -1537,7 +1539,11 @@ pages.mockbidding = async function (content) {
   const rd = ((charts || {}).rank_distribution || {}).active || {};
   const ranked = Object.values(rd).reduce((acc, value) => acc + Number(value || 0), 0);
   const top3 = Number(rd['1'] || 0) + Number(rd['2'] || 0) + Number(rd['3'] || 0);
-  const top3Rate = ranked ? Math.round(top3 / ranked * 1000) / 10 : null;
+  // 축이 어긋난 상태에서 숫자만 살려두면, 관리자가 차트 경고를 읽고도 바로 위의
+  // KPI 를 그대로 보고서에 옮긴다. 해석을 막으려면 숫자도 함께 막아야 한다.
+  const axisBroken = ((charts || {}).rank_axis_health || {}).healthy === false;
+  const top3Rate = (ranked && !axisBroken) ? Math.round(top3 / ranked * 1000) / 10 : null;
+  const top3Label = axisBroken ? '축 점검 중' : '표본 대기';
   const advanced = mbAdvancedTables(sum);
 
   content.innerHTML = `
@@ -1582,7 +1588,7 @@ pages.mockbidding = async function (content) {
         <p>복잡한 실험 용어 대신 안전성·가상 순위·낙찰가와의 거리만 먼저 보여드립니다.</p></div></div>
       <div class="mb-easy-kpis">
         <div><span>하한선을 지킨 비율</span><strong>${safeRate == null ? '표본 대기' : safeRate.toFixed(1) + '%'}</strong><small>현재 추천 가격 기준</small></div>
-        <div><span>가상 3위 안에 든 비율</span><strong>${top3Rate == null ? '표본 대기' : top3Rate + '%'}</strong><small>등수 확인 ${fmtNumber(ranked)}공고</small></div>
+        <div><span>가상 3위 안에 든 비율</span><strong>${top3Rate == null ? top3Label : top3Rate + '%'}</strong><small>등수 확인 ${fmtNumber(ranked)}공고 · 무효 제외</small></div>
         <div><span>결과 해석 상태</span><strong>${esc(mbGateLabel(reach.status))}</strong><small>${reach.interpretation_allowed ? '누적 경향을 참고할 수 있어요' : '아직 개별 결과 위주로 보세요'}</small></div>
       </div>
       <div class="mb-simple-charts">
