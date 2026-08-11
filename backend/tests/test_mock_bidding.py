@@ -4,6 +4,7 @@
 여기서 지키는 것은 §0.5 유효성 체크 4가지와 §3 등록 대상 규칙이다.
 """
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -982,6 +983,31 @@ class TestMockBidHistoryApi:
         assert page_three["has_previous"] is True
         assert page_three["has_next"] is False
         assert page_one["items"][0]["bid_no"] != page_three["items"][0]["bid_no"]
+
+
+class TestMockBidHistoryAdminUi:
+    """빠른 필터 전환에서 늦은 이전 응답이 현재 화면을 덮지 않아야 한다."""
+
+    def test_stale_history_response_is_ignored_before_render(self):
+        admin_js = (
+            Path(__file__).resolve().parents[2]
+            / "infra" / "nginx" / "html" / "admin" / "admin.js"
+        ).read_text(encoding="utf-8")
+        start = admin_js.index("async function loadMockBidHistory(historyState)")
+        end = admin_js.index("\nfunction mbAdvancedTables", start)
+        loader = admin_js[start:end]
+
+        request = "const data = await api('/admin/mock-bidding/history?' + params.toString());"
+        stale_guard = "if (requestSeq !== mockBidHistoryRequestSeq) return;"
+        first_render = "const summary = data.summary || {};"
+        catch_block = loader.index("} catch (e) {")
+
+        assert "const requestSeq = ++mockBidHistoryRequestSeq;" in loader
+        assert loader.index(request) < loader.index(stale_guard) < loader.index(first_render)
+        assert loader.index(stale_guard, catch_block) < loader.index(
+            "list.innerHTML = `<div class=\"mb-empty\"><b>결과를 불러오지 못했어요.",
+            catch_block,
+        )
 
 
 class TestScoringBacklogOrder:
