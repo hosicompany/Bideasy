@@ -719,6 +719,71 @@ class TestParticipantScoring:
         assert first["backfilled"] == 5
         assert second["backfilled"] == 0
 
+    def test_backfill_limit_ignores_rows_without_participants(self, db_session):
+        """참가자 없는 앞 5개 arm 이 복구 가능한 다음 공고를 굶기면 안 된다."""
+        self._prepare(db_session, "MB-P2-STARVE-EMPTY")
+        mb.score_pending(db_session)
+        self._prepare(db_session, "MB-P2-STARVE-READY")
+        mb.score_pending(db_session)
+
+        db_session.add(_participant("MB-P2-STARVE-READY", 1, 90_000_000, sucsf="Y"))
+        db_session.add(_participant("MB-P2-STARVE-READY", 2, 93_000_000))
+        db_session.commit()
+
+        result = mb.backfill_participant_ranks(db_session, limit=5)
+
+        assert result["candidates"] == 5
+        assert result["backfilled"] == 5
+        ready = (
+            db_session.query(models.MockBidResult)
+            .join(models.MockBid)
+            .filter(models.MockBid.bid_no == "MB-P2-STARVE-READY")
+            .all()
+        )
+        assert sum(row.estimated_rank is not None for row in ready) == 5
+
+    def test_recrawl_recomputes_changed_rank_and_preserves_measurement_time(self, db_session):
+        """부분 참가자 목록으로 계산했어도 완성된 재크롤이 새 rev 로 바로잡는다."""
+        bid_no = "MB-P2-RECRAWL"
+        self._prepare(db_session, bid_no, participants=[
+            _participant(bid_no, 1, 90_000_000, sucsf="Y"),
+            _participant(bid_no, 2, 100_000_000),
+        ])
+        mb.score_pending(db_session)
+
+        first = (
+            db_session.query(models.MockBidResult)
+            .join(models.MockBid)
+            .filter(models.MockBid.bid_no == bid_no, models.MockBid.arm == "standard")
+            .one()
+        )
+        assert first.estimated_rank == 2
+        original_scored_at = first.scored_at
+
+        db_session.query(models.OpeningParticipant).filter_by(bid_no=bid_no).delete()
+        db_session.add_all([
+            _participant(bid_no, 1, 89_000_000),
+            _participant(bid_no, 2, 90_000_000, sucsf="Y"),
+            _participant(bid_no, 3, 91_000_000),
+        ])
+        db_session.commit()
+
+        refreshed = mb.backfill_participant_ranks(db_session)
+        repeated = mb.backfill_participant_ranks(db_session)
+
+        assert refreshed["backfilled"] == 5
+        assert repeated["backfilled"] == 0
+        rows = (
+            db_session.query(models.MockBidResult)
+            .join(models.MockBid)
+            .filter(models.MockBid.bid_no == bid_no, models.MockBid.arm == "standard")
+            .order_by(models.MockBidResult.scoring_rev)
+            .all()
+        )
+        assert [row.estimated_rank for row in rows] == [2, 4]
+        assert rows[-1].participants_count == 3
+        assert rows[-1].scored_at == original_scored_at
+
     def test_registration_immutable_through_backfill(self, db_session):
         """등수 백필도 mock_bids 원장은 건드리지 않는다."""
         self._prepare(db_session, "MB-P2-5")
@@ -789,6 +854,24 @@ class TestChartAggregates:
         assert trend, "active arm 은 adjustment 를 기록하므로 오차가 있어야 한다"
         assert {"date", "mean_error", "n"} <= set(trend[0].keys())
 
+    def test_ratio_error_trend_uses_deadline_not_backfill_timestamp(self, db_session):
+        bid_no = "MB-CH-TREND-DATE"
+        self._prepare_scored(db_session, bid_no)
+        bid = db_session.query(models.MockBid).filter_by(
+            bid_no=bid_no, arm="active"
+        ).one()
+        result = db_session.query(models.MockBidResult).filter_by(
+            mock_bid_id=bid.id
+        ).one()
+        bid.deadline_at = datetime(2026, 1, 2, 15, 0)
+        result.scored_at = datetime(2026, 1, 12, 20, 30)
+        db_session.commit()
+
+        trend = mb.ratio_error_trend(db_session, arm="active")
+
+        assert any(row["date"] == "2026-01-02" for row in trend)
+        assert not any(row["date"] == "2026-01-12" for row in trend)
+
     def test_segment_stats_bracket_vocab(self, db_session):
         """금액대 어휘는 autocalibrate dataset.get_bracket 과 동일해야 한다."""
         from app.services.autocalibrate.dataset import BRACKETS
@@ -823,6 +906,82 @@ class TestChartAggregates:
         assert mb.segment_stats(db_session, arm="active") == before_segments
         assert mb.gap_distribution(db_session) == before_gaps
         assert mb.failure_tag_stats(db_session) == before_tags
+
+
+class TestMockBidHistoryApi:
+    """사람이 확인하는 공고 단위 이력 — 최근 N행이 아니라 전체 페이지."""
+
+    def _register(self, db_session, bid_no, *, completed):
+        notice = _notice(bid_no)
+        notice.title = f"{bid_no} 테스트 공사"
+        notice.organization = "테스트 발주처"
+        db_session.add(notice)
+        db_session.commit()
+        mb.register_notice(db_session, notice)
+        db_session.commit()
+        if not completed:
+            return
+
+        db_session.add(_opening(bid_no, winner=95_000_000))
+        db_session.add_all([
+            _participant(bid_no, 1, 95_000_000, sucsf="Y"),
+            _participant(bid_no, 2, 96_000_000),
+        ])
+        for row in db_session.query(models.MockBid).filter_by(bid_no=bid_no).all():
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
+        db_session.commit()
+        mb.score_pending(db_session)
+
+    def test_history_groups_arms_and_exposes_counterfactual_rank(
+        self, db_session, admin_client,
+    ):
+        self._register(db_session, "MB-HISTORY-DONE-1", completed=True)
+        self._register(db_session, "MB-HISTORY-DONE-2", completed=True)
+        self._register(db_session, "MB-HISTORY-WAIT-1", completed=False)
+
+        completed = admin_client.get(
+            "/api/v1/admin/mock-bidding/history",
+            params={"state": "completed", "search": "MB-HISTORY-", "page_size": 10},
+        )
+        waiting = admin_client.get(
+            "/api/v1/admin/mock-bidding/history",
+            params={"state": "waiting", "search": "MB-HISTORY-", "page_size": 10},
+        )
+
+        assert completed.status_code == 200
+        assert completed.json()["total"] == 2
+        first = completed.json()["items"][0]
+        assert first["state"] == "COMPLETED"
+        assert len(first["arms"]) == 5
+        assert first["primary_arm"]["arm"] == "active"
+        assert first["primary_arm"]["estimated_rank"] is not None
+        assert first["primary_arm"]["actual_winner_price"] == 95_000_000
+
+        assert waiting.status_code == 200
+        assert waiting.json()["total"] == 1
+        assert waiting.json()["items"][0]["state"] == "WAITING"
+        assert waiting.json()["items"][0]["primary_arm"]["outcome"] is None
+
+    def test_history_supports_all_past_pages(self, db_session, admin_client):
+        prefix = "MB-HISTORY-PAGE-"
+        for suffix in ("1", "2", "3"):
+            self._register(db_session, prefix + suffix, completed=True)
+
+        page_one = admin_client.get(
+            "/api/v1/admin/mock-bidding/history",
+            params={"state": "all", "search": prefix, "page": 1, "page_size": 1},
+        ).json()
+        page_three = admin_client.get(
+            "/api/v1/admin/mock-bidding/history",
+            params={"state": "all", "search": prefix, "page": 3, "page_size": 1},
+        ).json()
+
+        assert page_one["total"] == 3
+        assert page_one["total_pages"] == 3
+        assert page_one["has_next"] is True
+        assert page_three["has_previous"] is True
+        assert page_three["has_next"] is False
+        assert page_one["items"][0]["bid_no"] != page_three["items"][0]["bid_no"]
 
 
 class TestScoringBacklogOrder:
