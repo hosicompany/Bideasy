@@ -1,35 +1,57 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
+from app.core.analytics import log_event
 from app.db.session import get_db
 from app.schemas import bid as schemas
 from app.services.calculator import CalculatorService
 from app.db import models
 from app.core.logging import get_logger
-from app.core.security import get_current_user, require_admin
+from app.core.security import get_current_user, get_current_user_optional, require_admin
 
 logger = get_logger(__name__)
 
 router = APIRouter()
 
 @router.post("/calculate", response_model=schemas.BidCalculationResponse)
-def calculate_bid(request: schemas.BidCalculationRequest):
+def calculate_bid(
+    request: schemas.BidCalculationRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     """
     Calculate safe bid price based on basic price and rate.
     Applies strict 1-won truncation.
+
+    인증은 선택(익명 계산도 허용) — 로그인 사용자면 활성화 계측(첫 안전 판정)을 함께 기록한다.
     """
     try:
         contract_type = request.contract_type or "CONSTRUCTION"
-        
+
         final_price = CalculatorService.calculate_safe_bid(request.basic_price, request.rate)
-        
+
         lower_limit_rate = CalculatorService.get_lower_limit_rate(contract_type, request.basic_price)
         limit_price = request.basic_price * (lower_limit_rate / 100)
-        
+
         is_safe = final_price >= limit_price
-        
+
+        # 활성화 계측: 로그인 사용자의 첫 "안전 판정" 시각 기록. best-effort — 실패해도
+        # 계산 결과 응답을 절대 막지 않는다.
+        if current_user is not None:
+            try:
+                if current_user.first_activation_at is None:
+                    current_user.first_activation_at = datetime.now(timezone.utc)
+                    db.add(current_user)
+                    db.commit()
+                    log_event("activation_first_safe_check", user_id=current_user.id, source="bid_calculate")
+            except Exception as e:
+                logger.warning(f"activation first_activation_at hook 실패(non-fatal): {e}")
+                db.rollback()
+
         return schemas.BidCalculationResponse(
             original_price=request.basic_price,
             rate=request.rate,
