@@ -1291,6 +1291,7 @@ function esc(t) {
 // ─── 모의투찰 결과 ───────────────────────────────────────────
 // 설계·게이트 정본: docs/MOCK_BIDDING_DESIGN.md
 const MB_ARM_ORDER = ['standard', 'active', 'frontier_c5', 'frontier_c10', 'aggressive'];
+let mockBidHistoryRequestSeq = 0;
 
 function mbPct(v) { return v === null || v === undefined ? '—' : v + '%'; }
 function mbGateLabel(status) {
@@ -1436,11 +1437,13 @@ async function loadMockBidHistory(historyState) {
   const list = document.getElementById('mb-history-list');
   const pager = document.getElementById('mb-history-pager');
   if (!list || !pager) return;
+  const requestSeq = ++mockBidHistoryRequestSeq;
+  const requestedState = historyState.state;
   list.innerHTML = '<div class="mb-empty">결과를 불러오는 중...</div>';
   pager.innerHTML = '';
 
   const params = new URLSearchParams({
-    state: historyState.state,
+    state: requestedState,
     page: String(historyState.page),
     page_size: '10',
   });
@@ -1448,6 +1451,7 @@ async function loadMockBidHistory(historyState) {
 
   try {
     const data = await api('/admin/mock-bidding/history?' + params.toString());
+    if (requestSeq !== mockBidHistoryRequestSeq) return;
     const summary = data.summary || {};
     const setSummary = (id, value) => {
       const el = document.getElementById(id);
@@ -1460,7 +1464,7 @@ async function loadMockBidHistory(historyState) {
 
     list.innerHTML = (data.items || []).length
       ? data.items.map(mbHistoryItem).join('')
-      : mbHistoryEmpty(historyState.state);
+      : mbHistoryEmpty(requestedState);
     pager.innerHTML = `<span>전체 ${fmtNumber(data.total)}공고 · ${fmtNumber(data.page)} / ${fmtNumber(data.total_pages || 1)}페이지</span>
       <div><button class="btn btn-outline" data-mb-page="${data.page - 1}" ${data.has_previous ? '' : 'disabled'}>이전</button>
       <button class="btn btn-outline" data-mb-page="${data.page + 1}" ${data.has_next ? '' : 'disabled'}>다음</button></div>`;
@@ -1473,6 +1477,7 @@ async function loadMockBidHistory(historyState) {
       });
     });
   } catch (e) {
+    if (requestSeq !== mockBidHistoryRequestSeq) return;
     list.innerHTML = `<div class="mb-empty"><b>결과를 불러오지 못했어요.</b><span>${esc(e.message)}</span></div>`;
   }
 }
