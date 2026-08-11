@@ -149,7 +149,7 @@ const PAGE_TITLES = {
   autocalibrate: '자가보정',
   system: '시스템',
   simulation: '백테스트 (과거 데이터)',
-  mockbidding: '모의투찰 (사전 등록·채점)',
+  mockbidding: '모의투찰 결과',
 };
 
 function getCurrentRoute() {
@@ -1017,7 +1017,7 @@ pages.simulation = async function(content) {
       const brRows = (d.by_bracket || []).map(x => `<tr><td>${x.bracket}</td><td>${fmtNumber(x.total)}</td><td>${x.win_rate}%</td><td>${x.pass_rate}%</td><td>${x.dropout_rate}%</td></tr>`).join('');
       r.innerHTML = `<div class="card"><h3>결과 (표본 ${fmtNumber(d.sample)}건)</h3><p style="margin:8px 0;">${metricChips(m)}</p>
         <table style="width:100%;font-size:13px;margin-top:10px;"><thead><tr><th style="text-align:left;">가격대</th><th style="text-align:left;">건수</th><th style="text-align:left;">낙찰률</th><th style="text-align:left;">통과율</th><th style="text-align:left;">탈락률</th></tr></thead><tbody>${brRows}</tbody></table></div>`;
-    } catch (e) { r.innerHTML = '<div class="card">오류: ' + e.message + '</div>'; }
+    } catch (e) { r.innerHTML = '<div class="card">오류: ' + esc(e.message) + '</div>'; }
   });
   $('sim-whatif').addEventListener('click', async () => {
     const r = $('sim-result'); r.innerHTML = '<div class="card">민감도 분석 중...</div>';
@@ -1026,7 +1026,7 @@ pages.simulation = async function(content) {
       const rows = (d.results || []).map(x => `<tr><td>${x.margin_delta > 0 ? '+' : ''}${x.margin_delta}%p</td><td>${x.win_rate}%</td><td>${x.pass_rate}%</td><td>${x.dropout_rate}%</td></tr>`).join('');
       r.innerHTML = `<div class="card"><h3>여유분 민감도 (margin ±)</h3><p style="color:var(--color-text-muted);font-size:13px;">여유분을 늘리면 통과율↑·낙찰률↓ 트레이드오프를 봅니다.</p>
         <table style="width:100%;font-size:13px;margin-top:10px;"><thead><tr><th style="text-align:left;">여유분 가산</th><th style="text-align:left;">낙찰률</th><th style="text-align:left;">통과율</th><th style="text-align:left;">탈락률</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-    } catch (e) { r.innerHTML = '<div class="card">오류: ' + e.message + '</div>'; }
+    } catch (e) { r.innerHTML = '<div class="card">오류: ' + esc(e.message) + '</div>'; }
   });
 
   // ── 5-arm 비교 (모의투찰과 같은 arm 구성으로 과거를 재평가) ──
@@ -1040,12 +1040,12 @@ pages.simulation = async function(content) {
   try {
     const d = await api('/admin/simulation/arms');
     if (!d.available) {
-      armBox.innerHTML = '<div class="card">5-arm 비교: ' + (d.reason || '데이터 없음') + '</div>';
+      armBox.innerHTML = '<div class="card">5-arm 비교: ' + esc(d.reason || '데이터 없음') + '</div>';
     } else {
       renderArms(armBox, d);
     }
   } catch (e) {
-    armBox.innerHTML = '<div class="card">5-arm 비교 오류: ' + e.message + '</div>';
+    armBox.innerHTML = '<div class="card">5-arm 비교 오류: ' + esc(e.message) + '</div>';
   }
 };
 
@@ -1288,27 +1288,9 @@ function esc(t) {
 }
 
 
-// ─── 모의투찰 (사전 등록·채점) ───────────────────────────────
+// ─── 모의투찰 결과 ───────────────────────────────────────────
 // 설계·게이트 정본: docs/MOCK_BIDDING_DESIGN.md
-// ⚠️ 1차 지표는 무효율(dropout). 낙찰률이 아니다(§0.2) — 표 컬럼 순서도 그에 맞춘다.
-//    낙찰률의 대외 표기는 전역 규칙 §4-2 위반이므로 화면에 주의를 명시한다.
-
-const MB_ARM_LABEL = {
-  standard: 'standard (슬라이더 기본 −2.5%)',
-  active: 'active (현 자가보정)',
-  frontier_c5: 'frontier_c5 (무효 캡 5%)',
-  frontier_c10: 'frontier_c10 (무효 캡 10%)',
-  aggressive: 'aggressive (−12%)',
-};
 const MB_ARM_ORDER = ['standard', 'active', 'frontier_c5', 'frontier_c10', 'aggressive'];
-// arm 색은 화면 전체에서 고정 — 차트끼리 색이 다르면 비교가 안 된다.
-const MB_ARM_COLOR = {
-  standard: '#8B95A1',
-  active: '#3182F6',
-  frontier_c5: '#34C759',
-  frontier_c10: '#22A06B',
-  aggressive: '#FF3B30',
-};
 
 function mbPct(v) { return v === null || v === undefined ? '—' : v + '%'; }
 function mbGateLabel(status) {
@@ -1317,24 +1299,211 @@ function mbGateLabel(status) {
     BLOCKED_G_A: 'G-A 차단', LOCKED_G_B: 'G-B 잠금',
   })[status] || status || '—';
 }
-function mbGateColor(status) {
-  if (status === 'PASS') return '#34C759';
-  if (status === 'FAIL') return '#FF3B30';
-  return '#FF9500';
+
+function mbChartEmpty(canvasId, msg) {
+  const cv = document.getElementById(canvasId);
+  if (!cv || !cv.parentElement) return;
+  cv.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8B95A1;font-size:13px;">' + esc(msg) + '</div>';
+}
+
+
+// 운영 연구 지표는 보존하되 첫 화면은 공고 1건 = 카드 1개, 현재 추천(active)의
+// 가상 등수와 실제 개찰가 비교를 중심으로 보여준다.
+
+const MB_ARM_FRIENDLY = {
+  active: '현재 추천',
+  standard: '기본값',
+  frontier_c5: '안전 탐색',
+  frontier_c10: '도전 탐색',
+  aggressive: '공격적 탐색',
+};
+
+function mbDateText(iso) {
+  if (!iso) return '—';
+  return String(iso).replace('T', ' ').slice(0, 16);
+}
+
+function mbRateText(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + '%' : '—';
+}
+
+function mbOutcomeMeta(outcome) {
+  return ({
+    WIN: { label: '낙찰 가능 범위', tone: 'good' },
+    LOST: { label: '유효 · 낙찰가보다 높음', tone: 'neutral' },
+    DROPOUT: { label: '하한선 미달', tone: 'danger' },
+    VOID: { label: '판정 제외', tone: 'neutral' },
+    NO_RESULT: { label: '개찰 결과 대기', tone: 'waiting' },
+  })[outcome] || { label: '개찰 결과 대기', tone: 'waiting' };
+}
+
+function mbResultInsight(primary) {
+  if (!primary || !primary.outcome || primary.outcome === 'NO_RESULT') {
+    return '개찰 결과가 수집되면 실제 낙찰가와 가상 순위를 자동으로 계산해요.';
+  }
+  if (primary.outcome === 'DROPOUT') {
+    const gap = primary.actual_lower_limit == null
+      ? null : Number(primary.price) - Number(primary.actual_lower_limit);
+    return gap === null
+      ? '실제 하한선보다 낮아 유효하지 않았을 가능성이 커요.'
+      : `실제 하한선보다 ${fmtNumber(Math.abs(Math.round(gap)))}원 낮았어요. 이 금액으로는 유효하지 않았을 가능성이 커요.`;
+  }
+  const amount = primary.gap_to_winner_amount;
+  if (amount === null || amount === undefined) {
+    return '유효 범위는 지켰지만 실제 낙찰가와의 차이는 아직 계산 중이에요.';
+  }
+  if (amount > 0) {
+    return `실제 낙찰가보다 ${fmtNumber(amount)}원 높았어요. 더 낮은 가격을 쓴 업체가 앞섰습니다.`;
+  }
+  return `실제 낙찰가보다 ${fmtNumber(Math.abs(amount))}원 낮고 하한선은 지킨 가격이었어요.`;
+}
+
+function mbHistoryArmRows(arms) {
+  return (arms || []).map((arm) => {
+    const meta = mbOutcomeMeta(arm.outcome);
+    const rank = arm.estimated_rank == null
+      ? '—' : `가상 ${fmtNumber(arm.estimated_rank)}위`;
+    return `<tr>
+      <td><b>${esc(MB_ARM_FRIENDLY[arm.arm] || arm.arm || '—')}</b><small>${esc(arm.arm || '')}</small></td>
+      <td>${fmtNumber(arm.price)}원<small>${mbRateText(arm.bid_rate)}</small></td>
+      <td><span class="mb-result-badge ${meta.tone}">${esc(meta.label)}</span></td>
+      <td>${rank}<small>${arm.participants_count == null ? '참가자 집계 전' : `실제 참가 ${fmtNumber(arm.participants_count)}곳`}</small></td>
+      <td>${arm.gap_to_winner_amount == null ? '—' : `${arm.gap_to_winner_amount > 0 ? '+' : '−'}${fmtNumber(Math.abs(arm.gap_to_winner_amount))}원`}</td>
+    </tr>`;
+  }).join('');
+}
+
+function mbHistoryItem(item) {
+  const primary = item.primary_arm || {};
+  const meta = mbOutcomeMeta(primary.outcome);
+  const completed = item.state === 'COMPLETED';
+  const rankReady = primary.estimated_rank !== null && primary.estimated_rank !== undefined;
+  const rankText = rankReady ? `가상 ${fmtNumber(primary.estimated_rank)}위` : '집계 중';
+  const participantText = primary.participants_count == null
+    ? '참가자 데이터 대기' : `실제 참가 ${fmtNumber(primary.participants_count)}곳 기준`;
+  const title = item.title || '공고명 정보 없음';
+  return `<article class="mb-history-item">
+    <div class="mb-history-head">
+      <div>
+        <div class="mb-history-kicker">
+          <span class="mb-result-badge ${meta.tone}">${esc(meta.label)}</span>
+          <span>${esc(item.bid_no || '—')}</span>
+        </div>
+        <h4>${esc(title)}</h4>
+        <p>${esc(item.organization || '발주처 정보 없음')} · 마감 ${esc(mbDateText(item.deadline_at))}</p>
+      </div>
+      <div class="mb-history-date">${completed ? `개찰 ${esc(mbDateText(item.opened_at))}` : '결과 자동 확인 중'}</div>
+    </div>
+    <div class="mb-history-highlight">
+      <div class="mb-history-metric">
+        <span>우리가 기록한 현재 추천가</span>
+        <strong>${fmtNumber(primary.price)}원</strong>
+        <small>${mbRateText(primary.bid_rate)}</small>
+      </div>
+      <div class="mb-history-metric rank">
+        <span>실제로 제출했다면</span>
+        <strong>${rankText}</strong>
+        <small>${participantText}</small>
+      </div>
+      <div class="mb-history-metric">
+        <span>실제 낙찰가</span>
+        <strong>${primary.actual_winner_price == null ? '—' : fmtNumber(primary.actual_winner_price) + '원'}</strong>
+        <small>${completed ? '개찰 결과 기준' : '결과가 나오면 표시'}</small>
+      </div>
+    </div>
+    <p class="mb-history-insight">${esc(mbResultInsight(primary))}</p>
+    <details class="mb-strategy-details">
+      <summary>함께 기록한 5가지 가격 비교</summary>
+      <div class="mb-table-scroll"><table class="mb-history-table">
+        <thead><tr><th>가격안</th><th>기록한 금액</th><th>판정</th><th>가상 순위</th><th>낙찰가 차이</th></tr></thead>
+        <tbody>${mbHistoryArmRows(item.arms)}</tbody>
+      </table></div>
+    </details>
+  </article>`;
+}
+
+function mbHistoryEmpty(state) {
+  const text = state === 'completed'
+    ? '아직 개찰 결과가 확인된 공고가 없어요.'
+    : state === 'waiting'
+      ? '현재 결과를 기다리는 공고가 없어요.'
+      : '조건에 맞는 모의투찰 기록이 없어요.';
+  return `<div class="mb-empty"><b>${text}</b><span>공고번호 검색 조건을 바꿔보세요.</span></div>`;
+}
+
+async function loadMockBidHistory(historyState) {
+  const list = document.getElementById('mb-history-list');
+  const pager = document.getElementById('mb-history-pager');
+  if (!list || !pager) return;
+  list.innerHTML = '<div class="mb-empty">결과를 불러오는 중...</div>';
+  pager.innerHTML = '';
+
+  const params = new URLSearchParams({
+    state: historyState.state,
+    page: String(historyState.page),
+    page_size: '10',
+  });
+  if (historyState.search) params.set('search', historyState.search);
+
+  try {
+    const data = await api('/admin/mock-bidding/history?' + params.toString());
+    const summary = data.summary || {};
+    const setSummary = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = fmtNumber(value || 0);
+    };
+    setSummary('mb-summary-registered', summary.registered);
+    setSummary('mb-summary-completed', summary.completed);
+    setSummary('mb-summary-waiting', summary.waiting);
+    setSummary('mb-summary-ranked', summary.rank_ready);
+
+    list.innerHTML = (data.items || []).length
+      ? data.items.map(mbHistoryItem).join('')
+      : mbHistoryEmpty(historyState.state);
+    pager.innerHTML = `<span>전체 ${fmtNumber(data.total)}공고 · ${fmtNumber(data.page)} / ${fmtNumber(data.total_pages || 1)}페이지</span>
+      <div><button class="btn btn-outline" data-mb-page="${data.page - 1}" ${data.has_previous ? '' : 'disabled'}>이전</button>
+      <button class="btn btn-outline" data-mb-page="${data.page + 1}" ${data.has_next ? '' : 'disabled'}>다음</button></div>`;
+    pager.querySelectorAll('[data-mb-page]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (button.disabled) return;
+        historyState.page = Number(button.dataset.mbPage);
+        loadMockBidHistory(historyState);
+        document.getElementById('mb-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  } catch (e) {
+    list.innerHTML = `<div class="mb-empty"><b>결과를 불러오지 못했어요.</b><span>${esc(e.message)}</span></div>`;
+  }
+}
+
+function mbAdvancedTables(sum) {
+  const arms = sum.arms || {};
+  const armRows = MB_ARM_ORDER.filter((arm) => arms[arm]).map((arm) => {
+    const row = arms[arm];
+    return `<tr><td><b>${esc(MB_ARM_FRIENDLY[arm] || arm)}</b><small>${esc(arm)}</small></td>
+      <td>${fmtNumber(row.judged)}</td><td>${mbPct(row.dropout_rate)}</td>
+      <td>${mbPct(row.win_rate)}</td><td>${row.mean_ratio_error ?? '—'}</td></tr>`;
+  }).join('');
+  const tags = sum.failure_tags || {};
+  const tagRows = Object.keys(tags).map((tag) => {
+    const row = tags[tag];
+    return `<tr><td>${esc(tag)}</td><td>${fmtNumber(row.total)}</td><td>${mbPct(row.dropout_rate)}</td></tr>`;
+  }).join('');
+  return { armRows, tagRows };
 }
 
 pages.mockbidding = async function (content) {
-  content.innerHTML = '<div class="card">불러오는 중...</div>';
-
-  let sum, charts;
+  content.innerHTML = '<div class="card">모의투찰 결과를 불러오는 중...</div>';
+  let sum;
+  let charts;
   try {
-    // 차트 집계 실패가 성적표까지 막지 않도록 분리해서 잡는다
     [sum, charts] = await Promise.all([
       api('/admin/mock-bidding/summary'),
       api('/admin/mock-bidding/charts').catch(() => null),
     ]);
   } catch (e) {
-    content.innerHTML = '<div class="card">오류: ' + e.message + '</div>';
+    content.innerHTML = `<div class="card">오류: ${esc(e.message)}</div>`;
     return;
   }
 
@@ -1343,467 +1512,169 @@ pages.mockbidding = async function (content) {
   const gateB = gates.g_b || {};
   const gateC = gates.g_c || {};
   const queue = sum.queue_health || {};
-  const gate = reach.gate_g_a_threshold || 60;
-  const reachPct = reach.reach_pct;
-  const gateOk = reach.interpretation_allowed === true;
-  const gateColor = reachPct === null || reachPct === undefined ? '#8B95A1'
-    : (gateOk ? '#34C759' : '#FF3B30');
-
   const validity = sum.sample_validity || {};
-  const validJudged = validity.valid_judged_notices || 0;
-  const validityReady = validJudged > 0;
-  const interpretationBlocked = !gateOk || !validityReady;
-  const blockReasons = [];
-  if (!gateOk) blockReasons.push(`G-A 도달률 ${mbPct(reachPct)}가 기준 ${gate}% 미만`);
-  if (!validityReady) blockReasons.push('기초금액 일관성을 확인한 채점 표본 없음');
-  const metricsStyle = interpretationBlocked
-    ? 'opacity:.32;filter:grayscale(.8);pointer-events:none;user-select:none;'
-    : '';
-
-  const arms = sum.arms || {};
-  const armRows = MB_ARM_ORDER.filter((a) => arms[a]).map((a) => {
-    const m = arms[a];
-    return `<tr>
-      <td style="white-space:nowrap;">${MB_ARM_LABEL[a] || a}</td>
-      <td>${fmtNumber(m.judged)}</td>
-      <td style="font-weight:700;color:${m.dropout_rate > 10 ? '#FF3B30' : '#191F28'};">${mbPct(m.dropout_rate)}</td>
-      <td>${mbPct(m.win_rate)}</td>
-      <td>${fmtNumber(m.win)} / ${fmtNumber(m.lost)} / ${fmtNumber(m.dropout)}</td>
-      <td>${m.mean_ratio_error === null || m.mean_ratio_error === undefined ? '—' : m.mean_ratio_error}</td>
-      <td>${fmtNumber(m.no_result)}</td>
-    </tr>`;
-  }).join('');
-
-  const tags = sum.failure_tags || {};
-  const tagRows = Object.keys(tags).map((t) => {
-    const s = tags[t];
-    return `<tr><td>${t}</td><td>${fmtNumber(s.total)}</td><td>${fmtNumber(s.dropout)}</td>
-      <td style="font-weight:700;">${mbPct(s.dropout_rate)}</td><td>${fmtNumber(s.win)}</td></tr>`;
-  }).join('');
+  const active = (sum.arms || {}).active || {};
+  const safeRate = active.dropout_rate == null ? null : Math.max(0, 100 - active.dropout_rate);
+  const rd = ((charts || {}).rank_distribution || {}).active || {};
+  const ranked = Object.values(rd).reduce((acc, value) => acc + Number(value || 0), 0);
+  const top3 = Number(rd['1'] || 0) + Number(rd['2'] || 0) + Number(rd['3'] || 0);
+  const top3Rate = ranked ? Math.round(top3 / ranked * 1000) / 10 : null;
+  const advanced = mbAdvancedTables(sum);
 
   content.innerHTML = `
-    <div class="card">
-      <h3>G-A · 파이프라인 건전성</h3>
-      <p style="color:var(--color-text-muted);font-size:13px;">
-        등록한 건이 실제로 채점까지 도달하는 비율입니다. ${gl('G-A')} 기준 미달이면 다른 지표는 해석하지 않습니다.
-      </p>
-      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;align-items:baseline;">
-        <div><div style="font-size:12px;color:#8B95A1;">등록</div>
-          <div style="font-size:24px;font-weight:800;">${fmtNumber(reach.registered)}</div></div>
-        <div><div style="font-size:12px;color:#8B95A1;">채점 완료</div>
-          <div style="font-size:24px;font-weight:800;">${fmtNumber(reach.scored)}</div></div>
-        <div><div style="font-size:12px;color:#8B95A1;">도달률 (기준 ${gate}%)</div>
-          <div style="font-size:24px;font-weight:800;color:${gateColor};">${mbPct(reachPct)}</div></div>
-        <div><div style="font-size:12px;color:#8B95A1;">상태</div>
-          <div style="font-size:20px;font-weight:800;color:${mbGateColor(reach.status)};">${mbGateLabel(reach.status)}</div></div>
+    <section class="mb-hero">
+      <div>
+        <span class="mb-eyebrow">실제 돈은 쓰지 않는 사전 실험</span>
+        <h2>그때 이 가격을 썼다면 몇 위였을까요?</h2>
+        <p>마감 전에 기록한 가격을 실제 개찰 결과와 비교해요. 결과가 나오면 가상 순위와 낙찰가 차이를 자동으로 알려드립니다.</p>
       </div>
-      <p style="color:#8B95A1;font-size:12px;margin-top:10px;">
-        마감 도래 코호트 ${fmtNumber(reach.due_scored)} / ${fmtNumber(reach.due_registered)}공고
-        (${mbPct(reach.due_reach_pct)}) · 관찰 ${reach.observation_days || 0}/${reach.observation_window_days || 28}일
-      </p>
-    </div>
+      <div class="mb-hero-note"><b>읽는 순서</b><span>공고 선택 → 가상 순위 확인 → 필요할 때만 5가지 가격 비교</span></div>
+    </section>
 
-    <div class="card">
-      <h3>채점 큐 · 복구 관찰</h3>
-      <p style="color:var(--color-text-muted);font-size:13px;">
-        배치 limit을 실제로 소진하는 arm 행 기준입니다. 개찰결과 도착 → 최초 확인 → NO_RESULT 재시도 순으로 처리합니다.
-      </p>
-      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;align-items:baseline;">
-        <div><div style="font-size:12px;color:#8B95A1;">전체 잔량</div>
-          <div style="font-size:22px;font-weight:800;">${fmtNumber(queue.due_arm_rows)}</div></div>
-        <div><div style="font-size:12px;color:#8B95A1;">결과 도착·즉시 채점</div>
-          <div style="font-size:22px;font-weight:800;color:${(queue.ready_with_opening_result_arm_rows || 0) > 0 ? '#FF3B30' : '#34C759'};">${fmtNumber(queue.ready_with_opening_result_arm_rows)}</div></div>
-        <div><div style="font-size:12px;color:#8B95A1;">최초 확인 대기</div>
-          <div style="font-size:22px;font-weight:800;color:#FF9500;">${fmtNumber(queue.never_checked_arm_rows)}</div></div>
-        <div><div style="font-size:12px;color:#8B95A1;">NO_RESULT 재시도</div>
-          <div style="font-size:22px;font-weight:800;">${fmtNumber(queue.retry_no_result_arm_rows)}</div></div>
+    <section class="mb-summary-grid" aria-label="모의투찰 진행 요약">
+      <div class="mb-summary-card"><span>기록한 공고</span><strong id="mb-summary-registered">${fmtNumber(reach.registered || 0)}</strong><small>공고 기준</small></div>
+      <div class="mb-summary-card good"><span>개찰 확인 완료</span><strong id="mb-summary-completed">${fmtNumber(reach.scored || 0)}</strong><small>실제 결과와 비교 가능</small></div>
+      <div class="mb-summary-card waiting"><span>결과 기다리는 중</span><strong id="mb-summary-waiting">${fmtNumber(Math.max(0, (reach.registered || 0) - (reach.scored || 0)))}</strong><small>매일 자동 재확인</small></div>
+      <div class="mb-summary-card rank"><span>가상 등수 확인</span><strong id="mb-summary-ranked">—</strong><small>참가자 데이터 확보</small></div>
+    </section>
+
+    <section class="card mb-history-card" id="mb-history">
+      <div class="mb-section-head">
+        <div><span class="mb-section-kicker">전체 이력</span><h3>공고별 모의투찰 결과</h3>
+          <p>전략 5줄을 공고 하나로 묶었습니다. 지난 결과도 페이지를 넘겨 모두 확인할 수 있어요.</p></div>
       </div>
-      <p style="color:#8B95A1;font-size:12px;margin-top:10px;">
-        ${fmtNumber(queue.due_notices)}공고 · 최고 연체 ${queue.oldest_overdue_hours === null || queue.oldest_overdue_hours === undefined ? '—' : queue.oldest_overdue_hours + '시간'}
-      </p>
-    </div>
-
-    <div class="chart-grid-2">
-      <div class="card">
-        <h3>G-B · 전략 우열 판정</h3>
-        <div style="font-size:22px;font-weight:800;color:${mbGateColor(gateB.status)};margin:10px 0;">${mbGateLabel(gateB.status)}</div>
-        <p style="color:#4E5968;font-size:13px;line-height:1.7;">
-          적격심사제 유효 표본 ${fmtNumber(gateB.sample_notices)} / ${fmtNumber(gateB.minimum_notices || 400)}공고<br>
-          active 무효율 ≤ standard: ${gateB.active_dropout_lte_standard ? '충족' : '미충족'}<br>
-          active 적중 Wilson CI 하한 &gt; standard 상한: ${gateB.active_win_ci_lower_gt_standard_upper ? '충족' : '미충족'}
-        </p>
+      <div class="mb-history-controls">
+        <div class="mb-tabs" role="tablist">
+          <button class="active" data-mb-state="completed">개찰 완료</button>
+          <button data-mb-state="waiting">결과 대기</button>
+          <button data-mb-state="all">전체</button>
+        </div>
+        <form id="mb-history-search" class="mb-search">
+          <input id="mb-history-query" maxlength="100" placeholder="공고번호로 찾기" aria-label="공고번호 검색">
+          <button class="btn btn-primary" type="submit">찾기</button>
+        </form>
       </div>
-      <div class="card">
-        <h3>G-C · 전략투찰 제품화 판정</h3>
-        <div style="font-size:22px;font-weight:800;color:${mbGateColor(gateC.status)};margin:10px 0;">${mbGateLabel(gateC.status)}</div>
-        <p style="color:#4E5968;font-size:13px;line-height:1.7;">
-          frontier_c10 유효 표본 ${fmtNumber(gateC.sample_notices)}공고<br>
-          frontier_c10 적중 CI 하한 &gt; active 상한: ${gateC.frontier_c10_win_ci_lower_gt_active_upper ? '충족' : '미충족'}<br>
-          frontier_c10 무효율 ≤ ${gateC.frontier_c10_dropout_lte_pct || 11}%: ${gateC.frontier_c10_dropout_condition_met ? '충족' : '미충족'}
-        </p>
+      <div id="mb-history-list"></div>
+      <div id="mb-history-pager" class="mb-pager"></div>
+    </section>
+
+    <section class="card mb-easy-analysis">
+      <div class="mb-section-head"><div><span class="mb-section-kicker">한눈에 보기</span><h3>현재 추천 가격은 이렇게 움직이고 있어요</h3>
+        <p>복잡한 실험 용어 대신 안전성·가상 순위·낙찰가와의 거리만 먼저 보여드립니다.</p></div></div>
+      <div class="mb-easy-kpis">
+        <div><span>하한선을 지킨 비율</span><strong>${safeRate == null ? '표본 대기' : safeRate.toFixed(1) + '%'}</strong><small>현재 추천 가격 기준</small></div>
+        <div><span>가상 3위 안에 든 비율</span><strong>${top3Rate == null ? '표본 대기' : top3Rate + '%'}</strong><small>등수 확인 ${fmtNumber(ranked)}공고</small></div>
+        <div><span>결과 해석 상태</span><strong>${esc(mbGateLabel(reach.status))}</strong><small>${reach.interpretation_allowed ? '누적 경향을 참고할 수 있어요' : '아직 개별 결과 위주로 보세요'}</small></div>
       </div>
-    </div>
-
-    <div class="card">
-      <h3>성능 표본 유효성 · 공고 기준</h3>
-      <p style="color:var(--color-text-muted);font-size:13px;">
-        5개 arm 행을 중복 집계하지 않고 공고당 active 한 행으로 셉니다.
-        기초금액과 예정가격 비율이 ${(validity.base_ratio_band || [0.94, 1.06]).join('~')}인
-        표본만 아래 성능 지표에 사용합니다. 제외 원장은 삭제하거나 수정하지 않습니다.
-      </p>
-      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;align-items:baseline;">
-        <div><div style="font-size:12px;color:#8B95A1;">원시 확정 채점</div>
-          <div style="font-size:24px;font-weight:800;">${fmtNumber(validity.raw_judged_notices)}</div></div>
-        <div><div style="font-size:12px;color:#8B95A1;">유효 표본</div>
-          <div style="font-size:24px;font-weight:800;color:#34C759;">${fmtNumber(validJudged)}</div></div>
-        <div><div style="font-size:12px;color:#8B95A1;">기준 불일치 제외</div>
-          <div style="font-size:24px;font-weight:800;color:#FF3B30;">${fmtNumber(validity.excluded_base_mismatch)}</div></div>
-        <div><div style="font-size:12px;color:#8B95A1;">판정 불가 제외</div>
-          <div style="font-size:24px;font-weight:800;color:#FF9500;">${fmtNumber(validity.excluded_base_unknown)}</div></div>
+      <div class="mb-simple-charts">
+        <div><h4>가상 순위는 어디에 모였나요?</h4><p>현재 추천 가격을 실제 참가자 사이에 넣어 계산했습니다.</p><div class="chart-wrap"><canvas id="mb-ch-rank-simple"></canvas></div></div>
+        <div><h4>실제 낙찰가와 얼마나 달랐나요?</h4><p>0에 가까울수록 실제 낙찰가에 가까운 가격입니다.</p><div class="chart-wrap"><canvas id="mb-ch-gap-simple"></canvas></div></div>
       </div>
-    </div>
+    </section>
 
-    ${interpretationBlocked ? `<div class="card" style="border:2px solid #FF3B30;background:#FFF5F5;">
-      <h3 style="color:#FF3B30;">🔒 성능 해석 보류</h3>
-      <p style="margin-top:8px;color:#4E5968;">${blockReasons.join(' · ')}. 사전 등록한 게이트가 열리기 전에는 아래 수치로 arm 우열을 판단하지 않습니다.</p>
-    </div>` : ''}
-
-    <div id="mb-performance-metrics" aria-disabled="${interpretationBlocked}" style="${metricsStyle}">
-
-    <!-- 시각화 — 순서는 설계 §0.2 지표 우선순위 그대로: 무효율(1차·가장 크게) →
-         적중률(2차) → 등수(3차) → 격차 → 사정률 오차(4차) → 오답노트 → 세그먼트 -->
-    <div class="card">
-      <h3>① arm 별 무효율 — 1차 지표</h3>
-      <p style="color:var(--color-text-muted);font-size:13px;">
-        무효(DROPOUT)는 입찰 자체가 없던 일이 됩니다. 브랜드 KPI 는 유효율 —
-        이 막대가 낮을수록 좋습니다.
-      </p>
-      <div style="position:relative;height:300px;"><canvas id="mb-ch-dropout"></canvas></div>
-    </div>
-
-    <div class="chart-grid-2">
-      <div class="card">
-        <h3>② arm 별 적중률 (내부 참고)</h3>
-        <p style="color:var(--color-text-muted);font-size:13px;">대외 표기 금지(전역 규칙 §4-2).</p>
-        <div class="chart-wrap"><canvas id="mb-ch-win"></canvas></div>
+    <details class="card mb-advanced">
+      <summary><div><b>운영·연구용 상세 분석</b><span>게이트, 전략별 성적, 표본 품질을 확인할 때 펼치세요.</span></div><span>펼치기</span></summary>
+      <div class="mb-advanced-body">
+        <div class="mb-gate-grid">
+          <div><span>데이터 수집 상태</span><b>${esc(mbGateLabel(reach.status))}</b><small>${fmtNumber(reach.scored)} / ${fmtNumber(reach.registered)}공고 채점</small></div>
+          <div><span>추천 전략 비교</span><b>${esc(mbGateLabel(gateB.status))}</b><small>적격심사제 ${fmtNumber(gateB.sample_notices)} / ${fmtNumber(gateB.minimum_notices || 400)}공고</small></div>
+          <div><span>고위험 전략 검토</span><b>${esc(mbGateLabel(gateC.status))}</b><small>선행 조건 충족 후 판단</small></div>
+          <div><span>채점 대기</span><b>${fmtNumber(queue.due_notices)}공고</b><small>개찰 결과 도착분부터 처리</small></div>
+        </div>
+        <p class="mb-validity-note">유효 표본 ${fmtNumber(validity.valid_judged_notices)}공고 · 기초금액 기준 불일치 제외 ${fmtNumber(validity.excluded_base_mismatch)}공고 · 판정 불가 제외 ${fmtNumber(validity.excluded_base_unknown)}공고</p>
+        <div class="mb-advanced-grid">
+          <div><h4>5가지 가격안 누적 비교</h4><div class="mb-table-scroll"><table class="mb-history-table">
+            <thead><tr><th>가격안</th><th>채점</th><th>무효율</th><th>적중률</th><th>사정률 오차</th></tr></thead>
+            <tbody>${advanced.armRows || '<tr><td colspan="5">데이터 없음</td></tr>'}</tbody>
+          </table></div></div>
+          <div><h4>자주 나타난 주의 요소</h4><div class="mb-table-scroll"><table class="mb-history-table">
+            <thead><tr><th>요소</th><th>등장</th><th>무효율</th></tr></thead>
+            <tbody>${advanced.tagRows || '<tr><td colspan="3">데이터 없음</td></tr>'}</tbody>
+          </table></div></div>
+        </div>
+        <div><h4>사정률 예측 오차 추이</h4><p class="mb-chart-note">등수 백필 날짜가 아니라 공고 마감일 기준으로 묶습니다.</p><div class="chart-wrap"><canvas id="mb-ch-err-advanced"></canvas></div></div>
+        <div><h4>입찰방법 × 금액대</h4><div id="mb-seg-advanced" class="mb-table-scroll">—</div></div>
       </div>
-      <div class="card">
-        <h3>③ 등수 분포 — 우리가 몇 등에 몰리는지</h3>
-        <p style="color:var(--color-text-muted);font-size:13px;">
-          참가자 데이터가 붙은 채점 건만. 등수는 ${gl('무효')} 참가자를 포함한 순위입니다.
-        </p>
-        <div class="chart-wrap"><canvas id="mb-ch-rank"></canvas></div>
-      </div>
-    </div>
+    </details>
+    ${glossaryCard(['무효', '무효율', '적중', '밀림', '사전 등록', '예정가격', '사정률', '낙찰하한선', 'A값'])}`;
 
-    <div class="chart-grid-2">
-      <div class="card">
-        <h3>④ 낙찰가 대비 격차 분포</h3>
-        <p style="color:var(--color-text-muted);font-size:13px;">
-          (우리가격−낙찰가)/낙찰가. 0~0.5% 구간이 "아깝게 놓친" 건입니다.
-        </p>
-        <div class="chart-wrap"><canvas id="mb-ch-gap"></canvas></div>
-      </div>
-      <div class="card">
-        <h3>⑤ 사정률 예측 오차 추이 (active)</h3>
-        <p style="color:var(--color-text-muted);font-size:13px;">
-          개별 승패는 ${gl('예정가격')} 추첨 노이즈가 크지만, ${gl('사정률')} 오차는 모델의 순수 신호입니다.
-        </p>
-        <div class="chart-wrap"><canvas id="mb-ch-err"></canvas></div>
-      </div>
-    </div>
-
-    <div class="chart-grid-2">
-      <div class="card">
-        <h3>⑥ 오답노트 — 태그별 무효율</h3>
-        <div class="chart-wrap"><canvas id="mb-ch-tags"></canvas></div>
-      </div>
-      <div class="card">
-        <h3>⑦ 세그먼트 교차표 (입찰방법 × 금액대, active)</h3>
-        <p style="color:var(--color-text-muted);font-size:13px;">셀 = 채점 건수 / 무효율.</p>
-        <div id="mb-seg" style="overflow-x:auto;">—</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>arm 별 성적표</h3>
-      <p style="color:var(--color-text-muted);font-size:13px;">
-        <b>1차 지표는 무효율(dropout)</b>입니다 — 무효는 입찰 자체가 없던 일이 됩니다.
-        낙찰률은 내부 참고용이며 <b>대외 표기 금지</b>(전역 규칙 §4-2).
-      </p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;align-items:center;">
-        <select id="mb-method" style="padding:7px;border:1px solid #E5E8EB;border-radius:8px;">
-          <option value="">전체 입찰방법</option>
-          <option>적격심사제</option>
-          <option>소액수의견적</option>
-          <option>제한적최저가(낙찰하한율)</option>
-          <option>최저가낙찰제</option>
-        </select>
-        <button id="mb-reload" style="background:#3182F6;color:#fff;border:none;border-radius:10px;padding:9px 18px;font-weight:700;cursor:pointer;">조회</button>
-      </div>
-      <div style="overflow-x:auto;">
-      <table style="width:100%;font-size:13px;min-width:720px;">
-        <thead><tr>
-          <th style="text-align:left;">arm</th>
-          <th style="text-align:left;">채점</th>
-          <th style="text-align:left;">무효율 ★</th>
-          <th style="text-align:left;">적중률</th>
-          <th style="text-align:left;">WIN/LOST/무효</th>
-          <th style="text-align:left;">사정률 오차</th>
-          <th style="text-align:left;">미개찰</th>
-        </tr></thead>
-        <tbody>${armRows || '<tr><td colspan="7" style="color:#8B95A1;">아직 채점된 건이 없습니다. 등록 후 개찰이 붙으면 표시됩니다.</td></tr>'}</tbody>
-      </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>오답노트 — 태그별 무효율</h3>
-      <p style="color:var(--color-text-muted);font-size:13px;">
-        실패 건에 붙은 사유 태그. 여기서 나온 사실이 곧 사용자 경고 기능이 됩니다.
-      </p>
-      <div style="overflow-x:auto;">
-      <table style="width:100%;font-size:13px;min-width:520px;">
-        <thead><tr><th style="text-align:left;">태그</th><th style="text-align:left;">등장</th>
-          <th style="text-align:left;">무효</th><th style="text-align:left;">무효율</th><th style="text-align:left;">WIN</th></tr></thead>
-        <tbody>${tagRows || '<tr><td colspan="5" style="color:#8B95A1;">아직 데이터가 없습니다.</td></tr>'}</tbody>
-      </table>
-      </div>
-    </div>
-
-    </div>
-
-    <div class="card">
-      <h3>최근 등록 원장</h3>
-      <p style="color:var(--color-text-muted);font-size:13px;">
-        등록은 <b>마감 전에만</b> 이뤄지고 이후 수정되지 않습니다(사전 등록). 스냅샷은 등록 시점에 우리가 본 값입니다.
-      </p>
-      <div id="mb-reg" style="overflow-x:auto;">불러오는 중...</div>
-    </div>
-
-    <div class="card">
-      <h3>최근 채점 결과</h3>
-      <div id="mb-res" style="overflow-x:auto;">불러오는 중...</div>
-    </div>`;
-
-  renderMockBiddingCharts(charts);
-
-  document.getElementById('mb-reload').addEventListener('click', async () => {
-    const m = document.getElementById('mb-method').value;
-    location.hash = '#/mockbidding';
-    const c = document.getElementById('page-content');
-    c.innerHTML = '<div class="card">조회 중...</div>';
-    try {
-      const d = await api('/admin/mock-bidding/summary' + (m ? '?bid_method=' + encodeURIComponent(m) : ''));
-      const filteredReach = (d.gates || {}).g_a || d.scoring_reach || {};
-      const filteredValidity = d.sample_validity || {};
-      const filteredReady = filteredReach.interpretation_allowed === true
-        && (filteredValidity.valid_judged_notices || 0) > 0;
-      // 필터 결과만 간단 표로 다시 그린다(전체 화면 재구성 대신).
-      const rows = MB_ARM_ORDER.filter((a) => (d.arms || {})[a]).map((a) => {
-        const x = d.arms[a];
-        return `<tr><td>${MB_ARM_LABEL[a] || a}</td><td>${fmtNumber(x.judged)}</td>
-          <td style="font-weight:700;">${mbPct(x.dropout_rate)}</td><td>${mbPct(x.win_rate)}</td></tr>`;
-      }).join('');
-      c.innerHTML = `${filteredReady ? '' : `<div class="card" style="border:2px solid #FF3B30;background:#FFF5F5;">
-          <h3 style="color:#FF3B30;">🔒 성능 해석 보류</h3>
-          <p style="margin-top:8px;">G-A 기준 또는 유효 표본 조건을 충족하지 못했습니다.</p>
-        </div>`}<div class="card" style="${filteredReady ? '' : 'opacity:.32;filter:grayscale(.8);'}"><h3>${m || '전체'} — arm 별 성적</h3>
-        <p style="color:#8B95A1;font-size:13px;">유효 ${fmtNumber(filteredValidity.valid_judged_notices)}공고 · 기준 불일치 제외 ${fmtNumber(filteredValidity.excluded_base_mismatch)}공고</p>
-        <table style="width:100%;font-size:13px;margin-top:10px;">
-        <thead><tr><th style="text-align:left;">arm</th><th style="text-align:left;">채점</th>
-        <th style="text-align:left;">무효율 ★</th><th style="text-align:left;">적중률</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4" style="color:#8B95A1;">데이터 없음</td></tr>'}</tbody></table>
-        <p style="margin-top:12px;"><a href="#/mockbidding" onclick="location.reload()" class="link-muted">← 전체 보기</a></p></div>`;
-    } catch (e) {
-      c.innerHTML = '<div class="card">오류: ' + e.message + '</div>';
-    }
+  const historyState = { state: 'completed', page: 1, search: '' };
+  document.querySelectorAll('[data-mb-state]').forEach((button) => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('[data-mb-state]').forEach((item) => item.classList.remove('active'));
+      button.classList.add('active');
+      historyState.state = button.dataset.mbState;
+      historyState.page = 1;
+      loadMockBidHistory(historyState);
+    });
+  });
+  document.getElementById('mb-history-search').addEventListener('submit', (event) => {
+    event.preventDefault();
+    historyState.search = document.getElementById('mb-history-query').value.trim();
+    historyState.page = 1;
+    loadMockBidHistory(historyState);
   });
 
-  // 용어집 — 도메인 용어를 모르면 위 지표가 전부 오해된다
-  content.insertAdjacentHTML('beforeend', glossaryCard([
-    '무효', '무효율', '적중', '적중률', '밀림', '채점 도달률',
-    'G-A', 'G-B', 'G-C', 'arm', '사전 등록',
-    '기초금액', '복수예비가격', '예정가격', '사정률', '투찰률',
-    '낙찰하한율', '낙찰하한선', 'A값', '적격심사제', '소액수의견적',
-  ]));
-
-  // 원장·결과는 화면을 막지 않도록 뒤이어 채운다
-  api('/admin/mock-bidding/registrations?limit=30').then((d) => {
-    const el = document.getElementById('mb-reg');
-    if (!el) return;
-    if (!d.items || !d.items.length) { el.innerHTML = '<span style="color:#8B95A1;">아직 등록된 건이 없습니다. 매시 15분에 마감 임박 공고가 등록됩니다.</span>'; return; }
-    el.innerHTML = `<table style="width:100%;font-size:12px;min-width:820px;">
-      <thead><tr><th style="text-align:left;">공고번호</th><th style="text-align:left;">arm</th>
-      <th style="text-align:left;">등록가</th><th style="text-align:left;">투찰률</th>
-      <th style="text-align:left;">등록시각</th><th style="text-align:left;">마감</th>
-      <th style="text-align:left;">하한율(출처)</th><th style="text-align:left;">A값</th>
-      <th style="text-align:left;">상태</th></tr></thead><tbody>
-      ${d.items.map((x) => `<tr>
-        <td>${x.bid_no}</td><td>${x.arm}</td>
-        <td>${fmtNumber(x.price)}원</td><td>${x.bid_rate}%</td>
-        <td>${(x.registered_at || '').replace('T', ' ').slice(0, 16)}</td>
-        <td>${(x.deadline_at || '').replace('T', ' ').slice(0, 16)}</td>
-        <td>${x.snapshot.lower_limit_rate}% (${x.snapshot.llr_source})</td>
-        <td>${x.snapshot.a_value ? fmtNumber(x.snapshot.a_value) : '<span style="color:#FF3B30;">없음</span>'}</td>
-        <td>${x.status}</td></tr>`).join('')}
-      </tbody></table>`;
-  }).catch(() => {});
-
-  api('/admin/mock-bidding/results?limit=30').then((d) => {
-    const el = document.getElementById('mb-res');
-    if (!el) return;
-    if (!d.items || !d.items.length) { el.innerHTML = '<span style="color:#8B95A1;">아직 채점된 건이 없습니다.</span>'; return; }
-    const color = { WIN: '#34C759', DROPOUT: '#FF3B30', LOST: '#8B95A1', NO_RESULT: '#8B95A1' };
-    el.innerHTML = `<table style="width:100%;font-size:12px;min-width:820px;">
-      <thead><tr><th style="text-align:left;">공고번호</th><th style="text-align:left;">arm</th>
-      <th style="text-align:left;">판정</th><th style="text-align:left;">등수/참여</th>
-      <th style="text-align:left;">우리가격</th>
-      <th style="text-align:left;">낙찰가</th><th style="text-align:left;">하한선</th>
-      <th style="text-align:left;">낙찰가 대비</th><th style="text-align:left;">태그</th></tr></thead><tbody>
-      ${d.items.map((x) => `<tr>
-        <td>${x.bid_no}</td><td>${x.arm}</td>
-        <td style="font-weight:700;color:${color[x.outcome] || '#191F28'};">${x.outcome}</td>
-        <td>${x.estimated_rank ? x.estimated_rank + '위 / ' + (x.participants_count ?? '?') + '명' : '—'}</td>
-        <td>${fmtNumber(x.our_price)}</td>
-        <td>${x.actual_winner_price ? fmtNumber(x.actual_winner_price) : '—'}</td>
-        <td>${x.actual_lower_limit ? fmtNumber(Math.round(x.actual_lower_limit)) : '—'}</td>
-        <td>${x.gap_to_winner_pct === null || x.gap_to_winner_pct === undefined ? '—' : x.gap_to_winner_pct + '%'}</td>
-        <td style="color:#8B95A1;">${(x.failure_tags || []).join(', ') || '—'}</td></tr>`).join('')}
-      </tbody></table>`;
-  }).catch(() => {});
+  renderMockBiddingOverviewCharts(charts);
+  loadMockBidHistory(historyState);
 };
 
-// ─── 모의투찰 차트 렌더 — 순서는 §0.2 지표 우선순위, 라이브러리는
-//     대시보드와 동일한 Chart.js(admin.html 이 이미 로드) 재사용. CDN 추가 금지.
-
-function mbChartEmpty(canvasId, msg) {
-  const cv = document.getElementById(canvasId);
-  if (!cv || !cv.parentElement) return;
-  cv.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8B95A1;font-size:13px;">' + msg + '</div>';
-}
-
-function renderMockBiddingCharts(charts) {
-  const noData = '아직 채점 데이터가 없습니다.';
-  const allIds = ['mb-ch-dropout', 'mb-ch-win', 'mb-ch-rank', 'mb-ch-gap', 'mb-ch-err', 'mb-ch-tags'];
+function renderMockBiddingOverviewCharts(charts) {
+  const noData = '등수를 계산할 표본이 아직 없습니다.';
   if (!charts) {
-    allIds.forEach((id) => mbChartEmpty(id, '차트 집계를 불러오지 못했습니다.'));
+    ['mb-ch-rank-simple', 'mb-ch-gap-simple', 'mb-ch-err-advanced']
+      .forEach((id) => mbChartEmpty(id, '차트 데이터를 불러오지 못했습니다.'));
     return;
   }
-  const base = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } };
-  const legendBottom = { ...base, plugins: { legend: { display: true, position: 'bottom' } } };
 
-  // ①② arm 별 무효율(1차)·적중률(2차) — 같은 arm 은 항상 같은 색
-  const arms = MB_ARM_ORDER.filter((a) => (charts.arms || {})[a] && charts.arms[a].judged > 0);
-  if (!arms.length) {
-    mbChartEmpty('mb-ch-dropout', noData);
-    mbChartEmpty('mb-ch-win', noData);
+  const rank = (charts.rank_distribution || {}).active || {};
+  const rankGroups = [
+    Number(rank['1'] || 0),
+    Number(rank['2'] || 0) + Number(rank['3'] || 0),
+    ['4', '5', '6', '7', '8', '9', '10'].reduce((sum, key) => sum + Number(rank[key] || 0), 0),
+    Number(rank['11+'] || 0),
+  ];
+  if (!rankGroups.some(Boolean)) {
+    mbChartEmpty('mb-ch-rank-simple', noData);
   } else {
-    const colors = arms.map((a) => MB_ARM_COLOR[a] || '#3182F6');
-    new Chart(document.getElementById('mb-ch-dropout'), {
+    new Chart(document.getElementById('mb-ch-rank-simple'), {
       type: 'bar',
-      data: { labels: arms, datasets: [{ data: arms.map((a) => charts.arms[a].dropout_rate ?? 0), backgroundColor: colors }] },
-      options: { ...base, scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + '%' } } } },
-    });
-    new Chart(document.getElementById('mb-ch-win'), {
-      type: 'bar',
-      data: { labels: arms, datasets: [{ data: arms.map((a) => charts.arms[a].win_rate ?? 0), backgroundColor: colors }] },
-      options: { ...base, scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + '%' } } } },
+      data: { labels: ['1위', '2~3위', '4~10위', '11위 밖'], datasets: [{ data: rankGroups, backgroundColor: ['#3182F6', '#6BA6FA', '#A8C9F8', '#D7E5F7'], borderRadius: 8 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
     });
   }
 
-  // ③ 등수 분포 히스토그램 (3차 — Phase 2 산출물)
-  const rd = charts.rank_distribution || {};
-  const rankArms = MB_ARM_ORDER.filter((a) => rd[a]);
-  if (!rankArms.length) {
-    mbChartEmpty('mb-ch-rank', '참가자 데이터가 붙은 채점 건이 아직 없습니다.');
+  const gap = (charts.gap_distribution || {}).active || {};
+  const gapBuckets = charts.gap_buckets || [];
+  if (!gapBuckets.length || !gapBuckets.some((key) => gap[key])) {
+    mbChartEmpty('mb-ch-gap-simple', '낙찰가와 비교할 표본이 아직 없습니다.');
   } else {
-    const cap = charts.rank_histogram_cap || 10;
-    const labels = [];
-    for (let i = 1; i <= cap; i++) labels.push(String(i));
-    labels.push((cap + 1) + '+');
-    new Chart(document.getElementById('mb-ch-rank'), {
+    const friendly = ['5%+ 낮음', '2~5% 낮음', '0.5~2% 낮음', '0~0.5% 낮음', '0~0.5% 높음', '0.5~1% 높음', '1~2% 높음', '2~5% 높음', '5%+ 높음'];
+    new Chart(document.getElementById('mb-ch-gap-simple'), {
       type: 'bar',
-      data: {
-        labels,
-        datasets: rankArms.map((a) => ({ label: a, data: labels.map((l) => rd[a][l] || 0), backgroundColor: MB_ARM_COLOR[a] })),
-      },
-      options: { ...legendBottom, scales: { y: { beginAtZero: true } } },
+      data: { labels: friendly, datasets: [{ data: gapBuckets.map((key) => gap[key] || 0), backgroundColor: gapBuckets.map((_, index) => index <= 3 ? '#34C759' : '#FFB45C'), borderRadius: 6 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxRotation: 45, minRotation: 20 } }, y: { beginAtZero: true, ticks: { precision: 0 } } } },
     });
   }
 
-  // ④ 낙찰가 대비 격차 분포
-  const gd = charts.gap_distribution || {};
-  const gapArms = MB_ARM_ORDER.filter((a) => gd[a]);
-  if (!gapArms.length) {
-    mbChartEmpty('mb-ch-gap', noData);
-  } else {
-    const labels = charts.gap_buckets || [];
-    new Chart(document.getElementById('mb-ch-gap'), {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: gapArms.map((a) => ({ label: a, data: labels.map((l) => gd[a][l] || 0), backgroundColor: MB_ARM_COLOR[a] })),
-      },
-      options: { ...legendBottom, scales: { y: { beginAtZero: true } } },
-    });
-  }
-
-  // ⑤ 사정률 예측 오차 추이 (4차)
   const trend = charts.ratio_error_trend || [];
   if (!trend.length) {
-    mbChartEmpty('mb-ch-err', noData);
+    mbChartEmpty('mb-ch-err-advanced', '사정률 오차 표본이 아직 없습니다.');
   } else {
-    new Chart(document.getElementById('mb-ch-err'), {
+    new Chart(document.getElementById('mb-ch-err-advanced'), {
       type: 'line',
-      data: {
-        labels: trend.map((t) => (t.date || '').slice(5)),
-        datasets: [{
-          data: trend.map((t) => t.mean_error),
-          borderColor: '#3182F6',
-          backgroundColor: 'rgba(49, 130, 246, 0.1)',
-          tension: 0.3,
-          fill: true,
-        }],
-      },
-      options: { ...base, scales: { y: { beginAtZero: true } } },
+      data: { labels: trend.map((row) => String(row.date || '').slice(5)), datasets: [{ data: trend.map((row) => row.mean_error), borderColor: '#3182F6', backgroundColor: 'rgba(49,130,246,.08)', fill: true, tension: .3 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
     });
   }
 
-  // ⑥ 오답노트 태그별 무효율 (막대)
-  const tags = charts.failure_tags || {};
-  const tagNames = Object.keys(tags).filter((t) => tags[t].dropout_rate !== null && tags[t].dropout_rate !== undefined);
-  if (!tagNames.length) {
-    mbChartEmpty('mb-ch-tags', noData);
-  } else {
-    new Chart(document.getElementById('mb-ch-tags'), {
-      type: 'bar',
-      data: { labels: tagNames, datasets: [{ data: tagNames.map((t) => tags[t].dropout_rate), backgroundColor: '#FF8A00' }] },
-      options: { ...base, indexAxis: 'y', scales: { x: { beginAtZero: true, ticks: { callback: (v) => v + '%' } } } },
-    });
-  }
-
-  // ⑦ 세그먼트 교차표 — 금액대 경계는 autocalibrate 와 동일 어휘(small~xxlarge)
-  const segEl = document.getElementById('mb-seg');
-  if (segEl) {
-    const seg = charts.segments || [];
-    if (!seg.length) {
-      segEl.innerHTML = '<span style="color:#8B95A1;">' + noData + '</span>';
+  const segmentEl = document.getElementById('mb-seg-advanced');
+  const segments = charts.segments || [];
+  if (segmentEl) {
+    if (!segments.length) {
+      segmentEl.textContent = '세그먼트 표본이 아직 없습니다.';
     } else {
-      const brackets = ['small', 'medium', 'large', 'xlarge', 'xxlarge'];
-      const bracketLabel = { small: '~1억', medium: '1~5억', large: '5~10억', xlarge: '10~50억', xxlarge: '50억~' };
-      const byMethod = {};
-      seg.forEach((s) => { (byMethod[s.bid_method] = byMethod[s.bid_method] || {})[s.bracket] = s; });
-      segEl.innerHTML = `<table style="width:100%;font-size:12px;min-width:420px;">
-        <thead><tr><th style="text-align:left;">입찰방법</th>
-        ${brackets.map((b) => '<th style="text-align:left;">' + bracketLabel[b] + '</th>').join('')}</tr></thead><tbody>
-        ${Object.keys(byMethod).map((m) => `<tr><td style="white-space:nowrap;">${m}</td>
-          ${brackets.map((b) => {
-            const c = byMethod[m][b];
-            if (!c) return '<td style="color:#B0B8C1;">—</td>';
-            return `<td>${fmtNumber(c.judged)}건<br><span style="font-weight:700;color:${c.dropout_rate > 10 ? '#FF3B30' : '#191F28'};">${mbPct(c.dropout_rate)}</span></td>`;
-          }).join('')}</tr>`).join('')}
-        </tbody></table>`;
+      segmentEl.innerHTML = `<table class="mb-history-table"><thead><tr><th>입찰방법</th><th>금액대</th><th>채점</th><th>무효율</th></tr></thead><tbody>${segments.map((row) => `<tr><td>${esc(row.bid_method || '—')}</td><td>${esc(row.bracket || '—')}</td><td>${fmtNumber(row.judged)}</td><td>${mbPct(row.dropout_rate)}</td></tr>`).join('')}</tbody></table>`;
     }
   }
 }

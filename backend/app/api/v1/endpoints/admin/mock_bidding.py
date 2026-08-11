@@ -5,6 +5,8 @@
 ⚠️ 1차 지표는 **무효율(dropout)** 이다. 낙찰률이 아니다(§0.2).
    대외 표기에 낙찰률을 쓰는 것은 전역 규칙 §4-2 위반.
 """
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -120,6 +122,29 @@ def registrations(
             for r in rows
         ],
     }
+
+
+@router.get("/mock-bidding/history")
+def history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
+    state: Literal["all", "completed", "waiting"] = Query(
+        "completed", description="개찰 완료·결과 대기 필터"
+    ),
+    search: str | None = Query(None, max_length=100, description="공고번호 일부 검색"),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """공고 단위 전체 이력 — 5개 arm 과 최신 채점 결과를 한 묶음으로 반환."""
+    from app.services import mock_bidding as mb
+
+    return mb.history_page(
+        db,
+        page=page,
+        page_size=page_size,
+        state=state,
+        search=search,
+    )
 
 
 @router.get("/mock-bidding/results")

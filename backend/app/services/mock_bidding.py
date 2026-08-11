@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, case, exists, func
+from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
@@ -665,23 +665,55 @@ def score_queue_health(db: Session, now: datetime | None = None,
 
 
 def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
-    """참가자 데이터가 뒤늦게 도착한 채점분의 등수를 채운다 — **새 scoring_rev 행으로**.
+    """참가자 데이터가 새로 도착하거나 달라진 채점분의 등수를 다시 계산한다.
 
     채점 시점에 참가자가 이미 있으면 `score_mock_bid` 가 등수까지 채우지만,
     참가자 크롤이 늦거나(적격검사 지연·재크롤) Phase 2 배포 전 채점분은 비어
     있다. §0.5-3 이 기존 결과 행 UPDATE 를 금지하므로, 이전 판정을 그대로
     복사하고 등수만 더한 새 행(scoring_rev+1)을 쌓는다 — 집계는 최신 rev 만 본다.
+
+    참가자 행이 **있는 후보만** limit 전에 고른다. 참가자 없는 과거 행이 앞의
+    5,000자리를 계속 차지하면 뒤의 복구 가능한 행이 영원히 굶기 때문이다.
+    이미 등수가 있어도 참가자 수나 가격이 바뀌어 계산 결과가 달라지면 새 rev 를
+    만든다. API 가 진행 중인 개찰을 부분 응답한 뒤 완성하는 경우를 보정한다.
     """
     sq = _latest_rev_sq(db)
+    participant_count = (
+        select(func.count(models.OpeningParticipant.id))
+        .where(
+            models.OpeningParticipant.bid_no == models.MockBid.bid_no,
+            models.OpeningParticipant.bid_price.isnot(None),
+            models.OpeningParticipant.bid_price > 0,
+        )
+        .correlate(models.MockBid)
+        .scalar_subquery()
+    )
+    estimated_rank = 1 + (
+        select(func.count(models.OpeningParticipant.id))
+        .where(
+            models.OpeningParticipant.bid_no == models.MockBid.bid_no,
+            models.OpeningParticipant.bid_price.isnot(None),
+            models.OpeningParticipant.bid_price > 0,
+            models.OpeningParticipant.bid_price < models.MockBid.price,
+        )
+        .correlate(models.MockBid)
+        .scalar_subquery()
+    )
     rows = (
         db.query(models.MockBidResult, models.MockBid)
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
                        models.MockBidResult.scoring_rev == sq.c.max_rev))
         .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
-        .filter(models.MockBidResult.outcome.in_(("WIN", "LOST", "DROPOUT")),
-                models.MockBidResult.estimated_rank.is_(None))
-        # score_pending 과 같은 이유로 순서를 고정한다 — 정렬 없이 자르면
-        # 잘려 나간 쪽이 매일 같은 자리에 남아 등수가 영영 안 채워질 수 있다.
+        .filter(
+            models.MockBidResult.outcome.in_(("WIN", "LOST", "DROPOUT")),
+            participant_count > 0,
+            or_(
+                models.MockBidResult.estimated_rank.is_(None),
+                func.coalesce(models.MockBidResult.participants_count, -1)
+                != participant_count,
+                models.MockBidResult.estimated_rank != estimated_rank,
+            ),
+        )
         .order_by(models.MockBidResult.mock_bid_id.asc())
         .limit(limit)
         .all()
@@ -694,7 +726,11 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
     for prev, mb in rows:
         p_prices = [int(p.bid_price) for p in participants.get(mb.bid_no, []) if p.bid_price]
         if not p_prices:
-            continue  # 참가자가 아직 없으면 다음 실행에서 다시 본다
+            continue  # 조회 직후 재크롤로 교체된 극단적 경합 — 다음 실행에서 다시 본다
+        next_rank = estimate_rank(int(mb.price), p_prices)
+        next_count = len(p_prices)
+        if prev.estimated_rank == next_rank and prev.participants_count == next_count:
+            continue
         try:
             db.add(models.MockBidResult(
                 mock_bid_id=mb.id,
@@ -703,15 +739,17 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
                 actual_reserved_price=prev.actual_reserved_price,
                 actual_winner_price=prev.actual_winner_price,
                 actual_lower_limit=prev.actual_lower_limit,
-                estimated_rank=estimate_rank(int(mb.price), p_prices),
-                participants_count=len(p_prices),
+                estimated_rank=next_rank,
+                participants_count=next_count,
                 gap_to_winner_pct=prev.gap_to_winner_pct,
                 gap_to_limit_pct=prev.gap_to_limit_pct,
                 reserved_ratio_actual=prev.reserved_ratio_actual,
                 reserved_ratio_predicted=prev.reserved_ratio_predicted,
                 ratio_error=prev.ratio_error,
                 failure_tags=prev.failure_tags,
-                scored_at=now_kst(),
+                # 등수만 보강한 시각을 성능 관측일로 쓰면 과거 오차가 오늘로
+                # 이동한다. 원 판정의 측정 시각을 보존한다.
+                scored_at=prev.scored_at,
             ))
             # 건 단위 커밋 — 1건 결함이 배치 전체를 롤백시키지 않게(등록 배치에서 실제로 겪은 사고)
             db.commit()
@@ -723,6 +761,179 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
     result = {"candidates": len(rows), "backfilled": backfilled}
     logger.info(f"[mock_bidding.rank_backfill] {result}")
     return result
+
+
+def history_page(db: Session, *, page: int = 1, page_size: int = 10,
+                 state: str = "all", search: str | None = None) -> dict:
+    """공고 단위 모의투찰 이력.
+
+    원장은 arm 행 5개지만 사람이 확인하는 단위는 공고 1건이다. `active` arm 을
+    페이지 앵커로 삼고, 같은 공고의 5개 전략과 각 최신 scoring_rev 를 묶는다.
+    최근 N행 제한 대신 페이지네이션을 제공해 지난 개찰 결과까지 모두 찾을 수 있다.
+    """
+    if state not in {"all", "completed", "waiting"}:
+        raise ValueError("state must be all, completed, or waiting")
+
+    anchor = db.query(models.MockBid).filter(models.MockBid.arm == "active")
+    if state == "completed":
+        anchor = anchor.filter(models.MockBid.status == "SCORED")
+    elif state == "waiting":
+        anchor = anchor.filter(models.MockBid.status != "SCORED")
+    if search and search.strip():
+        anchor = anchor.filter(
+            models.MockBid.bid_no.contains(search.strip(), autoescape=True)
+        )
+
+    total = anchor.count()
+    anchors = (
+        anchor.order_by(models.MockBid.deadline_at.desc(), models.MockBid.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    bid_nos = [row.bid_no for row in anchors]
+
+    all_anchor = db.query(models.MockBid).filter(models.MockBid.arm == "active")
+    completed_total = all_anchor.filter(models.MockBid.status == "SCORED").count()
+    registered_total = all_anchor.count()
+    latest_all = _latest_rev_sq(db)
+    rank_ready = (
+        db.query(func.count(func.distinct(models.MockBid.bid_no)))
+        .join(models.MockBidResult,
+              models.MockBidResult.mock_bid_id == models.MockBid.id)
+        .join(latest_all, and_(
+            models.MockBidResult.mock_bid_id == latest_all.c.mock_bid_id,
+            models.MockBidResult.scoring_rev == latest_all.c.max_rev,
+        ))
+        .filter(models.MockBid.arm == "active",
+                models.MockBidResult.estimated_rank.isnot(None))
+        .scalar() or 0
+    )
+
+    if not bid_nos:
+        total_pages = (total + page_size - 1) // page_size
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "has_previous": page > 1,
+            "has_next": page < total_pages,
+            "summary": {
+                "registered": registered_total,
+                "completed": completed_total,
+                "waiting": max(0, registered_total - completed_total),
+                "rank_ready": rank_ready,
+            },
+            "items": [],
+        }
+
+    bids = (
+        db.query(models.MockBid)
+        .filter(models.MockBid.bid_no.in_(bid_nos))
+        .order_by(models.MockBid.bid_no, models.MockBid.id)
+        .all()
+    )
+    bid_ids = [row.id for row in bids]
+    latest = _latest_rev_sq(db)
+    result_rows = (
+        db.query(models.MockBidResult)
+        .join(latest, and_(
+            models.MockBidResult.mock_bid_id == latest.c.mock_bid_id,
+            models.MockBidResult.scoring_rev == latest.c.max_rev,
+        ))
+        .filter(models.MockBidResult.mock_bid_id.in_(bid_ids))
+        .order_by(models.MockBidResult.id.desc())
+        .all()
+    )
+    # 같은 max rev 중복이 이미 DB 에 있어도 화면에서는 최신 id 하나만 고른다.
+    results_by_bid_id: dict[int, models.MockBidResult] = {}
+    for result in result_rows:
+        results_by_bid_id.setdefault(result.mock_bid_id, result)
+
+    notices = {
+        row.bid_no: row for row in
+        db.query(models.Notice).filter(models.Notice.bid_no.in_(bid_nos)).all()
+    }
+    openings = {
+        row.bid_no: row for row in
+        db.query(models.OpeningResult).filter(models.OpeningResult.bid_no.in_(bid_nos)).all()
+    }
+    bids_by_no: dict[str, list[models.MockBid]] = {}
+    for bid in bids:
+        bids_by_no.setdefault(bid.bid_no, []).append(bid)
+
+    items = []
+    rank_ready_on_page = 0
+    for anchor_row in anchors:
+        notice = notices.get(anchor_row.bid_no)
+        opening = openings.get(anchor_row.bid_no)
+        arm_items = []
+        for bid in sorted(
+            bids_by_no.get(anchor_row.bid_no, []),
+            key=lambda row: ARMS.index(row.arm) if row.arm in ARMS else len(ARMS),
+        ):
+            result = results_by_bid_id.get(bid.id)
+            winner_price = result.actual_winner_price if result else (
+                opening.winner_price if opening else None
+            )
+            arm_items.append({
+                "arm": bid.arm,
+                "price": bid.price,
+                "bid_rate": bid.bid_rate,
+                "outcome": result.outcome if result else None,
+                "estimated_rank": result.estimated_rank if result else None,
+                "participants_count": result.participants_count if result else None,
+                "actual_winner_price": winner_price,
+                "actual_lower_limit": result.actual_lower_limit if result else None,
+                "gap_to_winner_pct": result.gap_to_winner_pct if result else None,
+                "gap_to_winner_amount": (
+                    int(round(float(bid.price) - float(winner_price)))
+                    if winner_price is not None else None
+                ),
+                "failure_tags": result.failure_tags if result else None,
+                "scored_at": result.scored_at.isoformat() if result and result.scored_at else None,
+            })
+
+        primary = next((row for row in arm_items if row["arm"] == "active"), None)
+        if primary and primary["estimated_rank"] is not None:
+            rank_ready_on_page += 1
+        completed = bool(primary and primary["outcome"] in _JUDGED)
+        items.append({
+            "bid_no": anchor_row.bid_no,
+            "title": notice.title if notice else None,
+            "organization": notice.organization if notice else (
+                opening.organization if opening else None
+            ),
+            "registered_at": (
+                anchor_row.registered_at.isoformat() if anchor_row.registered_at else None
+            ),
+            "deadline_at": (
+                anchor_row.deadline_at.isoformat() if anchor_row.deadline_at else None
+            ),
+            "opened_at": opening.open_date.isoformat() if opening and opening.open_date else None,
+            "state": "COMPLETED" if completed else "WAITING",
+            "primary_arm": primary,
+            "arms": arm_items,
+        })
+
+    total_pages = (total + page_size - 1) // page_size
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+        "has_previous": page > 1,
+        "has_next": page < total_pages,
+        "summary": {
+            "registered": registered_total,
+            "completed": completed_total,
+            "waiting": max(0, registered_total - completed_total),
+            "rank_ready": rank_ready,
+            "rank_ready_on_page": rank_ready_on_page,
+        },
+        "items": items,
+    }
 
 
 # ── 집계 (어드민·리포트) ──────────────────────────────────────
@@ -1165,14 +1376,18 @@ def gap_distribution(db: Session) -> dict:
 
 
 def ratio_error_trend(db: Session, arm: str = "active") -> list[dict]:
-    """사정률 예측 오차(§0.2 4차)의 일별 평균 추이.
+    """사정률 예측 오차(§0.2 4차)의 마감일 코호트별 평균 추이.
 
     arm 하나로 고정하는 이유: 예측(adjustment)이 arm 마다 달라 섞으면 신호가
     오염된다. 기본은 운영 정본인 active. (standard/aggressive 는 adjustment 를
     기록하지 않아 오차 자체가 없다.)
+
+    최신 scoring_rev 의 `scored_at` 으로 묶지 않는다. 등수 백필이 며칠 뒤 새
+    rev 를 만들면 이미 측정한 과거 오차가 백필 실행일로 이동하기 때문이다.
+    마감 전에 고정된 `MockBid.deadline_at` 이 실험 코호트의 안정적인 시간축이다.
     """
     sq = _latest_rev_sq(db)
-    day = func.date(models.MockBidResult.scored_at)
+    day = func.date(models.MockBid.deadline_at)
     rows = (
         db.query(day.label("d"),
                  func.avg(models.MockBidResult.ratio_error).label("e"),
