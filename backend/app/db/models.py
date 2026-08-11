@@ -803,8 +803,12 @@ class MockBidResult(Base):
     actual_winner_price = Column(Float)
     actual_lower_limit = Column(Float)
 
+    # 등수는 **유효 투찰자**(낙찰하한선 이상 = 개찰 API 가 opengRank 를 준 참가자)
+    # 기준이다. 무효 투찰까지 세면 개찰조서와 다른 물건이 된다 — 2026-08-11 실측:
+    # 참가자 462,900행 중 47.6%가 무효(rank 결측)라 등수가 평균 15.79 부풀었다.
     estimated_rank = Column(Integer)        # Phase 2(참가자 저장) 이후 채워진다
-    participants_count = Column(Integer)
+    participants_count = Column(Integer)        # 전 참가자 수(경쟁 강도 실측)
+    valid_participants_count = Column(Integer)  # 그중 유효 투찰 = 등수의 분모
 
     gap_to_winner_pct = Column(Float)       # (우리가격 - 낙찰가)/낙찰가 × 100
     gap_to_limit_pct = Column(Float)        # (우리가격 - 하한선)/하한선 × 100

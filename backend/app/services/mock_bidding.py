@@ -395,14 +395,37 @@ def _failure_tags(mb: models.MockBid, actual: models.OpeningResult,
 def estimate_rank(our_price: int, participant_prices: list[int]) -> int:
     """우리 등록가를 참가자 투찰가 목록에 끼워넣었을 때의 개찰 순위(1 = 최저가).
 
-    개찰 API 의 `opengRank` 와 같은 축이다 — 하한선 미달(무효) 참가자도 순위에
-    포함된다. 동가는 같은 순위로 본다(우리보다 **엄격히 낮은** 가격 수 + 1).
+    ⚠️ `participant_prices` 는 반드시 **유효 투찰가만** 담아야 한다
+    (`_valid_participant_prices` 를 쓸 것). 무효 투찰까지 넘기면 개찰조서와
+    다른 축이 된다 — 아래 실측 참조.
+
+    **2026-08-11 실측으로 뒤집힌 전제**: 종전 도크스트링은 "`opengRank` 와 같은
+    축이며 하한선 미달 참가자도 순위에 포함된다"고 단정했으나 **사실과 반대**다.
+    운영 참가자 462,900행 대조 결과, API 는 하한선 이상 유효 투찰자에게만
+    `opengRank` 를 주고 무효 투찰자는 순위가 없다(47.6%가 결측). 유효 투찰자만
+    골라 가격 오름차순으로 세면 저장된 `opengRank` 와 **99.95% 일치**한다.
+    무효까지 세던 종전 계산은 등수를 평균 15.79 부풀렸다.
+
+    동가는 같은 순위로 본다(우리보다 **엄격히 낮은** 가격 수 + 1).
 
     ⚠️ 판정(judge)의 대체가 아니라 별개 지표다(§0.2 3차). WIN/LOST/DROPOUT
     정의는 simulate_params 와 동일하게 유지된다(§P3) — 등수가 1이어도 하한선
     미달이면 DROPOUT 이고, 그 모순처럼 보이는 조합이 바로 배울 거리다.
     """
     return 1 + sum(1 for p in participant_prices if p < our_price)
+
+
+def _valid_participant_prices(participants: list[models.OpeningParticipant]) -> list[int]:
+    """등수 계산에 쓸 **유효 투찰가**만 추린다.
+
+    유효 판정 신호는 `rank`(= API `opengRank`)의 존재다. 하한선 미달로 무효가
+    된 투찰에는 API 가 순위를 주지 않으므로, 순위가 있다는 것 자체가 그 건이
+    개찰 순위 경쟁에 들어갔다는 뜻이다. `sucsf_yn` 은 '낙찰자인가'(적격검사
+    통과)라 무효 여부와 다른 축이므로 쓰지 않는다 — 그걸로 거르면 낙찰자 1명만
+    남는다.
+    """
+    return [int(p.bid_price) for p in participants
+            if p.bid_price and p.bid_price > 0 and p.rank is not None]
 
 
 def _participants_by_bid(db: Session, bid_nos: list[str]) -> dict[str, list[models.OpeningParticipant]]:
@@ -474,10 +497,14 @@ def score_mock_bid(db: Session, mb: models.MockBid,
     if reserved <= 0:
         tags.append("예정가격_결측")
 
-    # 등수 재구성 (§4-3) — 참가자 투찰가 목록에 우리 등록가를 끼워넣는다.
-    p_prices = [int(p.bid_price) for p in (participants or []) if p.bid_price]
-    est_rank = estimate_rank(int(mb.price), p_prices) if p_prices else None
-    participants_count = len(p_prices) if p_prices else actual.participants_count
+    # 등수 재구성 (§4-3) — **유효** 투찰가 목록에 우리 등록가를 끼워넣는다.
+    # 참여자 수는 전원을 세고(경쟁 강도), 등수의 분모는 유효분만 센다.
+    priced = [p for p in (participants or []) if p.bid_price and p.bid_price > 0]
+    valid_prices = _valid_participant_prices(priced)
+    # 유효분이 하나도 없으면 등수를 만들지 않는다 — 전원 무효인 공고와 개찰이
+    # 아직 안 끝난 공고를 구분할 수 없기 때문이다. 백필이 다음 회차에 다시 본다.
+    est_rank = estimate_rank(int(mb.price), valid_prices) if valid_prices else None
+    participants_count = len(priced) if priced else actual.participants_count
 
     res = models.MockBidResult(
         mock_bid_id=mb.id,
@@ -488,6 +515,7 @@ def score_mock_bid(db: Session, mb: models.MockBid,
         actual_lower_limit=round(lower_limit, 2),
         estimated_rank=est_rank,
         participants_count=participants_count,
+        valid_participants_count=len(valid_prices) if valid_prices else None,
         gap_to_winner_pct=round((float(mb.price) - winner) / winner * 100, 4) if winner else None,
         gap_to_limit_pct=(round((float(mb.price) - lower_limit) / lower_limit * 100, 4)
                           if lower_limit else None),
@@ -678,27 +706,27 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
     만든다. API 가 진행 중인 개찰을 부분 응답한 뒤 완성하는 경우를 보정한다.
     """
     sq = _latest_rev_sq(db)
-    participant_count = (
-        select(func.count(models.OpeningParticipant.id))
-        .where(
-            models.OpeningParticipant.bid_no == models.MockBid.bid_no,
-            models.OpeningParticipant.bid_price.isnot(None),
-            models.OpeningParticipant.bid_price > 0,
+
+    def _p_count(*extra):
+        """공고별 참가자 수 상관 서브쿼리 — 조건만 갈아 끼운다."""
+        return (
+            select(func.count(models.OpeningParticipant.id))
+            .where(
+                models.OpeningParticipant.bid_no == models.MockBid.bid_no,
+                models.OpeningParticipant.bid_price.isnot(None),
+                models.OpeningParticipant.bid_price > 0,
+                *extra,
+            )
+            .correlate(models.MockBid)
+            .scalar_subquery()
         )
-        .correlate(models.MockBid)
-        .scalar_subquery()
-    )
-    estimated_rank = 1 + (
-        select(func.count(models.OpeningParticipant.id))
-        .where(
-            models.OpeningParticipant.bid_no == models.MockBid.bid_no,
-            models.OpeningParticipant.bid_price.isnot(None),
-            models.OpeningParticipant.bid_price > 0,
-            models.OpeningParticipant.bid_price < models.MockBid.price,
-        )
-        .correlate(models.MockBid)
-        .scalar_subquery()
-    )
+
+    participant_count = _p_count()
+    # 등수 관련 계산은 전부 **유효 투찰**(opengRank 가 있는 행)만 센다.
+    _valid = models.OpeningParticipant.rank.isnot(None)
+    valid_count = _p_count(_valid)
+    estimated_rank = 1 + _p_count(
+        _valid, models.OpeningParticipant.bid_price < models.MockBid.price)
     rows = (
         db.query(models.MockBidResult, models.MockBid)
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
@@ -706,11 +734,13 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
         .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
         .filter(
             models.MockBidResult.outcome.in_(("WIN", "LOST", "DROPOUT")),
-            participant_count > 0,
+            valid_count > 0,
             or_(
                 models.MockBidResult.estimated_rank.is_(None),
                 func.coalesce(models.MockBidResult.participants_count, -1)
                 != participant_count,
+                func.coalesce(models.MockBidResult.valid_participants_count, -1)
+                != valid_count,
                 models.MockBidResult.estimated_rank != estimated_rank,
             ),
         )
@@ -724,12 +754,17 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
     participants = _participants_by_bid(db, list({b.bid_no for _, b in rows}))
     backfilled = 0
     for prev, mb in rows:
-        p_prices = [int(p.bid_price) for p in participants.get(mb.bid_no, []) if p.bid_price]
-        if not p_prices:
+        priced = [p for p in participants.get(mb.bid_no, [])
+                  if p.bid_price and p.bid_price > 0]
+        valid_prices = _valid_participant_prices(priced)
+        if not valid_prices:
             continue  # 조회 직후 재크롤로 교체된 극단적 경합 — 다음 실행에서 다시 본다
-        next_rank = estimate_rank(int(mb.price), p_prices)
-        next_count = len(p_prices)
-        if prev.estimated_rank == next_rank and prev.participants_count == next_count:
+        next_rank = estimate_rank(int(mb.price), valid_prices)
+        next_count = len(priced)
+        next_valid = len(valid_prices)
+        if (prev.estimated_rank == next_rank
+                and prev.participants_count == next_count
+                and prev.valid_participants_count == next_valid):
             continue
         try:
             db.add(models.MockBidResult(
@@ -741,6 +776,7 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
                 actual_lower_limit=prev.actual_lower_limit,
                 estimated_rank=next_rank,
                 participants_count=next_count,
+                valid_participants_count=next_valid,
                 gap_to_winner_pct=prev.gap_to_winner_pct,
                 gap_to_limit_pct=prev.gap_to_limit_pct,
                 reserved_ratio_actual=prev.reserved_ratio_actual,
@@ -884,6 +920,9 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
                 "outcome": result.outcome if result else None,
                 "estimated_rank": result.estimated_rank if result else None,
                 "participants_count": result.participants_count if result else None,
+                # 등수의 분모 — 전 참가자가 아니라 유효 투찰 수다(무효는 순위가 없다)
+                "valid_participants_count": (
+                    result.valid_participants_count if result else None),
                 "actual_winner_price": winner_price,
                 "actual_lower_limit": result.actual_lower_limit if result else None,
                 "gap_to_winner_pct": result.gap_to_winner_pct if result else None,
@@ -1314,10 +1353,59 @@ RANK_HISTOGRAM_CAP = 10
 GAP_BUCKETS = ("≤-5", "-5~-2", "-2~-0.5", "-0.5~0", "0~0.5", "0.5~1", "1~2", "2~5", ">5")
 
 
+def rank_axis_health(db: Session, sample_notices: int = 300) -> dict:
+    """저장된 `opengRank` 와 우리 재계산 등수가 같은 축인지 상시 감시한다.
+
+    **왜 상시로 재는가**: Phase 2 는 "무효 투찰도 순위에 포함된다"는 전제로
+    등수를 계산했는데 그 전제가 틀렸다는 사실은 배포 9일 뒤 운영 데이터를 손으로
+    대조해서야 드러났다(§9 · 2026-08-11). 그동안 화면은 멀쩡히 그려졌다. 검증
+    재료(`opengRank`)를 같은 테이블에 갖고 있으면서 대조하지 않으면, 축이 다시
+    갈라져도 똑같이 모른다. 비용은 이미 가진 데이터를 세는 것뿐이다.
+
+    불일치율이 크면 등수 지표(§0.2 3차) 해석을 멈춰야 한다는 신호다.
+    최근 크롤된 `sample_notices` 개 공고만 본다 — 전수는 어드민 화면 로드마다
+    수십만 행을 정렬하게 된다.
+    """
+    recent = (
+        db.query(models.OpeningParticipant.bid_no.label("bid_no"))
+        .group_by(models.OpeningParticipant.bid_no)
+        .order_by(func.max(models.OpeningParticipant.crawled_at).desc())
+        .limit(sample_notices)
+        .subquery()
+    )
+    calc = func.rank().over(
+        partition_by=models.OpeningParticipant.bid_no,
+        order_by=models.OpeningParticipant.bid_price,
+    ).label("calc")
+    sub = (
+        db.query(models.OpeningParticipant.rank.label("api_rank"), calc)
+        .join(recent, recent.c.bid_no == models.OpeningParticipant.bid_no)
+        .filter(models.OpeningParticipant.bid_price > 0,
+                models.OpeningParticipant.rank.isnot(None))
+        .subquery()
+    )
+    total, mismatch = (
+        db.query(func.count(),
+                 func.coalesce(func.sum(case((sub.c.api_rank != sub.c.calc, 1), else_=0)), 0))
+        .select_from(sub)
+        .one()
+    )
+    total, mismatch = int(total or 0), int(mismatch or 0)
+    return {
+        "sample_notices": sample_notices,
+        "ranked_rows": total,
+        "mismatch": mismatch,
+        "mismatch_pct": round(100.0 * mismatch / total, 3) if total else None,
+        # 2026-08-11 전수 실측 기준선 0.054% — 이보다 크게 벌어지면 축이 바뀐 것이다
+        "healthy": (mismatch / total < 0.01) if total else None,
+    }
+
+
 def rank_distribution(db: Session) -> dict:
     """arm 별 추정 등수 분포 (§0.2 3차 지표) — 우리가 몇 등에 몰리는지.
 
     등수는 Phase 2 참가자 데이터가 붙은 건에만 있다(없으면 빈 dict).
+    등수·분모 모두 **유효 투찰** 기준이다(`valid_participants_count`).
     """
     sq = _latest_rev_sq(db)
     rows = (

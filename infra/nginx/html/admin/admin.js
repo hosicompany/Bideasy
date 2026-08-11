@@ -1360,6 +1360,19 @@ function mbResultInsight(primary) {
   return `실제 낙찰가보다 ${fmtNumber(Math.abs(amount))}원 낮고 하한선은 지킨 가격이었어요.`;
 }
 
+// 등수의 분모는 전 참가자가 아니라 **유효 투찰** 수다. 낙찰하한선 미달 투찰에는
+// 개찰 API 가 순위를 주지 않으므로, 무효까지 세면 개찰조서와 다른 등수가 된다.
+function mbParticipantText(arm) {
+  const valid = arm.valid_participants_count;
+  const total = arm.participants_count;
+  if (valid != null) {
+    return total != null && total !== valid
+      ? `유효 투찰 ${fmtNumber(valid)}곳 기준 · 총 참가 ${fmtNumber(total)}곳`
+      : `유효 투찰 ${fmtNumber(valid)}곳 기준`;
+  }
+  return total == null ? '참가자 집계 전' : `총 참가 ${fmtNumber(total)}곳`;
+}
+
 function mbHistoryArmRows(arms) {
   return (arms || []).map((arm) => {
     const meta = mbOutcomeMeta(arm.outcome);
@@ -1369,7 +1382,7 @@ function mbHistoryArmRows(arms) {
       <td><b>${esc(MB_ARM_FRIENDLY[arm.arm] || arm.arm || '—')}</b><small>${esc(arm.arm || '')}</small></td>
       <td>${fmtNumber(arm.price)}원<small>${mbRateText(arm.bid_rate)}</small></td>
       <td><span class="mb-result-badge ${meta.tone}">${esc(meta.label)}</span></td>
-      <td>${rank}<small>${arm.participants_count == null ? '참가자 집계 전' : `실제 참가 ${fmtNumber(arm.participants_count)}곳`}</small></td>
+      <td>${rank}<small>${esc(mbParticipantText(arm))}</small></td>
       <td>${arm.gap_to_winner_amount == null ? '—' : `${arm.gap_to_winner_amount > 0 ? '+' : '−'}${fmtNumber(Math.abs(arm.gap_to_winner_amount))}원`}</td>
     </tr>`;
   }).join('');
@@ -1381,8 +1394,9 @@ function mbHistoryItem(item) {
   const completed = item.state === 'COMPLETED';
   const rankReady = primary.estimated_rank !== null && primary.estimated_rank !== undefined;
   const rankText = rankReady ? `가상 ${fmtNumber(primary.estimated_rank)}위` : '집계 중';
-  const participantText = primary.participants_count == null
-    ? '참가자 데이터 대기' : `실제 참가 ${fmtNumber(primary.participants_count)}곳 기준`;
+  const participantText = (primary.participants_count == null
+      && primary.valid_participants_count == null)
+    ? '참가자 데이터 대기' : mbParticipantText(primary);
   const title = item.title || '공고명 정보 없음';
   return `<article class="mb-history-item">
     <div class="mb-history-head">
@@ -1620,7 +1634,13 @@ pages.mockbidding = async function (content) {
     loadMockBidHistory(historyState);
   });
 
-  renderMockBiddingOverviewCharts(charts);
+  // 차트가 던져도 원장(가장 중요한 데이터)은 반드시 뜨게 한다 — 장식이 본문을
+  // 가리면 안 된다. Chart.js 로드 실패 한 번이 화면 전체를 비우던 구조였다.
+  try {
+    renderMockBiddingOverviewCharts(charts);
+  } catch (error) {
+    console.error('[mock-bidding] 차트 렌더 실패', error);
+  }
   loadMockBidHistory(historyState);
 };
 
@@ -1639,7 +1659,14 @@ function renderMockBiddingOverviewCharts(charts) {
     ['4', '5', '6', '7', '8', '9', '10'].reduce((sum, key) => sum + Number(rank[key] || 0), 0),
     Number(rank['11+'] || 0),
   ];
-  if (!rankGroups.some(Boolean)) {
+  // 등수 축이 개찰 API 와 어긋나면 그래프를 그리는 것 자체가 거짓말이 된다.
+  // Phase 2 는 축이 틀린 채 9일을 돌았고 화면은 그동안 멀쩡히 그려졌다.
+  const axis = charts.rank_axis_health;
+  if (axis && axis.healthy === false) {
+    mbChartEmpty('mb-ch-rank-simple',
+      `등수 축 점검이 필요해요 — 개찰 API 순위와 ${axis.mismatch_pct}% 어긋났습니다. `
+      + '원인을 확인할 때까지 등수는 해석하지 마세요.');
+  } else if (!rankGroups.some(Boolean)) {
     mbChartEmpty('mb-ch-rank-simple', noData);
   } else {
     new Chart(document.getElementById('mb-ch-rank-simple'), {

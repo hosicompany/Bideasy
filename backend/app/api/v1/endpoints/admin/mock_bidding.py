@@ -63,6 +63,8 @@ def charts(
         "sample_validity": mb.sample_validity(db),
         "rank_distribution": mb.rank_distribution(db),
         "rank_histogram_cap": mb.RANK_HISTOGRAM_CAP,
+        # 등수 축이 개찰 API 와 여전히 같은지 — 어긋나면 등수 해석을 멈춘다(§9)
+        "rank_axis_health": mb.rank_axis_health(db),
         "gap_distribution": mb.gap_distribution(db),
         "gap_buckets": list(mb.GAP_BUCKETS),
         "ratio_error_trend": mb.ratio_error_trend(db, arm=arm),
