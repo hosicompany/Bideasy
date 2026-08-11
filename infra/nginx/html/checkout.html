@@ -38,7 +38,7 @@
       <div class="card" style="padding:24px;align-self:start;">
         <span class="micro">주문 요약</span>
         <div class="seg" id="billing" style="margin-top:12px;"><button class="active" data-b="m">월간</button><button data-b="a">연간 <span style="color:var(--safe);font-family:var(--font-mono);font-size:12px;">−20%</span></button></div>
-        <div style="display:flex;align-items:center;gap:12px;margin-top:18px;"><span style="width:40px;height:40px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;" id="plan-ic"></span><div><div style="font-size:16px;font-weight:800;" id="plan-name">BidEasy Pro</div><div style="font-size:12.5px;color:var(--muted);" id="plan-desc">AI 무제한 · Deep 분석 · 경쟁 예측</div></div></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:18px;"><span style="width:40px;height:40px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;" id="plan-ic"></span><div><div style="font-size:16px;font-weight:800;" id="plan-name">BidEasy Pro</div><div style="font-size:12.5px;color:var(--muted);" id="plan-desc">AI 분석 일 50회 · Deep 분석 · 투찰가 검증</div></div></div>
         <div style="margin-top:18px;" id="summary"></div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;padding-top:14px;border-top:2px solid var(--ink);"><span style="font-size:15px;font-weight:800;white-space:nowrap;">첫 결제 금액</span><span class="num" style="font-size:24px;font-weight:600;" id="total">— 원</span></div>
         <p style="font-size:11.5px;color:var(--faint);margin-top:10px;line-height:1.5;">카드 등록 즉시 위 금액이 결제되어 구독이 시작됩니다. 이후 매 주기 자동 갱신되며 마이페이지에서 해지할 수 있어요.</p>
@@ -91,7 +91,7 @@
     var cycle = params.get('cycle') === 'annual' ? 'annual' : 'monthly';
     var PRICES = { pro: { monthly: 19900, annual: 191000 }, pro_plus: { monthly: 39900, annual: 383000 } };
     var TIER_KO = { pro: 'Pro', pro_plus: 'Pro+' };
-    var TIER_DESC = { pro: 'AI 일 50회 · Deep 분석 · 경쟁 참고치', pro_plus: 'AI 무제한 · 기관 프로파일링 · 사정률 분포 분석' };
+    var TIER_DESC = { pro: 'AI 일 50회 · Deep 분석 · 투찰가 검증', pro_plus: 'AI 무제한 · 안전 투찰 가이드(공사 입찰)' };
 
     function syncCycleButtons() {
       document.querySelectorAll('#billing button').forEach(function (x) { x.classList.toggle('active', x.getAttribute('data-b') === (cycle === 'annual' ? 'a' : 'm')); });

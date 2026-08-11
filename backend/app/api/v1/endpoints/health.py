@@ -29,10 +29,4 @@ def health_check(db: Session = Depends(get_db)):
     except Exception:
         status["redis"] = "unavailable"
 
-    # ML models check
-    import os
-    models_path = settings.ML_MODELS_PATH
-    ml_files = [f for f in os.listdir(models_path) if f.endswith(".joblib")] if os.path.isdir(models_path) else []
-    status["ml_models"] = len(ml_files)
-
     return status
