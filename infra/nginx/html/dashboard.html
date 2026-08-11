@@ -39,7 +39,7 @@
       </div>
       <div data-theme="dark" class="card grid-bg" style="padding:22px;background:var(--canvas);color:var(--ink);">
         <span class="micro" style="color:var(--accent);">AUTOCALIBRATE</span>
-        <div style="font-size:15px;font-weight:800;color:var(--ink);margin-top:6px;">이번 주 하한선 통과율</div>
+        <div style="font-size:15px;font-weight:800;color:var(--ink);margin-top:6px;">백테스트 하한선 통과율</div>
         <div style="display:flex;align-items:baseline;gap:6px;margin-top:10px;"><span class="num" id="acal-pass" style="font-size:34px;font-weight:600;color:var(--safe);">94.9</span><span style="color:var(--muted);font-weight:600;">%</span></div>
         <div id="acal-bars" style="display:flex;align-items:flex-end;gap:5px;height:56px;margin-top:16px;"></div>
         <p style="font-size:12px;color:var(--muted);margin-top:12px;line-height:1.5;">매주 개찰 결과를 학습해 자동 재보정 중. 손대지 않아도 정확해집니다.</p>
@@ -69,13 +69,13 @@
       return '<div class="card" style="padding:18px;"><div style="display:flex;align-items:center;gap:8px;color:var(--' + (tone || 'accent') + ');">' + BD.icon(ic, 16) + '<span class="micro" style="color:var(--muted);">' + l + '</span></div><div style="display:flex;align-items:baseline;gap:3px;margin-top:12px;"><span class="num" style="font-size:30px;font-weight:600;letter-spacing:-1px;">' + n + '</span><span style="font-size:14px;color:var(--muted);font-weight:600;">' + unit + '</span></div></div>';
     }
 
-    // 자가보정 막대(기본값) — stats 연동 시 갱신
+    // 자가보정 막대 — /autocalibrate/stats 의 실측 weekly 로만 그린다
+    // (임의 상승 시계열을 기본값으로 그리면 실적처럼 읽힌다).
     function renderBars(weekly) {
       document.getElementById('acal-bars').innerHTML = weekly.map(function (v, i, a) {
         return '<div style="flex:1;height:' + Math.max(6, v) + '%;border-radius:3px 3px 0 0;background:var(--' + (i === a.length - 1 ? 'safe' : 'accent') + ');opacity:' + (i === a.length - 1 ? 1 : 0.4 + i * 0.06) + ';"></div>';
       }).join('');
     }
-    renderBars([64, 68, 72, 75, 79, 83, 86, 90, 94.9]);
 
     // 마감 추적 — localStorage 관심 공고를 컨텍스트로 조회(제목·기초금액). 상세로 링크.
     async function loadTracked() {
