@@ -36,13 +36,22 @@ def upgrade() -> None:
         "WHERE company IS NOT NULL AND company <> TRIM(company)"
     )
     # 2) 정규화로 생겼을 수 있는 중복 정리 — 같은 키에서 가장 오래된 행만 남긴다.
-    #    `DELETE ... USING` 은 PostgreSQL 전용이라 서브쿼리로 쓴다(격리 검증 가능).
+    #
+    # ⚠️ `id NOT IN (SELECT MIN(id) ... GROUP BY ...)` 로 쓰면 안 된다. 운영
+    # 46만 행에서 **15분을 넘겨** 배포를 세웠다(취소 후 롤백). PostgreSQL 이
+    # NOT IN 서브쿼리를 anti-join 으로 못 펴면 행마다 결과 집합을 훑는다.
+    # `row_number()` 는 한 번 정렬로 끝나고(O(n log n)) 지울 id 만 남긴다.
+    # SQLite 3.25+ 도 지원하므로 격리 검증도 그대로 된다.
     bind.exec_driver_sql(
         """
         DELETE FROM opening_participants
-        WHERE id NOT IN (
-            SELECT MIN(id) FROM opening_participants
-            GROUP BY bid_no, company, bid_price
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT id, row_number() OVER (
+                    PARTITION BY bid_no, company, bid_price ORDER BY id
+                ) AS rn
+                FROM opening_participants
+            ) t WHERE t.rn > 1
         )
         """
     )
