@@ -25,6 +25,10 @@ _TRIGGERABLE = {
     "admin_report.send_daily": "일일 리포트",
 }
 
+#: `days_back` 인자를 받는 태스크. 참가자 축소 가드에 걸려 정본이 갱신되지 못한
+#: 공고는 창을 넓혀 다시 부르면 시효가 도달해 풀린다(유일한 복구 경로).
+_DAYS_BACK_TASKS = {"verification.daily_crawl_opening_results"}
+
 
 @router.get("/system/triggers")
 def list_triggers(_admin=Depends(require_admin)):
@@ -44,8 +48,13 @@ def trigger_task(task_name: str, days_back: int | None = None,
     """
     if task_name not in _TRIGGERABLE:
         raise HTTPException(status_code=400, detail="허용되지 않은 작업입니다.")
-    if days_back is not None and not 0 <= days_back <= 30:
-        raise HTTPException(status_code=400, detail="days_back 은 0~30 이어야 합니다.")
+    if days_back is not None:
+        # 이 인자를 받지 않는 태스크에 넘기면 워커에서 TypeError 로 죽는다.
+        if task_name not in _DAYS_BACK_TASKS:
+            raise HTTPException(status_code=400,
+                                detail="이 작업은 days_back 을 받지 않습니다.")
+        if not 0 <= days_back <= 30:
+            raise HTTPException(status_code=400, detail="days_back 은 0~30 이어야 합니다.")
     kwargs = {"days_back": days_back} if days_back is not None else {}
     task = celery_app.send_task(task_name, kwargs=kwargs)
     logger.info(f"manual task dispatched: {task_name} ({task.id})")

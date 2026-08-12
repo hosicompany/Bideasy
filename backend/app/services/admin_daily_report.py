@@ -17,7 +17,10 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.logging import get_logger
 from app.db import models
+
+logger = get_logger(__name__)
 
 
 def _day_bounds(target: date_cls) -> tuple[datetime, datetime]:
@@ -247,14 +250,26 @@ def collect_daily_report(
                 anomalies.append(
                     f"⚠️ 개찰 참가자 수집 {p_gap_h:.0f}시간째 없음 — 모의투찰 등수 지표 정지 의심"
                 )
-        elif db.query(models.MockBid.id).first() is not None:
-            # 가장 위험한 상태가 침묵 구간이 되면 안 된다 — 등록은 돌고 있는데
-            # 참가자가 **한 번도** 수집된 적 없는 배포 직후가 정확히 그 경우다.
-            anomalies.append(
-                "⚠️ 개찰 참가자 데이터가 한 건도 없음 — 수집 경로 확인 필요"
+        else:
+            # 가장 위험한 상태가 침묵 구간이 되면 안 된다 — 참가자가 **한 번도**
+            # 수집된 적 없는 배포 직후가 정확히 그 경우다. 다만 "등록이 있다"로
+            # 판정하면 안 된다. 등록 직후는 아직 개찰 전이라 참가자가 없는 게
+            # 정상이다. **개찰 결과까지 붙은 등록 공고**가 있는데 참가자가 0 이면
+            # 그건 수집 경로가 죽은 것이다.
+            opened = (
+                db.query(models.OpeningResult.bid_no)   # PK 는 bid_no — id 컬럼이 없다
+                .join(models.MockBid,
+                      models.MockBid.bid_no == models.OpeningResult.bid_no)
+                .first()
             )
-    except Exception:  # noqa: BLE001
-        pass
+            if opened is not None:
+                anomalies.append(
+                    "⚠️ 개찰 참가자 데이터가 한 건도 없음 — 수집 경로 확인 필요"
+                )
+    except Exception as e:  # noqa: BLE001
+        # 삼키되 조용하지는 않게 — 이 블록을 가둔 건 부가 지표가 본 리포트를
+        # 죽이지 않게 하려는 것이지, 고장을 숨기려는 게 아니다.
+        logger.warning(f"[daily_report] 참가자 수집 점검 실패: {type(e).__name__}: {e}")
 
     # ─── 요약 문자열 (이메일/슬랙 한 줄 헤더) ────────────────
     summary_line = (
