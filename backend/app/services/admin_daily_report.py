@@ -230,47 +230,42 @@ def collect_daily_report(
     # 며칠이 지나도 아무도 모른다. 태스크 실패 로그는 보는 사람이 없으므로
     # 매일 사람에게 닿는 이 리포트에 싣는다.
     #
-    # ⚠️ **절대 시간 임계를 쓰지 않는다.** 개찰은 영업일에만 일어나므로 주말·
-    # 연휴에는 수집이 없는 게 정상이다. 30시간으로 잡으면 매주 월요일, 80시간으로
-    # 잡아도 연휴마다 뜬다. 매주 뜨는 경보는 곧 무시된다.
+    # ⚠️ **시각으로 판정하지 않는다.** 절대 임계(30h·80h)는 주말·연휴마다 오탐이고,
+    # 개찰 결과와의 시각 차분도 마찬가지다 — 둘은 **같은 일일 크롤에서 찍히므로**
+    # 고장 첫날 관측되는 차이는 24h 한 값뿐이라, 어떤 임계를 골라도 크롤 주기 위에
+    # 놓인다(3차 리뷰가 축소 가드 시효에서 격파한 것과 같은 구조다). 게다가 두
+    # 값은 모수가 다르다 — 참가자는 **등록 공고만**, 개찰은 **전 공고**다.
     #
-    # 대신 **개찰 결과와 비교한다** — 둘은 같은 크롤에서 나오므로 연휴에는 함께
-    # 멈추고(면역), 개찰은 들어오는데 참가자만 안 들어오면 그건 진짜로 참가자
-    # 경로만 고장난 것이다. 하루 안에 잡힌다.
+    # 대신 **모수가 같은 사실 하나**를 본다: 최근 개찰이 확정된 등록 공고 중
+    # 참가자 행이 없는 비율. 연휴엔 분모가 0 이라 조용하고(면역), 수집 경로가
+    # 죽으면 분모는 그대로인데 분자가 치솟는다. 실측 2026-08-12 기준
+    # 정상값은 **0건**(3일 창 260공고 / 7일 창 558공고 전부 참가자 보유)이다.
     #
     # 이 블록은 통짜 리포트 함수 안이라, 여기서 던지면 매출·전환·AI 비용 지표까지
     # 함께 잃는다. 부가 지표 하나가 본 리포트를 죽이지 않게 가둔다.
     try:
-        def _naive(dt):
-            return dt.replace(tzinfo=None) if dt and dt.tzinfo else dt
-
-        last_participant = _naive(db.query(
-            func.max(models.OpeningParticipant.crawled_at)).scalar())
-        last_opening = _naive(db.query(
-            func.max(models.OpeningResult.crawled_at)).scalar())
-        if last_participant and last_opening:
-            # 개찰 결과가 참가자보다 하루 넘게 앞서면 참가자 경로만 죽은 것이다
-            behind_h = (last_opening - last_participant).total_seconds() / 3600
-            if behind_h > 24:
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=3)
+        opened_registered = {
+            row[0] for row in
+            db.query(models.MockBid.bid_no)
+            .join(models.OpeningResult,
+                  models.OpeningResult.bid_no == models.MockBid.bid_no)
+            .filter(models.OpeningResult.open_date >= since)
+            .distinct().all()
+        }
+        if opened_registered:
+            with_participants = {
+                row[0] for row in
+                db.query(models.OpeningParticipant.bid_no)
+                .filter(models.OpeningParticipant.bid_no.in_(opened_registered))
+                .distinct().all()
+            }
+            missing = len(opened_registered) - len(with_participants)
+            # 표본이 작을 때 1~2건으로 흔들리지 않게 비율과 건수를 함께 본다
+            if missing >= 5 and missing / len(opened_registered) >= 0.5:
                 anomalies.append(
-                    f"⚠️ 개찰 결과는 들어오는데 참가자 수집이 {behind_h:.0f}시간 뒤처짐 "
-                    "— 모의투찰 등수 지표 정지 의심"
-                )
-        elif last_participant is None:
-            # 가장 위험한 상태가 침묵 구간이 되면 안 된다 — 참가자가 **한 번도**
-            # 수집된 적 없는 배포 직후가 정확히 그 경우다. 다만 "등록이 있다"로
-            # 판정하면 안 된다. 등록 직후는 아직 개찰 전이라 참가자가 없는 게
-            # 정상이다. **개찰 결과까지 붙은 등록 공고**가 있는데 참가자가 0 이면
-            # 그건 수집 경로가 죽은 것이다.
-            opened = (
-                db.query(models.OpeningResult.bid_no)   # PK 는 bid_no — id 컬럼이 없다
-                .join(models.MockBid,
-                      models.MockBid.bid_no == models.OpeningResult.bid_no)
-                .first()
-            )
-            if opened is not None:
-                anomalies.append(
-                    "⚠️ 개찰 참가자 데이터가 한 건도 없음 — 수집 경로 확인 필요"
+                    f"⚠️ 최근 3일 개찰된 모의투찰 등록 공고 {len(opened_registered)}건 중 "
+                    f"{missing}건에 참가자 데이터 없음 — 수집 경로 확인 필요"
                 )
     except Exception as e:  # noqa: BLE001
         # 삼키되 조용하지는 않게 — 이 블록을 가둔 건 부가 지표가 본 리포트를

@@ -25,14 +25,16 @@ _TRIGGERABLE = {
     "admin_report.send_daily": "일일 리포트",
 }
 
-#: `days_back` 인자를 **실제로 받는** 태스크. 안 받는 태스크에 넘기면 워커에서
-#: TypeError 로 죽는다. 상한이 낮은 이유는 창 하나당 API 호출이 수백 회라
-#: 30일이면 5,000회를 넘고, 그중 한 창만 실패해도 그 런이 통째로 폐기되기 때문.
+#: `days_back` 인자를 **실제로 받는** 태스크와 그 상한. 안 받는 태스크에 넘기면
+#: 워커에서 TypeError 로 죽는다. 상한이 태스크마다 다른 이유:
+#: - 개찰 크롤은 창 하나당 API 호출이 수백 회라 30일이면 5,000회를 넘고, 그중
+#:   한 창만 실패해도 그 런의 참가자 저장이 통째로 폐기된다.
+#: - 예측 검증은 API 호출이 0 이고 DB 만 조회한다. 스케줄 기본값이 30 이므로
+#:   상한을 7 로 씌우면 **자기 기본값조차 수동으로 못 넣는다**.
 _DAYS_BACK_TASKS = {
-    "verification.daily_crawl_opening_results",
-    "verification.daily_verify_predictions",
+    "verification.daily_crawl_opening_results": 7,
+    "verification.daily_verify_predictions": 90,
 }
-_DAYS_BACK_MAX = 7
 
 
 @router.get("/system/triggers")
@@ -46,10 +48,12 @@ def trigger_task(task_name: str, days_back: int | None = None,
                  _admin=Depends(require_admin)):
     """허용된 Celery task 수동 실행 → task_id 반환.
 
-    `days_back` 은 개찰 크롤 계열의 **복구 경로**다. 참가자 축소 가드는 부분
-    응답이 완전 집합을 덮어쓰는 걸 막는데, 한 번 잘못 부푼 공고는 정기 크롤
-    창(2일) 안에서는 시효가 도달하기 전에 대상에서 이탈해 버린다. 창을 넓혀
-    다시 부르면 기존 데이터가 시효를 넘겨 최신 응답이 정본이 된다.
+    `days_back` 은 조회 창을 넓혀 **누락을 보충**하는 용도다. 정기 크롤 창(2일)
+    밖에서 개찰이 확정된 건을 뒤늦게 줍는다.
+
+    ⚠️ **과대 반영은 이 경로로 복구되지 않는다.** 참가자 저장은 병합이라 값이
+    단조 증가하므로, 창을 넓혀 여러 번 불러도 부푼 참여사수는 내려가지 않는다.
+    그 경우는 운영 DB 에서 직접 정리해야 한다.
     """
     if task_name not in _TRIGGERABLE:
         raise HTTPException(status_code=400, detail="허용되지 않은 작업입니다.")
@@ -60,10 +64,11 @@ def trigger_task(task_name: str, days_back: int | None = None,
                                 detail="이 작업은 days_back 을 받지 않습니다.")
         # 하한이 1인 이유: 0 이면 길이 0 짜리 창이 되어 API 0건 → 아무 일도
         # 안 일어났는데 "성공"으로 보고된다.
-        if not 1 <= days_back <= _DAYS_BACK_MAX:
+        limit = _DAYS_BACK_TASKS[task_name]
+        if not 1 <= days_back <= limit:
             raise HTTPException(
                 status_code=400,
-                detail=f"days_back 은 1~{_DAYS_BACK_MAX} 이어야 합니다.")
+                detail=f"days_back 은 1~{limit} 이어야 합니다.")
     kwargs = {"days_back": days_back} if days_back is not None else {}
     task = celery_app.send_task(task_name, kwargs=kwargs)
     logger.info(f"manual task dispatched: {task_name} ({task.id})")

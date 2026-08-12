@@ -279,7 +279,10 @@ def _parse_participant_kwargs(item: dict, stats: dict | None = None) -> dict | N
     return {
         "bid_no": bid_no,
         "rank": rank,
-        "company": item.get("bidprcCorpNm") or "",
+        # 병합 키의 일부라 **정규화가 필수**다. 후행 공백 하나만 붙어도 같은
+        # 업체가 별개 행이 되고, 삭제 경로가 없어 그 중복은 영구히 남는다
+        # (실측 2026-08-12: 앞뒤 공백 212행 / 466,850).
+        "company": (item.get("bidprcCorpNm") or "").strip(),
         "bid_price": int(bid_amt),
         "bid_rate": _f(item.get("bidprcRt")),
         "sucsf_yn": (item.get("sucsfYn") or "").strip().upper() or None,
@@ -359,10 +362,11 @@ def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
                     row.rank = r["rank"]
                     row.sucsf_yn = r["sucsf_yn"]
                     row.bid_rate = r["bid_rate"]
+                    # 실제로 바뀐 행만 시각을 새로 찍는다. 무조건 갱신하면
+                    # 재크롤마다 전 행이 UPDATE 돼 dead tuple 이 쌓이고,
+                    # "마지막으로 실제 바뀐 시점"이라는 신호도 잃는다.
+                    row.crawled_at = now
                     written += 1
-                # 이번 크롤에서 이 공고를 봤다는 표시 — 일일 리포트가 수집 정체를
-                # 이 시각으로 감지한다
-                row.crawled_at = now
             db.commit()
             saved_bids += 1
             written_rows += written
@@ -384,7 +388,7 @@ def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
             logger.warning(f"opening_crawler: 참가자 저장 실패 {bid_no}: {type(e).__name__}: {e}")
     return {
         "participant_bids": saved_bids,
-        "participant_rows": written_rows,
+        "participant_rows_changed": written_rows,
         "participant_errors": errors,
         "participant_structural_errors": structural_errors,
         "participant_final_counts": final_counts,
@@ -527,12 +531,15 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                     f"page limit reached with a full page: {start_str}~{end_str} "
                     f"(max_pages={max_pages})"
                 )
-            # 등록 공고는 참가자 저장이 끝난 뒤 **실제 행 수**로 덮는다(아래).
-            # 여기서 미리 창 집계를 반영하면 부분 응답이 그대로 공개 화면에
-            # 실리고, 참가자 행 수와도 갈라진다.
+            # 창 집계는 **전 공고**를 채운다. 등록 공고는 참가자 저장이 끝난 뒤
+            # 실제 행 수로 덮으므로(아래) 순서상 그쪽이 이긴다.
+            #
+            # ⚠️ 여기서 등록 공고를 미리 빼면 안 된다. 저장이 실패한 공고는
+            # `final_counts` 에도 안 들어가서 **어느 경로에서도 안 채워지고**,
+            # 2일 창을 벗어나면 영영 NULL 로 남는다(공개 SSR·통계에서 통째로
+            # 빠진다). master 는 창 집계가 전 공고를 채워 그 구멍이 없었다.
             counted += _apply_participant_counts(
-                db, {b: len(keys) for b, keys in window_keys.items()
-                     if b not in registered_bid_nos})
+                db, {b: len(keys) for b, keys in window_keys.items()})
             db.commit()
             inserted += window_inserted
             updated += window_updated
@@ -552,7 +559,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
 
     # 참가자 저장 — 본 크롤 커밋이 전부 끝난 뒤 별도 세션에서 공고 단위 커밋.
     # 실패해도 낙찰 결과 적재를 되돌리지 않는다(부가 데이터).
-    p_summary = {"participant_bids": 0, "participant_rows": 0,
+    p_summary = {"participant_bids": 0, "participant_rows_changed": 0,
                  "participant_errors": 0, "participant_structural_errors": 0,
                  "participant_final_counts": {}}
     if participants_by_bid:
@@ -561,12 +568,17 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             p_summary = _save_participants(pdb, participants_by_bid)
             # 등록 공고의 참여사수 = 병합 후 실제 참가자 행 수. 두 저장소가 같은
             # 소스를 보게 해야 "행 수는 5인데 화면은 12"가 나오지 않는다.
-            counted += _apply_participant_counts(
+            applied = _apply_participant_counts(
                 pdb, p_summary.pop("participant_final_counts"))
             pdb.commit()
+            counted += applied
         except Exception as e:  # noqa: BLE001
+            # ⚠️ 여기는 한 번에 커밋하므로 실패하면 **그 배치 전부**가 소실된다.
+            # `counted` 를 커밋 뒤에 더하는 것도 그래서다 — 앞서 커밋 전에 더했다가
+            # "아무것도 저장 안 됐는데 숫자는 성공"으로 보고될 뻔했다.
+            # 창 집계가 이미 전 공고를 채워 뒀으므로 값이 통째로 비지는 않는다.
             pdb.rollback()
-            logger.warning(f"opening_crawler: 참여사수 반영 실패: {type(e).__name__}: {e}")
+            logger.error(f"opening_crawler: 참여사수 반영 실패: {type(e).__name__}: {e}")
         finally:
             pdb.close()
 

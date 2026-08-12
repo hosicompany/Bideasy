@@ -317,7 +317,7 @@ class TestParticipantSave:
 
         saved = (db_session.query(models.OpeningParticipant)
                  .filter_by(bid_no="PSAVE-1-000").all())
-        assert r["participant_rows"] == 1        # 바뀐 1행만 썼다
+        assert r["participant_rows_changed"] == 1        # 바뀐 1행만 썼다
         assert len(saved) == 2                   # 중복 없음
         assert {p.sucsf_yn for p in saved if p.rank == 1} == {"Y"}
 
@@ -358,7 +358,7 @@ class TestParticipantSave:
         saved = (db_session.query(models.OpeningParticipant)
                  .filter_by(bid_no=bid_no).all())
         assert len(saved) == 9
-        assert r["participant_rows"] == 6        # 새로 들어온 6행만 썼다
+        assert r["participant_rows_changed"] == 6        # 새로 들어온 6행만 썼다
         assert r["participant_final_counts"][bid_no] == 9
 
     def test_rank_can_be_assigned_later(self, db_session):
@@ -441,7 +441,7 @@ def test_crawl_saves_participants_only_for_registered(monkeypatch, engine):
 
     assert result["ok"] is True
     assert result["participant_bids"] == 1
-    assert result["participant_rows"] == 2
+    assert result["participant_rows_changed"] == 2
 
     s = Session()
     try:
@@ -474,7 +474,8 @@ def test_crawl_reports_structural_save_failure(monkeypatch, engine):
     """구조적 예외(테이블·컬럼 부재)는 **1건만 나와도** 고장이다.
 
     건수로 판정하면 두 방향으로 틀린다 — 대상이 1건인 날 데이터 결함 하나로
-    배치가 red 가 되고, 반대로 축소 보류가 섞이면 진짜 고장이 초록불이 된다.
+    배치가 red 가 되고, 반대로 처리하지 못한 건이 분모에 섞이면 진짜 고장이
+    초록불이 된다.
     """
     from sqlalchemy.orm import sessionmaker
 
@@ -491,7 +492,7 @@ def test_crawl_reports_structural_save_failure(monkeypatch, engine):
     monkeypatch.setattr(crawler, "_fetch_page",
                         lambda start, end, page=1, num_rows=999: items if page == 1 else [])
     monkeypatch.setattr(crawler, "_save_participants",
-                        lambda db, by_bid: {"participant_bids": 0, "participant_rows": 0,
+                        lambda db, by_bid: {"participant_bids": 0, "participant_rows_changed": 0,
                                             "participant_errors": 1,
                                             "participant_structural_errors": 1,
                                             "participant_final_counts": {}})
@@ -563,7 +564,7 @@ def test_data_error_alone_is_not_a_structural_failure(monkeypatch, engine):
     monkeypatch.setattr(crawler, "_fetch_page",
                         lambda start, end, page=1, num_rows=999: items if page == 1 else [])
     monkeypatch.setattr(crawler, "_save_participants",
-                        lambda db, by_bid: {"participant_bids": 0, "participant_rows": 0,
+                        lambda db, by_bid: {"participant_bids": 0, "participant_rows_changed": 0,
                                             "participant_errors": 1,
                                             "participant_structural_errors": 0,
                                             "participant_final_counts": {}})
@@ -575,10 +576,10 @@ def test_data_error_alone_is_not_a_structural_failure(monkeypatch, engine):
 
 
 def test_structural_failure_is_caught_even_when_mixed_with_holds(monkeypatch, engine):
-    """축소 보류가 섞여도 구조적 고장은 잡힌다.
+    """부분 실패가 섞여도 구조적 고장은 잡힌다.
 
-    보류는 매일 일어나는 정상 동작이라, 분모에 그것까지 넣으면 이 검출기가
-    대부분의 날에 무력해진다.
+    건수 비율로 판정하면 정상 상황의 꼬리가 고장이 되거나, 반대로 진짜 고장이
+    분모에 묻힌다. 판정은 예외 **종류**로 한다.
     """
     from sqlalchemy.orm import sessionmaker
 
@@ -596,7 +597,7 @@ def test_structural_failure_is_caught_even_when_mixed_with_holds(monkeypatch, en
                         lambda start, end, page=1, num_rows=999: items if page == 1 else [])
     # 20공고 중 6건 보류, 14건 시도 → 전부 구조적 실패
     monkeypatch.setattr(crawler, "_save_participants",
-                        lambda db, by_bid: {"participant_bids": 0, "participant_rows": 0,
+                        lambda db, by_bid: {"participant_bids": 0, "participant_rows_changed": 0,
                                             "participant_errors": 14,
                                             "participant_structural_errors": 14,
                                             "participant_final_counts": {}})
