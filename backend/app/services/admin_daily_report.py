@@ -222,6 +222,24 @@ def collect_daily_report(
         if gap_hours > 30:
             anomalies.append(f"⚠️ 크롤러 {gap_hours:.0f}시간째 정체 — 확인 필요")
 
+    # 개찰 참가자 수집 정체 — 이게 멈추면 모의투찰 등수 지표가 **조용히** 성장을
+    # 멈춘다. 크롤은 초록불이고 화면은 "참가자 데이터 대기"와 구분되지 않아,
+    # 며칠이 지나도 아무도 모른다. 태스크 실패 로그는 보는 사람이 없으므로
+    # 매일 사람에게 닿는 이 리포트에 싣는다.
+    last_participant = db.query(
+        func.max(models.OpeningParticipant.crawled_at)
+    ).scalar()
+    if last_participant:
+        p_gap_h = (
+            datetime.now(timezone.utc).replace(tzinfo=None)
+            - (last_participant.replace(tzinfo=None)
+               if last_participant.tzinfo else last_participant)
+        ).total_seconds() / 3600
+        if p_gap_h > 30:
+            anomalies.append(
+                f"⚠️ 개찰 참가자 수집 {p_gap_h:.0f}시간째 없음 — 모의투찰 등수 지표 정지 의심"
+            )
+
     # ─── 요약 문자열 (이메일/슬랙 한 줄 헤더) ────────────────
     summary_line = (
         f"📊 {target.isoformat()} BidEasy 운영 리포트 — "

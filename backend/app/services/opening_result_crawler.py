@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 from sqlalchemy import func
+from sqlalchemy.exc import InternalError, OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -33,6 +34,11 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdScsbidInfo"
 _BSNS_DIV_CONSTRUCTION = "3"  # 공사
 _PAGE_SIZE = 999  # API accepts at most 999; 1000 falls back to 10 rows.
+
+#: 저장 실패를 **구조적 고장**으로 볼 예외들 — 테이블·컬럼 부재, 연결 단절.
+#: 1건만 나와도 전 건에 해당하므로 "몇 건이 실패했나"로 판정하면 안 된다.
+#: 나머지(값 범위 초과·제약 위반 등)는 그 건만의 데이터 결함이다.
+_STRUCTURAL_DB_ERRORS = (OperationalError, ProgrammingError, InternalError)
 
 
 def _fetch_page(
@@ -234,20 +240,28 @@ def _parse_participant_kwargs(item: dict, stats: dict | None = None) -> dict | N
     if not bid_amt or bid_amt <= 0:
         return None
 
-    # `opengRank` 는 **유효 투찰(낙찰하한선 이상)에만** 부여된다 — 결측은 곧
-    # 무효라는 뜻이고, 등수 계산은 이 값이 있는 행만 센다(설계 §7-8).
-    # 그래서 "무효라서 없음"과 "파싱이 깨져서 없음"을 반드시 갈라 세야 한다.
-    # 안 가르면 필드명이 바뀌었을 때 전 참가자가 조용히 "무효"로 둔갑하고,
-    # 화면은 "참가자 데이터 대기"와 구분되지 않는다.
-    raw_rank = item.get("opengRank")
+    # `opengRank` 는 **유효 투찰(낙찰하한선 이상)에만** 부여된다 — 값이 비어
+    # 있다는 건 그 투찰이 무효라는 뜻이다(2026-08-11 실측: 전체의 47.6%).
+    #
+    # 그래서 세 경우를 **갈라 세야** 한다. 뭉치면 API 가 필드명을 바꿨을 때
+    # 전 참가자가 조용히 "무효"로 둔갑하는데, 무효는 평소에도 큰 수라 증가가
+    # 묻힌다. `rank_field_missing` 이 그 사고를 가리키는 유일한 신호다.
     rank = None
-    if raw_rank in (None, ""):
+    if stats is not None:
+        stats["rows"] = stats.get("rows", 0) + 1
+    if "opengRank" not in item:
+        # 스키마 변경 의심 — 필드 자체가 응답에 없다
+        if stats is not None:
+            stats["rank_field_missing"] = stats.get("rank_field_missing", 0) + 1
+    elif item["opengRank"] in (None, ""):
+        # 정상 — 무효 투찰이라 API 가 순위를 주지 않았다
         if stats is not None:
             stats["rank_absent"] = stats.get("rank_absent", 0) + 1
     else:
         try:
-            rank = int(raw_rank)
+            rank = int(item["opengRank"])
         except (TypeError, ValueError):
+            # 형식 변경 의심 — 값은 있는데 정수가 아니다
             if stats is not None:
                 stats["rank_unparsed"] = stats.get("rank_unparsed", 0) + 1
 
@@ -275,67 +289,97 @@ def _load_registered_bid_nos(db: Session) -> tuple[set[str], bool]:
     try:
         return {row[0] for row in db.query(models.MockBid.bid_no).distinct().all()}, True
     except Exception as e:  # noqa: BLE001
+        # rollback 이 없으면 PostgreSQL 은 트랜잭션을 abort 상태로 두고, 이후
+        # 본 크롤의 모든 쿼리가 InFailedSqlTransaction 으로 죽는다 —
+        # "실패해도 본 크롤을 막지 않는다"는 이 함수의 약속이 깨진다.
+        db.rollback()
         logger.error(f"opening_crawler: 등록 bid_no 조회 실패 — 참가자 저장 생략: {e}")
         return set(), False
 
 
-def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
+def _save_participants(db: Session, by_bid: dict[str, list[dict]],
+                       stale_after_days: int = 3) -> dict:
     """공고 단위로 참가자 행을 삭제-재삽입.
 
     (bid_no, rank) UNIQUE 대신 이 방식을 쓰는 이유: API 가 동가 참가자에게
     동순위를 줄 가능성을 배제할 수 없고, 적격검사 진행 중엔 sucsfYn 이 나중에
     바뀔 수 있어(N→Y) 재크롤 시 최신 상태로 갈아끼우는 편이 정확하다.
     공고 단위 커밋 — 1건 결함이 나머지 공고의 참가자까지 날리지 않게.
+
+    ⚠️ 갈아끼우는 근거였던 `sucsf_yn`(적격검사 N→Y)은 **현재 읽는 코드가 없다**.
+    실질적인 근거는 부분 응답이 나중에 완성되는 경우이고, 그건 아래 축소 가드가
+    방향까지 함께 본다.
     """
     saved_bids = 0
     saved_rows = 0
     errors = 0
+    structural_errors = 0
     shrink_skipped = 0
+    shrink_overridden = 0
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
     for bid_no, rows in by_bid.items():
         # 같은 세션 내 API 중복 행 방어 (신뢰하되 확인).
-        # 키의 `company` 는 실측상 결측이 0건이라(462,900행 전수) 서로 다른
-        # 참가자가 한 행으로 접힐 일이 없다. 그래도 결측이 생기면 식별이 불가능
-        # 하므로, 그때는 병합하지 않고 그대로 둔다 — 참여자 수 과소가 중복보다
-        # 나쁘다(등수는 유효 투찰만 세므로 이 선택에 영향받지 않는다).
-        uniq: list[dict] = []
-        seen: set[tuple] = set()
+        # 키에 분기를 두지 않는다 — 상호 결측(실측 0건/462,900행)을 위해
+        # `if not company` 분기를 뒀더니 축소 가드와 합성돼, 한 번 부풀려 저장된
+        # 공고가 영영 복구되지 않았다. 이 코드에서 회귀는 늘 "특수 케이스를
+        # 분기로 빼는" 데서 났다.
+        uniq: dict[tuple, dict] = {}
         for r in rows:
-            if not r["company"]:
-                uniq.append(r)
-                continue
-            key = (r["rank"], r["company"], r["bid_price"])
-            if key in seen:
-                continue
-            seen.add(key)
-            uniq.append(r)
+            uniq[(r["rank"], r["company"], r["bid_price"])] = r
         try:
-            existing = (
-                db.query(func.count(models.OpeningParticipant.id))
+            existing, newest = (
+                db.query(func.count(models.OpeningParticipant.id),
+                         func.max(models.OpeningParticipant.crawled_at))
                 .filter(models.OpeningParticipant.bid_no == bid_no)
-                .scalar()
-            ) or 0
-            # **줄어드는 교체는 하지 않는다.** 개찰이 확정된 뒤 참가자가 사라질
+                .one()
+            )
+            existing = existing or 0
+            # **줄어드는 교체는 보류한다.** 개찰이 확정된 뒤 참가자가 사라질
             # 이유가 없으므로, 적게 온 응답은 완성본이 아니라 부분 응답으로 본다.
             # 그대로 갈아끼우면 채점이 그 퇴행값으로 등수를 다시 매기고, 그게
             # 최신 rev 가 되어 지표의 정본이 된다(12명 중 8위 → 5명 중 3위).
+            #
+            # 단 **영구 보류는 금지**다. 부분 응답은 개찰 직후에 나오므로, 기존
+            # 데이터가 충분히 오래됐는데도 계속 적게 온다면 그쪽이 정본이다.
+            # 시효가 없으면 한 번 잘못 부푼 공고가 영영 못 고쳐진다.
             if existing > len(uniq):
-                shrink_skipped += 1
-                logger.warning(
-                    f"opening_crawler: 참가자 축소 교체 보류 {bid_no}: "
-                    f"{existing}행 → {len(uniq)}행 (부분 응답 의심)"
-                )
-                continue
+                age_days = None
+                if newest is not None:
+                    naive = newest.replace(tzinfo=None) if newest.tzinfo else newest
+                    age_days = (now_utc - naive).days
+                if age_days is not None and age_days >= stale_after_days:
+                    shrink_overridden += 1
+                    logger.warning(
+                        f"opening_crawler: 참가자 축소이지만 기존 데이터가 {age_days}일 경과 "
+                        f"— 최신 응답을 채택 {bid_no}: {existing}행 → {len(uniq)}행"
+                    )
+                else:
+                    shrink_skipped += 1
+                    logger.warning(
+                        f"opening_crawler: 참가자 축소 교체 보류 {bid_no}: "
+                        f"{existing}행 → {len(uniq)}행 (부분 응답 의심)"
+                    )
+                    continue
             db.query(models.OpeningParticipant).filter(
                 models.OpeningParticipant.bid_no == bid_no
             ).delete()
-            for r in uniq:
+            for r in uniq.values():
                 db.add(models.OpeningParticipant(
                     **r, crawled_at=datetime.now(timezone.utc)
                 ))
             db.commit()
             saved_bids += 1
             saved_rows += len(uniq)
+        except _STRUCTURAL_DB_ERRORS as e:
+            # 테이블·컬럼 부재, 연결 단절 — 1건만 나와도 전 건에 해당하는 고장이다.
+            # 표본 수로 "전면 실패"를 가리려 하면 소표본에서 늘 오판한다.
+            db.rollback()
+            errors += 1
+            structural_errors += 1
+            logger.error(f"opening_crawler: 참가자 저장 구조적 실패 {bid_no}: "
+                         f"{type(e).__name__}: {e}")
         except Exception as e:  # noqa: BLE001
+            # 데이터 결함(값 범위 초과·제약 위반 등) — 그 건만의 문제다
             db.rollback()
             errors += 1
             logger.warning(f"opening_crawler: 참가자 저장 실패 {bid_no}: {type(e).__name__}: {e}")
@@ -343,7 +387,9 @@ def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
         "participant_bids": saved_bids,
         "participant_rows": saved_rows,
         "participant_errors": errors,
+        "participant_structural_errors": structural_errors,
         "participant_shrink_skipped": shrink_skipped,
+        "participant_shrink_overridden": shrink_overridden,
     }
 
 
@@ -364,15 +410,28 @@ def _apply_participant_counts(db: Session, counts: dict[str, int]) -> int:
     if not counts:
         return 0
     updated = 0
+    shrink_skipped = 0
     for bid_no, cnt in counts.items():
         row = db.query(models.OpeningResult).filter(
             models.OpeningResult.bid_no == bid_no
         ).first()
         if row is None or cnt <= 0:
             continue
+        # 참가자 행과 **같은 규칙**을 적용한다. 여기에만 축소 가드가 없으면 두
+        # 저장소가 서로 다른 말을 하고, 퇴행값은 하필 사용자에게 보이는 쪽으로
+        # 샌다 — 공개 SSR 공고 상세, 누적 개찰 통계, 블로그 자동 초안.
+        if row.participants_count and cnt < row.participants_count:
+            shrink_skipped += 1
+            logger.warning(
+                f"opening_crawler: 참여사수 축소 반영 보류 {bid_no}: "
+                f"{row.participants_count} → {cnt} (부분 응답 의심)"
+            )
+            continue
         if row.participants_count != cnt:
             row.participants_count = cnt
             updated += 1
+    if shrink_skipped:
+        logger.warning(f"opening_crawler: 참여사수 축소 보류 {shrink_skipped}건")
     return updated
 
 
@@ -428,6 +487,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     registered_bid_nos, scope_ok = _load_registered_bid_nos(db)
     participants_by_bid: dict[str, list[dict]] = {}
     parse_stats: dict[str, int] = {}
+    total_items = 0
     counted = 0
 
     try:
@@ -444,6 +504,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             for page in range(1, max_pages + 1):
                 items = _fetch_page(start_str, end_str, page=page)
                 pages_fetched += 1
+                total_items += len(items)
                 if not items:
                     break
                 for item in items:
@@ -490,7 +551,8 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     # 참가자 저장 — 본 크롤 커밋이 전부 끝난 뒤 별도 세션에서 공고 단위 커밋.
     # 실패해도 낙찰 결과 적재를 되돌리지 않는다(부가 데이터).
     p_summary = {"participant_bids": 0, "participant_rows": 0,
-                 "participant_errors": 0, "participant_shrink_skipped": 0}
+                 "participant_errors": 0, "participant_structural_errors": 0,
+                 "participant_shrink_skipped": 0, "participant_shrink_overridden": 0}
     if participants_by_bid:
         pdb = SessionLocal()
         try:
@@ -498,23 +560,28 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
         finally:
             pdb.close()
 
-    # 참가자 수집이 **통째로** 실패했는지. 부분 실패(데이터 결함 1건 등)는
-    # 카운트만 올린다 — 그걸로 매일 배치를 red 로 만들면 경보가 무뎌진다.
-    # 반면 전면 실패는 구조적 고장(테이블 없음·스키마 변경)이고, 이걸 성공으로
-    # 삼키면 정상 화면과 완전 고장 화면이 똑같아진다(설계 §9 원칙).
-    # 판정 기준은 **저장 시도가 전부 예외로 죽었는가**(`errors == targets`)다.
-    # "저장 0건"으로 잡으면 안 된다 — 축소 보류는 정상 방어 동작이고, 재크롤
-    # (days_back=2)로 이미 완전한 공고만 다시 온 날이면 전부 보류돼 저장이 0건이
-    # 된다. 그걸 고장이라 부르면 매일 red 가 뜨고 경보가 무뎌진다.
-    participant_ok = scope_ok and not (
-        participants_by_bid
-        and p_summary["participant_errors"] >= len(participants_by_bid)
-    )
+    # 참가자 수집 고장을 성공으로 삼키면 정상 화면과 완전 고장 화면이 똑같아진다
+    # (설계 §9 원칙). 다만 **건수로 판정하지 않는다** — 이 검출기는 그 방식으로
+    # 두 번 틀렸다. "저장 0건"으로 잡으니 정상적인 축소 보류가 고장이 됐고,
+    # 분모를 대상 수로 잡으니 시도조차 안 한 건이 섞여 진짜 고장이 초록불이 됐다.
+    # 남은 기준 셋은 전부 건수와 무관하다 — 조회 실패 / 구조적 예외 / 파싱 전멸.
+    parsed_rows = parse_stats.get("rows", 0)
+    field_missing = parse_stats.get("rank_field_missing", 0)
+    # API 가 행을 줬는데 참가자가 한 행도 안 나왔다 = 가격 필드명이 바뀐 것이다.
+    # `inserted or updated` 를 조건에 걸면 안 된다 — `bidprcAmt` 는 낙찰자 판별
+    # 에도 쓰여서 그 필드가 바뀌면 본 크롤도 함께 죽고, 그러면 이 검출기가
+    # 정작 그 사고에서 침묵한다(테스트로 확인).
+    parse_dead = bool(total_items and parsed_rows == 0)
+    # 순위 필드 전멸 = 등수 지표가 통째로 죽는다(전원이 '무효'로 둔갑해 안 보인다)
+    rank_field_dead = bool(parsed_rows and field_missing == parsed_rows)
+    structural = p_summary["participant_structural_errors"] > 0
+    participant_ok = scope_ok and not (structural or parse_dead or rank_field_dead)
     if not participant_ok:
         logger.error(
-            f"opening_crawler: 참가자 수집 전면 실패 — scope_ok={scope_ok} "
-            f"대상={len(participants_by_bid)}공고 저장={p_summary['participant_bids']} "
-            f"오류={p_summary['participant_errors']}"
+            f"opening_crawler: 참가자 수집 고장 — scope_ok={scope_ok} "
+            f"structural={structural} parse_dead={parse_dead} "
+            f"rank_field_dead={rank_field_dead} "
+            f"(items={total_items} parsed={parsed_rows} field_missing={field_missing})"
         )
     elif p_summary["participant_shrink_skipped"]:
         logger.warning(
@@ -527,10 +594,13 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
         "participant_ok": participant_ok,
         "participant_scope_ok": scope_ok,
         "participant_targets": len(participants_by_bid),
-        # rank_unparsed 가 늘면 `opengRank` 형식·필드명이 바뀐 것이다. 그대로
-        # 두면 전 참가자가 "무효"로 둔갑해 등수가 통째로 사라진다(설계 §7-8).
+        # `rank_absent` 는 무효 투찰이라 **평소에도 큰 수**다(실측 47.6%) — 이걸로
+        # 이상을 감지할 수 없다. 스키마가 바뀌면 `rank_field_missing` 이 튄다.
+        "participant_parsed_rows": parsed_rows,
         "rank_absent": parse_stats.get("rank_absent", 0),
+        "rank_field_missing": field_missing,
         "rank_unparsed": parse_stats.get("rank_unparsed", 0),
+        "api_items": total_items,
         "range": f"{overall_start}~{overall_end}",
         "pages_fetched": pages_fetched,
         "inserted": inserted,

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import time
 
 import pytest
@@ -267,26 +267,36 @@ class TestParticipantParsing:
         p = crawler._parse_participant_kwargs({"bidNtceNo": "P-4", "bidprcAmt": "80000000"})
         assert p is not None and p["rank"] is None
 
-    def test_absent_and_unparsed_rank_are_counted_apart(self):
-        """"무효라서 순위 없음"과 "파싱이 깨짐"은 다른 사건이다.
+    def test_rank_absence_is_split_by_cause(self):
+        """세 경우를 갈라 센다 — 필드 부재 / 빈 값 / 파싱 실패.
 
-        `opengRank` 결측은 곧 무효 투찰이라는 뜻이고 등수 계산은 이 값이 있는
-        행만 센다(§7-8). 두 경우를 뭉쳐 세면, 필드명이 바뀌었을 때 전 참가자가
-        조용히 "무효"로 둔갑해 등수가 통째로 사라지는데도 화면은 "참가자 데이터
-        대기"와 똑같아 아무도 모른다.
+        `opengRank` 가 비어 있다는 건 그 투찰이 무효라는 뜻이라 **평소에도 큰
+        수**다(실측 47.6%). 스키마 변경을 여기 뭉쳐 넣으면 증가가 묻혀서, 등수
+        지표가 통째로 죽어도 화면은 "참가자 데이터 대기"와 똑같아 아무도 모른다.
+        `rank_field_missing` 이 그 사고를 가리키는 유일한 신호다.
         """
         stats: dict = {}
-        # 무효 투찰 — API 가 순위를 주지 않는다
+        # 필드 자체가 없다 — 스키마 변경 의심
         crawler._parse_participant_kwargs(
             {"bidNtceNo": "P-5", "bidprcAmt": "80000000"}, stats)
+        # 값이 비었다 — 무효 투찰(정상)
         crawler._parse_participant_kwargs(
             {"bidNtceNo": "P-5", "bidprcAmt": "81000000", "opengRank": ""}, stats)
-        # 형식이 바뀌어 파싱 실패
+        # 값은 있는데 정수가 아니다 — 형식 변경 의심
         crawler._parse_participant_kwargs(
             {"bidNtceNo": "P-5", "bidprcAmt": "82000000", "opengRank": "3위"}, stats)
 
-        assert stats["rank_absent"] == 2
+        assert stats["rank_field_missing"] == 1
+        assert stats["rank_absent"] == 1
         assert stats["rank_unparsed"] == 1
+        assert stats["rows"] == 3     # 분모 — 절대값만으로는 해석할 수 없다
+
+    def test_rows_counts_only_saved_participants(self):
+        """가격이 없어 버려지는 행은 분모에 넣지 않는다."""
+        stats: dict = {}
+        assert crawler._parse_participant_kwargs(
+            {"bidNtceNo": "P-6", "opengRank": "1"}, stats) is None
+        assert stats.get("rows", 0) == 0
 
 
 class TestParticipantSave:
@@ -364,24 +374,44 @@ class TestParticipantSave:
         assert saved.sucsf_yn == "Y"
         assert r["participant_bids"] == 1
 
-    def test_rows_without_company_are_not_merged(self, db_session):
-        """상호가 없으면 식별이 불가능하므로 병합하지 않는다.
+    def test_identical_rows_are_deduped_without_special_cases(self, db_session):
+        """dedup 키에 분기를 두지 않는다.
 
-        실측상 상호 결측은 0건(462,900행 전수)이라 현재는 발생하지 않지만,
-        결측이 생기면 동가·무순위 참가자 둘이 한 행으로 접혀 참여자 수가 과소
-        집계된다. 과소가 중복보다 나쁘다(등수는 유효 투찰만 세므로 무영향).
+        상호 결측(실측 0건/462,900행)을 위해 `if not company` 분기를 뒀더니,
+        축소 가드와 합성돼 한 번 부풀려 저장된 공고가 영영 복구되지 않았다.
+        이 코드에서 회귀는 늘 "특수 케이스를 분기로 빼는" 데서 났다.
         """
-        bid_no = "PNOCO-1-000"
-        rows = [
-            {"bid_no": bid_no, "rank": None, "company": "", "bid_price": 88_000_000,
-             "bid_rate": 88.0, "sucsf_yn": "N"},
-            {"bid_no": bid_no, "rank": None, "company": "", "bid_price": 88_000_000,
-             "bid_rate": 88.0, "sucsf_yn": "N"},
-        ]
-        crawler._save_participants(db_session, {bid_no: rows})
+        bid_no = "PDEDUP-1-000"
+        row = {"bid_no": bid_no, "rank": None, "company": "", "bid_price": 88_000_000,
+               "bid_rate": 88.0, "sucsf_yn": "N"}
+        crawler._save_participants(db_session, {bid_no: [dict(row), dict(row)]})
 
+        # 완전히 같은 행은 하나로 — 상호 유무로 동작이 갈리지 않는다
         assert (db_session.query(models.OpeningParticipant)
-                .filter_by(bid_no=bid_no).count()) == 2
+                .filter_by(bid_no=bid_no).count()) == 1
+
+    def test_shrink_hold_expires_so_data_can_self_heal(self, db_session):
+        """축소 보류에 시효가 있다 — 영구 보류는 복구 불가를 뜻한다.
+
+        부분 응답은 개찰 직후에 나온다. 기존 데이터가 충분히 오래됐는데도 계속
+        적게 온다면 그쪽이 정본이다. 시효가 없으면 한 번 잘못 부푼 공고를
+        운영 DB 수동 삭제 말고는 고칠 방법이 없다.
+        """
+        bid_no = "PSTALE-1-000"
+        crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 6)})
+        # 기존 행을 오래된 것으로 만든다
+        old = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=5)
+        for p in db_session.query(models.OpeningParticipant).filter_by(bid_no=bid_no):
+            p.crawled_at = old
+        db_session.commit()
+
+        r = crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 3)},
+                                       stale_after_days=3)
+
+        assert r["participant_shrink_overridden"] == 1
+        assert r["participant_shrink_skipped"] == 0
+        assert (db_session.query(models.OpeningParticipant)
+                .filter_by(bid_no=bid_no).count()) == 3   # 최신 응답이 정본이 됐다
 
     def test_bigint_price_fits(self, db_session):
         """공사 투찰가는 int4(21.4억)를 넘는다 — mock_bids 에서 실제로 겪은 사고."""
@@ -458,8 +488,12 @@ def test_crawl_reports_participant_scope_failure(monkeypatch, engine):
     assert result["participant_scope_ok"] is False
 
 
-def test_crawl_reports_total_participant_save_failure(monkeypatch, engine):
-    """저장이 **전부** 실패하면 구조적 고장(테이블 없음·스키마 변경)이다."""
+def test_crawl_reports_structural_save_failure(monkeypatch, engine):
+    """구조적 예외(테이블·컬럼 부재)는 **1건만 나와도** 고장이다.
+
+    건수로 판정하면 두 방향으로 틀린다 — 대상이 1건인 날 데이터 결함 하나로
+    배치가 red 가 되고, 반대로 축소 보류가 섞이면 진짜 고장이 초록불이 된다.
+    """
     from sqlalchemy.orm import sessionmaker
 
     Session = sessionmaker(bind=engine)
@@ -476,12 +510,14 @@ def test_crawl_reports_total_participant_save_failure(monkeypatch, engine):
                         lambda start, end, page=1, num_rows=999: items if page == 1 else [])
     monkeypatch.setattr(crawler, "_save_participants",
                         lambda db, by_bid: {"participant_bids": 0, "participant_rows": 0,
-                                            "participant_errors": len(by_bid),
-                                            "participant_shrink_skipped": 0})
+                                            "participant_errors": 1,
+                                            "participant_structural_errors": 1,
+                                            "participant_shrink_skipped": 0,
+                                            "participant_shrink_overridden": 0})
 
     result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
 
-    assert result["ok"] is True
+    assert result["ok"] is True                    # 낙찰 결과 적재는 되돌리지 않는다
     assert result["participant_targets"] == 1
     assert result["participant_ok"] is False
 
@@ -527,6 +563,121 @@ def test_all_shrink_skipped_is_not_a_failure(monkeypatch, engine):
             bid_no="PSHRINKOK-1-000").count() == 3
     finally:
         s.close()
+
+
+def test_data_error_alone_is_not_a_structural_failure(monkeypatch, engine):
+    """대상이 1건뿐인 날 그 1건이 데이터 결함으로 실패해도 배치는 red 가 아니다.
+
+    건수 기준(`errors >= targets`)이면 `1 >= 1` 로 매번 걸린다. 모의투찰 등록분
+    중 하루 개찰 도래는 한 자릿수가 흔하므로 자주 발생한다.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(_make_mock_bid("PDATAERR-1-000"))
+    s.commit()
+    s.close()
+
+    items = [{"bidNtceNo": "PDATAERR-1", "bidNtceOrd": "000", "opengRank": "1",
+              "bidprcAmt": "90000000", "bidprcCorpNm": "A건설", "sucsfYn": "Y",
+              "fnlSucsfAmt": "90000000", "presmptPrce": "100000000"}]
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda start, end, page=1, num_rows=999: items if page == 1 else [])
+    monkeypatch.setattr(crawler, "_save_participants",
+                        lambda db, by_bid: {"participant_bids": 0, "participant_rows": 0,
+                                            "participant_errors": 1,
+                                            "participant_structural_errors": 0,
+                                            "participant_shrink_skipped": 0,
+                                            "participant_shrink_overridden": 0})
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["participant_errors"] == 1
+    assert result["participant_ok"] is True     # 데이터 결함은 그 건만의 문제다
+
+
+def test_structural_failure_is_caught_even_when_mixed_with_holds(monkeypatch, engine):
+    """축소 보류가 섞여도 구조적 고장은 잡힌다.
+
+    보류는 매일 일어나는 정상 동작이라, 분모에 그것까지 넣으면 이 검출기가
+    대부분의 날에 무력해진다.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(_make_mock_bid("PMIX-1-000"))
+    s.commit()
+    s.close()
+
+    items = [{"bidNtceNo": "PMIX-1", "bidNtceOrd": "000", "opengRank": "1",
+              "bidprcAmt": "90000000", "bidprcCorpNm": "A건설", "sucsfYn": "Y",
+              "fnlSucsfAmt": "90000000", "presmptPrce": "100000000"}]
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda start, end, page=1, num_rows=999: items if page == 1 else [])
+    # 20공고 중 6건 보류, 14건 시도 → 전부 구조적 실패
+    monkeypatch.setattr(crawler, "_save_participants",
+                        lambda db, by_bid: {"participant_bids": 0, "participant_rows": 0,
+                                            "participant_errors": 14,
+                                            "participant_structural_errors": 14,
+                                            "participant_shrink_skipped": 6,
+                                            "participant_shrink_overridden": 0})
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["participant_ok"] is False
+
+
+def test_participant_parse_wipeout_is_caught(monkeypatch, engine):
+    """API 가 행을 줬는데 참가자가 0건이면 고장이다(가격 필드명 변경).
+
+    `bidprcAmt` 는 낙찰자 판별에도 쓰이므로 이 사고에서는 본 크롤도 함께 죽는다.
+    그래서 판정에 `inserted or updated` 를 걸면 정작 이 사고에서 침묵한다.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    items = [{"bidNtceNo": "PWIPE-1", "bidNtceOrd": "000", "opengRank": "1",
+              "bidPrcAmt": "90000000",          # ← 필드명이 바뀌었다
+              "bidprcCorpNm": "A건설", "sucsfYn": "Y",
+              "fnlSucsfAmt": "90000000", "presmptPrce": "100000000",
+              "opengDate": "2026-07-10"}]
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda start, end, page=1, num_rows=999: items if page == 1 else [])
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["api_items"] > 0                      # API 는 행을 줬는데
+    assert result["participant_parsed_rows"] == 0       # 참가자가 0건이다
+    assert result["participant_ok"] is False
+
+
+def test_rank_field_wipeout_is_caught(monkeypatch, engine):
+    """순위 필드가 전멸하면 등수 지표가 죽는다 — 무효로 둔갑해 안 보인다."""
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(_make_mock_bid("PRANKGONE-1-000"))
+    s.commit()
+    s.close()
+
+    items = [{"bidNtceNo": "PRANKGONE-1", "bidNtceOrd": "000",
+              "opengRnkNo": "1",                # ← opengRank 가 사라졌다
+              "bidprcAmt": "90000000", "bidprcCorpNm": "A건설", "sucsfYn": "Y",
+              "fnlSucsfAmt": "90000000", "presmptPrce": "100000000"}]
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda start, end, page=1, num_rows=999: items if page == 1 else [])
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["rank_field_missing"] == result["participant_parsed_rows"] > 0
+    assert result["participant_ok"] is False
 
 
 def test_daily_crawl_task_fails_when_participants_collapse(monkeypatch):
