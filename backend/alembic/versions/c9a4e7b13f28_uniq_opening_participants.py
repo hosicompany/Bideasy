@@ -12,7 +12,7 @@
 만들 수 있으므로(공백 있는 행과 없는 행이 같은 키가 된다) 제약 생성 전에 정리한다.
 
 Revision ID: c9a4e7b13f28
-Revises: 6c034544c26d
+Revises: b8e4c1a29f73
 Create Date: 2026-08-12
 """
 from typing import Sequence, Union
@@ -20,7 +20,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = 'c9a4e7b13f28'
-down_revision: Union[str, None] = '6c034544c26d'
+down_revision: Union[str, None] = 'b8e4c1a29f73'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
