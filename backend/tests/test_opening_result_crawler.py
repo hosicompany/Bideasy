@@ -399,14 +399,13 @@ class TestParticipantSave:
         """
         bid_no = "PSTALE-1-000"
         crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 6)})
-        # 기존 행을 오래된 것으로 만든다
-        old = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=5)
+        # 하루 뒤 재크롤 상황 — 시효는 크롤 창보다 짧아야 도달한다(아래 테스트)
+        old = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=21)
         for p in db_session.query(models.OpeningParticipant).filter_by(bid_no=bid_no):
             p.crawled_at = old
         db_session.commit()
 
-        r = crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 3)},
-                                       stale_after_days=3)
+        r = crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 3)})
 
         assert r["participant_shrink_overridden"] == 1
         assert r["participant_shrink_skipped"] == 0
@@ -561,6 +560,96 @@ def test_all_shrink_skipped_is_not_a_failure(monkeypatch, engine):
     try:  # 완전 집합이 지켜졌다
         assert s.query(models.OpeningParticipant).filter_by(
             bid_no="PSHRINKOK-1-000").count() == 3
+    finally:
+        s.close()
+
+
+def test_shrink_hold_actually_expires_through_the_crawl_path(monkeypatch, engine):
+    """시효가 **정기 크롤 경로에서** 실제로 도달하는지 본다.
+
+    함수를 직접 부르는 테스트만 두면 "고친 표시"에 속는다. 시효를 크롤 창보다
+    길게 잡았을 때(3일 vs days_back=2) 그 분기는 수학적으로 도달 불가였는데,
+    함수 단위 테스트는 `crawled_at` 을 손으로 5일 전으로 조작해 통과했었다.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(_make_mock_bid("PHEAL-1-000"))
+    s.commit()
+    s.close()
+
+    def _items(n):
+        return [{"bidNtceNo": "PHEAL-1", "bidNtceOrd": "000", "opengRank": str(i + 1),
+                 "bidprcAmt": str(90_000_000 + i), "bidprcCorpNm": f"업체{i}",
+                 "sucsfYn": "Y" if i == 0 else "N", "fnlSucsfAmt": "90000000",
+                 "presmptPrce": "100000000", "opengDate": "2026-07-10"}
+                for i in range(n)]
+
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    # 1회차 — 6행이 들어간다
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda start, end, page=1, num_rows=999: _items(6) if page == 1 else [])
+    crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    # 하루가 지난 상황을 만든다(정기 크롤은 19:00 하루 1회)
+    s = Session()
+    aged = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
+    for p in s.query(models.OpeningParticipant).filter_by(bid_no="PHEAL-1-000"):
+        p.crawled_at = aged
+    s.commit()
+    s.close()
+
+    # 2회차 — 3행만 온다(축소). 시효를 넘겼으므로 최신 응답이 정본이 돼야 한다
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda start, end, page=1, num_rows=999: _items(3) if page == 1 else [])
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["participant_shrink_overridden"] == 1
+    assert result["participant_shrink_skipped"] == 0
+    s = Session()
+    try:
+        assert s.query(models.OpeningParticipant).filter_by(
+            bid_no="PHEAL-1-000").count() == 3
+    finally:
+        s.close()
+
+
+def test_participant_count_uses_same_key_as_storage(monkeypatch, engine):
+    """참여사수와 저장 행 수가 같은 정의를 쓴다.
+
+    raw 행을 그냥 더하면 API 가 같은 행을 두 번 준 날 `participants_count` 만
+    부풀어 `opening_participants` 행 수와 영구히 어긋난다. 그 값은 공개 SSR
+    공고 상세·누적 통계·블로그 자동 초안으로 나간다.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(_make_mock_bid("PDUPCNT-1-000"))
+    s.commit()
+    s.close()
+
+    row = {"bidNtceNo": "PDUPCNT-1", "bidNtceOrd": "000", "opengRank": "1",
+           "bidprcAmt": "90000000", "bidprcRt": "90.0", "bidprcCorpNm": "A건설",
+           "sucsfYn": "Y", "fnlSucsfAmt": "90000000", "fnlSucsfRt": "90.0",
+           "presmptPrce": "100000000", "rsrvtnPrce": "100000000",
+           "bssAmt": "100000000", "opengDate": "2026-07-10"}
+    items = [dict(row), dict(row)]        # API 가 같은 행을 두 번 줬다
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda start, end, page=1, num_rows=999: items if page == 1 else [])
+
+    crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    s = Session()
+    try:
+        saved = s.query(models.OpeningParticipant).filter_by(
+            bid_no="PDUPCNT-1-000").count()
+        opening = s.query(models.OpeningResult).filter_by(
+            bid_no="PDUPCNT-1-000").first()
+        assert saved == 1
+        assert opening.participants_count == saved   # 두 저장소가 같은 말을 한다
     finally:
         s.close()
 

@@ -22,7 +22,13 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 from sqlalchemy import func
-from sqlalchemy.exc import InternalError, OperationalError, ProgrammingError
+from sqlalchemy.exc import (
+    InterfaceError,
+    InternalError,
+    OperationalError,
+    PendingRollbackError,
+    ProgrammingError,
+)
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -37,8 +43,14 @@ _PAGE_SIZE = 999  # API accepts at most 999; 1000 falls back to 10 rows.
 
 #: 저장 실패를 **구조적 고장**으로 볼 예외들 — 테이블·컬럼 부재, 연결 단절.
 #: 1건만 나와도 전 건에 해당하므로 "몇 건이 실패했나"로 판정하면 안 된다.
-#: 나머지(값 범위 초과·제약 위반 등)는 그 건만의 데이터 결함이다.
-_STRUCTURAL_DB_ERRORS = (OperationalError, ProgrammingError, InternalError)
+#: 나머지(값 범위 초과 등)는 그 건만의 데이터 결함이다.
+#: `InterfaceError`(pgbouncer 유휴 종료·SSL 오류)와 `PendingRollbackError`
+#: (앞 건의 rollback 실패 후속)가 빠지면, 연결이 통째로 끊긴 상황이 "데이터
+#: 결함"으로 분류돼 이 검출기가 존재 이유인 자리에서 침묵한다.
+_STRUCTURAL_DB_ERRORS = (
+    OperationalError, ProgrammingError, InternalError,
+    InterfaceError, PendingRollbackError,
+)
 
 
 def _fetch_page(
@@ -298,7 +310,7 @@ def _load_registered_bid_nos(db: Session) -> tuple[set[str], bool]:
 
 
 def _save_participants(db: Session, by_bid: dict[str, list[dict]],
-                       stale_after_days: int = 3) -> dict:
+                       stale_after_hours: int = 20) -> dict:
     """공고 단위로 참가자 행을 삭제-재삽입.
 
     (bid_no, rank) UNIQUE 대신 이 방식을 쓰는 이유: API 가 동가 참가자에게
@@ -340,17 +352,24 @@ def _save_participants(db: Session, by_bid: dict[str, list[dict]],
             # 최신 rev 가 되어 지표의 정본이 된다(12명 중 8위 → 5명 중 3위).
             #
             # 단 **영구 보류는 금지**다. 부분 응답은 개찰 직후에 나오므로, 기존
-            # 데이터가 충분히 오래됐는데도 계속 적게 온다면 그쪽이 정본이다.
-            # 시효가 없으면 한 번 잘못 부푼 공고가 영영 못 고쳐진다.
+            # 데이터가 하루 넘게 묵었는데도 계속 적게 온다면 그쪽이 정본이다.
+            #
+            # ⚠️ 시효는 **크롤 창(`days_back`)보다 짧아야 도달한다.** 축소 판정을
+            # 받으려면 그 공고가 창 안에 있어야 하고, 직전 저장은 그 공고를 창에
+            # 담았던 이전 런이므로 경과는 창 길이를 넘을 수 없다. 시효를 창보다
+            # 길게 잡으면 이 분기가 **한 번도 실행되지 않는다**(3일로 뒀다가
+            # 리뷰에서 잡혔다 — 고친 표시만 나고 동작은 그대로였다).
+            # 일 단위가 아니라 시간 단위인 것도 같은 이유다: 하루 1회 크롤에서
+            # `.days` 는 크롤 시각이 조금만 흔들려도 0 이 된다.
             if existing > len(uniq):
-                age_days = None
+                age_h = None
                 if newest is not None:
                     naive = newest.replace(tzinfo=None) if newest.tzinfo else newest
-                    age_days = (now_utc - naive).days
-                if age_days is not None and age_days >= stale_after_days:
+                    age_h = (now_utc - naive).total_seconds() / 3600
+                if age_h is not None and age_h >= stale_after_hours:
                     shrink_overridden += 1
                     logger.warning(
-                        f"opening_crawler: 참가자 축소이지만 기존 데이터가 {age_days}일 경과 "
+                        f"opening_crawler: 참가자 축소이지만 기존 데이터가 {age_h:.0f}시간 경과 "
                         f"— 최신 응답을 채택 {bid_no}: {existing}행 → {len(uniq)}행"
                     )
                 else:
@@ -499,7 +518,12 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             window_skipped = 0
             # 참여사수 = 이 창에서 그 공고로 온 참가자 행 수. 창 단위로 세고
             # 창 단위로 반영한다(창을 넘겨 누적하면 재크롤 겹침에서 부풀어 오른다).
-            window_counts: dict[str, int] = {}
+            # 참여사수는 **저장과 같은 키로** 센다. raw 행을 그냥 더하면 API 가
+            # 같은 행을 두 번 준 날(페이지 경계에서 정렬이 흔들리면 999행 ×
+            # 수백 페이지 규모에서 실재하는 사고 — dedup 을 넣은 이유가 그것이다)
+            # `participants_count` 만 부풀어 `opening_participants` 행 수와
+            # 영구히 어긋난다. 두 저장소가 서로 다른 말을 하게 된다.
+            window_keys: dict[str, set] = {}
             logger.info(f"opening_crawler: window {start_str} ~ {end_str}")
             for page in range(1, max_pages + 1):
                 items = _fetch_page(start_str, end_str, page=page)
@@ -511,7 +535,8 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                     p = _parse_participant_kwargs(item, parse_stats)
                     if p:
                         # 세는 건 전 공고, 저장은 등록 공고만(설계 §P4).
-                        window_counts[p["bid_no"]] = window_counts.get(p["bid_no"], 0) + 1
+                        window_keys.setdefault(p["bid_no"], set()).add(
+                            (p["rank"], p["company"], p["bid_price"]))
                         if p["bid_no"] in registered_bid_nos:
                             participants_by_bid.setdefault(p["bid_no"], []).append(p)
                     kwargs = _parse_item_to_kwargs(item)
@@ -530,7 +555,8 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                     f"page limit reached with a full page: {start_str}~{end_str} "
                     f"(max_pages={max_pages})"
                 )
-            counted += _apply_participant_counts(db, window_counts)
+            counted += _apply_participant_counts(
+                db, {b: len(keys) for b, keys in window_keys.items()})
             db.commit()
             inserted += window_inserted
             updated += window_updated

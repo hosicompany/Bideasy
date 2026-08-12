@@ -226,19 +226,35 @@ def collect_daily_report(
     # 멈춘다. 크롤은 초록불이고 화면은 "참가자 데이터 대기"와 구분되지 않아,
     # 며칠이 지나도 아무도 모른다. 태스크 실패 로그는 보는 사람이 없으므로
     # 매일 사람에게 닿는 이 리포트에 싣는다.
-    last_participant = db.query(
-        func.max(models.OpeningParticipant.crawled_at)
-    ).scalar()
-    if last_participant:
-        p_gap_h = (
-            datetime.now(timezone.utc).replace(tzinfo=None)
-            - (last_participant.replace(tzinfo=None)
-               if last_participant.tzinfo else last_participant)
-        ).total_seconds() / 3600
-        if p_gap_h > 30:
+    #
+    # ⚠️ 임계가 왜 80시간인가: 개찰은 영업일에만 일어나고 재크롤(days_back=2)
+    # 특성상 **저장 0건인 날이 정상**이다. 30시간으로 잡으면 토요일 저장 후
+    # 일요일이 0건인 주마다 월요일 리포트에 뜬다. 매주 뜨는 경보는 곧 무시된다.
+    #
+    # 이 블록은 통짜 리포트 함수 안이라, 여기서 던지면 매출·전환·AI 비용 지표까지
+    # 함께 잃는다. 부가 지표 하나가 본 리포트를 죽이지 않게 가둔다.
+    try:
+        last_participant = db.query(
+            func.max(models.OpeningParticipant.crawled_at)
+        ).scalar()
+        if last_participant:
+            p_gap_h = (
+                datetime.now(timezone.utc).replace(tzinfo=None)
+                - (last_participant.replace(tzinfo=None)
+                   if last_participant.tzinfo else last_participant)
+            ).total_seconds() / 3600
+            if p_gap_h > 80:
+                anomalies.append(
+                    f"⚠️ 개찰 참가자 수집 {p_gap_h:.0f}시간째 없음 — 모의투찰 등수 지표 정지 의심"
+                )
+        elif db.query(models.MockBid.id).first() is not None:
+            # 가장 위험한 상태가 침묵 구간이 되면 안 된다 — 등록은 돌고 있는데
+            # 참가자가 **한 번도** 수집된 적 없는 배포 직후가 정확히 그 경우다.
             anomalies.append(
-                f"⚠️ 개찰 참가자 수집 {p_gap_h:.0f}시간째 없음 — 모의투찰 등수 지표 정지 의심"
+                "⚠️ 개찰 참가자 데이터가 한 건도 없음 — 수집 경로 확인 필요"
             )
+    except Exception:  # noqa: BLE001
+        pass
 
     # ─── 요약 문자열 (이메일/슬랙 한 줄 헤더) ────────────────
     summary_line = (

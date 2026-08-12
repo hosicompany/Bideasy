@@ -33,11 +33,21 @@ def list_triggers(_admin=Depends(require_admin)):
 
 
 @router.post("/system/tasks/{task_name}/trigger")
-def trigger_task(task_name: str, _admin=Depends(require_admin)):
-    """허용된 Celery task 수동 실행 → task_id 반환."""
+def trigger_task(task_name: str, days_back: int | None = None,
+                 _admin=Depends(require_admin)):
+    """허용된 Celery task 수동 실행 → task_id 반환.
+
+    `days_back` 은 개찰 크롤 계열의 **복구 경로**다. 참가자 축소 가드는 부분
+    응답이 완전 집합을 덮어쓰는 걸 막는데, 한 번 잘못 부푼 공고는 정기 크롤
+    창(2일) 안에서는 시효가 도달하기 전에 대상에서 이탈해 버린다. 창을 넓혀
+    다시 부르면 기존 데이터가 시효를 넘겨 최신 응답이 정본이 된다.
+    """
     if task_name not in _TRIGGERABLE:
         raise HTTPException(status_code=400, detail="허용되지 않은 작업입니다.")
-    task = celery_app.send_task(task_name)
+    if days_back is not None and not 0 <= days_back <= 30:
+        raise HTTPException(status_code=400, detail="days_back 은 0~30 이어야 합니다.")
+    kwargs = {"days_back": days_back} if days_back is not None else {}
+    task = celery_app.send_task(task_name, kwargs=kwargs)
     logger.info(f"manual task dispatched: {task_name} ({task.id})")
     return {"task_id": task.id, "task_name": task_name, "status": "dispatched"}
 
