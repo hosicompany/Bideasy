@@ -486,6 +486,49 @@ def test_crawl_reports_total_participant_save_failure(monkeypatch, engine):
     assert result["participant_ok"] is False
 
 
+def test_all_shrink_skipped_is_not_a_failure(monkeypatch, engine):
+    """전부 축소 보류돼도 고장이 아니다 — 보류는 정상 방어 동작이다.
+
+    `days_back=2` 로 같은 개찰을 재크롤하므로, 이미 완전한 공고만 다시 온 날은
+    저장이 0건이 된다. 이걸 전면 실패로 잡으면 매일 red 가 뜨고 경보가 무뎌진다.
+    판정 기준은 '저장 0건'이 아니라 '시도가 전부 예외'다.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(_make_mock_bid("PSHRINKOK-1-000"))
+    s.commit()
+    # 이미 완전 집합(3행)이 저장돼 있다
+    for i in range(3):
+        s.add(models.OpeningParticipant(
+            bid_no="PSHRINKOK-1-000", rank=i + 1, company=f"업체{i}",
+            bid_price=90_000_000 + i, bid_rate=90.0, sucsf_yn="N"))
+    s.commit()
+    s.close()
+
+    # 재크롤이 1행만 준다 → 축소 보류
+    items = [{"bidNtceNo": "PSHRINKOK-1", "bidNtceOrd": "000", "opengRank": "1",
+              "bidprcAmt": "90000000", "bidprcCorpNm": "A건설", "sucsfYn": "Y",
+              "fnlSucsfAmt": "90000000", "presmptPrce": "100000000"}]
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda start, end, page=1, num_rows=999: items if page == 1 else [])
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["participant_shrink_skipped"] == 1
+    assert result["participant_bids"] == 0
+    assert result["participant_ok"] is True        # 저장 0건이지만 고장이 아니다
+
+    s = Session()
+    try:  # 완전 집합이 지켜졌다
+        assert s.query(models.OpeningParticipant).filter_by(
+            bid_no="PSHRINKOK-1-000").count() == 3
+    finally:
+        s.close()
+
+
 def test_daily_crawl_task_fails_when_participants_collapse(monkeypatch):
     """부분 실패는 넘어가고, 전면 실패만 태스크를 FAILURE 로 만든다.
 

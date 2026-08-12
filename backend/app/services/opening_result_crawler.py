@@ -502,13 +502,24 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     # 카운트만 올린다 — 그걸로 매일 배치를 red 로 만들면 경보가 무뎌진다.
     # 반면 전면 실패는 구조적 고장(테이블 없음·스키마 변경)이고, 이걸 성공으로
     # 삼키면 정상 화면과 완전 고장 화면이 똑같아진다(설계 §9 원칙).
+    # 판정 기준은 **저장 시도가 전부 예외로 죽었는가**(`errors == targets`)다.
+    # "저장 0건"으로 잡으면 안 된다 — 축소 보류는 정상 방어 동작이고, 재크롤
+    # (days_back=2)로 이미 완전한 공고만 다시 온 날이면 전부 보류돼 저장이 0건이
+    # 된다. 그걸 고장이라 부르면 매일 red 가 뜨고 경보가 무뎌진다.
     participant_ok = scope_ok and not (
-        participants_by_bid and p_summary["participant_bids"] == 0
+        participants_by_bid
+        and p_summary["participant_errors"] >= len(participants_by_bid)
     )
     if not participant_ok:
         logger.error(
             f"opening_crawler: 참가자 수집 전면 실패 — scope_ok={scope_ok} "
-            f"대상={len(participants_by_bid)}공고 저장={p_summary['participant_bids']}"
+            f"대상={len(participants_by_bid)}공고 저장={p_summary['participant_bids']} "
+            f"오류={p_summary['participant_errors']}"
+        )
+    elif p_summary["participant_shrink_skipped"]:
+        logger.warning(
+            f"opening_crawler: 참가자 축소 교체 {p_summary['participant_shrink_skipped']}건 보류 "
+            f"(대상 {len(participants_by_bid)}공고) — 부분 응답이 반복되면 원인을 확인할 것"
         )
 
     summary = {
