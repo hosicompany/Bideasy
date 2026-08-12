@@ -305,14 +305,17 @@ class OpeningParticipant(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     bid_no = Column(String(100), index=True, nullable=False)
-    rank = Column(Integer)                  # opengRank (1 = 최저가)
+    # opengRank — **유효 투찰(낙찰하한선 이상)에만 부여된다.** 결측 = 무효 투찰
+    # (2026-08-11 실측 47.6%). 등수 계산은 이 값이 있는 행만 센다(설계 §7-8).
+    rank = Column(Integer)
     company = Column(String(255))           # bidprcCorpNm
     # BigInteger 필수 — 공사 기초금액 실측 최대 6,203억. int4(21.4억)면
     # 대형 공고 참가자 행이 NumericValueOutOfRange 로 죽는다(mock_bids 에서 실제로 겪음).
     bid_price = Column(BigInteger)          # bidprcAmt
     bid_rate = Column(Float)                # bidprcRt
     sucsf_yn = Column(String(5))            # 'Y' = 낙찰(적격검사 통과)
-    crawled_at = Column(DateTime, default=_utcnow)
+    # index: `rank_axis_health` 의 시간창 표본용 (마이그 b8e4c1a29f73)
+    crawled_at = Column(DateTime, default=_utcnow, index=True)
 
 
 class OpeningStat(Base):
@@ -803,8 +806,12 @@ class MockBidResult(Base):
     actual_winner_price = Column(Float)
     actual_lower_limit = Column(Float)
 
+    # 등수는 **유효 투찰자**(낙찰하한선 이상 = 개찰 API 가 opengRank 를 준 참가자)
+    # 기준이다. 무효 투찰까지 세면 개찰조서와 다른 물건이 된다 — 2026-08-11 실측:
+    # 참가자 462,900행 중 47.6%가 무효(rank 결측)라 등수가 평균 15.79 부풀었다.
     estimated_rank = Column(Integer)        # Phase 2(참가자 저장) 이후 채워진다
-    participants_count = Column(Integer)
+    participants_count = Column(Integer)        # 전 참가자 수(경쟁 강도 실측)
+    valid_participants_count = Column(Integer)  # 그중 유효 투찰 = 등수의 분모
 
     gap_to_winner_pct = Column(Float)       # (우리가격 - 낙찰가)/낙찰가 × 100
     gap_to_limit_pct = Column(Float)        # (우리가격 - 하한선)/하한선 × 100

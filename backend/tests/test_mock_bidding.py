@@ -625,7 +625,11 @@ def _participant(bid_no, rank, price, company="참가사", sucsf="N"):
 
 
 class TestEstimateRank:
-    """등수는 판정(judge)의 대체가 아니라 별개 지표다 — API opengRank 와 같은 축."""
+    """등수는 판정(judge)의 대체가 아니라 별개 지표다.
+
+    축은 **유효 투찰자만의** 가격 순위 = API `opengRank` (무효 투찰은 API 가
+    순위를 주지 않는다). 여기 넘기는 목록은 이미 걸러진 유효 투찰가다.
+    """
 
     def test_between_two_participants(self):
         assert mb.estimate_rank(90, [89, 91]) == 2
@@ -693,7 +697,7 @@ class TestParticipantScoring:
         db_session.commit()
 
         r = mb.backfill_participant_ranks(db_session)
-        assert r["backfilled"] == 5  # 5 arm 전부
+        assert r["backfilled"] == 5  # 5 arm 전부 — DROPOUT 도 참가자 수는 갱신한다(등수만 없다)
 
         rows = (db_session.query(models.MockBidResult)
                 .join(models.MockBid)
@@ -717,7 +721,7 @@ class TestParticipantScoring:
         first = mb.backfill_participant_ranks(db_session)
         second = mb.backfill_participant_ranks(db_session)
 
-        assert first["backfilled"] == 5
+        assert first["backfilled"] == 5  # 5 arm 전부 — DROPOUT 도 참가자 수는 갱신한다(등수만 없다)
         assert second["backfilled"] == 0
 
     def test_backfill_limit_ignores_rows_without_participants(self, db_session):
@@ -733,7 +737,7 @@ class TestParticipantScoring:
 
         result = mb.backfill_participant_ranks(db_session, limit=5)
 
-        assert result["candidates"] == 5
+        assert result["candidates"] == 5  # 5 arm 전부 — DROPOUT 도 참가자 수는 갱신한다(등수만 없다)
         assert result["backfilled"] == 5
         ready = (
             db_session.query(models.MockBidResult)
@@ -741,7 +745,7 @@ class TestParticipantScoring:
             .filter(models.MockBid.bid_no == "MB-P2-STARVE-READY")
             .all()
         )
-        assert sum(row.estimated_rank is not None for row in ready) == 5
+        assert sum(row.estimated_rank is not None for row in ready) == 4  # DROPOUT arm 은 등수 없음
 
     def test_recrawl_recomputes_changed_rank_and_preserves_measurement_time(self, db_session):
         """부분 참가자 목록으로 계산했어도 완성된 재크롤이 새 rev 로 바로잡는다."""
@@ -772,7 +776,7 @@ class TestParticipantScoring:
         refreshed = mb.backfill_participant_ranks(db_session)
         repeated = mb.backfill_participant_ranks(db_session)
 
-        assert refreshed["backfilled"] == 5
+        assert refreshed["backfilled"] == 5  # 5 arm 전부 — DROPOUT 도 참가자 수는 갱신한다(등수만 없다)
         assert repeated["backfilled"] == 0
         rows = (
             db_session.query(models.MockBidResult)
@@ -815,6 +819,397 @@ class TestParticipantScoring:
 
         after = mb.summarize(db_session).get("standard", {}).get("judged", 0)
         assert after == before  # rev 가 늘어도 judged 는 그대로
+
+    # ── 등수 축 = 유효 투찰만 (2026-08-11 운영 실측으로 뒤집힌 전제) ──
+    # API 는 낙찰하한선 이상 투찰에만 opengRank 를 준다. 무효까지 세면 등수가
+    # 개찰조서와 다른 물건이 된다 — 운영 표본에서 평균 15.79 부풀어 있었다.
+
+    def test_invalid_bids_do_not_count_toward_rank(self, db_session):
+        """하한 미달(rank 결측) 투찰은 우리보다 싸도 등수를 밀어내지 못한다."""
+        bid_no = "MB-P2-INVALID"
+        self._prepare(db_session, bid_no, participants=[
+            _participant(bid_no, 1, 90_000_000, sucsf="Y"),
+            _participant(bid_no, 2, 92_000_000),
+            # 무효 3명 — 더 싸지만 API 가 순위를 주지 않았다
+            _participant(bid_no, None, 80_000_000),
+            _participant(bid_no, None, 85_000_000),
+            _participant(bid_no, None, 88_000_000),
+        ])
+        mb.score_pending(db_session)
+
+        row = (db_session.query(models.MockBidResult)
+               .join(models.MockBid)
+               .filter(models.MockBid.bid_no == bid_no,
+                       models.MockBid.arm == "standard").one())
+        # standard 등록가 97.5M > 유효 2명 → 3위 (무효까지 세던 구 계산은 6위)
+        assert row.estimated_rank == 3
+        assert row.participants_count == 5        # 경쟁 강도는 전원을 센다
+        assert row.valid_participants_count == 2  # 등수의 분모는 유효분만
+
+    def test_no_rank_when_every_participant_is_invalid(self, db_session):
+        """유효 투찰이 하나도 없으면 등수를 만들지 않는다(개찰 미완과 구분 불가)."""
+        bid_no = "MB-P2-ALLINVALID"
+        self._prepare(db_session, bid_no, participants=[
+            _participant(bid_no, None, 80_000_000),
+            _participant(bid_no, None, 85_000_000),
+        ])
+        mb.score_pending(db_session)
+
+        row = (db_session.query(models.MockBidResult)
+               .join(models.MockBid)
+               .filter(models.MockBid.bid_no == bid_no,
+                       models.MockBid.arm == "standard").one())
+        assert row.estimated_rank is None
+        assert row.valid_participants_count is None
+        assert row.participants_count == 2
+
+    def test_backfill_corrects_rank_that_counted_invalid_bids(self, db_session):
+        """구 로직이 무효까지 세어 부풀린 등수를 새 rev 로 바로잡는다(기존 행 불변)."""
+        bid_no = "MB-P2-REGRESS"
+        self._prepare(db_session, bid_no, participants=[
+            _participant(bid_no, 1, 90_000_000, sucsf="Y"),
+            _participant(bid_no, 2, 92_000_000),
+            _participant(bid_no, None, 85_000_000),
+            _participant(bid_no, None, 88_000_000),
+        ])
+        mb.score_pending(db_session)
+
+        stale = (db_session.query(models.MockBidResult)
+                 .join(models.MockBid)
+                 .filter(models.MockBid.bid_no == bid_no,
+                         models.MockBid.arm == "standard").one())
+        # Phase 2 구 로직이 남긴 상태를 재현: 무효 포함 5위 + 분모 미기록
+        stale.estimated_rank = 5
+        stale.participants_count = 4
+        stale.valid_participants_count = None
+        db_session.commit()
+        stale_rev = stale.scoring_rev
+
+        # 나머지 4 arm 은 첫 채점에서 이미 유효 기준으로 맞게 채워졌다 — 손댈 게 없다
+        assert mb.backfill_participant_ranks(db_session)["backfilled"] == 1
+        assert mb.backfill_participant_ranks(db_session)["backfilled"] == 0  # 멱등
+
+        rows = (db_session.query(models.MockBidResult)
+                .join(models.MockBid)
+                .filter(models.MockBid.bid_no == bid_no,
+                        models.MockBid.arm == "standard")
+                .order_by(models.MockBidResult.scoring_rev).all())
+        assert len(rows) == 2
+        assert rows[0].scoring_rev == stale_rev and rows[0].estimated_rank == 5  # 원장 불변
+        assert rows[1].estimated_rank == 3
+        assert rows[1].valid_participants_count == 2
+        assert rows[1].participants_count == 4
+
+
+class TestDropoutHasNoRank:
+    """무효(DROPOUT)는 개찰 순위를 갖지 않는다 — 참가자에게 적용하는 규칙과 같다.
+
+    유효 투찰은 전부 하한선 이상이고 DROPOUT 은 하한선 미만이므로, 등수를
+    매기면 **정의상 항상 1위**가 된다. 그러면 무효를 많이 내는 arm 일수록 등수가
+    좋아 보여 §0.2 1차 지표(무효율)와 정반대로 움직인다. 운영 실측 2026-08-11:
+    DROPOUT 2,460건 중 2,453건(99.7%)이 이 인공물이었다.
+    """
+
+    def _prepare(self, db_session, bid_no, participants):
+        n = _notice(bid_no)
+        db_session.add(n)
+        db_session.commit()
+        mb.register_notice(db_session, n)
+        db_session.commit()
+        db_session.add(_opening(bid_no, winner=90_000_000))
+        db_session.add_all(participants)
+        db_session.commit()
+        for row in db_session.query(models.MockBid).filter_by(bid_no=bid_no).all():
+            row.deadline_at = mb.now_kst() - timedelta(hours=1)
+        db_session.commit()
+
+    def test_dropout_arm_gets_no_rank(self, db_session):
+        bid_no = "MB-DROP-1"
+        self._prepare(db_session, bid_no, [
+            _participant(bid_no, 1, 90_000_000, sucsf="Y"),
+            _participant(bid_no, 2, 92_000_000),
+        ])
+        mb.score_pending(db_session)
+
+        rows = {r.arm: res for res, r in (
+            db_session.query(models.MockBidResult, models.MockBid)
+            .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
+            .filter(models.MockBid.bid_no == bid_no).all())}
+        # aggressive 88.0M < 하한선 89,745,000 → DROPOUT
+        assert rows["aggressive"].outcome == "DROPOUT"
+        assert rows["aggressive"].estimated_rank is None       # 구 로직은 1위였다
+        # 참가자 수는 무효 건에도 남는다 — 유효 투찰이 몇 건이었나는 공고의
+        # 성질이지 우리 판정의 성질이 아니다. 지우면 같은 공고인데 arm 마다
+        # 경쟁 규모가 달라 보인다.
+        assert rows["aggressive"].valid_participants_count == 2
+        assert rows["aggressive"].participants_count == 2
+        # 하한선 이상 arm 은 정상적으로 등수를 받는다
+        assert rows["standard"].outcome in ("WIN", "LOST")
+        assert rows["standard"].estimated_rank == 3
+
+    def test_backfill_erases_rank_left_on_dropout(self, db_session):
+        """구 로직이 무효 건에 남긴 등수를 새 rev 로 지운다(기존 행은 불변)."""
+        bid_no = "MB-DROP-2"
+        self._prepare(db_session, bid_no, [
+            _participant(bid_no, 1, 90_000_000, sucsf="Y"),
+            _participant(bid_no, 2, 92_000_000),
+        ])
+        mb.score_pending(db_session)
+
+        stale = (db_session.query(models.MockBidResult)
+                 .join(models.MockBid)
+                 .filter(models.MockBid.bid_no == bid_no,
+                         models.MockBid.arm == "aggressive").one())
+        stale.estimated_rank = 1            # 구 로직이 남긴 인공물
+        stale.valid_participants_count = 2
+        db_session.commit()
+
+        assert mb.backfill_participant_ranks(db_session)["backfilled"] == 1
+        assert mb.backfill_participant_ranks(db_session)["backfilled"] == 0  # 멱등
+
+        rows = (db_session.query(models.MockBidResult)
+                .join(models.MockBid)
+                .filter(models.MockBid.bid_no == bid_no,
+                        models.MockBid.arm == "aggressive")
+                .order_by(models.MockBidResult.scoring_rev).all())
+        assert len(rows) == 2
+        assert rows[0].estimated_rank == 1        # 원장 불변
+        assert rows[1].estimated_rank is None     # 정정본
+        assert rows[1].outcome == "DROPOUT"       # 판정은 그대로
+
+    def test_dropout_participant_count_still_updates_on_recrawl(self, db_session):
+        """무효 건도 참가자 수는 계속 갱신된다.
+
+        회귀 이력: 무효를 별도 분기로 빼면서 진입 조건을 `등수가 있으면` 하나로
+        두는 바람에, 등수를 한 번 지운 뒤에는 어느 분기에도 안 잡혀 참가자 수가
+        **부분 응답 시점에 영구히 동결**됐다. 같은 공고인데 arm 마다 경쟁 규모가
+        달라 보인다(§4-3 의 "참여자 수 실측"이 무너진다).
+        """
+        bid_no = "MB-DROP-RECRAWL"
+        self._prepare(db_session, bid_no, [          # 부분 응답 — 2명만 도착
+            _participant(bid_no, 1, 90_000_000, sucsf="Y"),
+            _participant(bid_no, 2, 92_000_000),
+        ])
+        mb.score_pending(db_session)
+
+        def _agg():
+            return (db_session.query(models.MockBidResult)
+                    .join(models.MockBid)
+                    .filter(models.MockBid.bid_no == bid_no,
+                            models.MockBid.arm == "aggressive")
+                    .order_by(models.MockBidResult.scoring_rev.desc()).first())
+
+        assert _agg().outcome == "DROPOUT" and _agg().participants_count == 2
+
+        # 다음 날 재크롤로 참가자 완성
+        db_session.query(models.OpeningParticipant).filter_by(bid_no=bid_no).delete()
+        db_session.add_all([
+            _participant(bid_no, 1, 90_000_000, sucsf="Y"),
+            _participant(bid_no, 2, 92_000_000),
+            _participant(bid_no, 3, 93_000_000),
+            _participant(bid_no, None, 85_000_000),   # 무효도 참여자 수에는 들어간다
+        ])
+        db_session.commit()
+        mb.backfill_participant_ranks(db_session)
+
+        latest = _agg()
+        assert latest.participants_count == 4         # 동결되지 않는다
+        assert latest.valid_participants_count == 3
+        assert latest.estimated_rank is None          # 그래도 등수는 없다
+        assert latest.outcome == "DROPOUT"
+
+    def test_excluded_counts_are_split_by_reason(self, db_session):
+        """제외 수는 사유별로 센다 — 무효만 세면 양방향으로 틀린다.
+
+        참가자 데이터가 없어 애초에 분포 후보가 아니던 건을 "제외됐다"고 세면
+        과대이고, 유효 판정인데 등수를 못 구한 건을 안 세면 과소다.
+        """
+        # 세션을 공유하는 테스트라 절대값이 아니라 증가분을 본다
+        before = mb.rank_distribution_excluded(db_session)
+        with_p = "MB-EXC-WITH"
+        self._prepare(db_session, with_p, [
+            _participant(with_p, 1, 90_000_000, sucsf="Y"),
+            _participant(with_p, 2, 92_000_000),
+        ])
+        without_p = "MB-EXC-NONE"
+        self._prepare(db_session, without_p, [])   # 참가자 미도착
+        mb.score_pending(db_session)
+        after = mb.rank_distribution_excluded(db_session)
+
+        def _delta(reason, arm):
+            return after[reason].get(arm, 0) - before[reason].get(arm, 0)
+
+        # 참가자가 붙은 공고의 무효 1건만 'dropout' 으로 센다.
+        # 참가자가 없는 공고의 무효는 분포 후보가 아니므로 세지 않는다(2 가 아니다).
+        assert _delta("dropout", "aggressive") == 1
+        # 유효 판정인데 등수가 없는 건은 별도 사유로 센다(참가자 미도착 공고)
+        assert _delta("no_rank_data", "standard") == 1
+
+    def test_stale_rank_cleared_even_when_all_participants_invalid(self, db_session):
+        """유효 참가자가 하나도 없어도 무효 건의 잘못된 등수는 지운다.
+
+        지우는 데는 유효 참가자가 필요 없다. 필요하다고 두면 참가자가 전원
+        무효로만 수집된 공고에서 구 로직의 "1위"가 최신 rev 로 영구히 살아남아,
+        CSV·차트에 그대로 나간다.
+        """
+        bid_no = "MB-DROP-ALLINVALID"
+        self._prepare(db_session, bid_no, [
+            _participant(bid_no, None, 80_000_000),
+            _participant(bid_no, None, 85_000_000),
+        ])
+        mb.score_pending(db_session)
+
+        stale = (db_session.query(models.MockBidResult)
+                 .join(models.MockBid)
+                 .filter(models.MockBid.bid_no == bid_no,
+                         models.MockBid.arm == "aggressive").one())
+        stale.estimated_rank = 1          # PR #62 구 로직이 남긴 인공물
+        db_session.commit()
+
+        assert mb.backfill_participant_ranks(db_session)["backfilled"] == 1
+        assert mb.backfill_participant_ranks(db_session)["backfilled"] == 0  # 멱등
+
+        latest = (db_session.query(models.MockBidResult)
+                  .join(models.MockBid)
+                  .filter(models.MockBid.bid_no == bid_no,
+                          models.MockBid.arm == "aggressive")
+                  .order_by(models.MockBidResult.scoring_rev.desc()).first())
+        assert latest.estimated_rank is None
+
+    def test_rank_distribution_excludes_dropout(self, db_session):
+        """백필 전 구 데이터가 남아 있어도 등수 분포에는 들어가지 않는다."""
+        bid_no = "MB-DROP-3"
+        self._prepare(db_session, bid_no, [
+            _participant(bid_no, 1, 90_000_000, sucsf="Y"),
+            _participant(bid_no, 2, 92_000_000),
+        ])
+        mb.score_pending(db_session)
+
+        stale = (db_session.query(models.MockBidResult)
+                 .join(models.MockBid)
+                 .filter(models.MockBid.bid_no == bid_no,
+                         models.MockBid.arm == "aggressive").one())
+        stale.estimated_rank = 1
+        db_session.commit()
+
+        dist = mb.rank_distribution(db_session)
+        assert "1" not in dist.get("aggressive", {})
+
+
+class TestRankAxisHealth:
+    """저장된 opengRank 와 재계산 등수가 같은 축인지 상시 감시(§9).
+
+    Phase 2 는 축이 어긋난 채 9일을 돌았고 화면은 멀쩡히 그려졌다. 검증 재료가
+    같은 테이블에 있는데 대조하지 않으면 다시 갈라져도 모른다.
+    """
+
+    @staticmethod
+    def _only(db_session, rows):
+        """이 검사는 참가자 테이블 전체를 보므로 앞 테스트가 남긴 행을 치운다."""
+        db_session.query(models.OpeningParticipant).delete()
+        db_session.add_all(rows)
+        db_session.commit()
+
+    def test_consistent_data_is_healthy(self, db_session):
+        """정상 = 순위 있는 행끼리 가격순 + 무효(순위 결측)가 정상 비중으로 섞임."""
+        self._only(db_session, [
+            _participant("MB-AXIS-OK", 1, 90_000_000),
+            _participant("MB-AXIS-OK", 2, 92_000_000),
+            _participant("MB-AXIS-OK", 3, 95_000_000),
+            _participant("MB-AXIS-OK", None, 85_000_000),   # 하한 미달 = 무효
+            _participant("MB-AXIS-OK", None, 87_000_000),
+        ])
+
+        h = mb.rank_axis_health(db_session, min_rows=1, min_notices=1)
+        assert h["rows"] == 5
+        assert h["ranked_rows"] == 3
+        assert h["mismatch"] == 0
+        assert h["null_rank_pct"] == 40.0
+        assert h["healthy"] is True
+
+    def test_all_ranked_is_flagged(self, db_session):
+        """무효가 하나도 없다 = API 가 무효에도 순위를 주기 시작했다는 신호.
+
+        이번 사고(무효를 유효로 세던 것)는 가격순 검사로는 절대 안 잡힌다 —
+        순위 있는 행끼리는 언제나 가격순이기 때문이다. 결측률이 진짜 신호다.
+        """
+        self._only(db_session, [
+            _participant("MB-AXIS-NONULL", 1, 90_000_000),
+            _participant("MB-AXIS-NONULL", 2, 92_000_000),
+        ])
+
+        h = mb.rank_axis_health(db_session, min_rows=1, min_notices=1)
+        assert h["mismatch"] == 0          # 가격순은 멀쩡하다
+        assert h["null_rank_pct"] == 0.0
+        assert h["healthy"] is False       # 그래도 축이 바뀐 것이다
+
+    def test_total_parse_failure_is_flagged(self, db_session):
+        """필드명 변경 등으로 순위가 전부 결측되면 '데이터 대기'와 구분되어야 한다."""
+        self._only(db_session, [
+            _participant("MB-AXIS-ALLNULL", None, 90_000_000),
+            _participant("MB-AXIS-ALLNULL", None, 92_000_000),
+        ])
+
+        h = mb.rank_axis_health(db_session, min_rows=1, min_notices=1)
+        assert h["rows"] == 2 and h["ranked_rows"] == 0
+        assert h["healthy"] is False       # None(표본 없음)이 아니라 고장이다
+
+    def test_drifted_axis_is_flagged(self, db_session):
+        """API 가 가격순이 아닌 다른 축으로 순위를 주기 시작하면 즉시 드러난다."""
+        self._only(db_session, [
+            _participant("MB-AXIS-DRIFT", 3, 90_000_000),
+            _participant("MB-AXIS-DRIFT", 1, 92_000_000),
+            _participant("MB-AXIS-DRIFT", 2, 95_000_000),
+            _participant("MB-AXIS-DRIFT", None, 85_000_000),  # 결측률은 정상 범위
+        ])
+
+        h = mb.rank_axis_health(db_session, min_rows=1, min_notices=1)
+        assert h["mismatch"] == 3
+        assert h["mismatch_pct"] == 100.0
+        assert h["healthy"] is False
+
+    def test_small_sample_defers_judgement(self, db_session):
+        """표본이 작으면 '고장'이라고 외치지 않는다.
+
+        무효가 우연히 0건인 소표본을 고장으로 판정하면, 관리자는 그 오탐을 한 번
+        겪은 뒤 진짜 경고도 무시한다. 감시 장치의 목적 자체가 무너진다.
+        """
+        self._only(db_session, [
+            _participant("MB-AXIS-SMALL", 1, 90_000_000),
+            _participant("MB-AXIS-SMALL", 2, 92_000_000),
+        ])
+
+        h = mb.rank_axis_health(db_session)      # min_rows 기본값(200) 미달
+        assert h["rows"] == 2
+        assert h["healthy"] is None              # 판정 보류
+        assert h["reason"] is None
+        # 같은 데이터라도 하한을 낮추면 판정한다 — 무효 0건은 축 이상 신호다
+        assert mb.rank_axis_health(db_session, min_rows=1, min_notices=1)["healthy"] is False
+
+    def test_notice_count_is_the_real_guard(self, db_session):
+        """행이 많아도 **공고가 적으면** 판정하지 않는다.
+
+        결측률은 공고 단위로 흔들린다(공고 하나가 통째로 유효일 수 있다). 운영은
+        공고당 참가자가 ~250행이라, 행 기준만 두면 공고 1건으로도 하한을 넘겨
+        가드가 무력해진다 — 실제로 그렇게 만들었다가 리뷰에서 잡혔다.
+        """
+        self._only(db_session, [
+            _participant("MB-AXIS-ONE", i + 1, 90_000_000 + i * 1_000_000)
+            for i in range(6)
+        ])
+
+        # 행 하한은 넘지만 공고가 1건 → 보류
+        assert mb.rank_axis_health(db_session, min_rows=3, min_notices=2)["healthy"] is None
+        # 공고 하한까지 낮추면 판정한다(무효 0건 = 축 이상)
+        assert mb.rank_axis_health(db_session, min_rows=3, min_notices=1)["healthy"] is False
+
+    def test_no_participants_returns_none_not_false_health(self, db_session):
+        """표본이 없을 때 '건강함/고장' 어느 쪽으로도 단정하지 않는다."""
+        self._only(db_session, [])
+        h = mb.rank_axis_health(db_session, min_rows=1, min_notices=1)
+        assert h["ranked_rows"] == 0
+        assert h["healthy"] is None
+        assert h["mismatch_pct"] is None
 
 
 class TestChartAggregates:
