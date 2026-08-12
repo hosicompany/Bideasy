@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import time
 
 import pytest
@@ -226,7 +226,6 @@ def test_crawl_fails_instead_of_committing_when_page_cap_is_full(monkeypatch):
 
 
 def _make_mock_bid(bid_no):
-    from datetime import timedelta
 
     from app.services.mock_bidding import now_kst
 
@@ -300,10 +299,11 @@ class TestParticipantParsing:
 
 
 class TestParticipantSave:
-    def test_resave_replaces_not_duplicates(self, db_session):
-        """재크롤 시 공고 단위 삭제-재삽입 — (bid_no, rank) UNIQUE 대신 쓰는 방식.
+    def test_recrawl_updates_in_place_without_duplicating(self, db_session):
+        """재크롤은 **병합**한다 — 중복도 안 만들고 삭제도 안 한다.
 
-        적격검사 진행 중 sucsfYn 이 N→Y 로 바뀌므로 갈아끼우는 편이 정확하다.
+        삭제-재삽입의 원래 명분(적격검사 sucsfYn N→Y 반영)은 그대로 지켜진다.
+        `rank`·`sucsf_yn` 은 키가 아니라 갱신 대상이기 때문이다.
         """
         rows = [
             {"bid_no": "PSAVE-1-000", "rank": 1, "company": "A", "bid_price": 90_000_000,
@@ -317,8 +317,8 @@ class TestParticipantSave:
 
         saved = (db_session.query(models.OpeningParticipant)
                  .filter_by(bid_no="PSAVE-1-000").all())
-        assert r["participant_rows"] == 2
-        assert len(saved) == 2  # 중복 없이 교체
+        assert r["participant_rows"] == 1        # 바뀐 1행만 썼다
+        assert len(saved) == 2                   # 중복 없음
         assert {p.sucsf_yn for p in saved if p.rank == 1} == {"Y"}
 
     def _rows(self, bid_no, n, start_rank=1):
@@ -329,12 +329,13 @@ class TestParticipantSave:
             for i in range(n)
         ]
 
-    def test_shrinking_replacement_is_held(self, db_session):
-        """행 수가 줄어드는 교체는 하지 않는다.
+    def test_partial_response_cannot_shrink_stored_rows(self, db_session):
+        """부분 응답이 와도 기존 행이 사라지지 않는다 — 축소가 **구조적으로 불가**.
 
-        개찰이 확정된 뒤 참가자가 사라질 이유가 없으니, 적게 온 응답은 완성본이
-        아니라 부분 응답이다. 그대로 갈아끼우면 채점이 퇴행값으로 등수를 다시
-        매기고 그게 최신 rev 가 되어 지표의 정본이 된다(12명 중 8위 → 5명 중 3위).
+        삭제-재삽입이던 시절엔 "행 수가 줄면 보류" 가드가 필요했는데, 그 가드는
+        정기 스케줄에서 원리적으로 동작할 수 없었다(공고당 조회가 2회뿐이라
+        관측 경과가 24h 한 값 → 어떤 시효도 "항상 채택" 아니면 "영구 보류").
+        병합으로 바꾸면 가드 자체가 필요 없다.
         """
         bid_no = "PSHRINK-1-000"
         crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 12)})
@@ -343,12 +344,12 @@ class TestParticipantSave:
 
         saved = (db_session.query(models.OpeningParticipant)
                  .filter_by(bid_no=bid_no).all())
-        assert len(saved) == 12                      # 완전 집합이 지켜졌다
-        assert r["participant_shrink_skipped"] == 1
-        assert r["participant_bids"] == 0
+        assert len(saved) == 12                  # 완전 집합이 그대로 남는다
+        assert r["participant_bids"] == 1        # 보류가 아니라 정상 처리다
+        assert r["participant_final_counts"][bid_no] == 12
 
-    def test_growing_replacement_is_applied(self, db_session):
-        """반대로 늘어나는 교체(부분 → 완성)는 그대로 반영한다."""
+    def test_late_arrivals_are_added(self, db_session):
+        """뒤늦게 도착한 참가자는 그대로 추가된다."""
         bid_no = "PGROW-1-000"
         crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 3)})
 
@@ -357,22 +358,26 @@ class TestParticipantSave:
         saved = (db_session.query(models.OpeningParticipant)
                  .filter_by(bid_no=bid_no).all())
         assert len(saved) == 9
-        assert r["participant_shrink_skipped"] == 0
-        assert r["participant_bids"] == 1
+        assert r["participant_rows"] == 6        # 새로 들어온 6행만 썼다
+        assert r["participant_final_counts"][bid_no] == 9
 
-    def test_same_size_replacement_still_applies(self, db_session):
-        """행 수가 같으면 교체한다 — sucsfYn N→Y 반영 경로가 막히면 안 된다."""
-        bid_no = "PSAME-1-000"
-        rows = self._rows(bid_no, 3)
-        crawler._save_participants(db_session, {bid_no: rows})
-        rows[0]["sucsf_yn"] = "Y"
+    def test_rank_can_be_assigned_later(self, db_session):
+        """무효로 들어온 참가자가 나중에 순위를 받으면 갱신된다(행이 늘지 않는다).
 
-        r = crawler._save_participants(db_session, {bid_no: rows})
+        `rank` 를 키에 넣었다면 같은 참가자가 두 행이 됐을 것이다.
+        """
+        bid_no = "PLATERANK-1-000"
+        row = {"bid_no": bid_no, "rank": None, "company": "A건설",
+               "bid_price": 90_000_000, "bid_rate": 90.0, "sucsf_yn": "N"}
+        crawler._save_participants(db_session, {bid_no: [dict(row)]})
+
+        row["rank"] = 3
+        crawler._save_participants(db_session, {bid_no: [dict(row)]})
 
         saved = (db_session.query(models.OpeningParticipant)
-                 .filter_by(bid_no=bid_no, rank=1).one())
-        assert saved.sucsf_yn == "Y"
-        assert r["participant_bids"] == 1
+                 .filter_by(bid_no=bid_no).all())
+        assert len(saved) == 1
+        assert saved[0].rank == 3
 
     def test_identical_rows_are_deduped_without_special_cases(self, db_session):
         """dedup 키에 분기를 두지 않는다.
@@ -389,28 +394,6 @@ class TestParticipantSave:
         # 완전히 같은 행은 하나로 — 상호 유무로 동작이 갈리지 않는다
         assert (db_session.query(models.OpeningParticipant)
                 .filter_by(bid_no=bid_no).count()) == 1
-
-    def test_shrink_hold_expires_so_data_can_self_heal(self, db_session):
-        """축소 보류에 시효가 있다 — 영구 보류는 복구 불가를 뜻한다.
-
-        부분 응답은 개찰 직후에 나온다. 기존 데이터가 충분히 오래됐는데도 계속
-        적게 온다면 그쪽이 정본이다. 시효가 없으면 한 번 잘못 부푼 공고를
-        운영 DB 수동 삭제 말고는 고칠 방법이 없다.
-        """
-        bid_no = "PSTALE-1-000"
-        crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 6)})
-        # 하루 뒤 재크롤 상황 — 시효는 크롤 창보다 짧아야 도달한다(아래 테스트)
-        old = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=21)
-        for p in db_session.query(models.OpeningParticipant).filter_by(bid_no=bid_no):
-            p.crawled_at = old
-        db_session.commit()
-
-        r = crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 3)})
-
-        assert r["participant_shrink_overridden"] == 1
-        assert r["participant_shrink_skipped"] == 0
-        assert (db_session.query(models.OpeningParticipant)
-                .filter_by(bid_no=bid_no).count()) == 3   # 최신 응답이 정본이 됐다
 
     def test_bigint_price_fits(self, db_session):
         """공사 투찰가는 int4(21.4억)를 넘는다 — mock_bids 에서 실제로 겪은 사고."""
@@ -511,108 +494,13 @@ def test_crawl_reports_structural_save_failure(monkeypatch, engine):
                         lambda db, by_bid: {"participant_bids": 0, "participant_rows": 0,
                                             "participant_errors": 1,
                                             "participant_structural_errors": 1,
-                                            "participant_shrink_skipped": 0,
-                                            "participant_shrink_overridden": 0})
+                                            "participant_final_counts": {}})
 
     result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
 
     assert result["ok"] is True                    # 낙찰 결과 적재는 되돌리지 않는다
     assert result["participant_targets"] == 1
     assert result["participant_ok"] is False
-
-
-def test_all_shrink_skipped_is_not_a_failure(monkeypatch, engine):
-    """전부 축소 보류돼도 고장이 아니다 — 보류는 정상 방어 동작이다.
-
-    `days_back=2` 로 같은 개찰을 재크롤하므로, 이미 완전한 공고만 다시 온 날은
-    저장이 0건이 된다. 이걸 전면 실패로 잡으면 매일 red 가 뜨고 경보가 무뎌진다.
-    판정 기준은 '저장 0건'이 아니라 '시도가 전부 예외'다.
-    """
-    from sqlalchemy.orm import sessionmaker
-
-    Session = sessionmaker(bind=engine)
-    s = Session()
-    s.add(_make_mock_bid("PSHRINKOK-1-000"))
-    s.commit()
-    # 이미 완전 집합(3행)이 저장돼 있다
-    for i in range(3):
-        s.add(models.OpeningParticipant(
-            bid_no="PSHRINKOK-1-000", rank=i + 1, company=f"업체{i}",
-            bid_price=90_000_000 + i, bid_rate=90.0, sucsf_yn="N"))
-    s.commit()
-    s.close()
-
-    # 재크롤이 1행만 준다 → 축소 보류
-    items = [{"bidNtceNo": "PSHRINKOK-1", "bidNtceOrd": "000", "opengRank": "1",
-              "bidprcAmt": "90000000", "bidprcCorpNm": "A건설", "sucsfYn": "Y",
-              "fnlSucsfAmt": "90000000", "presmptPrce": "100000000"}]
-    monkeypatch.setattr(crawler, "SessionLocal", Session)
-    monkeypatch.setattr(crawler, "_fetch_page",
-                        lambda start, end, page=1, num_rows=999: items if page == 1 else [])
-
-    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
-
-    assert result["participant_shrink_skipped"] == 1
-    assert result["participant_bids"] == 0
-    assert result["participant_ok"] is True        # 저장 0건이지만 고장이 아니다
-
-    s = Session()
-    try:  # 완전 집합이 지켜졌다
-        assert s.query(models.OpeningParticipant).filter_by(
-            bid_no="PSHRINKOK-1-000").count() == 3
-    finally:
-        s.close()
-
-
-def test_shrink_hold_actually_expires_through_the_crawl_path(monkeypatch, engine):
-    """시효가 **정기 크롤 경로에서** 실제로 도달하는지 본다.
-
-    함수를 직접 부르는 테스트만 두면 "고친 표시"에 속는다. 시효를 크롤 창보다
-    길게 잡았을 때(3일 vs days_back=2) 그 분기는 수학적으로 도달 불가였는데,
-    함수 단위 테스트는 `crawled_at` 을 손으로 5일 전으로 조작해 통과했었다.
-    """
-    from sqlalchemy.orm import sessionmaker
-
-    Session = sessionmaker(bind=engine)
-    s = Session()
-    s.add(_make_mock_bid("PHEAL-1-000"))
-    s.commit()
-    s.close()
-
-    def _items(n):
-        return [{"bidNtceNo": "PHEAL-1", "bidNtceOrd": "000", "opengRank": str(i + 1),
-                 "bidprcAmt": str(90_000_000 + i), "bidprcCorpNm": f"업체{i}",
-                 "sucsfYn": "Y" if i == 0 else "N", "fnlSucsfAmt": "90000000",
-                 "presmptPrce": "100000000", "opengDate": "2026-07-10"}
-                for i in range(n)]
-
-    monkeypatch.setattr(crawler, "SessionLocal", Session)
-    # 1회차 — 6행이 들어간다
-    monkeypatch.setattr(crawler, "_fetch_page",
-                        lambda start, end, page=1, num_rows=999: _items(6) if page == 1 else [])
-    crawler.crawl_recent_openings(days_back=0, max_pages=2)
-
-    # 하루가 지난 상황을 만든다(정기 크롤은 19:00 하루 1회)
-    s = Session()
-    aged = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
-    for p in s.query(models.OpeningParticipant).filter_by(bid_no="PHEAL-1-000"):
-        p.crawled_at = aged
-    s.commit()
-    s.close()
-
-    # 2회차 — 3행만 온다(축소). 시효를 넘겼으므로 최신 응답이 정본이 돼야 한다
-    monkeypatch.setattr(crawler, "_fetch_page",
-                        lambda start, end, page=1, num_rows=999: _items(3) if page == 1 else [])
-    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
-
-    assert result["participant_shrink_overridden"] == 1
-    assert result["participant_shrink_skipped"] == 0
-    s = Session()
-    try:
-        assert s.query(models.OpeningParticipant).filter_by(
-            bid_no="PHEAL-1-000").count() == 3
-    finally:
-        s.close()
 
 
 def test_participant_count_uses_same_key_as_storage(monkeypatch, engine):
@@ -678,8 +566,7 @@ def test_data_error_alone_is_not_a_structural_failure(monkeypatch, engine):
                         lambda db, by_bid: {"participant_bids": 0, "participant_rows": 0,
                                             "participant_errors": 1,
                                             "participant_structural_errors": 0,
-                                            "participant_shrink_skipped": 0,
-                                            "participant_shrink_overridden": 0})
+                                            "participant_final_counts": {}})
 
     result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
 
@@ -712,8 +599,7 @@ def test_structural_failure_is_caught_even_when_mixed_with_holds(monkeypatch, en
                         lambda db, by_bid: {"participant_bids": 0, "participant_rows": 0,
                                             "participant_errors": 14,
                                             "participant_structural_errors": 14,
-                                            "participant_shrink_skipped": 6,
-                                            "participant_shrink_overridden": 0})
+                                            "participant_final_counts": {}})
 
     result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
 

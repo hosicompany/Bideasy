@@ -25,9 +25,14 @@ _TRIGGERABLE = {
     "admin_report.send_daily": "일일 리포트",
 }
 
-#: `days_back` 인자를 받는 태스크. 참가자 축소 가드에 걸려 정본이 갱신되지 못한
-#: 공고는 창을 넓혀 다시 부르면 시효가 도달해 풀린다(유일한 복구 경로).
-_DAYS_BACK_TASKS = {"verification.daily_crawl_opening_results"}
+#: `days_back` 인자를 **실제로 받는** 태스크. 안 받는 태스크에 넘기면 워커에서
+#: TypeError 로 죽는다. 상한이 낮은 이유는 창 하나당 API 호출이 수백 회라
+#: 30일이면 5,000회를 넘고, 그중 한 창만 실패해도 그 런이 통째로 폐기되기 때문.
+_DAYS_BACK_TASKS = {
+    "verification.daily_crawl_opening_results",
+    "verification.daily_verify_predictions",
+}
+_DAYS_BACK_MAX = 7
 
 
 @router.get("/system/triggers")
@@ -53,8 +58,12 @@ def trigger_task(task_name: str, days_back: int | None = None,
         if task_name not in _DAYS_BACK_TASKS:
             raise HTTPException(status_code=400,
                                 detail="이 작업은 days_back 을 받지 않습니다.")
-        if not 0 <= days_back <= 30:
-            raise HTTPException(status_code=400, detail="days_back 은 0~30 이어야 합니다.")
+        # 하한이 1인 이유: 0 이면 길이 0 짜리 창이 되어 API 0건 → 아무 일도
+        # 안 일어났는데 "성공"으로 보고된다.
+        if not 1 <= days_back <= _DAYS_BACK_MAX:
+            raise HTTPException(
+                status_code=400,
+                detail=f"days_back 은 1~{_DAYS_BACK_MAX} 이어야 합니다.")
     kwargs = {"days_back": days_back} if days_back is not None else {}
     task = celery_app.send_task(task_name, kwargs=kwargs)
     logger.info(f"manual task dispatched: {task_name} ({task.id})")

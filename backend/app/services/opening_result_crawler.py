@@ -21,7 +21,6 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import requests
-from sqlalchemy import func
 from sqlalchemy.exc import (
     InterfaceError,
     InternalError,
@@ -309,86 +308,67 @@ def _load_registered_bid_nos(db: Session) -> tuple[set[str], bool]:
         return set(), False
 
 
-def _save_participants(db: Session, by_bid: dict[str, list[dict]],
-                       stale_after_hours: int = 20) -> dict:
-    """공고 단위로 참가자 행을 삭제-재삽입.
+def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
+    """공고 단위로 참가자 행을 **병합**한다. 삭제하지 않는다.
 
-    (bid_no, rank) UNIQUE 대신 이 방식을 쓰는 이유: API 가 동가 참가자에게
-    동순위를 줄 가능성을 배제할 수 없고, 적격검사 진행 중엔 sucsfYn 이 나중에
-    바뀔 수 있어(N→Y) 재크롤 시 최신 상태로 갈아끼우는 편이 정확하다.
+    **왜 삭제-재삽입을 버렸나**: 그 방식은 부분 응답이 완전 집합을 덮어쓰는
+    구조라 "행 수가 줄면 보류" 가드가 필요했는데, 그 가드는 정기 스케줄에서
+    원리적으로 동작할 수 없었다. `days_back=2` + 하루 1회 크롤이면 한 공고는
+    **정확히 2회만** 조회되고(1회차는 기존 행이 없어 판정 자체가 없다) 2회차의
+    경과는 **항상 24시간**이다. 즉 관측 가능한 경과가 한 값뿐이라 어떤 시효를
+    골라도 "항상 채택"(가드 부재) 아니면 "항상 보류"(영구 고착) 둘 중 하나가
+    된다 — 한 번 보류한 뒤 스스로 낫는 값은 존재하지 않는다. 실제로 3일로
+    뒀을 땐 도달 불가였고, 20시간으로 낮췄더니 가드가 통째로 무력해졌다.
+
+    병합은 그 딜레마를 없앤다. 축소가 **구조적으로 불가능**해지므로 가드도
+    시효도 필요 없다 — 이 코드에서 회귀는 늘 분기를 더한 자리에서 났다.
+
+    키는 `(company, bid_price)` 다. 같은 업체가 한 공고에 두 번 투찰할 수 없다.
+    `rank`·`sucsf_yn` 은 적격검사 진행 중 바뀌므로(N→Y) 키가 아니라 **갱신
+    대상**이다 — 삭제-재삽입의 원래 명분이었던 그 갱신은 그대로 유지된다.
+
     공고 단위 커밋 — 1건 결함이 나머지 공고의 참가자까지 날리지 않게.
-
-    ⚠️ 갈아끼우는 근거였던 `sucsf_yn`(적격검사 N→Y)은 **현재 읽는 코드가 없다**.
-    실질적인 근거는 부분 응답이 나중에 완성되는 경우이고, 그건 아래 축소 가드가
-    방향까지 함께 본다.
     """
     saved_bids = 0
-    saved_rows = 0
+    written_rows = 0
     errors = 0
     structural_errors = 0
-    shrink_skipped = 0
-    shrink_overridden = 0
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    final_counts: dict[str, int] = {}
+    now = datetime.now(timezone.utc)
     for bid_no, rows in by_bid.items():
-        # 같은 세션 내 API 중복 행 방어 (신뢰하되 확인).
-        # 키에 분기를 두지 않는다 — 상호 결측(실측 0건/462,900행)을 위해
-        # `if not company` 분기를 뒀더니 축소 가드와 합성돼, 한 번 부풀려 저장된
-        # 공고가 영영 복구되지 않았다. 이 코드에서 회귀는 늘 "특수 케이스를
-        # 분기로 빼는" 데서 났다.
+        # 같은 응답 안의 중복 행 방어 (신뢰하되 확인)
         uniq: dict[tuple, dict] = {}
         for r in rows:
-            uniq[(r["rank"], r["company"], r["bid_price"])] = r
+            uniq[(r["company"], r["bid_price"])] = r
         try:
-            existing, newest = (
-                db.query(func.count(models.OpeningParticipant.id),
-                         func.max(models.OpeningParticipant.crawled_at))
+            existing = {
+                (p.company, p.bid_price): p
+                for p in db.query(models.OpeningParticipant)
                 .filter(models.OpeningParticipant.bid_no == bid_no)
-                .one()
-            )
-            existing = existing or 0
-            # **줄어드는 교체는 보류한다.** 개찰이 확정된 뒤 참가자가 사라질
-            # 이유가 없으므로, 적게 온 응답은 완성본이 아니라 부분 응답으로 본다.
-            # 그대로 갈아끼우면 채점이 그 퇴행값으로 등수를 다시 매기고, 그게
-            # 최신 rev 가 되어 지표의 정본이 된다(12명 중 8위 → 5명 중 3위).
-            #
-            # 단 **영구 보류는 금지**다. 부분 응답은 개찰 직후에 나오므로, 기존
-            # 데이터가 하루 넘게 묵었는데도 계속 적게 온다면 그쪽이 정본이다.
-            #
-            # ⚠️ 시효는 **크롤 창(`days_back`)보다 짧아야 도달한다.** 축소 판정을
-            # 받으려면 그 공고가 창 안에 있어야 하고, 직전 저장은 그 공고를 창에
-            # 담았던 이전 런이므로 경과는 창 길이를 넘을 수 없다. 시효를 창보다
-            # 길게 잡으면 이 분기가 **한 번도 실행되지 않는다**(3일로 뒀다가
-            # 리뷰에서 잡혔다 — 고친 표시만 나고 동작은 그대로였다).
-            # 일 단위가 아니라 시간 단위인 것도 같은 이유다: 하루 1회 크롤에서
-            # `.days` 는 크롤 시각이 조금만 흔들려도 0 이 된다.
-            if existing > len(uniq):
-                age_h = None
-                if newest is not None:
-                    naive = newest.replace(tzinfo=None) if newest.tzinfo else newest
-                    age_h = (now_utc - naive).total_seconds() / 3600
-                if age_h is not None and age_h >= stale_after_hours:
-                    shrink_overridden += 1
-                    logger.warning(
-                        f"opening_crawler: 참가자 축소이지만 기존 데이터가 {age_h:.0f}시간 경과 "
-                        f"— 최신 응답을 채택 {bid_no}: {existing}행 → {len(uniq)}행"
-                    )
-                else:
-                    shrink_skipped += 1
-                    logger.warning(
-                        f"opening_crawler: 참가자 축소 교체 보류 {bid_no}: "
-                        f"{existing}행 → {len(uniq)}행 (부분 응답 의심)"
-                    )
+                .all()
+            }
+            written = 0
+            for key, r in uniq.items():
+                row = existing.get(key)
+                if row is None:
+                    db.add(models.OpeningParticipant(**r, crawled_at=now))
+                    written += 1
                     continue
-            db.query(models.OpeningParticipant).filter(
-                models.OpeningParticipant.bid_no == bid_no
-            ).delete()
-            for r in uniq.values():
-                db.add(models.OpeningParticipant(
-                    **r, crawled_at=datetime.now(timezone.utc)
-                ))
+                if (row.rank != r["rank"] or row.sucsf_yn != r["sucsf_yn"]
+                        or row.bid_rate != r["bid_rate"]):
+                    row.rank = r["rank"]
+                    row.sucsf_yn = r["sucsf_yn"]
+                    row.bid_rate = r["bid_rate"]
+                    written += 1
+                # 이번 크롤에서 이 공고를 봤다는 표시 — 일일 리포트가 수집 정체를
+                # 이 시각으로 감지한다
+                row.crawled_at = now
             db.commit()
             saved_bids += 1
-            saved_rows += len(uniq)
+            written_rows += written
+            # 병합 후 실제 행 수. `OpeningResult.participants_count` 를 이 값으로
+            # 맞춰야 두 저장소가 같은 말을 한다(따로 세면 언젠가 갈라진다).
+            final_counts[bid_no] = len(existing | uniq)
         except _STRUCTURAL_DB_ERRORS as e:
             # 테이블·컬럼 부재, 연결 단절 — 1건만 나와도 전 건에 해당하는 고장이다.
             # 표본 수로 "전면 실패"를 가리려 하면 소표본에서 늘 오판한다.
@@ -404,11 +384,10 @@ def _save_participants(db: Session, by_bid: dict[str, list[dict]],
             logger.warning(f"opening_crawler: 참가자 저장 실패 {bid_no}: {type(e).__name__}: {e}")
     return {
         "participant_bids": saved_bids,
-        "participant_rows": saved_rows,
+        "participant_rows": written_rows,
         "participant_errors": errors,
         "participant_structural_errors": structural_errors,
-        "participant_shrink_skipped": shrink_skipped,
-        "participant_shrink_overridden": shrink_overridden,
+        "participant_final_counts": final_counts,
     }
 
 
@@ -425,32 +404,25 @@ def _apply_participant_counts(db: Session, counts: dict[str, int]) -> int:
     잘린 채 저장되지는 않는다.
 
     추가 API 호출은 0 이다 — 이미 받아 온 응답을 세기만 한다.
+
+    ⚠️ **축소 가드를 두지 않는다.** 한때 참가자 행과 같은 규칙을 적용했지만,
+    여기엔 자기 치유 경로가 없어 한 번 부푼 값이 영영 안 내려갔다. master 는
+    가드가 없어 다음 크롤에 스스로 교정됐는데 그 자기 교정을 없앤 셈이었다.
+    등록 공고는 아래 `participant_final_counts`(병합 후 실제 행 수)로 덮으므로
+    부분 응답에 흔들리지 않고, 미등록 공고는 이 창 집계가 유일한 소스다.
     """
     if not counts:
         return 0
     updated = 0
-    shrink_skipped = 0
     for bid_no, cnt in counts.items():
         row = db.query(models.OpeningResult).filter(
             models.OpeningResult.bid_no == bid_no
         ).first()
         if row is None or cnt <= 0:
             continue
-        # 참가자 행과 **같은 규칙**을 적용한다. 여기에만 축소 가드가 없으면 두
-        # 저장소가 서로 다른 말을 하고, 퇴행값은 하필 사용자에게 보이는 쪽으로
-        # 샌다 — 공개 SSR 공고 상세, 누적 개찰 통계, 블로그 자동 초안.
-        if row.participants_count and cnt < row.participants_count:
-            shrink_skipped += 1
-            logger.warning(
-                f"opening_crawler: 참여사수 축소 반영 보류 {bid_no}: "
-                f"{row.participants_count} → {cnt} (부분 응답 의심)"
-            )
-            continue
         if row.participants_count != cnt:
             row.participants_count = cnt
             updated += 1
-    if shrink_skipped:
-        logger.warning(f"opening_crawler: 참여사수 축소 보류 {shrink_skipped}건")
     return updated
 
 
@@ -555,8 +527,12 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                     f"page limit reached with a full page: {start_str}~{end_str} "
                     f"(max_pages={max_pages})"
                 )
+            # 등록 공고는 참가자 저장이 끝난 뒤 **실제 행 수**로 덮는다(아래).
+            # 여기서 미리 창 집계를 반영하면 부분 응답이 그대로 공개 화면에
+            # 실리고, 참가자 행 수와도 갈라진다.
             counted += _apply_participant_counts(
-                db, {b: len(keys) for b, keys in window_keys.items()})
+                db, {b: len(keys) for b, keys in window_keys.items()
+                     if b not in registered_bid_nos})
             db.commit()
             inserted += window_inserted
             updated += window_updated
@@ -578,11 +554,19 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     # 실패해도 낙찰 결과 적재를 되돌리지 않는다(부가 데이터).
     p_summary = {"participant_bids": 0, "participant_rows": 0,
                  "participant_errors": 0, "participant_structural_errors": 0,
-                 "participant_shrink_skipped": 0, "participant_shrink_overridden": 0}
+                 "participant_final_counts": {}}
     if participants_by_bid:
         pdb = SessionLocal()
         try:
             p_summary = _save_participants(pdb, participants_by_bid)
+            # 등록 공고의 참여사수 = 병합 후 실제 참가자 행 수. 두 저장소가 같은
+            # 소스를 보게 해야 "행 수는 5인데 화면은 12"가 나오지 않는다.
+            counted += _apply_participant_counts(
+                pdb, p_summary.pop("participant_final_counts"))
+            pdb.commit()
+        except Exception as e:  # noqa: BLE001
+            pdb.rollback()
+            logger.warning(f"opening_crawler: 참여사수 반영 실패: {type(e).__name__}: {e}")
         finally:
             pdb.close()
 
@@ -609,10 +593,10 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             f"rank_field_dead={rank_field_dead} "
             f"(items={total_items} parsed={parsed_rows} field_missing={field_missing})"
         )
-    elif p_summary["participant_shrink_skipped"]:
+    elif p_summary["participant_errors"]:
         logger.warning(
-            f"opening_crawler: 참가자 축소 교체 {p_summary['participant_shrink_skipped']}건 보류 "
-            f"(대상 {len(participants_by_bid)}공고) — 부분 응답이 반복되면 원인을 확인할 것"
+            f"opening_crawler: 참가자 저장 실패 {p_summary['participant_errors']}건 "
+            f"(대상 {len(participants_by_bid)}공고) — 반복되면 원인을 확인할 것"
         )
 
     summary = {

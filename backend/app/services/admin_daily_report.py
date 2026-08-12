@@ -230,27 +230,33 @@ def collect_daily_report(
     # 며칠이 지나도 아무도 모른다. 태스크 실패 로그는 보는 사람이 없으므로
     # 매일 사람에게 닿는 이 리포트에 싣는다.
     #
-    # ⚠️ 임계가 왜 80시간인가: 개찰은 영업일에만 일어나고 재크롤(days_back=2)
-    # 특성상 **저장 0건인 날이 정상**이다. 30시간으로 잡으면 토요일 저장 후
-    # 일요일이 0건인 주마다 월요일 리포트에 뜬다. 매주 뜨는 경보는 곧 무시된다.
+    # ⚠️ **절대 시간 임계를 쓰지 않는다.** 개찰은 영업일에만 일어나므로 주말·
+    # 연휴에는 수집이 없는 게 정상이다. 30시간으로 잡으면 매주 월요일, 80시간으로
+    # 잡아도 연휴마다 뜬다. 매주 뜨는 경보는 곧 무시된다.
+    #
+    # 대신 **개찰 결과와 비교한다** — 둘은 같은 크롤에서 나오므로 연휴에는 함께
+    # 멈추고(면역), 개찰은 들어오는데 참가자만 안 들어오면 그건 진짜로 참가자
+    # 경로만 고장난 것이다. 하루 안에 잡힌다.
     #
     # 이 블록은 통짜 리포트 함수 안이라, 여기서 던지면 매출·전환·AI 비용 지표까지
     # 함께 잃는다. 부가 지표 하나가 본 리포트를 죽이지 않게 가둔다.
     try:
-        last_participant = db.query(
-            func.max(models.OpeningParticipant.crawled_at)
-        ).scalar()
-        if last_participant:
-            p_gap_h = (
-                datetime.now(timezone.utc).replace(tzinfo=None)
-                - (last_participant.replace(tzinfo=None)
-                   if last_participant.tzinfo else last_participant)
-            ).total_seconds() / 3600
-            if p_gap_h > 80:
+        def _naive(dt):
+            return dt.replace(tzinfo=None) if dt and dt.tzinfo else dt
+
+        last_participant = _naive(db.query(
+            func.max(models.OpeningParticipant.crawled_at)).scalar())
+        last_opening = _naive(db.query(
+            func.max(models.OpeningResult.crawled_at)).scalar())
+        if last_participant and last_opening:
+            # 개찰 결과가 참가자보다 하루 넘게 앞서면 참가자 경로만 죽은 것이다
+            behind_h = (last_opening - last_participant).total_seconds() / 3600
+            if behind_h > 24:
                 anomalies.append(
-                    f"⚠️ 개찰 참가자 수집 {p_gap_h:.0f}시간째 없음 — 모의투찰 등수 지표 정지 의심"
+                    f"⚠️ 개찰 결과는 들어오는데 참가자 수집이 {behind_h:.0f}시간 뒤처짐 "
+                    "— 모의투찰 등수 지표 정지 의심"
                 )
-        else:
+        elif last_participant is None:
             # 가장 위험한 상태가 침묵 구간이 되면 안 된다 — 참가자가 **한 번도**
             # 수집된 적 없는 배포 직후가 정확히 그 경우다. 다만 "등록이 있다"로
             # 판정하면 안 된다. 등록 직후는 아직 개찰 전이라 참가자가 없는 게

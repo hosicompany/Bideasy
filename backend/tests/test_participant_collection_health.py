@@ -101,17 +101,46 @@ class TestDailyReportParticipantAlarm:
         )
         assert any("참가자" in a for a in report["anomalies"])
 
-    def test_weekend_gap_does_not_alarm(self, db_session):
-        """개찰은 영업일에만 난다 — 저장 0건인 날이 정상인 파이프라인이다.
+    @staticmethod
+    def _opening(bid_no, *, hours_ago):
+        return models.OpeningResult(
+            bid_no=bid_no, basic_price=100_000_000, reserved_price=100_000_000,
+            winner_price=90_000_000,
+            open_date=datetime.now(timezone.utc).replace(tzinfo=None),
+            crawled_at=datetime.now(timezone.utc).replace(tzinfo=None)
+            - timedelta(hours=hours_ago),
+        )
 
-        30시간 임계였을 때는 토요일 저장 후 일요일이 0건인 주마다 월요일에
-        떴다. 매주 뜨는 경보는 곧 무시된다.
+    def test_weekend_gap_does_not_alarm(self, db_session):
+        """주말엔 개찰이 없어 **둘 다** 멈춘다 — 정상이다.
+
+        절대 시간 임계였을 때는 30h 든 80h 든 주말·연휴마다 떴다. 매주 뜨는
+        경보는 곧 무시된다.
         """
-        report = self._report(db_session, participants=[
-            self._participant("HEALTH-WEEKEND-000", hours_ago=40)])
+        report = self._report(
+            db_session,
+            participants=[self._participant("HEALTH-WEEKEND-000", hours_ago=40)],
+            openings=[self._opening("HEALTH-WEEKEND-000", hours_ago=40)],
+        )
         assert not any("참가자" in a for a in report["anomalies"])
 
-    def test_long_gap_alarms(self, db_session):
-        report = self._report(db_session, participants=[
-            self._participant("HEALTH-STALE-000", hours_ago=100)])
+    def test_long_holiday_does_not_alarm(self, db_session):
+        """설·추석 5일 연휴에도 조용해야 한다 — 절대 임계로는 불가능했다."""
+        report = self._report(
+            db_session,
+            participants=[self._participant("HEALTH-HOLIDAY-000", hours_ago=110)],
+            openings=[self._opening("HEALTH-HOLIDAY-000", hours_ago=110)],
+        )
+        assert not any("참가자" in a for a in report["anomalies"])
+
+    def test_alarms_when_openings_advance_but_participants_do_not(self, db_session):
+        """개찰 결과는 들어오는데 참가자만 멈췄다 = 참가자 경로만 고장.
+
+        이건 연휴와 달리 진짜 이상이고, 하루 안에 잡혀야 한다.
+        """
+        report = self._report(
+            db_session,
+            participants=[self._participant("HEALTH-BEHIND-000", hours_ago=50)],
+            openings=[self._opening("HEALTH-BEHIND-000", hours_ago=2)],
+        )
         assert any("참가자" in a for a in report["anomalies"])
