@@ -267,6 +267,27 @@ class TestParticipantParsing:
         p = crawler._parse_participant_kwargs({"bidNtceNo": "P-4", "bidprcAmt": "80000000"})
         assert p is not None and p["rank"] is None
 
+    def test_absent_and_unparsed_rank_are_counted_apart(self):
+        """"무효라서 순위 없음"과 "파싱이 깨짐"은 다른 사건이다.
+
+        `opengRank` 결측은 곧 무효 투찰이라는 뜻이고 등수 계산은 이 값이 있는
+        행만 센다(§7-8). 두 경우를 뭉쳐 세면, 필드명이 바뀌었을 때 전 참가자가
+        조용히 "무효"로 둔갑해 등수가 통째로 사라지는데도 화면은 "참가자 데이터
+        대기"와 똑같아 아무도 모른다.
+        """
+        stats: dict = {}
+        # 무효 투찰 — API 가 순위를 주지 않는다
+        crawler._parse_participant_kwargs(
+            {"bidNtceNo": "P-5", "bidprcAmt": "80000000"}, stats)
+        crawler._parse_participant_kwargs(
+            {"bidNtceNo": "P-5", "bidprcAmt": "81000000", "opengRank": ""}, stats)
+        # 형식이 바뀌어 파싱 실패
+        crawler._parse_participant_kwargs(
+            {"bidNtceNo": "P-5", "bidprcAmt": "82000000", "opengRank": "3위"}, stats)
+
+        assert stats["rank_absent"] == 2
+        assert stats["rank_unparsed"] == 1
+
 
 class TestParticipantSave:
     def test_resave_replaces_not_duplicates(self, db_session):
@@ -289,6 +310,78 @@ class TestParticipantSave:
         assert r["participant_rows"] == 2
         assert len(saved) == 2  # 중복 없이 교체
         assert {p.sucsf_yn for p in saved if p.rank == 1} == {"Y"}
+
+    def _rows(self, bid_no, n, start_rank=1):
+        return [
+            {"bid_no": bid_no, "rank": start_rank + i, "company": f"업체{i}",
+             "bid_price": 90_000_000 + i * 1_000_000, "bid_rate": 90.0 + i,
+             "sucsf_yn": "N"}
+            for i in range(n)
+        ]
+
+    def test_shrinking_replacement_is_held(self, db_session):
+        """행 수가 줄어드는 교체는 하지 않는다.
+
+        개찰이 확정된 뒤 참가자가 사라질 이유가 없으니, 적게 온 응답은 완성본이
+        아니라 부분 응답이다. 그대로 갈아끼우면 채점이 퇴행값으로 등수를 다시
+        매기고 그게 최신 rev 가 되어 지표의 정본이 된다(12명 중 8위 → 5명 중 3위).
+        """
+        bid_no = "PSHRINK-1-000"
+        crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 12)})
+
+        r = crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 5)})
+
+        saved = (db_session.query(models.OpeningParticipant)
+                 .filter_by(bid_no=bid_no).all())
+        assert len(saved) == 12                      # 완전 집합이 지켜졌다
+        assert r["participant_shrink_skipped"] == 1
+        assert r["participant_bids"] == 0
+
+    def test_growing_replacement_is_applied(self, db_session):
+        """반대로 늘어나는 교체(부분 → 완성)는 그대로 반영한다."""
+        bid_no = "PGROW-1-000"
+        crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 3)})
+
+        r = crawler._save_participants(db_session, {bid_no: self._rows(bid_no, 9)})
+
+        saved = (db_session.query(models.OpeningParticipant)
+                 .filter_by(bid_no=bid_no).all())
+        assert len(saved) == 9
+        assert r["participant_shrink_skipped"] == 0
+        assert r["participant_bids"] == 1
+
+    def test_same_size_replacement_still_applies(self, db_session):
+        """행 수가 같으면 교체한다 — sucsfYn N→Y 반영 경로가 막히면 안 된다."""
+        bid_no = "PSAME-1-000"
+        rows = self._rows(bid_no, 3)
+        crawler._save_participants(db_session, {bid_no: rows})
+        rows[0]["sucsf_yn"] = "Y"
+
+        r = crawler._save_participants(db_session, {bid_no: rows})
+
+        saved = (db_session.query(models.OpeningParticipant)
+                 .filter_by(bid_no=bid_no, rank=1).one())
+        assert saved.sucsf_yn == "Y"
+        assert r["participant_bids"] == 1
+
+    def test_rows_without_company_are_not_merged(self, db_session):
+        """상호가 없으면 식별이 불가능하므로 병합하지 않는다.
+
+        실측상 상호 결측은 0건(462,900행 전수)이라 현재는 발생하지 않지만,
+        결측이 생기면 동가·무순위 참가자 둘이 한 행으로 접혀 참여자 수가 과소
+        집계된다. 과소가 중복보다 나쁘다(등수는 유효 투찰만 세므로 무영향).
+        """
+        bid_no = "PNOCO-1-000"
+        rows = [
+            {"bid_no": bid_no, "rank": None, "company": "", "bid_price": 88_000_000,
+             "bid_rate": 88.0, "sucsf_yn": "N"},
+            {"bid_no": bid_no, "rank": None, "company": "", "bid_price": 88_000_000,
+             "bid_rate": 88.0, "sucsf_yn": "N"},
+        ]
+        crawler._save_participants(db_session, {bid_no: rows})
+
+        assert (db_session.query(models.OpeningParticipant)
+                .filter_by(bid_no=bid_no).count()) == 2
 
     def test_bigint_price_fits(self, db_session):
         """공사 투찰가는 int4(21.4억)를 넘는다 — mock_bids 에서 실제로 겪은 사고."""
@@ -344,6 +437,73 @@ def test_crawl_saves_participants_only_for_registered(monkeypatch, engine):
         assert s.query(models.OpeningParticipant).filter_by(bid_no="PCRAWL-2-000").count() == 0
     finally:
         s.close()
+
+
+def test_crawl_reports_participant_scope_failure(monkeypatch, engine):
+    """등록 목록 조회가 깨지면 그 회차 참가자 수집이 통째로 생략된다 — 그 사실을
+    반드시 위로 올린다. 조용히 넘기면 크롤은 매일 초록불인데 등수 지표만 성장을
+    멈추고, 화면은 "참가자 데이터 대기"와 구분되지 않는다(설계 §9 원칙).
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_fetch_page", lambda *a, **k: [])
+    monkeypatch.setattr(crawler, "_load_registered_bid_nos", lambda db: (set(), False))
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["ok"] is True             # 낙찰 결과 적재는 되돌리지 않는다
+    assert result["participant_ok"] is False
+    assert result["participant_scope_ok"] is False
+
+
+def test_crawl_reports_total_participant_save_failure(monkeypatch, engine):
+    """저장이 **전부** 실패하면 구조적 고장(테이블 없음·스키마 변경)이다."""
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(_make_mock_bid("PFAIL-1-000"))
+    s.commit()
+    s.close()
+
+    items = [{"bidNtceNo": "PFAIL-1", "bidNtceOrd": "000", "opengRank": "1",
+              "bidprcAmt": "90000000", "bidprcCorpNm": "A건설", "sucsfYn": "Y",
+              "fnlSucsfAmt": "90000000", "presmptPrce": "100000000"}]
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda start, end, page=1, num_rows=999: items if page == 1 else [])
+    monkeypatch.setattr(crawler, "_save_participants",
+                        lambda db, by_bid: {"participant_bids": 0, "participant_rows": 0,
+                                            "participant_errors": len(by_bid),
+                                            "participant_shrink_skipped": 0})
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["ok"] is True
+    assert result["participant_targets"] == 1
+    assert result["participant_ok"] is False
+
+
+def test_daily_crawl_task_fails_when_participants_collapse(monkeypatch):
+    """부분 실패는 넘어가고, 전면 실패만 태스크를 FAILURE 로 만든다.
+
+    데이터 결함 1건으로 매일 배치를 red 로 만들면 경보가 무뎌진다.
+    """
+    monkeypatch.setattr(
+        crawler, "crawl_recent_openings",
+        lambda days_back=2: {"ok": True, "participant_ok": False, "participant_targets": 12},
+    )
+    with pytest.raises(RuntimeError, match="participant collection failed"):
+        verification_tasks.daily_crawl_opening_results(days_back=2)
+
+    monkeypatch.setattr(
+        crawler, "crawl_recent_openings",
+        lambda days_back=2: {"ok": True, "participant_ok": True,
+                             "participant_errors": 1, "participant_bids": 11},
+    )
+    assert verification_tasks.daily_crawl_opening_results(days_back=2)["participant_errors"] == 1
 
 
 def test_daily_crawl_task_fails_when_crawler_reports_failure(monkeypatch):

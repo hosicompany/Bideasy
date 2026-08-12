@@ -31,6 +31,12 @@ def daily_crawl_opening_results(days_back: int = 2) -> dict:
     logger.info(f"[daily_crawl] {result}")
     if not result.get("ok"):
         raise RuntimeError(result.get("error", "opening result crawl failed"))
+    # 참가자 수집 전면 실패는 성공으로 삼키지 않는다. 낙찰 결과는 이미 커밋됐고
+    # 되돌리지 않지만(부가 데이터라 본 크롤을 막지 않는다는 설계), 태스크는
+    # FAILURE 로 남겨야 한다 — 안 그러면 등수 지표가 조용히 성장 정지한 채
+    # 크롤은 매일 초록불이고 화면은 "참가자 데이터 대기"와 구분되지 않는다.
+    if not result.get("participant_ok", True):
+        raise RuntimeError(f"participant collection failed: {result}")
     return result
 
 
