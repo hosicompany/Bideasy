@@ -1401,7 +1401,6 @@ function mbHistoryItem(item) {
   const primary = item.primary_arm || {};
   const meta = mbOutcomeMeta(primary.outcome);
   const completed = item.state === 'COMPLETED';
-  const rankReady = primary.estimated_rank !== null && primary.estimated_rank !== undefined;
   const rankText = mbRankText(primary, '집계 중');
   const participantText = (primary.participants_count == null
       && primary.valid_participants_count == null)
@@ -1548,12 +1547,18 @@ pages.mockbidding = async function (content) {
   const top3 = Number(rd['1'] || 0) + Number(rd['2'] || 0) + Number(rd['3'] || 0);
   // 축이 어긋난 상태에서 숫자만 살려두면, 관리자가 차트 경고를 읽고도 바로 위의
   // KPI 를 그대로 보고서에 옮긴다. 해석을 막으려면 숫자도 함께 막아야 한다.
-  const axisBroken = ((charts || {}).rank_axis_health || {}).healthy === false;
+  const axisHealth = (charts || {}).rank_axis_health || {};
+  const axisBroken = axisHealth.healthy === false;
   // 제외 수를 숨기면 전수를 본 것처럼 읽힌다. 무효율이 높은 arm 일수록 많이
   // 빠지므로, arm 간 비교에는 반드시 무효율과 함께 봐야 한다.
-  const dropoutExcluded = Number(((charts || {}).rank_dropout_excluded || {}).active || 0);
-  const dropoutExcludedText = dropoutExcluded
-    ? `무효 ${fmtNumber(dropoutExcluded)}건은 순위가 없어 제외했어요(무효율은 위 지표 참조).` : '';
+  const excluded = (charts || {}).rank_excluded || {};
+  const exDropout = Number((excluded.dropout || {}).active || 0);
+  const exNoData = Number((excluded.no_rank_data || {}).active || 0);
+  const exParts = [];
+  if (exDropout) exParts.push(`무효 ${fmtNumber(exDropout)}건(순위 없음)`);
+  if (exNoData) exParts.push(`참가자 데이터 미도착 ${fmtNumber(exNoData)}건`);
+  const dropoutExcludedText = exParts.length
+    ? `${exParts.join(' · ')}은 제외했어요(무효율은 위 지표 참조).` : '';
   const top3Rate = (ranked && !axisBroken) ? Math.round(top3 / ranked * 1000) / 10 : null;
   const top3Label = axisBroken ? '축 점검 중' : '표본 대기';
   const advanced = mbAdvancedTables(sum);
@@ -1572,7 +1577,7 @@ pages.mockbidding = async function (content) {
       <div class="mb-summary-card"><span>기록한 공고</span><strong id="mb-summary-registered">${fmtNumber(reach.registered || 0)}</strong><small>공고 기준</small></div>
       <div class="mb-summary-card good"><span>개찰 확인 완료</span><strong id="mb-summary-completed">${fmtNumber(reach.scored || 0)}</strong><small>실제 결과와 비교 가능</small></div>
       <div class="mb-summary-card waiting"><span>결과 기다리는 중</span><strong id="mb-summary-waiting">${fmtNumber(Math.max(0, (reach.registered || 0) - (reach.scored || 0)))}</strong><small>매일 자동 재확인</small></div>
-      <div class="mb-summary-card rank"><span>가상 등수 확인</span><strong id="mb-summary-ranked">—</strong><small>참가자 데이터 확보</small></div>
+      <div class="mb-summary-card rank"><span>등수 계산 완료</span><strong id="mb-summary-ranked">—</strong><small>무효(순위 없음) 제외</small></div>
     </section>
 
     <section class="card mb-history-card" id="mb-history">
@@ -1691,6 +1696,12 @@ function renderMockBiddingOverviewCharts(charts) {
     }[axis.reason] || '축 점검이 필요합니다.';
     mbChartEmpty('mb-ch-rank-simple',
       `등수 축 점검이 필요해요 — ${why} 원인을 확인할 때까지 등수는 해석하지 마세요.`);
+  } else if (axis && axis.healthy === null && axis.rows === 0) {
+    // 감시 불능(표본 0)을 조용히 넘기면 '정상'과 화면이 같아진다. 이 함수의
+    // 존재 이유가 "축이 틀린 채 9일 돌았는데 화면은 멀쩡했다" 이다.
+    mbChartEmpty('mb-ch-rank-simple',
+      `최근 ${axis.window_days ?? 7}일 참가자 데이터가 없어 축 감시를 못 하고 있어요. `
+      + '개찰 참가자 크롤이 도는지 먼저 확인하세요.');
   } else if (!rankGroups.some(Boolean)) {
     mbChartEmpty('mb-ch-rank-simple', noData);
   } else {

@@ -15,6 +15,7 @@ Create Date: 2026-08-12
 """
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'b8e4c1a29f73'
@@ -23,11 +24,22 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+INDEX = 'ix_opening_participants_crawled_at'
+TABLE = 'opening_participants'
+
+
+def _has_index() -> bool:
+    return INDEX in {ix['name'] for ix
+                     in sa.inspect(op.get_bind()).get_indexes(TABLE)}
+
+
 def upgrade() -> None:
-    op.create_index('ix_opening_participants_crawled_at',
-                    'opening_participants', ['crawled_at'])
+    # 존재 확인 후 생성 — 분할 이전 판본(`a3f9d2c47e61` 에 인덱스가 들어 있던
+    # 버전)을 이미 적용한 로컬/스테이징 DB 에서 DuplicateTable 로 배포가 죽는다.
+    if not _has_index():
+        op.create_index(INDEX, TABLE, ['crawled_at'])
 
 
 def downgrade() -> None:
-    op.drop_index('ix_opening_participants_crawled_at',
-                  table_name='opening_participants')
+    if _has_index():
+        op.drop_index(INDEX, table_name=TABLE)

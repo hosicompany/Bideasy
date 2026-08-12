@@ -749,7 +749,12 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
         .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
         .filter(
             models.MockBidResult.outcome.in_(("WIN", "LOST", "DROPOUT")),
-            valid_count > 0,
+            # 무효의 잘못된 등수를 **지우는 데는** 유효 참가자가 필요 없다.
+            # `valid_count > 0` 만 두면, 참가자가 전원 무효로만 수집된 공고에서
+            # 구 로직이 남긴 "1위"가 최신 rev 로 영구히 살아남는다.
+            or_(valid_count > 0,
+                and_(models.MockBidResult.outcome == "DROPOUT",
+                     models.MockBidResult.estimated_rank.isnot(None))),
             or_(
                 func.coalesce(models.MockBidResult.estimated_rank, -1)
                 != func.coalesce(expected_rank, -1),
@@ -772,15 +777,18 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
         priced = [p for p in participants.get(mb.bid_no, [])
                   if p.bid_price and p.bid_price > 0]
         valid_prices = _valid_participant_prices(priced)
-        if not valid_prices:
+        is_dropout = prev.outcome == "DROPOUT"
+        # 유효 투찰이 없어도 무효 건의 잘못된 등수는 지운다(SQL 조건과 같은 짝)
+        clearing_stale_rank = is_dropout and prev.estimated_rank is not None
+        if not valid_prices and not clearing_stale_rank:
             continue  # 조회 직후 재크롤로 교체된 극단적 경합 — 다음 실행에서 다시 본다
         # 무효는 등수를 갖지 않는다. 참가자 수는 무효 건에도 갱신한다 — 분기를
         # 나눠 무효를 후보에서 빼면 그 행의 참가자 수가 부분 응답 시점에 영구히
         # 동결된다(리뷰가 잡은 회귀).
-        next_rank = (None if prev.outcome == "DROPOUT"
+        next_rank = (None if is_dropout
                      else estimate_rank(int(mb.price), valid_prices))
-        next_count = len(priced)
-        next_valid = len(valid_prices)
+        next_count = len(priced) if priced else prev.participants_count
+        next_valid = len(valid_prices) if valid_prices else None
         if (prev.estimated_rank == next_rank
                 and prev.participants_count == next_count
                 and prev.valid_participants_count == next_valid):
@@ -1007,6 +1015,14 @@ def _latest_rev_sq(db: Session):
         .group_by(models.MockBidResult.mock_bid_id)
         .subquery()
     )
+
+
+#: 어드민 엔드포인트 등 서비스 밖에서 쓰는 공개 이름. "등록 건당 최신 rev 만
+#: 본다"는 이 프로젝트의 집계 계약이라, private 로 감춰 두면 호출처가 조인을
+#: 빼먹고 각자 다른 기준으로 세게 된다.
+def latest_rev_subquery(db: Session):
+    """`_latest_rev_sq` 의 공개 별칭."""
+    return _latest_rev_sq(db)
 
 
 def _valid_base_filter():
@@ -1373,7 +1389,8 @@ GAP_BUCKETS = ("≤-5", "-5~-2", "-2~-0.5", "-0.5~0", "0~0.5", "0.5~1", "1~2", "
 
 
 def rank_axis_health(db: Session, sample_notices: int = 300,
-                     min_rows: int = 200, window_days: int = 7) -> dict:
+                     min_rows: int = 200, min_notices: int = 30,
+                     window_days: int = 7) -> dict:
     """저장된 `opengRank` 와 우리 재계산 등수가 같은 축인지 상시 감시한다.
 
     **왜 상시로 재는가**: Phase 2 는 "무효 투찰도 순위에 포함된다"는 전제로
@@ -1436,8 +1453,12 @@ def rank_axis_health(db: Session, sample_notices: int = 300,
 
     # 표본이 작으면 판정하지 않는다. 무효가 우연히 0건인 소표본을 "고장"이라고
     # 외치면, 관리자는 그 오탐을 한 번 겪은 뒤 진짜 경고도 무시한다.
+    #
+    # **공고 수가 진짜 기준이다.** 결측률은 공고 단위로 흔들리는데(공고 하나가
+    # 통째로 유효일 수 있다) 운영은 공고당 참가자가 ~250행이라, 행 기준만 두면
+    # **공고 1건으로도 200행을 넘겨** 가드가 무력해진다.
     healthy, reason = None, None
-    if total_rows >= min_rows:
+    if total_rows >= min_rows and sampled >= min_notices:
         # ① 순위가 있는 행끼리 가격순이 맞는가 (전수 실측 기준선 0.054%)
         if not ranked:
             healthy, reason = False, "no_rank_at_all"   # 파싱 전면 실패 의심
@@ -1455,6 +1476,8 @@ def rank_axis_health(db: Session, sample_notices: int = 300,
         "sample_notices": sample_notices,   # 요청값
         "sampled_notices": int(sampled),    # 실제 표본 — 이게 없으면 표본 크기를 모른다
         "min_rows": min_rows,
+        "min_notices": min_notices,
+        "window_days": window_days,
         "rows": total_rows,
         "ranked_rows": ranked,
         "mismatch": mismatch,
@@ -1465,25 +1488,41 @@ def rank_axis_health(db: Session, sample_notices: int = 300,
     }
 
 
-def rank_dropout_excluded(db: Session) -> dict:
-    """`rank_distribution` 이 무효로 제외한 arm 별 건수.
+def rank_distribution_excluded(db: Session) -> dict:
+    """`rank_distribution` 에서 빠진 arm 별 건수를 **사유별로** 돌려준다.
 
-    `summarize` 가 `excluded_base_mismatch` 를 함께 돌려주는 것과 같은 이유다 —
+    `summarize` 가 `excluded_base_mismatch` 를 함께 주는 것과 같은 이유다 —
     **제외 수를 숨기면 전수를 본 것처럼 읽힌다.** 특히 무효율이 높은 arm 일수록
     많이 빠지므로, 등수 분포를 arm 간 비교에 쓸 때는 반드시 무효율과 함께 봐야
-    한다(무효를 빼면 "유효였을 때"로 조건부인 분포가 된다).
+    한다(무효를 빼면 "유효였을 때"로 **조건부인** 분포가 된다).
+
+    사유가 둘이라 나눠 센다. 무효만 세면 두 방향으로 틀린다 — 참가자 데이터가
+    없어 애초에 분포 후보가 아니던 건을 "제외됐다"고 세고(과대), 유효 판정인데
+    등수를 못 구한 건은 아예 안 센다(과소).
     """
     sq = _latest_rev_sq(db)
-    rows = (
-        db.query(models.MockBid.arm, func.count().label("n"))
-        .join(models.MockBidResult, models.MockBidResult.mock_bid_id == models.MockBid.id)
-        .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
-                       models.MockBidResult.scoring_rev == sq.c.max_rev))
-        .filter(models.MockBidResult.outcome == "DROPOUT", _valid_base_filter())
-        .group_by(models.MockBid.arm)
-        .all()
-    )
-    return {arm: int(n) for arm, n in rows}
+
+    def _count(*extra):
+        rows = (
+            db.query(models.MockBid.arm, func.count().label("n"))
+            .join(models.MockBidResult,
+                  models.MockBidResult.mock_bid_id == models.MockBid.id)
+            .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                           models.MockBidResult.scoring_rev == sq.c.max_rev))
+            .filter(_valid_base_filter(), *extra)
+            .group_by(models.MockBid.arm)
+            .all()
+        )
+        return {arm: int(n) for arm, n in rows}
+
+    return {
+        # 참가자 데이터가 붙어 분포 후보였는데 무효라 빠진 건
+        "dropout": _count(models.MockBidResult.outcome == "DROPOUT",
+                          models.MockBidResult.valid_participants_count.isnot(None)),
+        # 유효 판정인데 등수를 못 구한 건(참가자 미도착 등)
+        "no_rank_data": _count(models.MockBidResult.outcome.in_(("WIN", "LOST")),
+                               models.MockBidResult.estimated_rank.is_(None)),
+    }
 
 
 def rank_distribution(db: Session) -> dict:

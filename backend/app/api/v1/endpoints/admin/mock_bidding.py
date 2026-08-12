@@ -63,8 +63,8 @@ def charts(
         "queue_health": mb.score_queue_health(db),
         "sample_validity": mb.sample_validity(db),
         "rank_distribution": mb.rank_distribution(db),
-        # 등수 분포에서 무효로 빠진 수 — 숨기면 전수를 본 것처럼 읽힌다
-        "rank_dropout_excluded": mb.rank_dropout_excluded(db),
+        # 등수 분포에서 빠진 수(사유별) — 숨기면 전수를 본 것처럼 읽힌다
+        "rank_excluded": mb.rank_distribution_excluded(db),
         "rank_histogram_cap": mb.RANK_HISTOGRAM_CAP,
         # 등수 축이 개찰 API 와 여전히 같은지 — 어긋나면 등수 해석을 멈춘다(§9)
         "rank_axis_health": mb.rank_axis_health(db),
@@ -168,7 +168,7 @@ def results(
     """
     from app.services import mock_bidding as mb
 
-    sq = mb._latest_rev_sq(db)
+    sq = mb.latest_rev_subquery(db)
     q = (
         db.query(models.MockBidResult, models.MockBid)
         .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
