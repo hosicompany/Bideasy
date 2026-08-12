@@ -17,7 +17,10 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.logging import get_logger
 from app.db import models
+
+logger = get_logger(__name__)
 
 
 def _day_bounds(target: date_cls) -> tuple[datetime, datetime]:
@@ -221,6 +224,53 @@ def collect_daily_report(
         ).total_seconds() / 3600
         if gap_hours > 30:
             anomalies.append(f"⚠️ 크롤러 {gap_hours:.0f}시간째 정체 — 확인 필요")
+
+    # 개찰 참가자 수집 정체 — 이게 멈추면 모의투찰 등수 지표가 **조용히** 성장을
+    # 멈춘다. 크롤은 초록불이고 화면은 "참가자 데이터 대기"와 구분되지 않아,
+    # 며칠이 지나도 아무도 모른다. 태스크 실패 로그는 보는 사람이 없으므로
+    # 매일 사람에게 닿는 이 리포트에 싣는다.
+    #
+    # ⚠️ **시각으로 판정하지 않는다.** 절대 임계(30h·80h)는 주말·연휴마다 오탐이고,
+    # 개찰 결과와의 시각 차분도 마찬가지다 — 둘은 **같은 일일 크롤에서 찍히므로**
+    # 고장 첫날 관측되는 차이는 24h 한 값뿐이라, 어떤 임계를 골라도 크롤 주기 위에
+    # 놓인다(3차 리뷰가 축소 가드 시효에서 격파한 것과 같은 구조다). 게다가 두
+    # 값은 모수가 다르다 — 참가자는 **등록 공고만**, 개찰은 **전 공고**다.
+    #
+    # 대신 **모수가 같은 사실 하나**를 본다: 최근 개찰이 확정된 등록 공고 중
+    # 참가자 행이 없는 비율. 연휴엔 분모가 0 이라 조용하고(면역), 수집 경로가
+    # 죽으면 분모는 그대로인데 분자가 치솟는다. 실측 2026-08-12 기준
+    # 정상값은 **0건**(3일 창 260공고 / 7일 창 558공고 전부 참가자 보유)이다.
+    #
+    # 이 블록은 통짜 리포트 함수 안이라, 여기서 던지면 매출·전환·AI 비용 지표까지
+    # 함께 잃는다. 부가 지표 하나가 본 리포트를 죽이지 않게 가둔다.
+    try:
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=3)
+        opened_registered = {
+            row[0] for row in
+            db.query(models.MockBid.bid_no)
+            .join(models.OpeningResult,
+                  models.OpeningResult.bid_no == models.MockBid.bid_no)
+            .filter(models.OpeningResult.open_date >= since)
+            .distinct().all()
+        }
+        if opened_registered:
+            with_participants = {
+                row[0] for row in
+                db.query(models.OpeningParticipant.bid_no)
+                .filter(models.OpeningParticipant.bid_no.in_(opened_registered))
+                .distinct().all()
+            }
+            missing = len(opened_registered) - len(with_participants)
+            # 표본이 작을 때 1~2건으로 흔들리지 않게 비율과 건수를 함께 본다
+            if missing >= 5 and missing / len(opened_registered) >= 0.5:
+                anomalies.append(
+                    f"⚠️ 최근 3일 개찰된 모의투찰 등록 공고 {len(opened_registered)}건 중 "
+                    f"{missing}건에 참가자 데이터 없음 — 수집 경로 확인 필요"
+                )
+    except Exception as e:  # noqa: BLE001
+        # 삼키되 조용하지는 않게 — 이 블록을 가둔 건 부가 지표가 본 리포트를
+        # 죽이지 않게 하려는 것이지, 고장을 숨기려는 게 아니다.
+        logger.warning(f"[daily_report] 참가자 수집 점검 실패: {type(e).__name__}: {e}")
 
     # ─── 요약 문자열 (이메일/슬랙 한 줄 헤더) ────────────────
     summary_line = (

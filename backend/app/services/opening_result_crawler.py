@@ -21,6 +21,13 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import requests
+from sqlalchemy.exc import (
+    InterfaceError,
+    InternalError,
+    OperationalError,
+    PendingRollbackError,
+    ProgrammingError,
+)
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -32,6 +39,17 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdScsbidInfo"
 _BSNS_DIV_CONSTRUCTION = "3"  # 공사
 _PAGE_SIZE = 999  # API accepts at most 999; 1000 falls back to 10 rows.
+
+#: 저장 실패를 **구조적 고장**으로 볼 예외들 — 테이블·컬럼 부재, 연결 단절.
+#: 1건만 나와도 전 건에 해당하므로 "몇 건이 실패했나"로 판정하면 안 된다.
+#: 나머지(값 범위 초과 등)는 그 건만의 데이터 결함이다.
+#: `InterfaceError`(pgbouncer 유휴 종료·SSL 오류)와 `PendingRollbackError`
+#: (앞 건의 rollback 실패 후속)가 빠지면, 연결이 통째로 끊긴 상황이 "데이터
+#: 결함"으로 분류돼 이 검출기가 존재 이유인 자리에서 침묵한다.
+_STRUCTURAL_DB_ERRORS = (
+    OperationalError, ProgrammingError, InternalError,
+    InterfaceError, PendingRollbackError,
+)
 
 
 def _fetch_page(
@@ -209,7 +227,7 @@ def _parse_item_to_kwargs(item: dict) -> dict | None:
     }
 
 
-def _parse_participant_kwargs(item: dict) -> dict | None:
+def _parse_participant_kwargs(item: dict, stats: dict | None = None) -> dict | None:
     """API 응답 item 을 OpeningParticipant kwargs 로 변환.
 
     `_parse_item_to_kwargs` 가 낙찰자 행만 남기고 버리는 것과 달리, 여기서는
@@ -233,66 +251,148 @@ def _parse_participant_kwargs(item: dict) -> dict | None:
     if not bid_amt or bid_amt <= 0:
         return None
 
+    # `opengRank` 는 **유효 투찰(낙찰하한선 이상)에만** 부여된다 — 값이 비어
+    # 있다는 건 그 투찰이 무효라는 뜻이다(2026-08-11 실측: 전체의 47.6%).
+    #
+    # 그래서 세 경우를 **갈라 세야** 한다. 뭉치면 API 가 필드명을 바꿨을 때
+    # 전 참가자가 조용히 "무효"로 둔갑하는데, 무효는 평소에도 큰 수라 증가가
+    # 묻힌다. `rank_field_missing` 이 그 사고를 가리키는 유일한 신호다.
     rank = None
-    try:
-        rank = int(item.get("opengRank"))
-    except (TypeError, ValueError):
-        pass  # 순위 결측이어도 투찰가만 있으면 등수 재구성엔 쓸 수 있다
+    if stats is not None:
+        stats["rows"] = stats.get("rows", 0) + 1
+    if "opengRank" not in item:
+        # 스키마 변경 의심 — 필드 자체가 응답에 없다
+        if stats is not None:
+            stats["rank_field_missing"] = stats.get("rank_field_missing", 0) + 1
+    elif item["opengRank"] in (None, ""):
+        # 정상 — 무효 투찰이라 API 가 순위를 주지 않았다
+        if stats is not None:
+            stats["rank_absent"] = stats.get("rank_absent", 0) + 1
+    else:
+        try:
+            rank = int(item["opengRank"])
+        except (TypeError, ValueError):
+            # 형식 변경 의심 — 값은 있는데 정수가 아니다
+            if stats is not None:
+                stats["rank_unparsed"] = stats.get("rank_unparsed", 0) + 1
 
     return {
         "bid_no": bid_no,
         "rank": rank,
-        "company": item.get("bidprcCorpNm") or "",
+        # 병합 키의 일부라 **정규화가 필수**다. 후행 공백 하나만 붙어도 같은
+        # 업체가 별개 행이 되고, 삭제 경로가 없어 그 중복은 영구히 남는다
+        # (실측 2026-08-12: 앞뒤 공백 212행 / 466,850).
+        "company": (item.get("bidprcCorpNm") or "").strip(),
         "bid_price": int(bid_amt),
         "bid_rate": _f(item.get("bidprcRt")),
         "sucsf_yn": (item.get("sucsfYn") or "").strip().upper() or None,
     }
 
 
-def _load_registered_bid_nos(db: Session) -> set[str]:
+def _load_registered_bid_nos(db: Session) -> tuple[set[str], bool]:
     """모의투찰에 등록된 bid_no 집합 — 참가자 저장 범위(설계 §P4).
 
     전수 저장은 하루 169k행 규모라 함정이다. 등록분만 담으면 데이터량이
     수십분의 1로 떨어지면서 얻을 건 다 얻는다. 실패해도 본 크롤(낙찰 결과
     적재)을 막지 않는다 — 참가자는 부가 데이터다.
+
+    **다만 실패했다는 사실은 반드시 위로 올린다**(`ok` 플래그). 조용히 빈
+    집합을 돌려주면 그 회차 참가자 수집이 통째로 생략되는데, 크롤은 초록불이고
+    화면은 "참가자 데이터 대기"와 똑같아서 며칠이 지나도 아무도 모른다.
     """
     try:
-        return {row[0] for row in db.query(models.MockBid.bid_no).distinct().all()}
+        return {row[0] for row in db.query(models.MockBid.bid_no).distinct().all()}, True
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"opening_crawler: 등록 bid_no 조회 실패 — 참가자 저장 생략: {e}")
-        return set()
+        # rollback 이 없으면 PostgreSQL 은 트랜잭션을 abort 상태로 두고, 이후
+        # 본 크롤의 모든 쿼리가 InFailedSqlTransaction 으로 죽는다 —
+        # "실패해도 본 크롤을 막지 않는다"는 이 함수의 약속이 깨진다.
+        db.rollback()
+        logger.error(f"opening_crawler: 등록 bid_no 조회 실패 — 참가자 저장 생략: {e}")
+        return set(), False
 
 
 def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
-    """공고 단위로 참가자 행을 삭제-재삽입.
+    """공고 단위로 참가자 행을 **병합**한다. 삭제하지 않는다.
 
-    (bid_no, rank) UNIQUE 대신 이 방식을 쓰는 이유: API 가 동가 참가자에게
-    동순위를 줄 가능성을 배제할 수 없고, 적격검사 진행 중엔 sucsfYn 이 나중에
-    바뀔 수 있어(N→Y) 재크롤 시 최신 상태로 갈아끼우는 편이 정확하다.
+    **왜 삭제-재삽입을 버렸나**: 그 방식은 부분 응답이 완전 집합을 덮어쓰는
+    구조라 "행 수가 줄면 보류" 가드가 필요했는데, 그 가드는 정기 스케줄에서
+    원리적으로 동작할 수 없었다. `days_back=2` + 하루 1회 크롤이면 한 공고는
+    **정확히 2회만** 조회되고(1회차는 기존 행이 없어 판정 자체가 없다) 2회차의
+    경과는 **항상 24시간**이다. 즉 관측 가능한 경과가 한 값뿐이라 어떤 시효를
+    골라도 "항상 채택"(가드 부재) 아니면 "항상 보류"(영구 고착) 둘 중 하나가
+    된다 — 한 번 보류한 뒤 스스로 낫는 값은 존재하지 않는다. 실제로 3일로
+    뒀을 땐 도달 불가였고, 20시간으로 낮췄더니 가드가 통째로 무력해졌다.
+
+    병합은 그 딜레마를 없앤다. 축소가 **구조적으로 불가능**해지므로 가드도
+    시효도 필요 없다 — 이 코드에서 회귀는 늘 분기를 더한 자리에서 났다.
+
+    키는 `(company, bid_price)` 다. 같은 업체가 한 공고에 두 번 투찰할 수 없다.
+    `rank`·`sucsf_yn` 은 적격검사 진행 중 바뀌므로(N→Y) 키가 아니라 **갱신
+    대상**이다 — 삭제-재삽입의 원래 명분이었던 그 갱신은 그대로 유지된다.
+
     공고 단위 커밋 — 1건 결함이 나머지 공고의 참가자까지 날리지 않게.
     """
     saved_bids = 0
-    saved_rows = 0
+    written_rows = 0
+    errors = 0
+    structural_errors = 0
+    final_counts: dict[str, int] = {}
+    now = datetime.now(timezone.utc)
     for bid_no, rows in by_bid.items():
-        # 같은 세션 내 API 중복 행 방어 (신뢰하되 확인)
+        # 같은 응답 안의 중복 행 방어 (신뢰하되 확인)
         uniq: dict[tuple, dict] = {}
         for r in rows:
-            uniq[(r["rank"], r["company"], r["bid_price"])] = r
+            uniq[(r["company"], r["bid_price"])] = r
         try:
-            db.query(models.OpeningParticipant).filter(
-                models.OpeningParticipant.bid_no == bid_no
-            ).delete()
-            for r in uniq.values():
-                db.add(models.OpeningParticipant(
-                    **r, crawled_at=datetime.now(timezone.utc)
-                ))
+            existing = {
+                (p.company, p.bid_price): p
+                for p in db.query(models.OpeningParticipant)
+                .filter(models.OpeningParticipant.bid_no == bid_no)
+                .all()
+            }
+            written = 0
+            for key, r in uniq.items():
+                row = existing.get(key)
+                if row is None:
+                    db.add(models.OpeningParticipant(**r, crawled_at=now))
+                    written += 1
+                    continue
+                if (row.rank != r["rank"] or row.sucsf_yn != r["sucsf_yn"]
+                        or row.bid_rate != r["bid_rate"]):
+                    row.rank = r["rank"]
+                    row.sucsf_yn = r["sucsf_yn"]
+                    row.bid_rate = r["bid_rate"]
+                    # 실제로 바뀐 행만 시각을 새로 찍는다. 무조건 갱신하면
+                    # 재크롤마다 전 행이 UPDATE 돼 dead tuple 이 쌓이고,
+                    # "마지막으로 실제 바뀐 시점"이라는 신호도 잃는다.
+                    row.crawled_at = now
+                    written += 1
             db.commit()
             saved_bids += 1
-            saved_rows += len(uniq)
-        except Exception as e:  # noqa: BLE001
+            written_rows += written
+            # 병합 후 실제 행 수. `OpeningResult.participants_count` 를 이 값으로
+            # 맞춰야 두 저장소가 같은 말을 한다(따로 세면 언젠가 갈라진다).
+            final_counts[bid_no] = len(existing | uniq)
+        except _STRUCTURAL_DB_ERRORS as e:
+            # 테이블·컬럼 부재, 연결 단절 — 1건만 나와도 전 건에 해당하는 고장이다.
+            # 표본 수로 "전면 실패"를 가리려 하면 소표본에서 늘 오판한다.
             db.rollback()
+            errors += 1
+            structural_errors += 1
+            logger.error(f"opening_crawler: 참가자 저장 구조적 실패 {bid_no}: "
+                         f"{type(e).__name__}: {e}")
+        except Exception as e:  # noqa: BLE001
+            # 데이터 결함(값 범위 초과·제약 위반 등) — 그 건만의 문제다
+            db.rollback()
+            errors += 1
             logger.warning(f"opening_crawler: 참가자 저장 실패 {bid_no}: {type(e).__name__}: {e}")
-    return {"participant_bids": saved_bids, "participant_rows": saved_rows}
+    return {
+        "participant_bids": saved_bids,
+        "participant_rows_changed": written_rows,
+        "participant_errors": errors,
+        "participant_structural_errors": structural_errors,
+        "participant_final_counts": final_counts,
+    }
 
 
 def _apply_participant_counts(db: Session, counts: dict[str, int]) -> int:
@@ -308,6 +408,12 @@ def _apply_participant_counts(db: Session, counts: dict[str, int]) -> int:
     잘린 채 저장되지는 않는다.
 
     추가 API 호출은 0 이다 — 이미 받아 온 응답을 세기만 한다.
+
+    ⚠️ **축소 가드를 두지 않는다.** 한때 참가자 행과 같은 규칙을 적용했지만,
+    여기엔 자기 치유 경로가 없어 한 번 부푼 값이 영영 안 내려갔다. master 는
+    가드가 없어 다음 크롤에 스스로 교정됐는데 그 자기 교정을 없앤 셈이었다.
+    등록 공고는 아래 `participant_final_counts`(병합 후 실제 행 수)로 덮으므로
+    부분 응답에 흔들리지 않고, 미등록 공고는 이 창 집계가 유일한 소스다.
     """
     if not counts:
         return 0
@@ -373,8 +479,10 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
 
     # 참가자 저장 대상 = 모의투찰 등록 공고만 (설계 §P4 — 전수 저장 금지).
     # API 는 참가자별로 row 를 쪼개 주므로, 낙찰자 판별과 별개로 여기서 줍는다.
-    registered_bid_nos = _load_registered_bid_nos(db)
+    registered_bid_nos, scope_ok = _load_registered_bid_nos(db)
     participants_by_bid: dict[str, list[dict]] = {}
+    parse_stats: dict[str, int] = {}
+    total_items = 0
     counted = 0
 
     try:
@@ -386,18 +494,25 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             window_skipped = 0
             # 참여사수 = 이 창에서 그 공고로 온 참가자 행 수. 창 단위로 세고
             # 창 단위로 반영한다(창을 넘겨 누적하면 재크롤 겹침에서 부풀어 오른다).
-            window_counts: dict[str, int] = {}
+            # 참여사수는 **저장과 같은 키로** 센다. raw 행을 그냥 더하면 API 가
+            # 같은 행을 두 번 준 날(페이지 경계에서 정렬이 흔들리면 999행 ×
+            # 수백 페이지 규모에서 실재하는 사고 — dedup 을 넣은 이유가 그것이다)
+            # `participants_count` 만 부풀어 `opening_participants` 행 수와
+            # 영구히 어긋난다. 두 저장소가 서로 다른 말을 하게 된다.
+            window_keys: dict[str, set] = {}
             logger.info(f"opening_crawler: window {start_str} ~ {end_str}")
             for page in range(1, max_pages + 1):
                 items = _fetch_page(start_str, end_str, page=page)
                 pages_fetched += 1
+                total_items += len(items)
                 if not items:
                     break
                 for item in items:
-                    p = _parse_participant_kwargs(item)
+                    p = _parse_participant_kwargs(item, parse_stats)
                     if p:
                         # 세는 건 전 공고, 저장은 등록 공고만(설계 §P4).
-                        window_counts[p["bid_no"]] = window_counts.get(p["bid_no"], 0) + 1
+                        window_keys.setdefault(p["bid_no"], set()).add(
+                            (p["rank"], p["company"], p["bid_price"]))
                         if p["bid_no"] in registered_bid_nos:
                             participants_by_bid.setdefault(p["bid_no"], []).append(p)
                     kwargs = _parse_item_to_kwargs(item)
@@ -416,7 +531,15 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                     f"page limit reached with a full page: {start_str}~{end_str} "
                     f"(max_pages={max_pages})"
                 )
-            counted += _apply_participant_counts(db, window_counts)
+            # 창 집계는 **전 공고**를 채운다. 등록 공고는 참가자 저장이 끝난 뒤
+            # 실제 행 수로 덮으므로(아래) 순서상 그쪽이 이긴다.
+            #
+            # ⚠️ 여기서 등록 공고를 미리 빼면 안 된다. 저장이 실패한 공고는
+            # `final_counts` 에도 안 들어가서 **어느 경로에서도 안 채워지고**,
+            # 2일 창을 벗어나면 영영 NULL 로 남는다(공개 SSR·통계에서 통째로
+            # 빠진다). master 는 창 집계가 전 공고를 채워 그 구멍이 없었다.
+            counted += _apply_participant_counts(
+                db, {b: len(keys) for b, keys in window_keys.items()})
             db.commit()
             inserted += window_inserted
             updated += window_updated
@@ -436,16 +559,70 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
 
     # 참가자 저장 — 본 크롤 커밋이 전부 끝난 뒤 별도 세션에서 공고 단위 커밋.
     # 실패해도 낙찰 결과 적재를 되돌리지 않는다(부가 데이터).
-    p_summary = {"participant_bids": 0, "participant_rows": 0}
+    p_summary = {"participant_bids": 0, "participant_rows_changed": 0,
+                 "participant_errors": 0, "participant_structural_errors": 0,
+                 "participant_final_counts": {}}
     if participants_by_bid:
         pdb = SessionLocal()
         try:
             p_summary = _save_participants(pdb, participants_by_bid)
+            # 등록 공고의 참여사수 = 병합 후 실제 참가자 행 수. 두 저장소가 같은
+            # 소스를 보게 해야 "행 수는 5인데 화면은 12"가 나오지 않는다.
+            applied = _apply_participant_counts(
+                pdb, p_summary.pop("participant_final_counts"))
+            pdb.commit()
+            counted += applied
+        except Exception as e:  # noqa: BLE001
+            # ⚠️ 여기는 한 번에 커밋하므로 실패하면 **그 배치 전부**가 소실된다.
+            # `counted` 를 커밋 뒤에 더하는 것도 그래서다 — 앞서 커밋 전에 더했다가
+            # "아무것도 저장 안 됐는데 숫자는 성공"으로 보고될 뻔했다.
+            # 창 집계가 이미 전 공고를 채워 뒀으므로 값이 통째로 비지는 않는다.
+            pdb.rollback()
+            logger.error(f"opening_crawler: 참여사수 반영 실패: {type(e).__name__}: {e}")
         finally:
             pdb.close()
 
+    # 참가자 수집 고장을 성공으로 삼키면 정상 화면과 완전 고장 화면이 똑같아진다
+    # (설계 §9 원칙). 다만 **건수로 판정하지 않는다** — 이 검출기는 그 방식으로
+    # 두 번 틀렸다. "저장 0건"으로 잡으니 정상적인 축소 보류가 고장이 됐고,
+    # 분모를 대상 수로 잡으니 시도조차 안 한 건이 섞여 진짜 고장이 초록불이 됐다.
+    # 남은 기준 셋은 전부 건수와 무관하다 — 조회 실패 / 구조적 예외 / 파싱 전멸.
+    parsed_rows = parse_stats.get("rows", 0)
+    field_missing = parse_stats.get("rank_field_missing", 0)
+    # API 가 행을 줬는데 참가자가 한 행도 안 나왔다 = 가격 필드명이 바뀐 것이다.
+    # `inserted or updated` 를 조건에 걸면 안 된다 — `bidprcAmt` 는 낙찰자 판별
+    # 에도 쓰여서 그 필드가 바뀌면 본 크롤도 함께 죽고, 그러면 이 검출기가
+    # 정작 그 사고에서 침묵한다(테스트로 확인).
+    parse_dead = bool(total_items and parsed_rows == 0)
+    # 순위 필드 전멸 = 등수 지표가 통째로 죽는다(전원이 '무효'로 둔갑해 안 보인다)
+    rank_field_dead = bool(parsed_rows and field_missing == parsed_rows)
+    structural = p_summary["participant_structural_errors"] > 0
+    participant_ok = scope_ok and not (structural or parse_dead or rank_field_dead)
+    if not participant_ok:
+        logger.error(
+            f"opening_crawler: 참가자 수집 고장 — scope_ok={scope_ok} "
+            f"structural={structural} parse_dead={parse_dead} "
+            f"rank_field_dead={rank_field_dead} "
+            f"(items={total_items} parsed={parsed_rows} field_missing={field_missing})"
+        )
+    elif p_summary["participant_errors"]:
+        logger.warning(
+            f"opening_crawler: 참가자 저장 실패 {p_summary['participant_errors']}건 "
+            f"(대상 {len(participants_by_bid)}공고) — 반복되면 원인을 확인할 것"
+        )
+
     summary = {
         "ok": True,
+        "participant_ok": participant_ok,
+        "participant_scope_ok": scope_ok,
+        "participant_targets": len(participants_by_bid),
+        # `rank_absent` 는 무효 투찰이라 **평소에도 큰 수**다(실측 47.6%) — 이걸로
+        # 이상을 감지할 수 없다. 스키마가 바뀌면 `rank_field_missing` 이 튄다.
+        "participant_parsed_rows": parsed_rows,
+        "rank_absent": parse_stats.get("rank_absent", 0),
+        "rank_field_missing": field_missing,
+        "rank_unparsed": parse_stats.get("rank_unparsed", 0),
+        "api_items": total_items,
         "range": f"{overall_start}~{overall_end}",
         "pages_fetched": pages_fetched,
         "inserted": inserted,
