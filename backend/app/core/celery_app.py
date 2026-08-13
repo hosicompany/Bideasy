@@ -51,6 +51,15 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=19, minute=0),
         "kwargs": {"days_back": 2},
     },
+    # 심야 02:00 — 채점 대기 공고의 개찰일 표적 재조회.
+    # 정기 크롤은 개찰일 기준 2일 창이라, 낙찰자 확정(적격심사)이 그 안에 안
+    # 끝난 공고는 영영 결과가 안 붙는다(실측: 채점 도달률 33.8% 정체).
+    # 하루가 ~84페이지라 회당 날짜 수를 묶고, 사용자 트래픽이 적은 시간에 둔다.
+    "nightly-recheck-pending-openings": {
+        "task": "verification.recheck_pending_openings",
+        "schedule": crontab(hour=2, minute=0),
+        "kwargs": {"max_days": 21, "max_dates": 10},
+    },
     # 개찰 크롤(19:00) 뒤 — 누적 개찰 통계 재집계 (docs/OPENING_STATS_DESIGN.md)
     "daily-opening-stats-rebuild": {
         "task": "opening_stats.rebuild",

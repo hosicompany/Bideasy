@@ -40,6 +40,48 @@ def daily_crawl_opening_results(days_back: int = 2) -> dict:
     return result
 
 
+@celery_app.task(name="verification.recheck_pending_openings")
+def recheck_pending_openings(max_days: int = 21, max_dates: int = 10) -> dict:
+    """심야 — 채점 대기 중인 등록 공고의 **개찰일을 표적 재조회**.
+
+    정기 크롤(19:00, 개찰일 기준 2일 창)은 개찰 당일만 본다. 그런데 개찰은
+    마감 당일에 나도 **낙찰자 확정(적격심사)은 며칠~수주** 걸리고, 크롤러는
+    낙찰자 행만 `OpeningResult` 로 저장하므로 2일 창 안에 확정되지 않은 공고는
+    **영영 결과가 안 붙는다**. 실측 2026-08-13: 채점 도달률이 마감 후 8~9일이
+    지나도 33.8% 에서 정체(NO_RESULT 1,747공고 중 개찰 결과 보유 **0건**).
+
+    개찰 API 는 날짜 창 조회만 지원해(공고번호 지정 시 "필수값 입력 에러",
+    같이 줘도 무시) 그 날짜를 통째로 훑는 수밖에 없다. 하루가 약 84페이지라
+    회당 날짜 수를 `max_dates` 로 묶고, 오래된 개찰일부터 처리한다.
+
+    실패해도 정기 크롤과 독립이다 — 이건 **보충**이지 본 수집이 아니다.
+    """
+    from app.db.session import SessionLocal
+    from app.services.mock_bidding import pending_opening_dates
+    from app.services.opening_result_crawler import (
+        crawl_recent_openings, windows_for_dates,
+    )
+
+    db = SessionLocal()
+    try:
+        dates = pending_opening_dates(db, max_days=max_days, limit=max_dates)
+    finally:
+        db.close()
+
+    if not dates:
+        logger.info("[recheck_openings] 재조회 대상 없음")
+        return {"ok": True, "dates": 0, "note": "재조회 대상 없음"}
+
+    logger.info(f"[recheck_openings] 대상 {len(dates)}일: "
+                f"{dates[0].isoformat()} ~ {dates[-1].isoformat()}")
+    result = crawl_recent_openings(windows=windows_for_dates(dates))
+    result["recheck_dates"] = [d.isoformat() for d in dates]
+    logger.info(f"[recheck_openings] {result}")
+    if not result.get("ok"):
+        raise RuntimeError(result.get("error", "recheck crawl failed"))
+    return result
+
+
 @celery_app.task(name="opening_stats.rebuild")
 def rebuild_opening_stats(window_days: int = 365) -> dict:
     """매일 19:30 KST — 누적 개찰 통계 재집계.

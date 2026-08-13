@@ -458,13 +458,39 @@ def _upsert_opening_result(db: Session, kwargs: dict, seen: set[str]) -> bool:
     return True
 
 
-def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
+def windows_for_dates(dates) -> list[tuple[datetime, datetime]]:
+    """날짜 목록 → API 조회 창(그날 00:00 ~ 23:59) 목록.
+
+    개찰 API 는 **날짜 창 조회만** 지원한다(2026-08-13 실측: `bidNtceNo` 를 줘도
+    무시되고 `bidNtceNo` 단독은 "필수값 입력 에러"). 그래서 특정 공고를 다시
+    보려면 그 공고의 개찰일을 통째로 훑는 수밖에 없다.
+    """
+    return [
+        (datetime.combine(d, datetime.min.time()),
+         datetime.combine(d, datetime.min.time()).replace(hour=23, minute=59))
+        for d in dates
+    ]
+
+
+def crawl_recent_openings(days_back: int = 2, max_pages: int = 200,
+                          windows: list[tuple[datetime, datetime]] | None = None) -> dict:
     """최근 N일 (기본 2일) 동안 개찰된 공사 결과 일괄 크롤 → DB upsert.
 
     매일 Celery beat 가 호출. days_back=2 로 안전마진(하루 누락 방지).
+
+    `windows` 를 주면 그 창만 조회한다 — 채점 대기 공고의 개찰일을 표적
+    재조회하는 경로(`verification.recheck_pending_openings`)가 쓴다. 정기 크롤은
+    개찰일 기준 2일 창이라, **낙찰자 확정(적격심사)이 그 안에 안 끝난 공고는
+    영영 결과가 안 붙는다**(실측: 채점 도달률이 8~9일이 지나도 33.8% 정체).
     """
-    end_dt = datetime.now()
-    start_dt = end_dt - timedelta(days=days_back)
+    if windows is None:
+        end_dt = datetime.now()
+        start_dt = end_dt - timedelta(days=days_back)
+        windows = list(_daily_windows(start_dt, end_dt))
+    if not windows:
+        return {"ok": True, "note": "조회할 창이 없습니다", "pages_fetched": 0,
+                "inserted": 0, "updated": 0, "skipped": 0}
+    start_dt, end_dt = windows[0][0], windows[-1][1]
     overall_start = start_dt.strftime("%Y%m%d%H%M")
     overall_end = end_dt.strftime("%Y%m%d%H%M")
 
@@ -486,7 +512,7 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     counted = 0
 
     try:
-        for window_start, window_end in _daily_windows(start_dt, end_dt):
+        for window_start, window_end in windows:
             start_str = window_start.strftime("%Y%m%d%H%M")
             end_str = window_end.strftime("%Y%m%d%H%M")
             window_inserted = 0

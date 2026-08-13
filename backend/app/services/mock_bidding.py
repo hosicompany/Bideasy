@@ -539,6 +539,52 @@ def score_mock_bid(db: Session, mb: models.MockBid,
     return res
 
 
+def pending_opening_dates(db: Session, max_days: int = 21,
+                          limit: int = 10) -> list[datetime.date]:
+    """채점 대기 중인 등록 공고의 **개찰 예정일**을 오래된 순으로 돌려준다.
+
+    **왜 필요한가** (2026-08-13 실측): 개찰은 마감 당일에 나지만
+    (채점 성공분 786공고의 마감→개찰 지연이 전부 0.0일) **낙찰자 확정은
+    적격심사 때문에 며칠~수주 걸린다**. 크롤러는 낙찰자 행만 `OpeningResult`
+    로 저장하므로, 개찰일 기준 2일 창 안에 확정되지 않으면 그 공고는 **영영**
+    결과가 안 붙는다 — 채점 도달률이 마감 후 8~9일이 지나도 33.8% 에서 멈춘다.
+
+    개찰 API 는 날짜 창 조회만 지원하므로(공고번호 지정 불가) 그 날짜를 통째로
+    다시 훑는 수밖에 없다. 하루가 약 84페이지라, 회당 처리할 날짜 수를 묶는다.
+
+    - `max_days`: 이보다 오래된 개찰일은 포기한다. 유찰·취소처럼 낙찰자가 영영
+      확정되지 않는 건이 매일 같은 자리를 차지하는 것을 막는다.
+    - 미래 개찰일은 제외한다(아직 개찰 전이라 조회해도 결과가 없다).
+    """
+    now = now_kst()
+    since = (now - timedelta(days=max_days)).strftime("%Y-%m-%d")
+    until = now.strftime("%Y-%m-%d %H:%M:%S")
+    # Notice.opening_date 는 "YYYY-MM-DD HH:MM:SS" 문자열이라 사전순 = 시간순.
+    day = func.substr(models.Notice.opening_date, 1, 10)
+    rows = (
+        db.query(day.label("d"))
+        .select_from(models.MockBid)
+        .join(models.Notice, models.Notice.bid_no == models.MockBid.bid_no)
+        .filter(
+            models.Notice.opening_date.isnot(None),
+            models.Notice.opening_date >= since,
+            models.Notice.opening_date <= until,
+            ~exists().where(models.OpeningResult.bid_no == models.MockBid.bid_no),
+        )
+        .group_by(day)
+        .order_by(day.asc())
+        .limit(limit)
+        .all()
+    )
+    out = []
+    for (d,) in rows:
+        try:
+            out.append(datetime.strptime(d, "%Y-%m-%d").date())
+        except (TypeError, ValueError):
+            continue  # 형식이 깨진 값 하나가 재조회 전체를 막지 않게
+    return out
+
+
 def score_pending(db: Session, limit: int = 5000) -> dict:
     """마감이 지난 미채점 등록분을 일괄 채점.
 
