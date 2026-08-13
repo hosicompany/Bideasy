@@ -30,6 +30,12 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # ⚠️ `task_acks_late` 와 짝이다. kombu redis 트랜스포트의 기본
+    # `visibility_timeout` 은 **1시간**이라, 그보다 오래 도는 태스크는 브로커가
+    # 메시지를 되돌려 **중복 실행**된다. 개찰 표적 재조회는 회당 수천 페이지라
+    # 한 시간을 넘길 수 있고, 그러면 같은 날짜를 두 워커가 동시에 훑으면서
+    # API 호출이 2배가 되고 같은 공고에 DB 경합이 난다.
+    broker_transport_options={"visibility_timeout": 6 * 3600},
 )
 
 # 정기 스케줄 — Asia/Seoul 기준
@@ -58,7 +64,7 @@ celery_app.conf.beat_schedule = {
     "nightly-recheck-pending-openings": {
         "task": "verification.recheck_pending_openings",
         "schedule": crontab(hour=2, minute=0),
-        "kwargs": {"max_days": 21, "max_dates": 10},
+        "kwargs": {"max_days": 21, "max_dates": 15},
     },
     # 개찰 크롤(19:00) 뒤 — 누적 개찰 통계 재집계 (docs/OPENING_STATS_DESIGN.md)
     "daily-opening-stats-rebuild": {

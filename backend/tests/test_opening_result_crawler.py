@@ -162,13 +162,17 @@ def test_crawl_commits_each_completed_day_before_later_failure(monkeypatch):
 
     result = crawler.crawl_recent_openings(days_back=2, max_pages=1)
 
-    assert result["ok"] is False
+    # 창 하나가 실패해도 나머지는 처리한다(창 단위 격리) — 실패 사실은
+    # `failed_windows` 로 보고한다. 한 날짜의 결함이 나머지를 죽이면,
+    # 표적 재조회에서 같은 독약 날짜가 매일 큐를 막는다.
+    assert result["ok"] is True
+    assert result["failed_windows"] == ["202607100000: RuntimeError: HTTP 502"]
     assert calls == [
         ("202607081416", "202607082359"),
         ("202607090000", "202607092359"),
         ("202607100000", "202607101416"),
     ]
-    assert db.commit_count == 2
+    assert db.commit_count == 2          # 완료된 두 날은 커밋됐다
     assert db.rolled_back is True
     assert db.closed is True
 
@@ -195,7 +199,9 @@ def test_failure_counts_only_rows_from_committed_days(monkeypatch):
 
     result = crawler.crawl_recent_openings(days_back=2, max_pages=2)
 
-    assert result["ok"] is False
+    # 실패한 창의 행은 집계에 들어가지 않는다(롤백됐으므로)
+    assert result["ok"] is True
+    assert result["failed_windows"] and "202607100000" in result["failed_windows"][0]
     assert result["inserted"] == 0
     assert result["updated"] == 0
     assert result["skipped"] == 0

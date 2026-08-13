@@ -158,6 +158,123 @@ class TestRecheckTask:
         ]
 
 
+class TestWindowIsolation:
+    """창 하나의 결함이 나머지 날짜를 죽이면 안 된다.
+
+    표적 재조회는 **오래된 순 고정**이라, 한 날짜가 매번 실패하면 그 날짜가
+    21일 동안 큐를 막고 뒤의 날짜는 한 번도 처리되지 않는다.
+    """
+
+    def _seed_pages(self, monkeypatch, engine, bad_date):
+        from sqlalchemy.orm import sessionmaker
+
+        monkeypatch.setattr(crawler, "SessionLocal", sessionmaker(bind=engine))
+        monkeypatch.setattr(crawler, "_PAGE_INTERVAL_SEC", 0)
+        seen = []
+
+        def fake_fetch(start, end, page=1, num_rows=999):
+            seen.append(start)
+            if start.startswith(bad_date):
+                raise RuntimeError("HTTP 502")
+            return []
+
+        monkeypatch.setattr(crawler, "_fetch_page", fake_fetch)
+        return seen
+
+    def test_one_bad_window_does_not_stop_the_rest(self, monkeypatch, engine):
+        seen = self._seed_pages(monkeypatch, engine, bad_date="20260805")
+
+        r = crawler.crawl_recent_openings(windows=crawler.windows_for_dates(
+            [date(2026, 8, 5), date(2026, 8, 6), date(2026, 8, 7)]))
+
+        assert r["ok"] is True                     # 부분 실패는 고장이 아니다
+        assert len(r["failed_windows"]) == 1
+        # 실패한 창 **뒤의** 날짜들이 실제로 조회됐다
+        assert any(s.startswith("20260806") for s in seen)
+        assert any(s.startswith("20260807") for s in seen)
+
+    def test_all_windows_failing_is_reported_as_failure(self, monkeypatch, engine):
+        self._seed_pages(monkeypatch, engine, bad_date="2026")
+
+        r = crawler.crawl_recent_openings(windows=crawler.windows_for_dates(
+            [date(2026, 8, 5), date(2026, 8, 6)]))
+
+        assert r["ok"] is False                    # 전 창 실패는 고장이다
+        assert len(r["failed_windows"]) == 2
+
+    def test_participants_of_earlier_windows_survive_a_later_failure(
+            self, monkeypatch, engine):
+        """앞 창의 참가자는 뒤 창이 실패해도 저장돼 있어야 한다.
+
+        참가자를 전 창 종료 후 한꺼번에 저장하면, 뒤 창의 예외가 앞 창에서 모은
+        참가자를 통째로 지운다. 그런데 참여사수(`OpeningResult`)는 창 단위로 이미
+        커밋돼 있어 **두 저장소가 영구히 갈라진다** — 정기 크롤과 달리 재조회에는
+        자기 치유가 없다(그 날짜는 곧 대상에서 빠진다).
+        """
+        from sqlalchemy.orm import sessionmaker
+
+        Session = sessionmaker(bind=engine)
+        s = Session()
+        s.add(models.MockBid(
+            bid_no="WISO-1-000", arm="standard",
+            registered_at=mb.now_kst() - timedelta(days=1),
+            deadline_at=mb.now_kst() - timedelta(hours=2),
+            price=97_500_000, snapshot_basic_price=100_000_000, status="REGISTERED"))
+        s.commit()
+        s.close()
+
+        good = [{"bidNtceNo": "WISO-1", "bidNtceOrd": "000", "opengRank": "1",
+                 "bidprcAmt": "90000000", "bidprcRt": "90.0", "bidprcCorpNm": "A건설",
+                 "sucsfYn": "Y", "fnlSucsfAmt": "90000000", "fnlSucsfRt": "90.0",
+                 "bssAmt": "100000000", "rsrvtnPrce": "100000000",
+                 "opengDate": "2026-08-05"}]
+        monkeypatch.setattr(crawler, "SessionLocal", Session)
+        monkeypatch.setattr(crawler, "_PAGE_INTERVAL_SEC", 0)
+        monkeypatch.setattr(
+            crawler, "_fetch_page",
+            lambda start, end, page=1, num_rows=999: (
+                (_ for _ in ()).throw(RuntimeError("HTTP 502"))
+                if start.startswith("20260806")
+                else (good if page == 1 else [])))
+
+        crawler.crawl_recent_openings(windows=crawler.windows_for_dates(
+            [date(2026, 8, 5), date(2026, 8, 6)]))
+
+        s = Session()
+        try:
+            assert s.query(models.OpeningParticipant).filter_by(
+                bid_no="WISO-1-000").count() == 1
+        finally:
+            s.close()
+
+
+class TestFutureWindowClamp:
+    def test_today_is_clamped_to_now(self, monkeypatch):
+        """미래 종료시각을 요청하면 API 가 "입력범위값 초과 에러"를 낸다."""
+        fixed = datetime(2026, 8, 13, 10, 0)
+
+        class _Frozen(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed
+
+        monkeypatch.setattr(crawler, "datetime", _Frozen)
+        (start, end), = crawler.windows_for_dates([date(2026, 8, 13)])
+
+        assert end == fixed          # 23:59 가 아니라 현재 시각
+
+    def test_future_date_yields_no_window(self, monkeypatch):
+        fixed = datetime(2026, 8, 13, 10, 0)
+
+        class _Frozen(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed
+
+        monkeypatch.setattr(crawler, "datetime", _Frozen)
+        assert crawler.windows_for_dates([date(2026, 8, 20)]) == []
+
+
 class TestCrawlWithExplicitWindows:
     def test_empty_windows_is_a_noop(self):
         r = crawler.crawl_recent_openings(windows=[])

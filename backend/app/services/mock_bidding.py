@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -540,7 +540,7 @@ def score_mock_bid(db: Session, mb: models.MockBid,
 
 
 def pending_opening_dates(db: Session, max_days: int = 21,
-                          limit: int = 10) -> list[datetime.date]:
+                          limit: int = 15) -> list[date_cls]:
     """채점 대기 중인 등록 공고의 **개찰 예정일**을 오래된 순으로 돌려준다.
 
     **왜 필요한가** (2026-08-13 실측): 개찰은 마감 당일에 나지만
