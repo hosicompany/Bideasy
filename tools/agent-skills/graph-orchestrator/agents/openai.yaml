@@ -1,0 +1,4 @@
+interface:
+  display_name: "Graph Orchestrator"
+  short_description: "검증 가능한 실행 그래프를 설계하고 검사합니다"
+  default_prompt: "Use $graph-orchestrator to design and validate a bounded execution graph for this complex workflow."

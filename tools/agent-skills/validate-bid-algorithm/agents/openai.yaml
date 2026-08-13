@@ -1,0 +1,4 @@
+interface:
+  display_name: "Validate Bid Algorithm"
+  short_description: "투찰 알고리즘의 증거 품질과 성능을 검증합니다"
+  default_prompt: "Use $validate-bid-algorithm to audit bid evidence and compare champion and challenger without leaking future data."
