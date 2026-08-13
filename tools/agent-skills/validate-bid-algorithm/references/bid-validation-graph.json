@@ -1,0 +1,340 @@
+{
+  "version": "1.0",
+  "graph_id": "bideasy-bid-algorithm-validation",
+  "entry_node": "evaluation_contract",
+  "external_inputs": {},
+  "shared_state_schema": {
+    "experiment_id": "ExperimentId",
+    "code_sha": "ContentHash",
+    "data_manifest_hash": "ContentHash",
+    "formula_hash": "ContentHash",
+    "as_of_cutoff": "Timestamp",
+    "route": "Route",
+    "feature_version": "FeatureVersion",
+    "fold_predictions": "ArtifactRef",
+    "metrics": "ArtifactRef",
+    "failure_class": "FailureClass",
+    "gate_decision": "GateDecision",
+    "approval_id": "ApprovalId"
+  },
+  "nodes": [
+    {
+      "id": "evaluation_contract",
+      "role": "contract",
+      "independence_group": "control",
+      "inputs": {},
+      "outputs": {
+        "evaluation_contract": "EvaluationContract",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Freeze code, formula, data snapshot, feature cutoff, folds, metrics, minimum effect, and stop rules before outcome inspection.",
+      "allowed_tools": ["read_repository", "read_manifest"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 900,
+      "retry_limit": 0,
+      "verifier": null,
+      "required_approval": null
+    },
+    {
+      "id": "data_lineage_audit",
+      "role": "auditor",
+      "independence_group": "data-audit",
+      "inputs": {
+        "evaluation_contract": "EvaluationContract",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "data_audit": "DataAudit",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Inspect feature observation time, outcome availability, lineage, corrections, content hash, and split isolation at the frozen cutoff.",
+      "allowed_tools": ["read_repository", "read_dataset", "run_read_only_query"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 3600,
+      "retry_limit": 1,
+      "verifier": null,
+      "required_approval": null
+    },
+    {
+      "id": "formula_runtime_audit",
+      "role": "auditor",
+      "independence_group": "formula-audit",
+      "inputs": {
+        "evaluation_contract": "EvaluationContract",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "formula_audit": "FormulaAudit",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Trace actual production and evaluation calculation paths without using post-deadline values.",
+      "allowed_tools": ["read_repository", "run_tests"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 3600,
+      "retry_limit": 1,
+      "verifier": null,
+      "required_approval": null
+    },
+    {
+      "id": "rules_domain_audit",
+      "role": "auditor",
+      "independence_group": "rules-audit",
+      "inputs": {
+        "evaluation_contract": "EvaluationContract",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "rules_audit": "RulesAudit",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Use rules effective at each notice's recommendation time and preserve source dates.",
+      "allowed_tools": ["read_repository", "read_primary_sources"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 3600,
+      "retry_limit": 1,
+      "verifier": null,
+      "required_approval": null
+    },
+    {
+      "id": "user_competitor_audit",
+      "role": "auditor",
+      "independence_group": "evidence-audit",
+      "inputs": {
+        "evaluation_contract": "EvaluationContract",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "evidence_audit": "EvidenceAudit",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Accept only timestamped, same-notice, same-cutoff, pre-deadline observations; do not perform external collection.",
+      "allowed_tools": ["read_repository", "read_approved_artifacts"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 3600,
+      "retry_limit": 1,
+      "verifier": null,
+      "required_approval": null
+    },
+    {
+      "id": "baseline_reproduction",
+      "role": "integrator",
+      "independence_group": "control",
+      "inputs": {
+        "data_audit": "DataAudit",
+        "formula_audit": "FormulaAudit",
+        "rules_audit": "RulesAudit",
+        "evidence_audit": "EvidenceAudit",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "baseline_report": "BaselineReport",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Reproduce the champion on exactly the frozen snapshot and formula version.",
+      "allowed_tools": ["read_repository", "run_tests", "run_read_only_evaluation"],
+      "side_effect": "none",
+      "join_policy": "all",
+      "timeout_seconds": 3600,
+      "retry_limit": 0,
+      "verifier": null,
+      "required_approval": null
+    },
+    {
+      "id": "contract_router",
+      "role": "router",
+      "independence_group": "control",
+      "inputs": {
+        "baseline_report": "BaselineReport",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "route_plan": "RoutePlan",
+        "verifier_feedback": "VerifierFeedback",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Assign PRICE_DOMINANT, QUALIFICATION, COMPREHENSIVE, NEGOTIATION, or UNSUPPORTED using pre-deadline fields only.",
+      "allowed_tools": ["read_baseline_report"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 600,
+      "retry_limit": 0,
+      "verifier": null,
+      "required_approval": null
+    },
+    {
+      "id": "candidate_builder",
+      "role": "candidate_builder",
+      "independence_group": "model-builder",
+      "inputs": {
+        "route_plan": "RoutePlan",
+        "verifier_feedback": "VerifierFeedback",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "candidate_report": "CandidateReport",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Fit only on the declared train fold and select only on validation; never inspect sealed-test outcomes.",
+      "allowed_tools": ["read_repository", "run_isolated_experiment"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 7200,
+      "retry_limit": 0,
+      "verifier": "independent_verifier",
+      "required_approval": null
+    },
+    {
+      "id": "independent_verifier",
+      "role": "verifier",
+      "independence_group": "independent-checker",
+      "inputs": {
+        "candidate_report": "CandidateReport",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "verification_report": "VerificationReport",
+        "verifier_feedback": "VerifierFeedback",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Rebuild leakage, formula, sample-unit, segment, and paired-metric checks from immutable artifacts in fresh context.",
+      "allowed_tools": ["read_artifacts", "run_validators", "run_read_only_evaluation"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 3600,
+      "retry_limit": 0,
+      "verifier": null,
+      "required_approval": null
+    },
+    {
+      "id": "shadow_gate",
+      "role": "gate",
+      "independence_group": "control",
+      "inputs": {
+        "verification_report": "VerificationReport",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "gate_decision": "GateDecision",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Apply only preregistered G0 through G-C shadow criteria; never activate or deploy.",
+      "allowed_tools": ["read_artifacts", "run_validators"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 600,
+      "retry_limit": 0,
+      "verifier": null,
+      "required_approval": null
+    },
+    {
+      "id": "aborted",
+      "role": "terminal",
+      "independence_group": "control",
+      "inputs": {
+        "verification_report": "VerificationReport",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "gate_decision": "GateDecision",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "as_of_policy": "Record the bounded-loop failure and preserve evidence without further tuning.",
+      "allowed_tools": ["write_report_artifact"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 300,
+      "retry_limit": 0,
+      "verifier": null,
+      "required_approval": null
+    },
+    {
+      "id": "audit_report",
+      "role": "terminal",
+      "independence_group": "control",
+      "inputs": {
+        "gate_decision": "GateDecision",
+        "data_manifest_hash": "ContentHash",
+        "formula_hash": "ContentHash"
+      },
+      "outputs": {
+        "final_report": "AuditReport"
+      },
+      "as_of_policy": "Report VERIFIED, NOT_VERIFIED, or BLOCKED with traceable artifacts and required approvals.",
+      "allowed_tools": ["write_report_artifact"],
+      "side_effect": "none",
+      "join_policy": "any",
+      "timeout_seconds": 600,
+      "retry_limit": 0,
+      "verifier": null,
+      "required_approval": null
+    }
+  ],
+  "edges": [
+    {"from": "evaluation_contract", "to": "data_lineage_audit", "condition": "contract_frozen", "artifacts": ["evaluation_contract", "data_manifest_hash", "formula_hash"]},
+    {"from": "evaluation_contract", "to": "formula_runtime_audit", "condition": "contract_frozen", "artifacts": ["evaluation_contract", "data_manifest_hash", "formula_hash"]},
+    {"from": "evaluation_contract", "to": "rules_domain_audit", "condition": "contract_frozen", "artifacts": ["evaluation_contract", "data_manifest_hash", "formula_hash"]},
+    {"from": "evaluation_contract", "to": "user_competitor_audit", "condition": "contract_frozen", "artifacts": ["evaluation_contract", "data_manifest_hash", "formula_hash"]},
+    {"from": "data_lineage_audit", "to": "baseline_reproduction", "condition": "success", "artifacts": ["data_audit", "data_manifest_hash", "formula_hash"]},
+    {"from": "formula_runtime_audit", "to": "baseline_reproduction", "condition": "success", "artifacts": ["formula_audit", "data_manifest_hash", "formula_hash"]},
+    {"from": "rules_domain_audit", "to": "baseline_reproduction", "condition": "success", "artifacts": ["rules_audit", "data_manifest_hash", "formula_hash"]},
+    {"from": "user_competitor_audit", "to": "baseline_reproduction", "condition": "success", "artifacts": ["evidence_audit", "data_manifest_hash", "formula_hash"]},
+    {"from": "baseline_reproduction", "to": "contract_router", "condition": "baseline_reproduced", "artifacts": ["baseline_report", "data_manifest_hash", "formula_hash"]},
+    {"from": "contract_router", "to": "candidate_builder", "condition": "supported_route", "artifacts": ["route_plan", "verifier_feedback", "data_manifest_hash", "formula_hash"]},
+    {"from": "candidate_builder", "to": "independent_verifier", "condition": "candidate_complete", "artifacts": ["candidate_report", "data_manifest_hash", "formula_hash"]},
+    {"from": "independent_verifier", "to": "candidate_builder", "condition": "classified_failure_and_budget_remaining", "artifacts": ["verifier_feedback", "data_manifest_hash", "formula_hash"]},
+    {"from": "independent_verifier", "to": "shadow_gate", "condition": "verification_pass", "artifacts": ["verification_report", "data_manifest_hash", "formula_hash"]},
+    {"from": "independent_verifier", "to": "aborted", "condition": "abort_condition_or_budget_exhausted", "artifacts": ["verification_report", "data_manifest_hash", "formula_hash"]},
+    {"from": "shadow_gate", "to": "audit_report", "condition": "gate_decided", "artifacts": ["gate_decision", "data_manifest_hash", "formula_hash"]},
+    {"from": "aborted", "to": "audit_report", "condition": "failure_recorded", "artifacts": ["gate_decision", "data_manifest_hash", "formula_hash"]}
+  ],
+  "cycles": [
+    {
+      "nodes": ["candidate_builder", "independent_verifier"],
+      "max_iterations": 3,
+      "progress_signal": "preregistered primary metric improves without a hard-constraint regression",
+      "abort_condition": "two consecutive iterations miss the minimum practical effect, leakage is unexplained, or a safety constraint fails",
+      "success_exit": "shadow_gate",
+      "failure_exit": "aborted"
+    }
+  ],
+  "fan_in": [
+    {
+      "node": "baseline_reproduction",
+      "required_predecessors": [
+        "data_lineage_audit",
+        "formula_runtime_audit",
+        "rules_domain_audit",
+        "user_competitor_audit"
+      ],
+      "required_artifacts": ["data_manifest_hash", "formula_hash"],
+      "require_same_snapshot_hash": true
+    }
+  ],
+  "approvals": []
+}
