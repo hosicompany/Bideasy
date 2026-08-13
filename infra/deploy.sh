@@ -105,7 +105,12 @@ case "${1:-deploy}" in
     # Build new images
     dc build app celery_worker celery_beat
 
-    # Rolling restart: app first, then celery.
+    # 새 코드가 새 테이블을 즉시 사용하므로 트래픽을 받는 app보다 migration이
+    # 반드시 먼저다. `run`은 방금 빌드한 app 이미지를 일회성으로 실행하므로
+    # 구 app은 계속 서비스하고, schema가 준비된 뒤에만 교체된다.
+    dc run --rm --no-deps app alembic upgrade head
+
+    # Rolling restart: migrated schema 위에서 app first, then celery.
     # --force-recreate: 코드/템플릿이 볼륨 마운트면 이미지 해시가 안 바뀌어 컨테이너가
     # 재생성되지 않아 옛 프로세스가 남는다. 강제 재생성으로 항상 새 코드·템플릿 로드.
     dc up -d --no-deps --force-recreate app
@@ -119,10 +124,6 @@ case "${1:-deploy}" in
     else
       echo "WARNING: Health check failed. Check logs with './deploy.sh logs app'"
     fi
-
-    # Run migrations before asynchronous services load the new task code.
-    dc \
-      exec app alembic upgrade head
 
     # Update celery worker.
     dc up -d --no-deps --force-recreate celery_worker
