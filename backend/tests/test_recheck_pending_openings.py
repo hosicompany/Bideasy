@@ -248,6 +248,29 @@ class TestWindowIsolation:
             s.close()
 
 
+class TestTimezoneAxis:
+    """개찰 API 의 날짜 파라미터는 **KST 표기**다. 운영 컨테이너는 UTC 다."""
+
+    def test_clamp_uses_kst_not_container_time(self, monkeypatch):
+        """UTC 로 자르면 9시간 과거를 요청해 그날 개찰(10~11시)을 통째로 놓친다.
+
+        대상 날짜는 `pending_opening_dates` 가 `now_kst()` 로 고르는데 클램프만
+        컨테이너 시각을 쓰면 두 축이 갈라진다.
+        """
+        # 컨테이너(UTC) 01:00 = KST 10:00
+        utc_now = datetime(2026, 8, 13, 1, 0)
+
+        class _Frozen(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return utc_now.replace(tzinfo=tz) + (tz.utcoffset(None) if tz else timedelta(0))
+
+        monkeypatch.setattr(crawler, "datetime", _Frozen)
+        (_, end), = crawler.windows_for_dates([date(2026, 8, 13)])
+
+        assert end.hour == 10          # KST 10:00 — UTC 01:00 이 아니다
+
+
 class TestFutureWindowClamp:
     def test_today_is_clamped_to_now(self, monkeypatch):
         """미래 종료시각을 요청하면 API 가 "입력범위값 초과 에러"를 낸다."""
