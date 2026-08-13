@@ -117,6 +117,7 @@ def run_calibration_cycle(
             "risk_calibration_error": round(cal_error, 5),
         },
         notes=" | ".join(decision.reasons),
+        parametrization=optimizer.PARAMETRIZATION,
     )
 
     # ── 5. 채택 또는 롤백 ───────────────────────────────────

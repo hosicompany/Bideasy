@@ -141,6 +141,64 @@ def objective_value(
     return j
 
 
+PARAMETRIZATION = "ratio_pinned_v2"
+_MARGIN_STEP = 0.1
+
+
+def pinned_adjustment(risk_model: ReservedRatioModel, method: str, bracket: str) -> float:
+    """사정률 중심(중앙값)을 `adjustment` 로 환산 — 탐색하지 않고 고정한다.
+
+    MAE 의 최적 점예측은 평균이 아니라 중앙값이고, 얕은 세그먼트의 부모
+    shrinkage 는 `risk_model.get_segment` 계약을 그대로 따른다.
+
+    저장·표시 형식이 0.1 단위라 같은 해상도로 반올림한다 — 사정률 σ 가 약
+    0.8%p 라 0.1%p 손실은 무시 가능하고, 2자리로 두면 화면(`{adj:+.1f}%`)이
+    실제와 다른 숫자를 보여준다.
+    """
+    return round((risk_model.predict_reserved_ratio(method, bracket) - 1.0) * 100, 1)
+
+
+def margin_grid(lower_rate: float, adjustment: float, step: float = _MARGIN_STEP) -> list[float]:
+    """고정된 adjustment 에서 곱의 도달 범위를 보존하는 margin 격자.
+
+    ⚠️ 상한을 상수로 박으면 **고정값에 따라 한쪽이 조용히 잘린다** — adjustment
+    가 음수로 고정되면 같은 곱에 닿는 데 더 큰 margin 이 필요한데, 옛 상한
+    (1.5%p) 을 그대로 쓰면 공격적인 쪽 후보가 격자에서 사라진다. 탐색 축을
+    줄이면서 도달 범위까지 줄이면 성능 변화의 원인을 귀속할 수 없다.
+
+    그래서 2축 격자가 닿던 **곱의 최대치**를 고정 adjustment 에서 재현하는
+    지점까지 상한을 유도한다. 하한은 0.0 을 유지한다 — 하한율 미만은 정의상
+    무효라 탐색할 이유가 없다(옛 격자의 음수 곱 영역은 애초에 사표였다).
+    """
+    scale = 1.0 + adjustment / 100.0
+    max_product = (1.0 + max(_ADJ_RANGE) / 100.0) * (lower_rate + max(_MARGIN_RANGE))
+    upper = max_product / scale - lower_rate if scale > 0 else max(_MARGIN_RANGE)
+    # 내림하면 격자가 목표 곱에 **못 미치는** 지점에서 끝난다(반올림 손실이
+    # 곧 잘림이다). 올림이면 최대 한 칸 넘칠 뿐이라 커버리지가 보장된다.
+    steps = max(1, math.ceil(upper / step - 1e-9))
+    return [round(i * step, 2) for i in range(steps + 1)]
+
+
+def converted_margin(
+    lower_rate: float, old_adj: float, old_margin: float, new_adj: float
+) -> float:
+    """파라미터화 전환 시 곱을 보존하는 margin (전환 스크립트가 쓴다).
+
+    격자 해상도(0.1%p)라 곱이 정확히 같을 수는 없는데, **반올림 방향이 곧 위험
+    방향이다** — 곱이 줄면 투찰가가 낮아져 낙찰하한선에 가까워지고 무효 위험이
+    커진다(무효율은 §0.2 1차 지표). 반올림하면 세그먼트 절반이 그쪽으로
+    떨어지므로 잔차를 **항상 안전한 쪽(곱 ≥ 기존)** 으로 몰아 올림한다.
+
+    margin 은 0.0 미만이 될 수 없다 — 하한율 아래는 정의상 무효다. 사정률
+    중심이 크게 잡힌 세그먼트에서 곱을 맞추려다 음수가 나올 수 있는데(실측:
+    실시설계기술제안입찰/xxlarge), 그때는 곱 보존을 포기하고 0.0 으로 막는다.
+    그 세그먼트도 곱이 커지므로 역시 안전한 쪽이다.
+    """
+    old_product = (1.0 + old_adj / 100.0) * (lower_rate + old_margin)
+    exact = old_product / (1.0 + new_adj / 100.0) - lower_rate
+    return max(0.0, math.ceil(exact * 10 - 1e-9) / 10)
+
+
 def optimize_segment(
     records: list[BidRecord],
     method: str,
@@ -173,36 +231,43 @@ def optimize_segment(
         )
         baseline_dropout_uw = base_sim.get("dropout_rate_uw", base_sim["dropout_rate"])
 
+    # ── 탐색 축: margin 1축 (adjustment 는 데이터에서 고정) ──────────
+    # 옛 2축 탐색은 J 가 (adj, margin) 을 **곱으로만** 보는 탓에 adjustment 를
+    # 식별하지 못했다 — 곱이 같은 조합은 목적함수가 동일해서, 최적화가 고른
+    # adjustment 는 사정률 예측이 아니라 margin 과의 임의 배분이었다.
+    # 그 부산물이 ① 4차 지표 오염 ② A값 가격식에서의 실제 가격 차이로 샜다.
+    # 상세·검증 = docs/MOCK_BIDDING_DESIGN.md §9 (2026-08-13).
+    adj = pinned_adjustment(risk_model, method, bracket)
+
     best: CandidateParams | None = None
     best_j = -float("inf")
-    for adj in _ADJ_RANGE:
-        for margin in _MARGIN_RANGE:
-            sim = simulate_params(seg_records, adj, margin, year_weights)
-            # 세그먼트 안전 제약 (hard)
-            if baseline_dropout_uw is not None:
-                cand_dropout_uw = sim.get("dropout_rate_uw", sim["dropout_rate"])
-                if cand_dropout_uw > baseline_dropout_uw + SEGMENT_DROPOUT_HARD_LIMIT:
-                    continue
-            e_dropout = risk_model.dropout_probability(
-                adj, margin, method, bracket, lower_rate
+    for margin in margin_grid(lower_rate, adj):
+        sim = simulate_params(seg_records, adj, margin, year_weights)
+        # 세그먼트 안전 제약 (hard)
+        if baseline_dropout_uw is not None:
+            cand_dropout_uw = sim.get("dropout_rate_uw", sim["dropout_rate"])
+            if cand_dropout_uw > baseline_dropout_uw + SEGMENT_DROPOUT_HARD_LIMIT:
+                continue
+        e_dropout = risk_model.dropout_probability(
+            adj, margin, method, bracket, lower_rate
+        )
+        j = objective_value(
+            sim, e_dropout, adj, margin, prev_params, lam, gamma, tau, effective_eta
+        )
+        if j > best_j:
+            best_j = j
+            best = CandidateParams(
+                method=method,
+                bracket=bracket,
+                adjustment=adj,
+                margin=margin,
+                objective=round(j, 6),
+                win_rate=round(sim["win_rate"], 3),
+                pass_rate=round(sim["pass_rate"], 3),
+                expected_dropout=round(e_dropout, 5),
+                n_samples=len(seg_records),
+                source="optimized",
             )
-            j = objective_value(
-                sim, e_dropout, adj, margin, prev_params, lam, gamma, tau, effective_eta
-            )
-            if j > best_j:
-                best_j = j
-                best = CandidateParams(
-                    method=method,
-                    bracket=bracket,
-                    adjustment=adj,
-                    margin=margin,
-                    objective=round(j, 6),
-                    win_rate=round(sim["win_rate"], 3),
-                    pass_rate=round(sim["pass_rate"], 3),
-                    expected_dropout=round(e_dropout, 5),
-                    n_samples=len(seg_records),
-                    source="optimized",
-                )
     return best
 
 

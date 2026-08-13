@@ -19,6 +19,7 @@ from app.services.autocalibrate.strategy_store import (
 )
 from app.services.autocalibrate import dataset as ds
 from app.services.autocalibrate import guard
+from app.services.autocalibrate import optimizer
 from app.services.autocalibrate.ratio_error import TIE_MARGIN, walk_forward_validate
 from app.services.autocalibrate.risk_model import ReservedRatioModel
 from app.services.calculator import BID_STRATEGY
@@ -283,3 +284,83 @@ def test_ratio_error_prefers_simpler_candidate_when_indistinguishable(records):
         f"> TIE_MARGIN {TIE_MARGIN}) — 후보 선택을 재검토할 것"
     )
     assert report["selected_shadow_candidate"] == "segment_median"
+
+
+# ── R1: 파라미터화 ratio_pinned_v2 계약 ──────────────────────────────
+# 옛 2축 탐색은 J 가 (adj, margin) 을 곱으로만 보는 탓에 adjustment 를 식별하지
+# 못했다(§9 2026-08-13). 아래 넷은 그 수습이 되돌아가지 않게 잡아 둔다.
+
+def test_optimizer_pins_adjustment_instead_of_searching_it(records):
+    """adjustment 는 탐색 대상이 아니다 — 사정률 중심에 고정된다."""
+    weights = optimizer.adaptive_year_weights(records)
+    risk_model = ReservedRatioModel.fit(records, weights)
+
+    checked = 0
+    for method, bracket in (("적격심사제", "medium"), ("소액수의견적", "small")):
+        cand = optimizer.optimize_segment(records, method, bracket, risk_model)
+        if cand is None:
+            continue
+        checked += 1
+        assert cand.adjustment == optimizer.pinned_adjustment(
+            risk_model, method, bracket
+        ), f"{method}/{bracket} 의 adjustment 가 고정값과 다르다 — 축이 되살아났다"
+    assert checked, "검증한 세그먼트가 없다"
+
+
+def test_margin_grid_does_not_shrink_product_reach():
+    """축을 줄이되 곱의 도달 범위는 줄이지 않는다.
+
+    상한을 상수로 박으면 고정된 adjustment 에 따라 공격적인 쪽 후보가 조용히
+    잘린다. 그러면 성능 변화가 축 변경 탓인지 격자가 좁아진 탓인지 못 가른다.
+    """
+    lower = 89.745
+    old_reach = (1 + max(optimizer._ADJ_RANGE) / 100) * (
+        lower + max(optimizer._MARGIN_RANGE)
+    )
+    for adj in (-1.0, -0.5, -0.1, 0.0, 0.5, 1.0):
+        grid = optimizer.margin_grid(lower, adj)
+        assert grid[0] == 0.0, "하한율 미만은 정의상 무효라 0.0 에서 시작해야 한다"
+        reach = (1 + adj / 100) * (lower + max(grid))
+        assert reach >= old_reach - 1e-9, f"adj {adj} 에서 곱 상한이 잘렸다"
+
+
+def test_parametrization_conversion_never_lowers_product():
+    """전환의 반올림 잔차는 **항상 안전한 쪽**으로만 남는다.
+
+    곱이 줄면 투찰가가 낙찰하한선에 가까워져 무효 위험이 커진다 — 전환이라는
+    이벤트 자체가 사용자를 위험 쪽으로 미는 일은 없어야 한다.
+    """
+    lower = 89.745
+    for old_adj in (-1.0, -0.3, 0.0, 0.5, 0.9):
+        for old_margin in (0.1, 0.5, 1.0, 1.4):
+            for new_adj in (-0.6, -0.1, 0.0, 1.3):
+                new_margin = optimizer.converted_margin(
+                    lower, old_adj, old_margin, new_adj
+                )
+                assert new_margin >= 0.0, "margin 이 음수면 무조건 무효다"
+                old_p = (1 + old_adj / 100) * (lower + old_margin)
+                new_p = (1 + new_adj / 100) * (lower + new_margin)
+                assert new_p >= old_p - 1e-9, (
+                    f"곱이 줄었다: adj {old_adj}→{new_adj}, "
+                    f"margin {old_margin}→{new_margin} ({old_p:.4f}→{new_p:.4f})"
+                )
+
+
+def test_strategy_version_carries_parametrization():
+    """저장된 두 숫자가 어느 축인지 버전이 스스로 밝힌다.
+
+    기본값이 구 축인 이유: 이 필드 이전에 저장된 파일에는 값이 없는데, 그것들은
+    전부 2축 자유 탐색 결과다. 새 축으로 읽으면 adjustment 를 사정률 예측으로
+    오해한다.
+    """
+    from app.services.autocalibrate.strategy_store import StrategyVersion
+
+    assert StrategyVersion(version_id="x", created_at="t", params={}).parametrization == (
+        "product_v1"
+    )
+    assert optimizer.PARAMETRIZATION == "ratio_pinned_v2"
+    # 옛 JSON(필드 없음)을 읽어도 구 축으로 남아야 한다
+    legacy = StrategyVersion.from_dict(
+        {"version_id": "old", "created_at": "t", "params": {}}
+    )
+    assert legacy.parametrization == "product_v1"
