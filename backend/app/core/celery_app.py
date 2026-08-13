@@ -30,6 +30,15 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # ⚠️ `task_acks_late` 와 짝이다. kombu redis 트랜스포트의 기본
+    # `visibility_timeout` 은 **1시간**이라, 그보다 오래 도는 태스크는 브로커가
+    # 메시지를 되돌려 **중복 실행**된다. 개찰 표적 재조회는 회당 수천 페이지라
+    # 한 시간을 넘길 수 있고, 그러면 같은 날짜를 두 워커가 동시에 훑으면서
+    # API 호출이 2배가 되고 같은 공고에 DB 경합이 난다.
+    # ⚠️ 이 값은 **전 태스크에 적용**된다. 배포로 워커가 죽으면 in-flight 메시지의
+    # 재전달이 1시간 → 6시간으로 늦어진다(예: 03:00 자동결제가 중단되면 04:00 이
+    # 아니라 09:00 에 재시도). 중복 실행을 막는 쪽이 더 중요하다고 보고 감수한다.
+    broker_transport_options={"visibility_timeout": 6 * 3600},
 )
 
 # 정기 스케줄 — Asia/Seoul 기준
@@ -50,6 +59,16 @@ celery_app.conf.beat_schedule = {
         "task": "verification.daily_crawl_opening_results",
         "schedule": crontab(hour=19, minute=0),
         "kwargs": {"days_back": 2},
+    },
+    # 심야 02:00 — 채점 대기 공고의 개찰일 표적 재조회.
+    # 정기 크롤은 개찰일 기준 2일 창이라, 낙찰자 확정(적격심사)이 그 안에 안
+    # 끝난 공고는 영영 결과가 안 붙는다(실측: 채점 도달률 33.8% 정체).
+    # 하루 분량은 84~170페이지로 흔들려(2026-08-05 실측 vs 레포 정본) 회당
+    # 날짜 수를 묶고, 사용자 트래픽이 적은 시간에 둔다.
+    "nightly-recheck-pending-openings": {
+        "task": "verification.recheck_pending_openings",
+        "schedule": crontab(hour=2, minute=0),
+        "kwargs": {"max_days": 21, "max_dates": 21},
     },
     # 개찰 크롤(19:00) 뒤 — 누적 개찰 통계 재집계 (docs/OPENING_STATS_DESIGN.md)
     "daily-opening-stats-rebuild": {

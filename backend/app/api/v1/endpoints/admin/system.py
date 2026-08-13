@@ -17,6 +17,10 @@ _TRIGGERABLE = {
     "notices.purge_old": "오래된 공고 정리",
     "verification.daily_crawl_opening_results": "개찰결과 크롤",
     "verification.daily_verify_predictions": "예측 검증",
+    # beat 등록을 02:00 까지 기다리지 않고 확인할 유일한 경로.
+    # ⚠️ `_DAYS_BACK_TASKS` 에는 넣지 말 것 — 이 태스크는 `days_back` 을 받지 않아
+    # 넘기면 워커에서 TypeError 로 죽는다.
+    "verification.recheck_pending_openings": "개찰 표적 재조회(채점 대기분)",
     "opening_stats.rebuild": "누적 개찰 통계 재집계",
     "trial.send_expiry_reminders": "체험 만료 알림",
     "deadline.send_reminders": "마감 리마인더",

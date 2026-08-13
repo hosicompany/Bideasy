@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -537,6 +537,81 @@ def score_mock_bid(db: Session, mb: models.MockBid,
     db.add(res)
     mb.status = "SCORED"   # 상태 플래그만 갱신 — 등록 내용(가격·스냅샷)은 불변
     return res
+
+
+def pending_opening_dates(db: Session, max_days: int = 21,
+                          limit: int = 15) -> tuple[list[date_cls], int]:
+    """채점 대기 중인 등록 공고의 **개찰 예정일**을 오래된 순으로 돌려준다.
+
+    **왜 필요한가** (2026-08-13 실측): 개찰은 마감 당일에 나지만
+    (채점 성공분 786공고의 마감→개찰 지연이 전부 0.0일) **낙찰자 확정은
+    적격심사 때문에 며칠~수주 걸린다**. 크롤러는 낙찰자 행만 `OpeningResult`
+    로 저장하므로, 개찰일 기준 2일 창 안에 확정되지 않으면 그 공고는 **영영**
+    결과가 안 붙는다 — 채점 도달률이 마감 후 8~9일이 지나도 33.8% 에서 멈춘다.
+
+    개찰 API 는 날짜 창 조회만 지원하므로(공고번호 지정 불가) 그 날짜를 통째로
+    다시 훑는 수밖에 없다. 하루 분량은 **84~170페이지로 날에 따라 2배 이상
+    흔들리므로**(2026-08-05 실측 vs 레포 정본 169k행) 큰 쪽 기준으로 본다.
+
+    - `max_days`: 이보다 오래된 개찰일은 포기한다. 유찰·취소처럼 낙찰자가 영영
+      확정되지 않는 건이 매일 같은 자리를 차지하는 것을 막는다.
+    - 미래 개찰일은 제외한다(아직 개찰 전이라 조회해도 결과가 없다).
+
+    반환: `(날짜 목록, 밀린 날짜 수)`. 밀린 수를 함께 주는 이유는 아래 참조.
+    """
+    now = now_kst()
+    since = (now - timedelta(days=max_days)).strftime("%Y-%m-%d")
+    until = now.strftime("%Y-%m-%d %H:%M:%S")
+    # Notice.opening_date 는 "YYYY-MM-DD HH:MM:SS" 문자열이라 사전순 = 시간순.
+    day = func.substr(models.Notice.opening_date, 1, 10)
+    rows = (
+        db.query(day.label("d"))
+        .select_from(models.MockBid)
+        .join(models.Notice, models.Notice.bid_no == models.MockBid.bid_no)
+        .filter(
+            models.Notice.opening_date.isnot(None),
+            models.Notice.opening_date >= since,
+            models.Notice.opening_date <= until,
+            ~exists().where(models.OpeningResult.bid_no == models.MockBid.bid_no),
+        )
+        .group_by(day)
+        .order_by(day.asc())
+        .limit(limit)
+        .all()
+    )
+    # 잘린 사실을 **반드시 남긴다.** `score_pending` 이 같은 실수로 데였다 —
+    # 잔량을 안 보이면 "정상처럼 보이는데 실제로는 데이터가 새고 있는" 상황이
+    # 조용히 지나간다. 여기선 최근 날짜가 뒤로 밀려 수확이 큰 D+3~D+7 구간을
+    # 비켜가는데, 그게 일어났는지 알 방법이 없어진다.
+    #
+    # ⚠️ `limit + 1` 로 세면 **0 아니면 1** 밖에 안 나온다. 5일이 밀려도 "1일"로
+    # 보고돼, 운영자가 그 값을 보고 limit 을 1 올려도 여전히 4일이 굶는다.
+    # 잘림의 **크기**를 재려면 전체 개수를 따로 세야 한다(야간 1회라 비용 무시).
+    total_days = (
+        db.query(func.count(func.distinct(day)))
+        .select_from(models.MockBid)
+        .join(models.Notice, models.Notice.bid_no == models.MockBid.bid_no)
+        .filter(
+            models.Notice.opening_date.isnot(None),
+            models.Notice.opening_date >= since,
+            models.Notice.opening_date <= until,
+            ~exists().where(models.OpeningResult.bid_no == models.MockBid.bid_no),
+        )
+        .scalar()
+    ) or 0
+    deferred = max(0, int(total_days) - limit)
+    out = []
+    for (d,) in rows:
+        try:
+            out.append(datetime.strptime(d, "%Y-%m-%d").date())
+        except (TypeError, ValueError):
+            continue  # 형식이 깨진 값 하나가 재조회 전체를 막지 않게
+    if deferred:
+        logger.warning(
+            f"[mock_bidding] 재조회 대상 날짜 {deferred}일이 밀렸다(limit={limit}) "
+            "— 최근 날짜가 굶으면 수확이 큰 구간을 비켜간다"
+        )
+    return out, deferred
 
 
 def score_pending(db: Session, limit: int = 5000) -> dict:

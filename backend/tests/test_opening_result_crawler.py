@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 
 import pytest
@@ -162,13 +162,17 @@ def test_crawl_commits_each_completed_day_before_later_failure(monkeypatch):
 
     result = crawler.crawl_recent_openings(days_back=2, max_pages=1)
 
-    assert result["ok"] is False
+    # 창 하나가 실패해도 나머지는 처리한다(창 단위 격리) — 실패 사실은
+    # `failed_windows` 로 보고한다. 한 날짜의 결함이 나머지를 죽이면,
+    # 표적 재조회에서 같은 독약 날짜가 매일 큐를 막는다.
+    assert result["ok"] is True
+    assert result["failed_windows"] == ["202607100000: RuntimeError: HTTP 502"]
     assert calls == [
         ("202607081416", "202607082359"),
         ("202607090000", "202607092359"),
         ("202607100000", "202607101416"),
     ]
-    assert db.commit_count == 2
+    assert db.commit_count == 2          # 완료된 두 날은 커밋됐다
     assert db.rolled_back is True
     assert db.closed is True
 
@@ -195,7 +199,9 @@ def test_failure_counts_only_rows_from_committed_days(monkeypatch):
 
     result = crawler.crawl_recent_openings(days_back=2, max_pages=2)
 
-    assert result["ok"] is False
+    # 실패한 창의 행은 집계에 들어가지 않는다(롤백됐으므로)
+    assert result["ok"] is True
+    assert result["failed_windows"] and "202607100000" in result["failed_windows"][0]
     assert result["inserted"] == 0
     assert result["updated"] == 0
     assert result["skipped"] == 0
@@ -819,3 +825,185 @@ class TestParticipantCount:
 
     def test_parse_participant_rejects_row_without_price(self):
         assert crawler._parse_participant_kwargs(_opening_item()) is None
+
+
+# ── 고장 신호가 사라지지 않는가 (리뷰가 프로브로만 재현했던 경로) ──
+
+
+class _CommitFailDB(_FakeDB):
+    """창 커밋만 실패하는 세션 — 참여사수 갱신이 롤백되는 상황."""
+
+    def commit(self):
+        self.commit_count += 1
+        raise RuntimeError("disk full")
+
+
+def test_counted_is_not_inflated_when_window_commit_fails(monkeypatch):
+    """커밋이 터지면 롤백된 갱신이 숫자로 남으면 안 된다.
+
+    창 하나만 실패하면 `ok:True` 라, "성공했고 5,000건 반영"으로 보고된다.
+    같은 함수가 참가자 경로에서 지키는 규칙을 창 경로에서도 지켜야 한다.
+    """
+    db = _CommitFailDB()
+    monkeypatch.setattr(crawler, "datetime", _FrozenDateTime)
+    monkeypatch.setattr(crawler, "SessionLocal", lambda: db)
+    monkeypatch.setattr(crawler, "_PAGE_INTERVAL_SEC", 0)
+    monkeypatch.setattr(crawler, "_fetch_page", lambda *a, **k: [])
+    monkeypatch.setattr(crawler, "_load_registered_bid_nos", lambda db: (set(), True))
+    monkeypatch.setattr(crawler, "_apply_participant_counts", lambda db, counts: 5000)
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["participants_counted"] == 0     # 롤백됐으므로 0이어야 한다
+    assert result["failed_windows"]
+
+
+def test_structural_errors_survive_a_later_commit_failure(monkeypatch, engine):
+    """저장이 구조적으로 실패한 사실이 뒤이은 예외에 묻히면 안 된다.
+
+    `_save_participants` 가 센 `structural_errors` 를 커밋 **뒤에** 병합하면,
+    그 사이가 터졌을 때 카운터가 통째로 버려진다. 연결이 끊겨 전부 실패했는데
+    `participant_ok=True` 로 초록불이 된다 — 이 검출기가 존재하는 이유가
+    정확히 그 상황이다.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(_make_mock_bid("SIG-1-000"))
+    s.commit()
+    s.close()
+
+    items = [{"bidNtceNo": "SIG-1", "bidNtceOrd": "000", "opengRank": "1",
+              "bidprcAmt": "90000000", "bidprcCorpNm": "A건설", "sucsfYn": "Y",
+              "fnlSucsfAmt": "90000000", "bssAmt": "100000000",
+              "rsrvtnPrce": "100000000", "opengDate": "2026-07-10"}]
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_PAGE_INTERVAL_SEC", 0)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda s_, e_, page=1, num_rows=999: items if page == 1 else [])
+    # 저장은 구조적으로 실패했다고 보고하고, 이어지는 참여사수 반영이 터진다
+    monkeypatch.setattr(crawler, "_save_participants",
+                        lambda db, by_bid: {"participant_bids": 0,
+                                            "participant_rows_changed": 0,
+                                            "participant_errors": 1,
+                                            "participant_structural_errors": 1,
+                                            "participant_final_counts": {"SIG-1-000": 1}})
+
+    calls = {"n": 0}
+    real_apply = crawler._apply_participant_counts
+
+    def flaky_apply(db, counts):
+        calls["n"] += 1
+        if calls["n"] >= 2:          # 창 경로는 통과, 참가자 경로에서 터진다
+            raise RuntimeError("connection lost")
+        return real_apply(db, counts)
+
+    monkeypatch.setattr(crawler, "_apply_participant_counts", flaky_apply)
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["participant_structural_errors"] >= 1
+    assert result["participant_ok"] is False       # 초록불이 되면 안 된다
+
+
+def test_count_apply_failure_is_itself_structural(monkeypatch, engine):
+    """참여사수 반영은 순수 DB 작업이라, 거기서 터졌다는 건 구조적 문제다."""
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    s.add(_make_mock_bid("SIG-2-000"))
+    s.commit()
+    s.close()
+
+    items = [{"bidNtceNo": "SIG-2", "bidNtceOrd": "000", "opengRank": "1",
+              "bidprcAmt": "90000000", "bidprcCorpNm": "A건설", "sucsfYn": "Y",
+              "fnlSucsfAmt": "90000000", "bssAmt": "100000000",
+              "rsrvtnPrce": "100000000", "opengDate": "2026-07-10"}]
+    monkeypatch.setattr(crawler, "SessionLocal", Session)
+    monkeypatch.setattr(crawler, "_PAGE_INTERVAL_SEC", 0)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda s_, e_, page=1, num_rows=999: items if page == 1 else [])
+    # 저장 자체는 성공했는데(구조적 에러 0) 참여사수 반영만 터진다
+    monkeypatch.setattr(crawler, "_save_participants",
+                        lambda db, by_bid: {"participant_bids": 1,
+                                            "participant_rows_changed": 1,
+                                            "participant_errors": 0,
+                                            "participant_structural_errors": 0,
+                                            "participant_final_counts": {"SIG-2-000": 1}})
+
+    calls = {"n": 0}
+    real_apply = crawler._apply_participant_counts
+
+    def flaky_apply(db, counts):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise RuntimeError("connection lost")
+        return real_apply(db, counts)
+
+    monkeypatch.setattr(crawler, "_apply_participant_counts", flaky_apply)
+
+    result = crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    assert result["participant_structural_errors"] == 1
+    assert result["participant_ok"] is False
+
+
+class _KstAwareFrozen(datetime):
+    """축 변환을 **실제로 하는** 프리즈 — UTC/KST 차이를 재현한다.
+
+    기존 `_FrozenDateTime` 은 `value.replace(tzinfo=tz)` 라 축을 바꾸지 않아,
+    "컨테이너 시각을 그대로 보내면 9시간 어긋난다"는 결함을 재현하지 못한다.
+    """
+
+    _UTC_NOW = datetime(2026, 7, 10, 10, 0)      # = KST 19:00
+
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return cls._UTC_NOW                   # 컨테이너 시각(UTC)
+        return cls._UTC_NOW.replace(tzinfo=timezone.utc).astimezone(tz)
+
+
+def test_daily_crawl_window_uses_kst_not_container_time(monkeypatch):
+    """19:00 KST 크롤이 "10:00 까지"를 요청하면 그날 개찰(10~11시)이 밀린다.
+
+    개찰 API 의 `opengBgnDt/opengEndDt` 는 KST 표기인데 운영 컨테이너 TZ 는 UTC 다.
+    """
+    calls = []
+    db = _FakeDB()
+    monkeypatch.setattr(crawler, "datetime", _KstAwareFrozen)
+    monkeypatch.setattr(crawler, "SessionLocal", lambda: db)
+    monkeypatch.setattr(crawler, "_PAGE_INTERVAL_SEC", 0)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda s_, e_, page=1, num_rows=999: calls.append((s_, e_)) or [])
+    monkeypatch.setattr(crawler, "_load_registered_bid_nos", lambda db: (set(), True))
+
+    crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    # 창 끝이 KST 19:00 이어야 한다 — UTC 10:00 이면 9시간을 놓친다
+    assert calls[0][1].endswith("1900"), calls
+
+
+def test_daily_crawl_task_raises_on_any_failed_window(monkeypatch):
+    """정기 크롤은 창이 3개뿐이라 하나만 실패해도 알린다.
+
+    페이지 상한 초과는 "그날 데이터가 잘렸다"는 신호다. 창 격리는 재조회(15창)에
+    필요한 정책이지 정기 크롤까지 조용하게 만들라는 뜻이 아니다.
+    """
+    monkeypatch.setattr(
+        crawler, "crawl_recent_openings",
+        lambda days_back=2: {"ok": True, "participant_ok": True,
+                             "failed_windows": ["202607100000: RuntimeError: page limit"]},
+    )
+    with pytest.raises(RuntimeError, match="crawl window failed"):
+        verification_tasks.daily_crawl_opening_results(days_back=2)
+
+
+def test_daily_crawl_task_succeeds_when_no_window_failed(monkeypatch):
+    monkeypatch.setattr(
+        crawler, "crawl_recent_openings",
+        lambda days_back=2: {"ok": True, "participant_ok": True, "failed_windows": []},
+    )
+    assert verification_tasks.daily_crawl_opening_results(days_back=2)["ok"] is True

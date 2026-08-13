@@ -39,6 +39,18 @@ logger = logging.getLogger(__name__)
 _BASE_URL = "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdScsbidInfo"
 _BSNS_DIV_CONSTRUCTION = "3"  # 공사
 _PAGE_SIZE = 999  # API accepts at most 999; 1000 falls back to 10 rows.
+#: 페이지 간 간격. 같은 API 를 쓰는 `scripts/census_construction.py` 와 같은 값.
+#: 표적 재조회는 회당 수천 페이지라 이게 없으면 공공 API 한도에 부딪힌다.
+_PAGE_INTERVAL_SEC = 0.3
+
+#: 개찰 API 의 `opengBgnDt/opengEndDt` 는 **KST 표기**다. 운영 컨테이너 TZ 는
+#: UTC 라 `datetime.now()` 를 그대로 포맷해 보내면 9시간 과거를 요청하게 된다.
+_KST = timezone(timedelta(hours=9))
+
+
+def _now_kst() -> datetime:
+    """API 가 쓰는 축(KST)의 현재 시각 — naive 로 돌려준다."""
+    return datetime.now(_KST).replace(tzinfo=None)
 
 #: 저장 실패를 **구조적 고장**으로 볼 예외들 — 테이블·컬럼 부재, 연결 단절.
 #: 1건만 나와도 전 건에 해당하므로 "몇 건이 실패했나"로 판정하면 안 된다.
@@ -458,13 +470,61 @@ def _upsert_opening_result(db: Session, kwargs: dict, seen: set[str]) -> bool:
     return True
 
 
-def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
+def windows_for_dates(dates) -> list[tuple[datetime, datetime]]:
+    """날짜 목록 → API 조회 창(그날 00:00 ~ 23:59) 목록.
+
+    개찰 API 는 **날짜 창 조회만** 지원한다(2026-08-13 실측: `bidNtceNo` 를 줘도
+    무시되고 `bidNtceNo` 단독은 "필수값 입력 에러"). 그래서 특정 공고를 다시
+    보려면 그 공고의 개찰일을 통째로 훑는 수밖에 없다.
+
+    ⚠️ 하루 분량은 **날에 따라 2배 이상 흔들린다** — 2026-08-05 실측 83,791행
+    (84페이지)이지만 레포 정본은 공사 개찰을 하루 169k행(=170페이지)으로 적는다
+    (`models.py`·`docs/OPENING_STATS_DESIGN.md`). `max_pages` 여유와 회당 소요를
+    가늠할 때는 **큰 쪽**을 기준으로 봐야 한다.
+    """
+    # ⚠️ **KST 로 잰다.** 컨테이너 시각(UTC)으로 자르면 9시간이 어긋난다.
+    # 02:00 KST 실행 기준 UTC 는 전날 17:00 이라, **어제 날짜의 창이 17:00 에서
+    # 잘려** 그 뒤 개찰(17:00~23:59 KST)을 놓친다. 오늘 날짜는 대상 선정 단계가
+    # 이미 걸러내므로(개찰은 보통 10~11시) 문제가 되는 건 어제 창이다.
+    now = _now_kst()
+    out = []
+    for d in dates:
+        start = datetime.combine(d, datetime.min.time())
+        # ⚠️ **미래 종료시각을 요청하면 안 된다** — API 가 "입력범위값 초과
+        # 에러"를 낸다(docs/BACKFILL_VALIDATION_DESIGN.md §3 probe). 오늘 날짜가
+        # 목록에 들어오면 23:59 는 미래다.
+        end = min(start.replace(hour=23, minute=59), now)
+        if end <= start:
+            continue          # 그날이 아직 시작도 안 했다
+        out.append((start, end))
+    return out
+
+
+def crawl_recent_openings(days_back: int = 2, max_pages: int = 200,
+                          windows: list[tuple[datetime, datetime]] | None = None) -> dict:
     """최근 N일 (기본 2일) 동안 개찰된 공사 결과 일괄 크롤 → DB upsert.
 
     매일 Celery beat 가 호출. days_back=2 로 안전마진(하루 누락 방지).
+
+    `windows` 를 주면 그 창만 조회한다 — 채점 대기 공고의 개찰일을 표적
+    재조회하는 경로(`verification.recheck_pending_openings`)가 쓴다. 정기 크롤은
+    개찰일 기준 2일 창이라, **낙찰자 확정(적격심사)이 그 안에 안 끝난 공고는
+    영영 결과가 안 붙는다**(실측: 채점 도달률이 8~9일이 지나도 33.8% 정체).
     """
-    end_dt = datetime.now()
-    start_dt = end_dt - timedelta(days=days_back)
+    if windows is None:
+        # ⚠️ **KST 로 잰다.** API 의 `opengBgnDt/opengEndDt` 는 KST 표기인데
+        # 운영 컨테이너 TZ 는 UTC 다. `datetime.now()` 를 그대로 포맷해 보내면
+        # 19:00 KST 크롤이 "10:00 까지"를 요청해 **그날 개찰(보통 10~11시 KST)이
+        # 통째로 빠진다.** 그래서 같은 날 개찰분이 채점(20:30)에 못 들어가고
+        # 하루씩 밀려 왔다 — celery_app.py 의 "같은 날 개찰분을 잡는다"는 주석이
+        # 실제로는 성립하지 않았다.
+        end_dt = _now_kst()
+        start_dt = end_dt - timedelta(days=days_back)
+        windows = list(_daily_windows(start_dt, end_dt))
+    if not windows:
+        return {"ok": True, "note": "조회할 창이 없습니다", "pages_fetched": 0,
+                "inserted": 0, "updated": 0, "skipped": 0}
+    start_dt, end_dt = windows[0][0], windows[-1][1]
     overall_start = start_dt.strftime("%Y%m%d%H%M")
     overall_end = end_dt.strftime("%Y%m%d%H%M")
 
@@ -480,13 +540,26 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     # 참가자 저장 대상 = 모의투찰 등록 공고만 (설계 §P4 — 전수 저장 금지).
     # API 는 참가자별로 row 를 쪼개 주므로, 낙찰자 판별과 별개로 여기서 줍는다.
     registered_bid_nos, scope_ok = _load_registered_bid_nos(db)
-    participants_by_bid: dict[str, list[dict]] = {}
     parse_stats: dict[str, int] = {}
     total_items = 0
     counted = 0
+    failed_windows: list[str] = []
+    participant_targets = 0
+    p_totals = {"participant_bids": 0, "participant_rows_changed": 0,
+                "participant_errors": 0, "participant_structural_errors": 0}
 
+    # ⚠️ **창 하나를 끝까지 완결시킨 뒤 다음 창으로 간다.** 참가자를 전 창이
+    # 끝난 뒤에 한꺼번에 저장하면 세 가지가 동시에 깨진다:
+    #   ① 창 k 에서 예외가 나면 창 1..k-1 의 참가자가 통째로 사라지는데
+    #      참여사수(`OpeningResult`)는 이미 커밋돼 두 저장소가 갈라진다.
+    #   ② 창 수만큼 참가자 dict 가 메모리에 쌓인다(재조회는 10창 = 수십만 행,
+    #      워커 상한은 512M).
+    #   ③ 한 날짜의 결함이 나머지 날짜를 전부 죽인다(재조회는 오래된 순
+    #      고정이라 같은 독약 날짜가 매일 큐를 막는다).
+    # 창 단위로 가두면 셋 다 사라진다 — CLAUDE.md 함정 17 과 같은 원칙이다.
+    # 루프 안 예외는 창 단위로 잡히지만, 그 밖에서 터지면 세션이 샌다.
     try:
-        for window_start, window_end in _daily_windows(start_dt, end_dt):
+        for window_start, window_end in windows:
             start_str = window_start.strftime("%Y%m%d%H%M")
             end_str = window_end.strftime("%Y%m%d%H%M")
             window_inserted = 0
@@ -494,94 +567,98 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             window_skipped = 0
             # 참여사수 = 이 창에서 그 공고로 온 참가자 행 수. 창 단위로 세고
             # 창 단위로 반영한다(창을 넘겨 누적하면 재크롤 겹침에서 부풀어 오른다).
-            # 참여사수는 **저장과 같은 키로** 센다. raw 행을 그냥 더하면 API 가
-            # 같은 행을 두 번 준 날(페이지 경계에서 정렬이 흔들리면 999행 ×
-            # 수백 페이지 규모에서 실재하는 사고 — dedup 을 넣은 이유가 그것이다)
-            # `participants_count` 만 부풀어 `opening_participants` 행 수와
-            # 영구히 어긋난다. 두 저장소가 서로 다른 말을 하게 된다.
+            # **저장과 같은 키로** 센다. raw 행을 그냥 더하면 API 가 같은 행을 두 번
+            # 준 날 `participants_count` 만 부풀어 `opening_participants` 행 수와
+            # 영구히 어긋난다 — 두 저장소가 서로 다른 말을 하게 된다.
             window_keys: dict[str, set] = {}
+            window_participants: dict[str, list[dict]] = {}
             logger.info(f"opening_crawler: window {start_str} ~ {end_str}")
-            for page in range(1, max_pages + 1):
-                items = _fetch_page(start_str, end_str, page=page)
-                pages_fetched += 1
-                total_items += len(items)
-                if not items:
-                    break
-                for item in items:
-                    p = _parse_participant_kwargs(item, parse_stats)
-                    if p:
-                        # 세는 건 전 공고, 저장은 등록 공고만(설계 §P4).
-                        window_keys.setdefault(p["bid_no"], set()).add(
-                            (p["rank"], p["company"], p["bid_price"]))
-                        if p["bid_no"] in registered_bid_nos:
-                            participants_by_bid.setdefault(p["bid_no"], []).append(p)
-                    kwargs = _parse_item_to_kwargs(item)
-                    if kwargs is None:
-                        window_skipped += 1
-                        continue
-                    if _upsert_opening_result(db, kwargs, seen):
-                        window_inserted += 1
-                    else:
-                        window_updated += 1
-                # 요청 건수 미만 = 마지막 페이지
-                if len(items) < _PAGE_SIZE:
-                    break
-            else:
-                raise RuntimeError(
-                    f"page limit reached with a full page: {start_str}~{end_str} "
-                    f"(max_pages={max_pages})"
-                )
-            # 창 집계는 **전 공고**를 채운다. 등록 공고는 참가자 저장이 끝난 뒤
-            # 실제 행 수로 덮으므로(아래) 순서상 그쪽이 이긴다.
-            #
-            # ⚠️ 여기서 등록 공고를 미리 빼면 안 된다. 저장이 실패한 공고는
-            # `final_counts` 에도 안 들어가서 **어느 경로에서도 안 채워지고**,
-            # 2일 창을 벗어나면 영영 NULL 로 남는다(공개 SSR·통계에서 통째로
-            # 빠진다). master 는 창 집계가 전 공고를 채워 그 구멍이 없었다.
-            counted += _apply_participant_counts(
-                db, {b: len(keys) for b, keys in window_keys.items()})
-            db.commit()
+            try:
+                for page in range(1, max_pages + 1):
+                    items = _fetch_page(start_str, end_str, page=page)
+                    pages_fetched += 1
+                    total_items += len(items)
+                    if not items:
+                        break
+                    for item in items:
+                        p = _parse_participant_kwargs(item, parse_stats)
+                        if p:
+                            # 세는 건 전 공고, 저장은 등록 공고만(설계 §P4).
+                            window_keys.setdefault(p["bid_no"], set()).add(
+                                (p["rank"], p["company"], p["bid_price"]))
+                            if p["bid_no"] in registered_bid_nos:
+                                window_participants.setdefault(p["bid_no"], []).append(p)
+                        kwargs = _parse_item_to_kwargs(item)
+                        if kwargs is None:
+                            window_skipped += 1
+                            continue
+                        if _upsert_opening_result(db, kwargs, seen):
+                            window_inserted += 1
+                        else:
+                            window_updated += 1
+                    # 요청 건수 미만 = 마지막 페이지
+                    if len(items) < _PAGE_SIZE:
+                        break
+                    # 공공 API 예우 — 같은 API 를 쓰는 census 스크립트와 같은 간격.
+                    # 재조회는 회당 수천 페이지라 이게 없으면 한도에 부딪힌다.
+                    time.sleep(_PAGE_INTERVAL_SEC)
+                else:
+                    raise RuntimeError(
+                        f"page limit reached with a full page: {start_str}~{end_str} "
+                        f"(max_pages={max_pages})"
+                    )
+                # 창 집계는 **전 공고**를 채운다. 등록 공고는 아래에서 실제 행 수로
+                # 덮으므로 순서상 그쪽이 이긴다. 여기서 등록 공고를 미리 빼면,
+                # 저장이 실패한 공고가 어느 경로에서도 안 채워져 영영 NULL 로 남는다.
+                applied_window = _apply_participant_counts(
+                    db, {b: len(keys) for b, keys in window_keys.items()})
+                db.commit()
+                # 커밋 **뒤에** 더한다. 앞에서 더하면 커밋이 터졌을 때 롤백된
+                # 갱신이 숫자로만 남아 "아무것도 저장 안 됐는데 5,000건 반영"
+                # 으로 보고된다(같은 함수가 참가자 경로에서 지키는 규칙이다).
+                counted += applied_window
+            except Exception as e:  # noqa: BLE001
+                db.rollback()
+                failed_windows.append(f"{start_str}: {type(e).__name__}: {e}")
+                logger.error(f"opening_crawler: window {start_str} 실패 — "
+                             f"{type(e).__name__}: {e}")
+                continue
             inserted += window_inserted
             updated += window_updated
             skipped += window_skipped
-    except Exception as e:  # noqa: BLE001
-        db.rollback()
-        logger.error(f"opening_crawler: commit fail {type(e).__name__}: {e}")
-        return {
-            "ok": False,
-            "error": f"{type(e).__name__}: {e}",
-            "inserted": inserted,
-            "updated": updated,
-            "skipped": skipped,
-        }
+
+            # 이 창의 참가자를 **여기서** 저장한다. 다음 창이 실패해도 이건 남는다.
+            if window_participants:
+                participant_targets += len(window_participants)
+                pdb = SessionLocal()
+                try:
+                    ps = _save_participants(pdb, window_participants)
+                    final_counts = ps.pop("participant_final_counts")
+                    # ⚠️ 카운터는 **여기서** 병합한다. 아래 호출이 터지면 `ps` 가
+                    # 통째로 버려지는데, 거기엔 이미 센 `structural_errors` 가
+                    # 들어 있다 — 연결이 끊긴 상황에서 저장이 전부 실패했는데
+                    # 그 사실이 사라져 `participant_ok=True` 로 초록불이 된다.
+                    # 이 검출기가 존재하는 이유가 정확히 그 상황이다.
+                    for k, v in ps.items():
+                        p_totals[k] = p_totals.get(k, 0) + v
+                    # 등록 공고의 참여사수 = 병합 후 실제 참가자 행 수. 두 저장소가
+                    # 같은 소스를 보게 해야 "행 수는 5인데 화면은 12"가 안 나온다.
+                    applied = _apply_participant_counts(pdb, final_counts)
+                    pdb.commit()
+                    counted += applied      # 커밋 성공에 종속되는 건 이것뿐이다
+                except Exception as e:  # noqa: BLE001
+                    pdb.rollback()
+                    # 이 실패 자체가 구조적이다 — 참여사수 반영은 순수 DB 작업이라
+                    # 여기서 터졌다는 건 연결·스키마 문제라는 뜻이다.
+                    p_totals["participant_structural_errors"] += 1
+                    logger.error(f"opening_crawler: 창 {start_str} 참가자 저장 실패: "
+                                 f"{type(e).__name__}: {e}")
+                finally:
+                    pdb.close()
     finally:
         db.close()
 
-    # 참가자 저장 — 본 크롤 커밋이 전부 끝난 뒤 별도 세션에서 공고 단위 커밋.
-    # 실패해도 낙찰 결과 적재를 되돌리지 않는다(부가 데이터).
-    p_summary = {"participant_bids": 0, "participant_rows_changed": 0,
-                 "participant_errors": 0, "participant_structural_errors": 0,
-                 "participant_final_counts": {}}
-    if participants_by_bid:
-        pdb = SessionLocal()
-        try:
-            p_summary = _save_participants(pdb, participants_by_bid)
-            # 등록 공고의 참여사수 = 병합 후 실제 참가자 행 수. 두 저장소가 같은
-            # 소스를 보게 해야 "행 수는 5인데 화면은 12"가 나오지 않는다.
-            applied = _apply_participant_counts(
-                pdb, p_summary.pop("participant_final_counts"))
-            pdb.commit()
-            counted += applied
-        except Exception as e:  # noqa: BLE001
-            # ⚠️ 여기는 한 번에 커밋하므로 실패하면 **그 배치 전부**가 소실된다.
-            # `counted` 를 커밋 뒤에 더하는 것도 그래서다 — 앞서 커밋 전에 더했다가
-            # "아무것도 저장 안 됐는데 숫자는 성공"으로 보고될 뻔했다.
-            # 창 집계가 이미 전 공고를 채워 뒀으므로 값이 통째로 비지는 않는다.
-            pdb.rollback()
-            logger.error(f"opening_crawler: 참여사수 반영 실패: {type(e).__name__}: {e}")
-        finally:
-            pdb.close()
-
+    p_summary = p_totals
     # 참가자 수집 고장을 성공으로 삼키면 정상 화면과 완전 고장 화면이 똑같아진다
     # (설계 §9 원칙). 다만 **건수로 판정하지 않는다** — 이 검출기는 그 방식으로
     # 두 번 틀렸다. "저장 0건"으로 잡으니 정상적인 축소 보류가 고장이 됐고,
@@ -608,14 +685,24 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
     elif p_summary["participant_errors"]:
         logger.warning(
             f"opening_crawler: 참가자 저장 실패 {p_summary['participant_errors']}건 "
-            f"(대상 {len(participants_by_bid)}공고) — 반복되면 원인을 확인할 것"
+            f"(대상 {participant_targets}공고) — 반복되면 원인을 확인할 것"
         )
 
+    # 창 하나가 실패해도 나머지는 처리한다(창 단위 격리). 다만 **전 창이 실패**
+    # 하면 그건 부분 결함이 아니라 고장이므로 실패로 보고한다.
+    ok = not (failed_windows and len(failed_windows) == len(windows))
+    if failed_windows:
+        logger.error(f"opening_crawler: 실패한 창 {len(failed_windows)}/{len(windows)} — "
+                     f"{failed_windows[:3]}")
+
     summary = {
-        "ok": True,
+        "ok": ok,
+        "error": failed_windows[0] if (failed_windows and not ok) else None,
+        "failed_windows": failed_windows,
+        "windows": len(windows),
         "participant_ok": participant_ok,
         "participant_scope_ok": scope_ok,
-        "participant_targets": len(participants_by_bid),
+        "participant_targets": participant_targets,
         # `rank_absent` 는 무효 투찰이라 **평소에도 큰 수**다(실측 47.6%) — 이걸로
         # 이상을 감지할 수 없다. 스키마가 바뀌면 `rank_field_missing` 이 튄다.
         "participant_parsed_rows": parsed_rows,
