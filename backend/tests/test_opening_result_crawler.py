@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 
 import pytest
@@ -948,3 +948,62 @@ def test_count_apply_failure_is_itself_structural(monkeypatch, engine):
 
     assert result["participant_structural_errors"] == 1
     assert result["participant_ok"] is False
+
+
+class _KstAwareFrozen(datetime):
+    """축 변환을 **실제로 하는** 프리즈 — UTC/KST 차이를 재현한다.
+
+    기존 `_FrozenDateTime` 은 `value.replace(tzinfo=tz)` 라 축을 바꾸지 않아,
+    "컨테이너 시각을 그대로 보내면 9시간 어긋난다"는 결함을 재현하지 못한다.
+    """
+
+    _UTC_NOW = datetime(2026, 7, 10, 10, 0)      # = KST 19:00
+
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return cls._UTC_NOW                   # 컨테이너 시각(UTC)
+        return cls._UTC_NOW.replace(tzinfo=timezone.utc).astimezone(tz)
+
+
+def test_daily_crawl_window_uses_kst_not_container_time(monkeypatch):
+    """19:00 KST 크롤이 "10:00 까지"를 요청하면 그날 개찰(10~11시)이 밀린다.
+
+    개찰 API 의 `opengBgnDt/opengEndDt` 는 KST 표기인데 운영 컨테이너 TZ 는 UTC 다.
+    """
+    calls = []
+    db = _FakeDB()
+    monkeypatch.setattr(crawler, "datetime", _KstAwareFrozen)
+    monkeypatch.setattr(crawler, "SessionLocal", lambda: db)
+    monkeypatch.setattr(crawler, "_PAGE_INTERVAL_SEC", 0)
+    monkeypatch.setattr(crawler, "_fetch_page",
+                        lambda s_, e_, page=1, num_rows=999: calls.append((s_, e_)) or [])
+    monkeypatch.setattr(crawler, "_load_registered_bid_nos", lambda db: (set(), True))
+
+    crawler.crawl_recent_openings(days_back=0, max_pages=2)
+
+    # 창 끝이 KST 19:00 이어야 한다 — UTC 10:00 이면 9시간을 놓친다
+    assert calls[0][1].endswith("1900"), calls
+
+
+def test_daily_crawl_task_raises_on_any_failed_window(monkeypatch):
+    """정기 크롤은 창이 3개뿐이라 하나만 실패해도 알린다.
+
+    페이지 상한 초과는 "그날 데이터가 잘렸다"는 신호다. 창 격리는 재조회(15창)에
+    필요한 정책이지 정기 크롤까지 조용하게 만들라는 뜻이 아니다.
+    """
+    monkeypatch.setattr(
+        crawler, "crawl_recent_openings",
+        lambda days_back=2: {"ok": True, "participant_ok": True,
+                             "failed_windows": ["202607100000: RuntimeError: page limit"]},
+    )
+    with pytest.raises(RuntimeError, match="crawl window failed"):
+        verification_tasks.daily_crawl_opening_results(days_back=2)
+
+
+def test_daily_crawl_task_succeeds_when_no_window_failed(monkeypatch):
+    monkeypatch.setattr(
+        crawler, "crawl_recent_openings",
+        lambda days_back=2: {"ok": True, "participant_ok": True, "failed_windows": []},
+    )
+    assert verification_tasks.daily_crawl_opening_results(days_back=2)["ok"] is True

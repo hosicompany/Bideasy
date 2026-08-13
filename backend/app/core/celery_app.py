@@ -68,7 +68,7 @@ celery_app.conf.beat_schedule = {
     "nightly-recheck-pending-openings": {
         "task": "verification.recheck_pending_openings",
         "schedule": crontab(hour=2, minute=0),
-        "kwargs": {"max_days": 21, "max_dates": 15},
+        "kwargs": {"max_days": 21, "max_dates": 21},
     },
     # 개찰 크롤(19:00) 뒤 — 누적 개찰 통계 재집계 (docs/OPENING_STATS_DESIGN.md)
     "daily-opening-stats-rebuild": {

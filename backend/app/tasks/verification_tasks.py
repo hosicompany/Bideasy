@@ -47,7 +47,7 @@ def daily_crawl_opening_results(days_back: int = 2) -> dict:
 
 
 @celery_app.task(name="verification.recheck_pending_openings")
-def recheck_pending_openings(max_days: int = 21, max_dates: int = 15) -> dict:
+def recheck_pending_openings(max_days: int = 21, max_dates: int = 21) -> dict:
     """심야 — 채점 대기 중인 등록 공고의 **개찰일을 표적 재조회**.
 
     정기 크롤(19:00, 개찰일 기준 2일 창)은 개찰 당일만 본다. 그런데 개찰은
@@ -59,9 +59,12 @@ def recheck_pending_openings(max_days: int = 21, max_dates: int = 15) -> dict:
     개찰 API 는 날짜 창 조회만 지원해(공고번호 지정 시 "필수값 입력 에러",
     같이 줘도 무시) 그 날짜를 통째로 훑는 수밖에 없다.
 
-    `max_dates` 는 **21일 내 영업일 수(~15)보다 작으면 안 된다.** 대상보다 작게
-    잡고 오래된 순으로만 처리하면 새 날짜가 뒤로 밀려, 수확이 가장 큰 D+3~D+7
-    구간을 정확히 비켜간다. 대신 이미 걷힌 날짜는 대상에서 자동으로 빠진다.
+    `max_dates` 는 **후보 날짜 수보다 작으면 안 된다.** 대상보다 작게 잡고 오래된
+    순으로만 처리하면 새 날짜가 뒤로 밀려, 수확이 가장 큰 D+3~D+7 구간을 정확히
+    비켜간다. 후보 창은 `max_days=21` 일 때 **22 캘린더일**(경계 포함)이고 그 안의
+    평일은 **16일**이라, 15 로 두면 정상 운영에서 매일 밤 잘림 경고가 뜬다 —
+    매일 뜨는 경보는 곧 무시된다. 이미 걷힌 날짜는 대상에서 자동으로 빠지므로
+    넉넉히 잡아도 실제 조회는 남은 날짜 수만큼이다.
 
     실패해도 정기 크롤과 독립이다 — 이건 **보충**이지 본 수집이 아니다.
     창 하나가 실패해도 나머지 날짜는 처리된다(창 단위 격리).
