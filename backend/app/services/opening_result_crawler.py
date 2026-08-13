@@ -476,10 +476,16 @@ def windows_for_dates(dates) -> list[tuple[datetime, datetime]]:
     개찰 API 는 **날짜 창 조회만** 지원한다(2026-08-13 실측: `bidNtceNo` 를 줘도
     무시되고 `bidNtceNo` 단독은 "필수값 입력 에러"). 그래서 특정 공고를 다시
     보려면 그 공고의 개찰일을 통째로 훑는 수밖에 없다.
+
+    ⚠️ 하루 분량은 **날에 따라 2배 이상 흔들린다** — 2026-08-05 실측 83,791행
+    (84페이지)이지만 레포 정본은 공사 개찰을 하루 169k행(=170페이지)으로 적는다
+    (`models.py`·`docs/OPENING_STATS_DESIGN.md`). `max_pages` 여유와 회당 소요를
+    가늠할 때는 **큰 쪽**을 기준으로 봐야 한다.
     """
-    # ⚠️ **KST 로 잰다.** 대상 날짜는 `pending_opening_dates` 가 `now_kst()` 로
-    # 고르는데 여기서 컨테이너 시각(UTC)으로 자르면 9시간이 어긋나, 오늘 날짜가
-    # 대상에 들어왔을 때 그날 개찰(보통 10~11시 KST)을 통째로 놓친다.
+    # ⚠️ **KST 로 잰다.** 컨테이너 시각(UTC)으로 자르면 9시간이 어긋난다.
+    # 02:00 KST 실행 기준 UTC 는 전날 17:00 이라, **어제 날짜의 창이 17:00 에서
+    # 잘려** 그 뒤 개찰(17:00~23:59 KST)을 놓친다. 오늘 날짜는 대상 선정 단계가
+    # 이미 걸러내므로(개찰은 보통 10~11시) 문제가 되는 건 어제 창이다.
     now = _now_kst()
     out = []
     for d in dates:
@@ -506,7 +512,13 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200,
     영영 결과가 안 붙는다**(실측: 채점 도달률이 8~9일이 지나도 33.8% 정체).
     """
     if windows is None:
-        end_dt = datetime.now()
+        # ⚠️ **KST 로 잰다.** API 의 `opengBgnDt/opengEndDt` 는 KST 표기인데
+        # 운영 컨테이너 TZ 는 UTC 다. `datetime.now()` 를 그대로 포맷해 보내면
+        # 19:00 KST 크롤이 "10:00 까지"를 요청해 **그날 개찰(보통 10~11시 KST)이
+        # 통째로 빠진다.** 그래서 같은 날 개찰분이 채점(20:30)에 못 들어가고
+        # 하루씩 밀려 왔다 — celery_app.py 의 "같은 날 개찰분을 잡는다"는 주석이
+        # 실제로는 성립하지 않았다.
+        end_dt = _now_kst()
         start_dt = end_dt - timedelta(days=days_back)
         windows = list(_daily_windows(start_dt, end_dt))
     if not windows:
@@ -598,9 +610,13 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200,
                 # 창 집계는 **전 공고**를 채운다. 등록 공고는 아래에서 실제 행 수로
                 # 덮으므로 순서상 그쪽이 이긴다. 여기서 등록 공고를 미리 빼면,
                 # 저장이 실패한 공고가 어느 경로에서도 안 채워져 영영 NULL 로 남는다.
-                counted += _apply_participant_counts(
+                applied_window = _apply_participant_counts(
                     db, {b: len(keys) for b, keys in window_keys.items()})
                 db.commit()
+                # 커밋 **뒤에** 더한다. 앞에서 더하면 커밋이 터졌을 때 롤백된
+                # 갱신이 숫자로만 남아 "아무것도 저장 안 됐는데 5,000건 반영"
+                # 으로 보고된다(같은 함수가 참가자 경로에서 지키는 규칙이다).
+                counted += applied_window
             except Exception as e:  # noqa: BLE001
                 db.rollback()
                 failed_windows.append(f"{start_str}: {type(e).__name__}: {e}")
@@ -617,16 +633,24 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200,
                 pdb = SessionLocal()
                 try:
                     ps = _save_participants(pdb, window_participants)
-                    # 등록 공고의 참여사수 = 병합 후 실제 참가자 행 수. 두 저장소가
-                    # 같은 소스를 보게 해야 "행 수는 5인데 화면은 12"가 안 나온다.
-                    applied = _apply_participant_counts(
-                        pdb, ps.pop("participant_final_counts"))
-                    pdb.commit()
-                    counted += applied
+                    final_counts = ps.pop("participant_final_counts")
+                    # ⚠️ 카운터는 **여기서** 병합한다. 아래 호출이 터지면 `ps` 가
+                    # 통째로 버려지는데, 거기엔 이미 센 `structural_errors` 가
+                    # 들어 있다 — 연결이 끊긴 상황에서 저장이 전부 실패했는데
+                    # 그 사실이 사라져 `participant_ok=True` 로 초록불이 된다.
+                    # 이 검출기가 존재하는 이유가 정확히 그 상황이다.
                     for k, v in ps.items():
                         p_totals[k] = p_totals.get(k, 0) + v
+                    # 등록 공고의 참여사수 = 병합 후 실제 참가자 행 수. 두 저장소가
+                    # 같은 소스를 보게 해야 "행 수는 5인데 화면은 12"가 안 나온다.
+                    applied = _apply_participant_counts(pdb, final_counts)
+                    pdb.commit()
+                    counted += applied      # 커밋 성공에 종속되는 건 이것뿐이다
                 except Exception as e:  # noqa: BLE001
                     pdb.rollback()
+                    # 이 실패 자체가 구조적이다 — 참여사수 반영은 순수 DB 작업이라
+                    # 여기서 터졌다는 건 연결·스키마 문제라는 뜻이다.
+                    p_totals["participant_structural_errors"] += 1
                     logger.error(f"opening_crawler: 창 {start_str} 참가자 저장 실패: "
                                  f"{type(e).__name__}: {e}")
                 finally:

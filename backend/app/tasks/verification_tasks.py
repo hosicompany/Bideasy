@@ -31,6 +31,12 @@ def daily_crawl_opening_results(days_back: int = 2) -> dict:
     logger.info(f"[daily_crawl] {result}")
     if not result.get("ok"):
         raise RuntimeError(result.get("error", "opening result crawl failed"))
+    # 정기 크롤은 **창이 3개뿐**이고 다음 날 창이 겹쳐 자기 치유되므로, 한 창만
+    # 실패해도 시끄럽게 알린다. 특히 페이지 상한 초과는 "그날 데이터가 잘렸다"는
+    # 신호인데, 이걸 삼키면 성수기마다 조용히 결손이 쌓인다.
+    # (표적 재조회는 창이 15개라 정책이 다르다 — 거긴 전 창 실패만 실패로 본다.)
+    if result.get("failed_windows"):
+        raise RuntimeError(f"crawl window failed: {result['failed_windows']}")
     # 참가자 수집 전면 실패는 성공으로 삼키지 않는다. 낙찰 결과는 이미 커밋됐고
     # 되돌리지 않지만(부가 데이터라 본 크롤을 막지 않는다는 설계), 태스크는
     # FAILURE 로 남겨야 한다 — 안 그러면 등수 지표가 조용히 성장 정지한 채
@@ -68,18 +74,21 @@ def recheck_pending_openings(max_days: int = 21, max_dates: int = 15) -> dict:
 
     db = SessionLocal()
     try:
-        dates = pending_opening_dates(db, max_days=max_days, limit=max_dates)
+        dates, deferred = pending_opening_dates(db, max_days=max_days, limit=max_dates)
     finally:
         db.close()
 
     if not dates:
         logger.info("[recheck_openings] 재조회 대상 없음")
-        return {"ok": True, "dates": 0, "note": "재조회 대상 없음"}
+        return {"ok": True, "dates": 0, "deferred": deferred,
+                "note": "재조회 대상 없음"}
 
     logger.info(f"[recheck_openings] 대상 {len(dates)}일: "
                 f"{dates[0].isoformat()} ~ {dates[-1].isoformat()}")
     result = crawl_recent_openings(windows=windows_for_dates(dates))
     result["recheck_dates"] = [d.isoformat() for d in dates]
+    # 밀린 날짜가 계속 잡히면 `max_dates` 가 실제 대상보다 작다는 뜻이다.
+    result["deferred"] = deferred
     logger.info(f"[recheck_openings] {result}")
     if not result.get("ok"):
         raise RuntimeError(result.get("error", "recheck crawl failed"))

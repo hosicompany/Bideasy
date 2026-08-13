@@ -540,7 +540,7 @@ def score_mock_bid(db: Session, mb: models.MockBid,
 
 
 def pending_opening_dates(db: Session, max_days: int = 21,
-                          limit: int = 15) -> list[date_cls]:
+                          limit: int = 15) -> tuple[list[date_cls], int]:
     """채점 대기 중인 등록 공고의 **개찰 예정일**을 오래된 순으로 돌려준다.
 
     **왜 필요한가** (2026-08-13 실측): 개찰은 마감 당일에 나지만
@@ -555,6 +555,8 @@ def pending_opening_dates(db: Session, max_days: int = 21,
     - `max_days`: 이보다 오래된 개찰일은 포기한다. 유찰·취소처럼 낙찰자가 영영
       확정되지 않는 건이 매일 같은 자리를 차지하는 것을 막는다.
     - 미래 개찰일은 제외한다(아직 개찰 전이라 조회해도 결과가 없다).
+
+    반환: `(날짜 목록, 밀린 날짜 수)`. 밀린 수를 함께 주는 이유는 아래 참조.
     """
     now = now_kst()
     since = (now - timedelta(days=max_days)).strftime("%Y-%m-%d")
@@ -573,16 +575,26 @@ def pending_opening_dates(db: Session, max_days: int = 21,
         )
         .group_by(day)
         .order_by(day.asc())
-        .limit(limit)
+        .limit(limit + 1)      # 잘렸는지 알려면 한 개 더 봐야 한다
         .all()
     )
+    # 잘린 사실을 **반드시 남긴다.** `score_pending` 이 같은 실수로 데였다 —
+    # 잔량을 안 보이면 "정상처럼 보이는데 실제로는 데이터가 새고 있는" 상황이
+    # 조용히 지나간다. 여기선 최근 날짜가 뒤로 밀려 수확이 큰 D+3~D+7 구간을
+    # 비켜가는데, 그게 일어났는지 알 방법이 없어진다.
+    deferred = max(0, len(rows) - limit)
     out = []
-    for (d,) in rows:
+    for (d,) in rows[:limit]:
         try:
             out.append(datetime.strptime(d, "%Y-%m-%d").date())
         except (TypeError, ValueError):
             continue  # 형식이 깨진 값 하나가 재조회 전체를 막지 않게
-    return out
+    if deferred:
+        logger.warning(
+            f"[mock_bidding] 재조회 대상 날짜 {deferred}일이 밀렸다(limit={limit}) "
+            "— 최근 날짜가 굶으면 수확이 큰 구간을 비켜간다"
+        )
+    return out, deferred
 
 
 def score_pending(db: Session, limit: int = 5000) -> dict:

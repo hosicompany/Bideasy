@@ -73,23 +73,24 @@ class TestPendingOpeningDates:
         self._clean(db_session)
         self._seed(db_session, "RC-PENDING-000", days_ago=5)
 
-        dates = mb.pending_opening_dates(db_session)
+        dates, deferred = mb.pending_opening_dates(db_session)
 
         assert dates == [(mb.now_kst() - timedelta(days=5)).date()]
+        assert deferred == 0
 
     def test_skips_notices_that_already_have_results(self, db_session):
         """결과가 붙은 공고는 다시 훑을 이유가 없다 — 대상에서 자동으로 빠진다."""
         self._clean(db_session)
         self._seed(db_session, "RC-DONE-000", days_ago=5, opened=True)
 
-        assert mb.pending_opening_dates(db_session) == []
+        assert mb.pending_opening_dates(db_session)[0] == []
 
     def test_gives_up_on_too_old_openings(self, db_session):
         """유찰·취소처럼 낙찰자가 영영 확정 안 되는 건이 매일 자리를 차지하면 안 된다."""
         self._clean(db_session)
         self._seed(db_session, "RC-ANCIENT-000", days_ago=40)
 
-        assert mb.pending_opening_dates(db_session, max_days=21) == []
+        assert mb.pending_opening_dates(db_session, max_days=21)[0] == []
 
     def test_ignores_future_openings(self, db_session):
         """아직 개찰 전이면 조회해도 결과가 없다."""
@@ -99,7 +100,7 @@ class TestPendingOpeningDates:
         db_session.add(_mock_bid("RC-FUTURE-000"))
         db_session.commit()
 
-        assert mb.pending_opening_dates(db_session) == []
+        assert mb.pending_opening_dates(db_session)[0] == []
 
     def test_oldest_first_and_capped(self, db_session):
         """하루가 ~84페이지라 회당 처리량을 묶는다. 오래된 것부터 처리한다."""
@@ -107,9 +108,12 @@ class TestPendingOpeningDates:
         for i in (3, 5, 7):
             self._seed(db_session, f"RC-MANY-{i}-000", days_ago=i)
 
-        dates = mb.pending_opening_dates(db_session, limit=2)
+        dates, deferred = mb.pending_opening_dates(db_session, limit=2)
 
         assert dates == [(mb.now_kst() - timedelta(days=d)).date() for d in (7, 5)]
+        # 잘린 사실을 반드시 남긴다 — 최근 날짜가 굶으면 수확이 큰 D+3~D+7
+        # 구간을 비켜가는데, 안 남기면 그게 일어났는지 알 방법이 없다.
+        assert deferred == 1
 
     def test_malformed_opening_date_does_not_break_the_batch(self, db_session):
         """값 하나가 깨졌다고 재조회 전체가 멈추면 안 된다."""
@@ -119,7 +123,7 @@ class TestPendingOpeningDates:
         db_session.commit()
         self._seed(db_session, "RC-GOOD-000", days_ago=4)
 
-        assert mb.pending_opening_dates(db_session) == [
+        assert mb.pending_opening_dates(db_session)[0] == [
             (mb.now_kst() - timedelta(days=4)).date()]
 
 
@@ -129,7 +133,7 @@ class TestRecheckTask:
         called = []
         monkeypatch.setattr(crawler, "crawl_recent_openings",
                             lambda **kw: called.append(kw) or {"ok": True})
-        monkeypatch.setattr(mb, "pending_opening_dates", lambda *a, **k: [])
+        monkeypatch.setattr(mb, "pending_opening_dates", lambda *a, **k: ([], 0))
 
         r = verification_tasks.recheck_pending_openings()
 
@@ -146,7 +150,7 @@ class TestRecheckTask:
 
         monkeypatch.setattr(crawler, "crawl_recent_openings", fake_crawl)
         monkeypatch.setattr(mb, "pending_opening_dates",
-                            lambda *a, **k: [date(2026, 8, 5), date(2026, 8, 6)])
+                            lambda *a, **k: ([date(2026, 8, 5), date(2026, 8, 6)], 0))
 
         r = verification_tasks.recheck_pending_openings()
 
