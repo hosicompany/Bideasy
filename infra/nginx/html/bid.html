@@ -44,7 +44,7 @@
 
     if (!no) { document.getElementById('detail').innerHTML = '<div class="panel" style="padding:40px;text-align:center;">공고번호가 없어요. <a href="/search" style="color:var(--accent);">검색으로</a></div>'; document.getElementById('ai').style.display = 'none'; return; }
 
-    var bid = { title: '공고 ' + no, basic: null, type: 'CONSTRUCTION' };
+    var bid = { title: '공고 ' + no, basis: null, estimate: null, type: 'CONSTRUCTION' };
 
     function fact(k, v, mono) { return '<div><div class="micro" style="font-size:9.5px;">' + k + '</div><div class="' + (mono ? 'num' : '') + '" style="font-size:15px;font-weight:600;margin-top:5px;">' + v + '</div></div>'; }
 
@@ -55,7 +55,7 @@
         '<h1 style="font-size:26px;font-weight:800;letter-spacing:-0.6px;line-height:1.3;margin:12px 0 0;">' + BD.esc(bid.title) + '</h1>' +
         '<p style="font-size:14px;color:var(--muted);margin-top:6px;">공고번호 ' + BD.esc(no) + '</p>' +
         '<div class="card" style="padding:22px;margin-top:18px;display:grid;grid-template-columns:1fr 1fr 1fr;row-gap:20px;column-gap:16px;">' +
-          fact('기초금액', bid.basic ? BD.fmt(bid.basic) : '—', 1) + fact('계약 종류', TKO[bid.type] || '—') + fact('공고번호', BD.esc(no), 1) + '</div>' +
+          fact('기초금액', bid.basis ? BD.fmt(bid.basis) : '미확인', 1) + fact('추정가격', bid.estimate ? BD.fmt(bid.estimate) : '—', 1) + fact('계약 종류', TKO[bid.type] || '—') + '</div>' +
         '<div style="margin-top:22px;"><span class="micro">자격 자동 매칭</span><div class="card" id="qual" style="padding:14px 18px;margin-top:10px;"><div class="skel" style="height:18px;border-radius:6px;"></div></div></div>' +
         '<div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap;"><a class="btn btn-primary" href="/calculator.html?no=' + encodeURIComponent(no) + '">' + BD.icon('bolt', 15) + ' 투찰가 계산하기</a>' +
           '<button id="fav" class="btn ' + (isFav ? 'btn-primary' : 'btn-ghost') + '"' + (isFav ? ' style="background:var(--accent-soft);color:var(--accent);"' : '') + '>' + BD.icon('star', 15) + ' <span id="favtxt">' + (isFav ? '즐겨찾기됨' : '즐겨찾기') + '</span></button></div>';
@@ -93,7 +93,12 @@
 
     // 공고 컨텍스트 로드 → 상세 채움
     fetch(API_BASE + '/bids/' + encodeURIComponent(no) + '/context').then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
-      if (c) { if (c.title) bid.title = c.title; if (c.estimated_price) bid.basic = c.estimated_price; if (c.contract_type) bid.type = c.contract_type; }
+      if (c) {
+        if (c.title) bid.title = c.title;
+        if (c.basis_status === 'confirmed' && c.basis_amount) bid.basis = c.basis_amount;
+        if (c.estimated_price) bid.estimate = c.estimated_price;
+        if (c.contract_type) bid.type = c.contract_type;
+      }
       renderDetail();
     }).catch(function () { renderDetail(); });
 

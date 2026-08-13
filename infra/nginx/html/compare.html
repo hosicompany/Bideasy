@@ -67,7 +67,8 @@
           '<div class="micro" style="font-size:9px;margin-top:4px;">' + d.bid + '</div></td>';
       }).join('') + '</tr>';
       function row(key, fn) { html += '<tr><th>' + key + '</th>' + data.map(function (d) { return '<td>' + fn(d.ctx || {}, d) + '</td>'; }).join('') + '</tr>'; }
-      row('기초금액', function (c) { return c.estimated_price ? '<span class="num" style="font-weight:600;">' + BD.won(c.estimated_price) + '원</span>' : '—'; });
+      row('기초금액', function (c) { return c.basis_status === 'confirmed' && c.basis_amount ? '<span class="num" style="font-weight:600;">' + BD.won(c.basis_amount) + '원</span>' : '미확인'; });
+      row('추정가격', function (c) { return c.estimated_price ? '<span class="num">' + BD.won(c.estimated_price) + '원</span>' : '—'; });
       row('계약 종류', function (c) { return TKO[c.contract_type] || '—'; });
       if (token) row('입찰 자격', function (c, d) {
         var q = d.qual; if (!q) return '—';

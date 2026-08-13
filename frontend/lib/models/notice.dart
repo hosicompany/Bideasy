@@ -6,6 +6,13 @@ class Notice {
   final String title;
   final String content; // Notice URL
   final double basicPrice;
+  final double? basisAmount;
+  final String basisStatus;
+  final DateTime? basisAmountAt;
+  final double? lowerLimitRate;
+  final String? lowerLimitSource;
+  final double? prdprcRangeBgn;
+  final double? prdprcRangeEnd;
   final DateTime? startDate;
   final DateTime? endDate;
   final String? contractType;
@@ -32,6 +39,8 @@ class Notice {
 
   // Calculated fields (populated by AI Analysis or Calculator)
   final int? aValue;
+  final String? aValueSource;
+  final String? aValueApplicable;
   final int? netCost;
 
   Notice({
@@ -39,6 +48,13 @@ class Notice {
     required this.title,
     required this.content,
     required this.basicPrice,
+    this.basisAmount,
+    this.basisStatus = 'unconfirmed',
+    this.basisAmountAt,
+    this.lowerLimitRate,
+    this.lowerLimitSource,
+    this.prdprcRangeBgn,
+    this.prdprcRangeEnd,
     this.startDate,
     this.endDate,
     this.contractType,
@@ -61,8 +77,28 @@ class Notice {
     this.attachmentUrl,
     this.attachmentName,
     this.aValue,
+    this.aValueSource,
+    this.aValueApplicable,
     this.netCost,
   });
+
+  double? get confirmedBasisAmount {
+    final amount = basisAmount;
+    if (basisStatus.toLowerCase() != 'confirmed' ||
+        amount == null ||
+        amount <= 0) {
+      return null;
+    }
+    return amount;
+  }
+
+  bool get isConstruction {
+    final normalized = (contractType ?? '').trim().toUpperCase();
+    return normalized == 'CONSTRUCTION' ||
+        normalized == 'WORKS' ||
+        normalized == '공사' ||
+        (bidType ?? '').contains('공사');
+  }
 
   bool get isClosed {
     if (openingDate == null) return false;
@@ -81,11 +117,32 @@ class Notice {
       }
     }
 
+    double? parseDouble(Object? value) {
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '');
+    }
+
+    int? parseInt(Object? value) {
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '');
+    }
+
+    final parsedBasisAmount = parseDouble(json['basis_amount']);
+
     return Notice(
       // Core fields
       bidNo: json['bid_no'] ?? '',
       title: json['title'] ?? '',
       basicPrice: (json['basic_price'] ?? 0).toDouble(),
+      basisAmount: parsedBasisAmount,
+      // An amount without an explicit confirmation status is not sufficient
+      // evidence for a safety calculation; the screen will fetch context.
+      basisStatus: json['basis_status']?.toString() ?? 'unconfirmed',
+      basisAmountAt: parseDate(json['basis_amount_at']?.toString()),
+      lowerLimitRate: parseDouble(json['lower_limit_rate']),
+      lowerLimitSource: json['lower_limit_source']?.toString(),
+      prdprcRangeBgn: parseDouble(json['prdprc_range_bgn']),
+      prdprcRangeEnd: parseDouble(json['prdprc_range_end']),
       contractType: json['contract_type'],
       content: json['content'] ?? '',
       startDate: parseDate(json['start_date']),
@@ -112,8 +169,48 @@ class Notice {
       rebidYn: json['rebid_yn'],
       attachmentUrl: json['attachment_url'],
       attachmentName: json['attachment_name'],
-      aValue: json['a_value'],
-      netCost: json['net_cost'],
+      aValue: parseInt(json['a_value']),
+      aValueSource: json['a_value_source']?.toString(),
+      aValueApplicable: json['a_value_applicable']?.toString(),
+      netCost: parseInt(json['net_cost']),
+    );
+  }
+
+  /// Merge the authoritative calculation fields returned by `/bids/{id}/context`.
+  /// Missing context values never turn the estimated price into a basis amount.
+  Notice withCalculationContext(Map<String, dynamic> json) {
+    double? parseDouble(Object? value) {
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '');
+    }
+
+    int? parseInt(Object? value) {
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '');
+    }
+
+    DateTime? parseDate(Object? value) {
+      final raw = value?.toString();
+      if (raw == null || raw.isEmpty) return null;
+      return DateTime.tryParse(raw.replaceAll(' ', 'T'));
+    }
+
+    return copyWith(
+      basisAmount: parseDouble(json['basis_amount']),
+      basisStatus: json['basis_status']?.toString(),
+      basisAmountAt: parseDate(json['basis_amount_at']),
+      startDate: parseDate(json['bid_date']),
+      lowerLimitRate: parseDouble(json['lower_limit_rate']),
+      lowerLimitSource: json['lower_limit_source']?.toString(),
+      prdprcRangeBgn: parseDouble(json['prdprc_range_bgn']),
+      prdprcRangeEnd: parseDouble(json['prdprc_range_end']),
+      contractType: json['contract_type']?.toString(),
+      bidMethod: json['bid_method']?.toString(),
+      contractMethod: json['contract_method']?.toString(),
+      aValue: parseInt(json['a_value']),
+      aValueSource: json['a_value_source']?.toString(),
+      aValueApplicable: json['a_value_applicable']?.toString(),
+      netCost: parseInt(json['net_cost']),
     );
   }
 
@@ -127,13 +224,35 @@ class Notice {
   Map<String, String> toAnalysisParams() {
     final params = <String, String>{};
     if (title.isNotEmpty) params['title'] = title;
-    if (basicPrice > 0) params['basic_price'] = basicPrice.toString();
+    // Notice.basicPrice is presmptPrce (estimated price), not the confirmed
+    // basis used by safety calculations.
+    if (basicPrice > 0) params['estimated_price'] = basicPrice.toString();
+    final basis = confirmedBasisAmount;
+    if (basis != null) {
+      params['basis_amount'] = basis.toString();
+      params['basis_status'] = 'confirmed';
+    }
+    if (lowerLimitRate != null) {
+      params['lower_limit_rate'] = lowerLimitRate.toString();
+    }
+    if (prdprcRangeBgn != null) {
+      params['prdprc_range_bgn'] = prdprcRangeBgn.toString();
+    }
+    if (prdprcRangeEnd != null) {
+      params['prdprc_range_end'] = prdprcRangeEnd.toString();
+    }
+    if (aValue != null) params['a_value'] = aValue.toString();
+    if (aValueSource != null) params['a_value_source'] = aValueSource!;
+    if (aValueApplicable != null) {
+      params['a_value_applicable'] = aValueApplicable!;
+    }
     if (organization != null) params['organization'] = organization!;
     if (demandOrganization != null) {
       params['demand_organization'] = demandOrganization!;
     }
     if (bidMethod != null) params['bid_method'] = bidMethod!;
     if (contractMethod != null) params['contract_method'] = contractMethod!;
+    if (contractType != null) params['contract_type'] = contractType!;
     if (bidType != null) params['bid_type'] = bidType!;
     if (status != null) params['status'] = status!;
     if (region != null) params['region'] = region!;
@@ -162,6 +281,13 @@ class Notice {
     String? title,
     String? content,
     double? basicPrice,
+    double? basisAmount,
+    String? basisStatus,
+    DateTime? basisAmountAt,
+    double? lowerLimitRate,
+    String? lowerLimitSource,
+    double? prdprcRangeBgn,
+    double? prdprcRangeEnd,
     DateTime? startDate,
     DateTime? endDate,
     String? contractType,
@@ -184,6 +310,8 @@ class Notice {
     String? attachmentUrl,
     String? attachmentName,
     int? aValue,
+    String? aValueSource,
+    String? aValueApplicable,
     int? netCost,
   }) {
     return Notice(
@@ -191,6 +319,13 @@ class Notice {
       title: title ?? this.title,
       content: content ?? this.content,
       basicPrice: basicPrice ?? this.basicPrice,
+      basisAmount: basisAmount ?? this.basisAmount,
+      basisStatus: basisStatus ?? this.basisStatus,
+      basisAmountAt: basisAmountAt ?? this.basisAmountAt,
+      lowerLimitRate: lowerLimitRate ?? this.lowerLimitRate,
+      lowerLimitSource: lowerLimitSource ?? this.lowerLimitSource,
+      prdprcRangeBgn: prdprcRangeBgn ?? this.prdprcRangeBgn,
+      prdprcRangeEnd: prdprcRangeEnd ?? this.prdprcRangeEnd,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       contractType: contractType ?? this.contractType,
@@ -213,6 +348,8 @@ class Notice {
       attachmentUrl: attachmentUrl ?? this.attachmentUrl,
       attachmentName: attachmentName ?? this.attachmentName,
       aValue: aValue ?? this.aValue,
+      aValueSource: aValueSource ?? this.aValueSource,
+      aValueApplicable: aValueApplicable ?? this.aValueApplicable,
       netCost: netCost ?? this.netCost,
     );
   }

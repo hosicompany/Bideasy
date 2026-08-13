@@ -3,11 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'my_page_screen.dart';
 import 'notification_screen.dart';
+import 'bid_calculator_screen.dart';
 import '../theme/style.dart';
 import '../widgets/notice_card.dart';
-import '../widgets/bid_slider.dart';
-import '../widgets/ai_analysis_card.dart';
-import '../widgets/opening_result_table.dart';
 import '../widgets/state_widgets.dart';
 import '../utils/snackbar_utils.dart';
 import '../models/notice.dart';
@@ -245,14 +243,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     // Exclude Closed Checkbox
                     InkWell(
                       onTap: () {
-                        ref.read(noticesProvider.notifier).toggleExcludeClosed();
+                        ref
+                            .read(noticesProvider.notifier)
+                            .toggleExcludeClosed();
                       },
                       child: Row(
                         children: [
                           Checkbox(
                             value: s.excludeClosed,
                             onChanged: (_) {
-                              ref.read(noticesProvider.notifier).toggleExcludeClosed();
+                              ref
+                                  .read(noticesProvider.notifier)
+                                  .toggleExcludeClosed();
                             },
                             materialTapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
@@ -328,170 +330,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _showCalculator(BuildContext context, Notice notice) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        minChildSize: 0.5,
-        builder: (_, controller) => Container(
-          decoration: const BoxDecoration(
-            color: AppColors.surfaceWhite,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: CalculatorView(notice: notice),
-        ),
-      ),
-    );
-  }
-}
-
-class CalculatorView extends StatefulWidget {
-  final Notice notice;
-  const CalculatorView({super.key, required this.notice});
-
-  @override
-  State<CalculatorView> createState() => _CalculatorViewState();
-}
-
-class _CalculatorViewState extends State<CalculatorView> {
-  double _rate = 0.0;
-
-  // Logic from backend/app/services/calculator.py
-  // Real Logic: Calculate Lower Limit Rate based on Contract Type
-  double get _lowerLimitRate {
-    // 법정 낙찰하한율 (국가계약법 기준, backend/app/services/calculator.py와 동기화)
-    switch (widget.notice.contractType) {
-      case 'SERVICE':
-        return 60.0;    // 용역
-      case 'GOODS':
-        return 0.0;     // 물품 (최저가 방식, 하한선 없음)
-      case 'CONSTRUCTION':
-      default:
-        return 87.745;  // 공사
-    }
-  }
-
-  // Calculate the rate difference from standard (100%) that corresponds to the lower limit
-  // e.g. 87.745% means -12.255% from basic price
-  double get _dangerousThreshold => _lowerLimitRate - 100.0;
-
-  int get _calculatedPrice {
-    double target = widget.notice.basicPrice * (1 + _rate / 100);
-    return (target / 10).floor() * 10;
-  }
-
-  // Check safety: If user rate is BELOW the threshold
-  bool get _isDangerous => _rate < _dangerousThreshold;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, left: 24, right: 24, bottom: 24),
-      child: Column(
-        children: [
-          // Handle Bar and Close Button Row
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.divider,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: AppColors.textMain),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Scrollable Content
-          Expanded(
-            child: ListView(
-              controller: ScrollController(),
-              padding: EdgeInsets.zero,
-              children: [
-                Text(widget.notice.title, style: AppTextStyles.h2),
-                const SizedBox(height: 8),
-                Text("기초금액: ${widget.notice.formattedPrice}원",
-                    style: AppTextStyles.body1),
-                const SizedBox(height: 32),
-                if (widget.notice.isClosed) ...[
-                  // Closed View: Result Table
-                  OpeningResultTable(notice: widget.notice),
-                  const SizedBox(height: 32),
-                  const Divider(),
-                  const SizedBox(height: 16),
-                  AiAnalysisCard(
-                      notice: widget.notice), // Optional: Keep for reference
-                ] else ...[
-                  // Active View: Calculator
-                  Center(
-                    child: Text(
-                      "${_calculatedPrice.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}원",
-                      style: AppTextStyles.h1.copyWith(fontSize: 32),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  AiAnalysisCard(notice: widget.notice),
-
-                  const SizedBox(height: 24),
-
-                  BidSlider(
-                    currentRate: _rate,
-                    isDangerous: _isDangerous,
-                    onChanged: (val) {
-                      setState(() => _rate = val);
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                ],
-              ],
-            ),
-          ),
-
-          // Action Button (Hide if closed)
-          if (!widget.notice.isClosed) ...[
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isDangerous
-                    ? null
-                    : () {
-                        Clipboard.setData(ClipboardData(text: _calculatedPrice.toString()));
-                        HapticFeedback.mediumImpact();
-                        SnackBarUtils.showSuccess(context, '투찰가 $_calculatedPrice원이 복사됐어요');
-                        Navigator.pop(context);
-                      },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isDangerous
-                      ? AppColors.dangerRed
-                      : AppColors.primaryBlue,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
-                  disabledBackgroundColor: AppColors.backgroundGrey,
-                ),
-                child: const Text("이 가격으로 저장하기",
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
-        ],
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BidCalculatorScreen(notice: notice),
       ),
     );
   }

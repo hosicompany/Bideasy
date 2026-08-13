@@ -60,11 +60,14 @@ class ApiService {
       case 404:
         throw ApiException(detail ?? '요청한 데이터를 찾을 수 없어요', statusCode: 404);
       case 429:
-        throw ApiException(detail ?? '요청이 너무 많아요. 잠시 후 다시 시도해주세요', statusCode: 429);
+        throw ApiException(detail ?? '요청이 너무 많아요. 잠시 후 다시 시도해주세요',
+            statusCode: 429);
       case >= 500:
-        throw ApiException(detail ?? '서버에 문제가 생겼어요. 잠시 후 다시 시도해주세요', statusCode: response.statusCode);
+        throw ApiException(detail ?? '서버에 문제가 생겼어요. 잠시 후 다시 시도해주세요',
+            statusCode: response.statusCode);
       default:
-        throw ApiException(detail ?? '요청에 실패했어요 (${response.statusCode})', statusCode: response.statusCode);
+        throw ApiException(detail ?? '요청에 실패했어요 (${response.statusCode})',
+            statusCode: response.statusCode);
     }
   }
 
@@ -73,9 +76,9 @@ class ApiService {
   static String? _token;
 
   static Map<String, String> get _authHeaders => {
-    'Content-Type': 'application/json',
-    if (_token != null) 'Authorization': 'Bearer $_token',
-  };
+        'Content-Type': 'application/json',
+        if (_token != null) 'Authorization': 'Bearer $_token',
+      };
 
   static Future<bool> loadToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -202,6 +205,22 @@ class ApiService {
     _throwForStatus(response);
   }
 
+  /// Fetches authoritative calculation inputs for a notice.
+  ///
+  /// `estimated_price` is intentionally kept separate from `basis_amount` by
+  /// the backend. Callers must still require `basis_status == confirmed`.
+  Future<Map<String, dynamic>> fetchBidContext(String bidNo) async {
+    final encodedBidNo = Uri.encodeComponent(bidNo);
+    final response = await _request(
+      () => http.get(Uri.parse('$baseUrl/bids/$encodedBidNo/context')),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes))
+          as Map<String, dynamic>;
+    }
+    _throwForStatus(response);
+  }
+
   Future<void> triggerCrawl() async {
     final response = await _request(
       () => http.post(Uri.parse('$baseUrl/bids/crawl')),
@@ -214,8 +233,11 @@ class ApiService {
   Future<Map<String, dynamic>> calculateBidDetailed({
     required double basicPrice,
     required double rate,
+    required String aValueStatus,
     String? contractType,
     int? aValue,
+    double? lowerLimitRate,
+    String? bidDate,
   }) async {
     final response = await _request(
       () => http.post(
@@ -226,6 +248,9 @@ class ApiService {
           'rate': rate,
           'contract_type': contractType ?? 'CONSTRUCTION',
           'a_value': aValue ?? 0,
+          'a_value_status': aValueStatus,
+          if (lowerLimitRate != null) 'lower_limit_rate': lowerLimitRate,
+          if (bidDate != null) 'bid_date': bidDate,
         }),
       ),
     );
@@ -280,9 +305,7 @@ class ApiService {
     );
     if (response.statusCode == 200) {
       List<dynamic> body = jsonDecode(utf8.decode(response.bodyBytes));
-      return body
-          .map((dynamic item) => OpeningResult.fromJson(item))
-          .toList();
+      return body.map((dynamic item) => OpeningResult.fromJson(item)).toList();
     }
     _throwForStatus(response);
   }
@@ -319,7 +342,8 @@ class ApiService {
 
   Future<Map<String, dynamic>> getPointBalance() async {
     final response = await _request(
-      () => http.get(Uri.parse('$baseUrl/points/balance'), headers: _authHeaders),
+      () =>
+          http.get(Uri.parse('$baseUrl/points/balance'), headers: _authHeaders),
     );
     if (response.statusCode == 200) {
       return jsonDecode(utf8.decode(response.bodyBytes));
@@ -349,7 +373,8 @@ class ApiService {
 
   Future<Map<String, dynamic>> getDailyFreeStatus() async {
     final response = await _request(
-      () => http.get(Uri.parse('$baseUrl/points/daily-free'), headers: _authHeaders),
+      () => http.get(Uri.parse('$baseUrl/points/daily-free'),
+          headers: _authHeaders),
     );
     if (response.statusCode == 200) {
       return jsonDecode(utf8.decode(response.bodyBytes));
@@ -430,7 +455,7 @@ class ApiService {
     final response = await _request(
       () => http.post(
         Uri.parse('$baseUrl/smart-bid/competition/predict'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _authHeaders,
         body: jsonEncode({
           'bid_type': bidType,
           'estimated_amount': estimatedAmount,
@@ -447,9 +472,17 @@ class ApiService {
   }
 
   Future<SmartBidRecommendation> getSmartRecommendation({
-    required double baseAmount,
+    required double? baseAmount,
+    required String basisStatus,
     String bidType = 'construction',
+    String? bidNo,
+    String? bidMethod,
+    String? contractMethod,
     double aValue = 0,
+    String? aValueStatus,
+    double? lowerLimitRate,
+    double? prdprcRangeBgn,
+    double? prdprcRangeEnd,
     double? estimatedAmount,
     String agencyName = '',
     String? bidDate,
@@ -457,11 +490,21 @@ class ApiService {
     final response = await _request(
       () => http.post(
         Uri.parse('$baseUrl/smart-bid/recommend'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _authHeaders,
         body: jsonEncode({
           'base_amount': baseAmount,
+          'basis_status': basisStatus,
           'bid_type': bidType,
+          if (bidNo != null && bidNo.isNotEmpty) 'bid_no': bidNo,
+          if (bidMethod != null && bidMethod.isNotEmpty)
+            'bid_method': bidMethod,
+          if (contractMethod != null && contractMethod.isNotEmpty)
+            'contract_method': contractMethod,
           'a_value': aValue,
+          if (aValueStatus != null) 'a_value_status': aValueStatus,
+          if (lowerLimitRate != null) 'lower_limit_rate': lowerLimitRate,
+          if (prdprcRangeBgn != null) 'prdprc_range_bgn': prdprcRangeBgn,
+          if (prdprcRangeEnd != null) 'prdprc_range_end': prdprcRangeEnd,
           'agency_name': agencyName,
           if (estimatedAmount != null) 'estimated_amount': estimatedAmount,
           if (bidDate != null) 'bid_date': bidDate,
@@ -472,6 +515,35 @@ class ApiService {
       final json = jsonDecode(utf8.decode(response.bodyBytes));
       return SmartBidRecommendation.fromJson(json['data']);
     }
+    _throwForStatus(response);
+  }
+
+  Future<void> recordRecommendationDecision({
+    required String recommendationId,
+    required String eventType,
+    required String idempotencyKey,
+    String? selectedPolicy,
+    double? submittedPrice,
+    Map<String, dynamic>? details,
+    bool centralTrainingOptIn = false,
+  }) async {
+    final response = await _request(
+      () => http.post(
+        Uri.parse(
+          '$baseUrl/recommendations/$recommendationId/decisions',
+        ),
+        headers: _authHeaders,
+        body: jsonEncode({
+          'idempotency_key': idempotencyKey,
+          'event_type': eventType,
+          if (selectedPolicy != null) 'selected_policy': selectedPolicy,
+          if (submittedPrice != null) 'submitted_price': submittedPrice.round(),
+          if (details != null) 'details': details,
+          'central_training_opt_in': centralTrainingOptIn,
+        }),
+      ),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) return;
     _throwForStatus(response);
   }
 
@@ -575,8 +647,7 @@ class ApiService {
       () => http.post(Uri.parse('$baseUrl/analysis/$bidId/deep')),
     );
     if (response.statusCode == 200) {
-      return DeepAnalysis.fromJson(
-          jsonDecode(utf8.decode(response.bodyBytes)));
+      return DeepAnalysis.fromJson(jsonDecode(utf8.decode(response.bodyBytes)));
     }
     _throwForStatus(response);
   }
@@ -693,7 +764,8 @@ class ApiService {
     _throwForStatus(response);
   }
 
-  Future<List<Map<String, dynamic>>> getNotifications({bool unreadOnly = false}) async {
+  Future<List<Map<String, dynamic>>> getNotifications(
+      {bool unreadOnly = false}) async {
     final uri = Uri.parse('$baseUrl/notifications/list').replace(
       queryParameters: unreadOnly ? {'unread_only': 'true'} : {},
     );
@@ -708,7 +780,8 @@ class ApiService {
 
   Future<int> getUnreadNotificationCount() async {
     final response = await _request(
-      () => http.get(Uri.parse('$baseUrl/notifications/unread-count'), headers: _authHeaders),
+      () => http.get(Uri.parse('$baseUrl/notifications/unread-count'),
+          headers: _authHeaders),
     );
     if (response.statusCode == 200) {
       final data = jsonDecode(utf8.decode(response.bodyBytes));

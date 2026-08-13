@@ -24,12 +24,12 @@
       {
         "@type": "Question",
         "name": "A값은 어디서 확인하나요?",
-        "acceptedAnswer": { "@type": "Answer", "text": "A값(국민연금·건강보험·산재·고용·노인장기요양보험 합계)은 조달청 OpenAPI에는 없고 공고문이나 첨부문서에만 있어요. BidEasy는 첨부 파싱과 사용자 제보로 A값을 자동 수집해 보여드려요. 공사 입찰에만 영향이 있어요." }
+        "acceptedAnswer": { "@type": "Answer", "text": "A값(국민연금·건강보험·산재·고용·노인장기요양보험 합계)은 공고별 투찰금액 산정 정보나 첨부문서에서 확인해야 해요. 자동으로 불러오지 못하면 공고 원문을 확인해 직접 입력하세요." }
       },
       {
         "@type": "Question",
         "name": "투찰가는 어떻게 계산하나요?",
-        "acceptedAnswer": { "@type": "Answer", "text": "기초금액 × (1 + 사정률) × 낙찰하한율로 낙찰하한가를 구하고, A값이 있으면 보정해요. BidEasy 계산기는 1원 단위 절사까지 자동으로 처리해요." }
+        "acceptedAnswer": { "@type": "Answer", "text": "투찰가는 (기초금액-A값)×투찰률+A값으로 계산하고 10원 미만을 버려요. 하한선은 (기초금액-A값)×공고별 낙찰하한율+A값으로 별도 계산합니다." }
       }
     ]
   }
@@ -77,7 +77,7 @@
 
         <div style="margin-top:18px;">
           <label class="field-label">기초금액 (원)</label>
-          <input class="input" id="basic" type="text" inputmode="numeric" value="500,000,000">
+          <input class="input" id="basic" type="text" inputmode="numeric" value="" placeholder="공고의 확정 기초금액을 입력하세요">
         </div>
 
         <div style="margin-top:18px;">
@@ -93,8 +93,12 @@
 
         <div id="aval-wrap" style="margin-top:18px;">
           <label class="field-label">A값 (사후정산 비목 합계, 원)</label>
-          <input class="input" id="aval" type="text" inputmode="numeric" value="12,400,000">
-          <div class="hint" style="font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5;">국민연금·건강보험·노인장기요양·산재·고용보험 합계. 모르면 0. 투찰률이 적용되지 않습니다.</div>
+          <input class="input" id="aval" type="text" inputmode="numeric" value="" placeholder="공고의 확정 A값을 입력하세요">
+          <label style="display:flex;align-items:flex-start;gap:8px;margin-top:9px;font-size:12.5px;color:var(--muted);line-height:1.45;cursor:pointer;">
+            <input id="aval-na" type="checkbox" style="margin-top:2px;accent-color:var(--accent);">
+            <span>공고에서 A값 산정 비대상임을 확인했습니다.</span>
+          </label>
+          <div class="hint" style="font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5;">A값을 찾지 못한 상태와 비대상(0원)은 다릅니다. 공고 원문에서 확인한 뒤 입력하거나 비대상을 확인해 주세요.</div>
         </div>
       </div>
 
@@ -109,29 +113,61 @@
     document.getElementById('from-bid-link').querySelector('span').insertAdjacentHTML('afterbegin', BD.icon('search', 14));
 
     // 공사는 금액대별 티어(assets/lower-limits.js — 정본: backend lower_limits.py 미러).
-    // 용역·물품은 기존 정책 유지(계약유형별 상이 — 도메인 재검토 전 변경 금지).
-    var LOWER = { SERVICE: 87.995, GOODS: 87.995 };
+    // 용역·물품은 하나의 보편 하한율이 없다. 공고 명시값을 API로 받은 경우만
+    // 판정하고, 그 외에는 그럴듯한 기본값 대신 기권한다.
     var CT_KO = { CONSTRUCTION: '공사', SERVICE: '용역', GOODS: '물품' };
 
-    // 기본 5억 공사 하한율 89.745% 위에서 시작 — 첫 화면이 '위반' 상태로 열리지 않게
-    var st = { ct: 'CONSTRUCTION', basic: 500000000, tcl: 90.3, aval: 12400000, copied: false };
+    var st = {
+      ct: 'CONSTRUCTION', basic: 0, tcl: 90.3, aval: 0,
+      aStatus: 'unknown', explicitLower: null, rangeBgn: null, rangeEnd: null,
+      bidDate: null, copied: false, verifying: false, revision: 0
+    };
 
     function num(el) { return Number(document.getElementById(el).value.replace(/[^\d]/g, '')) || 0; }
 
+    function invalidate() {
+      st.revision += 1;
+      st.copied = false;
+      st.verifying = false;
+    }
+
+    function aValueKnown() {
+      return st.aStatus === 'confirmed' || st.aStatus === 'not_applicable';
+    }
+
     function render() {
-      var a = st.ct === 'GOODS' ? 0 : st.aval;
-      var rate = st.ct === 'CONSTRUCTION' ? window.BD_LOWER.construction(st.basic) : LOWER[st.ct];
+      var a = st.aStatus === 'not_applicable' ? 0 : st.aval;
+      var rate = st.explicitLower || (st.ct === 'CONSTRUCTION' ? window.BD_LOWER.construction(st.basic) : null);
+      var invalidA = a < 0 || (st.basic > 0 && a >= st.basic);
+      if (!st.basic || !rate || !aValueKnown() || invalidA) {
+        var reason = !st.basic
+          ? '확정 기초금액이 없어 계산을 보류합니다. 추정가격을 기초금액으로 바꾸거나 ×1.1로 추정하지 않습니다.'
+          : !rate
+            ? '이 계약 유형의 공고별 낙찰하한율을 확인하지 못해 안전 판정을 보류합니다.'
+            : !aValueKnown()
+              ? 'A값 산정 대상 여부 또는 확정 A값을 확인하지 못해 계산을 보류합니다.'
+              : 'A값은 0 이상이며 확정 기초금액보다 작아야 합니다.';
+        document.getElementById('result').style.borderColor = 'var(--line)';
+        document.getElementById('result').innerHTML =
+          '<div style="display:flex;justify-content:space-between;align-items:center;"><span class="micro">계산 보류</span><span class="chip chip-neutral">기권</span></div>' +
+          '<div class="panel" style="padding:18px;margin-top:18px;"><div style="display:flex;gap:9px;align-items:flex-start;color:var(--muted);"><span style="color:var(--warn);flex-shrink:0;">' + BD.icon('alert', 16, 2) + '</span><span style="font-size:13.5px;line-height:1.6;">' + reason + '</span></div></div>' +
+          '<button class="btn btn-block btn-ghost" style="margin-top:16px;opacity:.5;cursor:not-allowed;" disabled>확인 전 복사 불가</button>';
+        document.getElementById('tcl-label').textContent = '투찰률 — 현재 ' + st.tcl.toFixed(2) + '%';
+        document.getElementById('tcl-hint').textContent = '공고의 확정 기초금액과 낙찰하한율을 먼저 확인해 주세요.';
+        document.getElementById('presets').innerHTML = '';
+        return;
+      }
       var predicted = Math.floor(((st.basic - a) * (st.tcl / 100) + a) / 10) * 10;
       // 하한선도 A값 보정 — 백엔드 calculator.py 와 동일 공식: (기초 − A) × 하한율 + A
-      var lower = Math.round(a > 0 ? (st.basic - a) * rate / 100 + a : st.basic * rate / 100);
-      var diff = st.basic ? ((predicted - lower) / st.basic) * 100 : 0;
-      var level = predicted < lower ? 'DANGER' : (diff < 0.5 ? 'WARN' : 'SAFE');
+      var lower = Math.floor((a > 0 ? (st.basic - a) * rate / 100 + a : st.basic * rate / 100) / 10) * 10;
+      var diff = lower ? ((predicted - lower) / lower) * 100 : 0;
+      var level = predicted < lower ? 'DANGER' : (diff < 2 ? 'WARN' : 'SAFE');
       var danger = level === 'DANGER';
       var pos = Math.max(0.05, Math.min(0.96, (diff + 1.5) / 4));
-      var meta = { SAFE: ['안전선 통과', 'safe', '하한선 위로 충분한 여유가 있어요. 안전하게 투찰하셔도 됩니다.'], WARN: ['하한선 근접 — 주의', 'warn', '하한선과 거의 붙어 있어요. 투찰률을 한 번 더 확인해 주세요.'], DANGER: ['안전선 위반', 'danger', '낙찰하한선 아래예요. 이대로면 무효 입찰 위험 — 복사를 막았어요.'] }[level];
+      var meta = { SAFE: ['계산상 하한 통과', 'safe', '계산상 낙찰하한선 위입니다. 자격·서류·원가 조건은 별도로 확인하세요.'], WARN: ['하한선 근접 — 주의', 'warn', '하한선과 가깝습니다. 공고별 A값·반올림 규칙을 다시 확인해 주세요.'], DANGER: ['하한미달', 'danger', '낙찰하한선 아래입니다. 입찰무효와는 다른 상태이며 가격순위 대상에서 제외될 수 있어 복사를 막았습니다.'] }[level];
 
       document.getElementById('tcl-label').textContent = '투찰률 — 현재 ' + st.tcl.toFixed(2) + '%';
-      document.getElementById('tcl-hint').textContent = '낙찰하한선(' + rate + '%)에 가까울수록 낙찰 확률은 오르지만, 밑으로 내려가면 무효예요. 슬라이더로 안전한 지점을 찾아보세요.';
+      document.getElementById('tcl-hint').textContent = '공고별 낙찰하한선(' + rate + '%)과 비교합니다. 하한미달, 입찰무효, 적격탈락은 서로 다른 상태입니다.';
       document.getElementById('tcl').style.accentColor = danger ? 'var(--danger)' : 'var(--accent)';
 
       var presets = [rate - 0.25, rate, rate + 0.45, rate + 1.05, rate + 2.05];
@@ -139,7 +175,7 @@
         var on = Math.abs(st.tcl - r) < 0.005, isL = Math.abs(r - rate) < 0.005;
         return '<button class="btn btn-ghost btn-sm preset" data-r="' + r.toFixed(3) + '" style="flex:1;padding:7px 0;font-family:var(--font-mono);font-weight:500;border-color:' + (on ? 'var(--accent)' : isL ? 'var(--danger)' : 'var(--line-2)') + ';color:' + (on ? 'var(--accent)' : isL ? 'var(--danger)' : 'var(--muted)') + ';">' + r.toFixed(2) + '</button>';
       }).join('');
-      document.querySelectorAll('.preset').forEach(function (b) { b.addEventListener('click', function () { st.tcl = Number(b.getAttribute('data-r')); document.getElementById('tcl').value = st.tcl; render(); }); });
+      document.querySelectorAll('.preset').forEach(function (b) { b.addEventListener('click', function () { st.tcl = Number(b.getAttribute('data-r')); document.getElementById('tcl').value = st.tcl; invalidate(); render(); }); });
 
       var gauge = '<div style="position:relative;height:8px;border-radius:4px;overflow:hidden;background:linear-gradient(90deg,var(--danger-soft) 0 37.5%,var(--safe-soft) 37.5% 100%);"></div>' +
         '<div style="position:relative;height:0;"><div style="position:absolute;left:37.5%;top:-14px;width:2px;height:16px;background:var(--ink);border-radius:1px;"></div>' +
@@ -152,46 +188,141 @@
         '<div style="display:flex;align-items:baseline;gap:7px;margin-top:12px;"><span class="num" style="font-size:22px;font-weight:500;color:var(--muted);">₩</span><span class="num" style="font-size:40px;font-weight:600;letter-spacing:-1.5px;color:var(--' + (danger ? 'danger' : 'ink') + ');">' + BD.won(predicted) + '</span></div>' +
         '<div class="panel" style="padding:18px;margin-top:18px;">' + gauge + '</div>' +
         '<div style="margin-top:10px;"><div class="drow"><span class="k">낙찰하한선 · ' + rate + '%</span><span class="v">' + BD.fmt(lower) + '</span></div>' +
-        '<div class="drow"><span class="k">하한 대비 여유</span><span class="v" style="color:var(--' + (danger ? 'danger' : 'safe') + ');font-weight:700;">' + (diff >= 0 ? '+' : '') + diff.toFixed(2) + ' %p</span></div>' +
+        '<div class="drow"><span class="k">하한 대비 여유</span><span class="v" style="color:var(--' + (danger ? 'danger' : 'safe') + ');font-weight:700;">' + (diff >= 0 ? '+' : '') + diff.toFixed(2) + '%</span></div>' +
         (a > 0 ? '<div class="drow"><span class="k">A값 (투찰률 미적용)</span><span class="v">' + BD.fmt(a) + '</span></div>' : '') + '</div>' +
         '<div style="display:flex;gap:9px;margin-top:14px;padding:12px 14px;border-radius:11px;background:var(--' + meta[1] + '-soft);"><span style="color:var(--' + meta[1] + ');flex-shrink:0;margin-top:1px;">' + BD.icon(danger ? 'alert' : level === 'WARN' ? 'alert' : 'shield', 15, 1.8) + '</span><span style="font-size:13px;color:var(--ink-2);line-height:1.55;">사장님, ' + meta[2] + '</span></div>' +
-        '<button id="copy" class="btn btn-block ' + (danger ? 'btn-ghost' : 'btn-primary') + '" style="margin-top:16px;' + (danger ? 'opacity:.5;cursor:not-allowed;' : '') + '"' + (danger ? ' disabled' : '') + '>' + BD.icon(st.copied ? 'check' : 'copy', 15) + ' ' + (danger ? '하한선 미달 — 복사 불가' : st.copied ? '복사됐어요' : '이 금액 복사하기') + '</button>';
+        '<button id="copy" class="btn btn-block ' + (danger ? 'btn-ghost' : 'btn-primary') + '" style="margin-top:16px;' + (danger ? 'opacity:.5;cursor:not-allowed;' : '') + '"' + (danger || st.verifying ? ' disabled' : '') + '>' + BD.icon(st.copied ? 'check' : 'copy', 15) + ' ' + (danger ? '하한선 미달 — 복사 불가' : st.verifying ? '서버 공식 재확인 중…' : st.copied ? '검증된 금액을 복사했어요' : '서버 확인 후 복사') + '</button>';
 
       var cp = document.getElementById('copy');
-      if (cp && !danger) cp.addEventListener('click', function () {
-        var val = String(predicted);
-        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(val).catch(function () {}); }
-        st.copied = true; BD.toast('이 금액을 복사했어요'); render();
+      if (cp && !danger) cp.addEventListener('click', async function () {
+        var revision = st.revision;
+        var snapshot = {
+          basic_price: st.basic,
+          rate: st.tcl - 100,
+          contract_type: st.ct,
+          a_value: a,
+          a_value_status: st.aStatus,
+          lower_limit_rate: st.explicitLower,
+          bid_date: st.bidDate,
+          prdprc_range_bgn: st.rangeBgn,
+          prdprc_range_end: st.rangeEnd
+        };
+        st.verifying = true; render();
+        try {
+          var resp = await fetch(API_BASE + '/bids/calculate/detailed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(snapshot)
+          });
+          var data = await resp.json().catch(function () { return null; });
+          if (!resp.ok || !data) throw new Error((data && data.detail) || '서버 검증 실패');
+          if (revision !== st.revision) return;
+          var serverPrice = Number(data.result_price);
+          var serverLower = Number(data.lower_limit_price);
+          var serverA = Number(data.a_value || 0);
+          if (!Number.isSafeInteger(serverPrice) || serverPrice % 10 !== 0 ||
+              serverA !== a || Number(data.original_price) !== st.basic ||
+              Math.abs(Number(data.rate) - (st.tcl - 100)) > 0.0000001 ||
+              data.safety_level === 'DANGER' || serverPrice < serverLower) {
+            throw new Error('서버 검증 결과가 현재 입력과 일치하지 않습니다.');
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(String(serverPrice));
+          }
+          st.copied = true;
+          BD.toast('서버에서 재검증한 금액을 복사했어요');
+        } catch (err) {
+          if (revision === st.revision) {
+            st.copied = false;
+            BD.toast(BD.esc(err && err.message ? err.message : '검증 후 다시 시도해 주세요.'), 'danger');
+          }
+        } finally {
+          if (revision === st.revision) {
+            st.verifying = false;
+            render();
+          }
+        }
       });
     }
 
     document.querySelectorAll('#seg button').forEach(function (b) {
       b.addEventListener('click', function () {
         document.querySelectorAll('#seg button').forEach(function (x) { x.classList.remove('active'); });
-        b.classList.add('active'); st.ct = b.getAttribute('data-ct');
-        document.getElementById('aval-wrap').style.display = st.ct === 'GOODS' ? 'none' : 'block';
-        st.copied = false; render();
+        b.classList.add('active');
+        if (st.ct !== b.getAttribute('data-ct')) {
+          st.ct = b.getAttribute('data-ct');
+          // A notice rate belongs to its original contract route. Never reuse
+          // it after the user changes the route.
+          st.explicitLower = null;
+          invalidate();
+        }
+        render();
       });
     });
-    document.getElementById('basic').addEventListener('input', function (e) { st.basic = num('basic'); st.copied = false; render(); });
-    document.getElementById('aval').addEventListener('input', function () { st.aval = num('aval'); st.copied = false; render(); });
-    document.getElementById('tcl').addEventListener('input', function (e) { st.tcl = Number(e.target.value); st.copied = false; render(); });
+    document.getElementById('basic').addEventListener('input', function () { st.basic = num('basic'); st.explicitLower = null; invalidate(); render(); });
+    document.getElementById('aval').addEventListener('input', function () {
+      st.aval = num('aval');
+      st.aStatus = st.aval > 0 ? 'confirmed' : (document.getElementById('aval-na').checked ? 'not_applicable' : 'unknown');
+      if (st.aval > 0) document.getElementById('aval-na').checked = false;
+      invalidate(); render();
+    });
+    document.getElementById('aval-na').addEventListener('change', function (e) {
+      if (e.target.checked) {
+        st.aval = 0;
+        st.aStatus = 'not_applicable';
+        document.getElementById('aval').value = '';
+      } else {
+        st.aStatus = st.aval > 0 ? 'confirmed' : 'unknown';
+      }
+      invalidate(); render();
+    });
+    document.getElementById('tcl').addEventListener('input', function (e) { st.tcl = Number(e.target.value); invalidate(); render(); });
     render();
 
-    // ?no= 프리필 — 실제 공고 컨텍스트(GET /bids/{no}/context)로 기초금액·종류 자동 입력
+    // ?no= 프리필 — confirmed basis_amount 만 쓴다. estimated_price는 표시용
+    // 추정가격이며 계산 입력으로 절대 대입하지 않는다.
     var no = new URLSearchParams(location.search).get('no');
     if (no) {
       fetch(API_BASE + '/bids/' + encodeURIComponent(no) + '/context').then(function (r) { return r.ok ? r.json() : null; }).then(function (ctx) {
         if (!ctx || ctx.found === false) return;
-        if (ctx.estimated_price) { st.basic = ctx.estimated_price; document.getElementById('basic').value = BD.won(st.basic); }
+        if (ctx.basis_status === 'confirmed' && ctx.basis_amount) {
+          st.basic = ctx.basis_amount;
+          document.getElementById('basic').value = BD.won(st.basic);
+        } else {
+          st.basic = 0;
+          document.getElementById('basic').value = '';
+        }
+        st.explicitLower = ctx.lower_limit_rate == null ? null : Number(ctx.lower_limit_rate);
+        st.rangeBgn = ctx.prdprc_range_bgn == null ? null : Number(ctx.prdprc_range_bgn);
+        st.rangeEnd = ctx.prdprc_range_end == null ? null : Number(ctx.prdprc_range_end);
+        st.bidDate = ctx.bid_date || ctx.start_date || null;
+        var applicable = String(ctx.a_value_applicable || '').trim().toUpperCase();
+        if (['N', 'NO', 'FALSE', '미적용', '비대상'].indexOf(applicable) >= 0) {
+          st.aval = 0;
+          st.aStatus = 'not_applicable';
+          document.getElementById('aval').value = '';
+          document.getElementById('aval-na').checked = true;
+        } else if (ctx.a_value && ctx.a_value > 0 && ctx.a_value_source) {
+          st.aval = ctx.a_value;
+          st.aStatus = 'confirmed';
+          document.getElementById('aval').value = BD.won(st.aval);
+          document.getElementById('aval-na').checked = false;
+        } else {
+          st.aval = 0;
+          st.aStatus = 'unknown';
+          document.getElementById('aval').value = '';
+          document.getElementById('aval-na').checked = false;
+        }
         if (ctx.contract_type) {
           st.ct = ctx.contract_type;
           document.querySelectorAll('#seg button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-ct') === st.ct); });
-          document.getElementById('aval-wrap').style.display = st.ct === 'GOODS' ? 'none' : 'block';
         }
         var nm = ctx.title || ('공고 ' + no);
-        document.getElementById('banner').innerHTML = '<div class="card" style="margin-top:16px;padding:12px 16px;display:flex;align-items:center;gap:12px;border-color:var(--accent);background:var(--accent-soft);flex-wrap:wrap;"><span style="color:var(--accent);display:flex;flex-shrink:0;">' + BD.icon('doc', 15) + '</span><span style="font-size:13.5px;color:var(--ink-2);"><b style="color:var(--ink);">' + BD.esc(nm) + '</b> 기준 · 기초금액·종류 자동 입력됨</span><a class="btn btn-quiet btn-sm" style="margin-left:auto;color:var(--accent);" href="/bid.html?no=' + encodeURIComponent(no) + '">공고 상세 →</a></div>';
-        st.copied = false; render();
+        var confirmed = ctx.basis_status === 'confirmed' && ctx.basis_amount;
+        var tone = confirmed ? 'accent' : 'warn';
+        var message = confirmed ? '확정 기초금액·공고 조건을 불러왔습니다.' : '기초금액 미확인 — 추정가격은 자동 입력하지 않았습니다.';
+        document.getElementById('banner').innerHTML = '<div class="card" style="margin-top:16px;padding:12px 16px;display:flex;align-items:center;gap:12px;border-color:var(--' + tone + ');background:var(--' + tone + '-soft);flex-wrap:wrap;"><span style="color:var(--' + tone + ');display:flex;flex-shrink:0;">' + BD.icon(confirmed ? 'doc' : 'alert', 15) + '</span><span style="font-size:13.5px;color:var(--ink-2);"><b style="color:var(--ink);">' + BD.esc(nm) + '</b> · ' + message + '</span><a class="btn btn-quiet btn-sm" style="margin-left:auto;color:var(--accent);" href="/bid.html?no=' + encodeURIComponent(no) + '">공고 상세 →</a></div>';
+        invalidate(); render();
       }).catch(function () {});
     }
   })();

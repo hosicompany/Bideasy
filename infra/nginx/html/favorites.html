@@ -60,7 +60,7 @@
       host.innerHTML = '<div class="skel" style="height:96px;border-radius:16px;"></div>';
       Promise.all(ids.map(function (id) {
         return fetch(API_BASE + '/bids/' + encodeURIComponent(id) + '/context').then(function (r) { return r.ok ? r.json() : null; }).then(function (c) {
-          return { id: id, title: (c && c.title) || ('공고 ' + id), basic: c && c.estimated_price, type: (c && c.contract_type) || null };
+          return { id: id, title: (c && c.title) || ('공고 ' + id), basic: c && c.basis_status === 'confirmed' ? c.basis_amount : null, type: (c && c.contract_type) || null };
         }).catch(function () { return { id: id, title: '공고 ' + id, basic: null, type: null }; });
       })).then(function (rows) {
         host.innerHTML = '<div style="display:flex;flex-direction:column;gap:12px;">' + rows.map(card).join('') + '</div>';

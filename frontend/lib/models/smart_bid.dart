@@ -1,5 +1,33 @@
 import 'package:flutter/material.dart';
 
+Map<String, dynamic> _asMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return <String, dynamic>{};
+}
+
+double _asDouble(dynamic value, [double fallback = 0]) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? fallback;
+}
+
+double? _asNullableDouble(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString());
+}
+
+int? _asNullableInt(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toInt();
+  return int.tryParse(value.toString());
+}
+
+String? _asNullableString(dynamic value) {
+  final text = value?.toString().trim();
+  return text == null || text.isEmpty ? null : text;
+}
+
 /// 경쟁 강도 5단계
 enum CompetitionLevel {
   blueOcean,
@@ -72,8 +100,7 @@ class CompetitionPrediction {
       predictedCount: json['predicted_count'] ?? 0,
       predictedBucket: json['predicted_bucket'] ?? 4,
       competitionLevel: json['competition_level'] ?? '',
-      blueOceanProbability:
-          (json['blue_ocean_probability'] ?? 0).toDouble(),
+      blueOceanProbability: (json['blue_ocean_probability'] ?? 0).toDouble(),
       strategy: json['strategy']?['description'] ?? '',
     );
   }
@@ -87,13 +114,25 @@ class SmartBidRecommendation {
   final double appliedMarginPct;
   final double effectiveRate;
   final double expectedPlannedPriceMean;
-  final double expectedPlannedPriceLow;
-  final double expectedPlannedPriceHigh;
+  final double? expectedPlannedPriceLow;
+  final double? expectedPlannedPriceHigh;
+  final String? expectedPlannedPriceRangeSource;
+  final String? expectedPlannedPriceRangeUnavailableReason;
   final double bidRateAtMean;
   final String tieRisk;
   final double dangerZone;
   final String recommendation;
   final CompetitionInfo? competition;
+  final String recommendationId;
+  final String? asOf;
+  final String route;
+  final String? strategyVersion;
+  final String decisionStatus;
+  final String? abstainCode;
+  final String? abstainReason;
+  final RecommendationEvidence? evidence;
+  final RecommendationProbabilities? probabilities;
+  final String? competitionUnavailableReason;
 
   SmartBidRecommendation({
     required this.optimalBid,
@@ -104,34 +143,132 @@ class SmartBidRecommendation {
     required this.expectedPlannedPriceMean,
     required this.expectedPlannedPriceLow,
     required this.expectedPlannedPriceHigh,
+    this.expectedPlannedPriceRangeSource,
+    this.expectedPlannedPriceRangeUnavailableReason,
     required this.bidRateAtMean,
     required this.tieRisk,
     required this.dangerZone,
     required this.recommendation,
     this.competition,
+    this.recommendationId = '',
+    this.asOf,
+    this.route = '',
+    this.strategyVersion,
+    this.decisionStatus = 'recommended',
+    this.abstainCode,
+    this.abstainReason,
+    this.evidence,
+    this.probabilities,
+    this.competitionUnavailableReason,
   });
 
+  bool get isAbstained =>
+      decisionStatus == 'abstained' || abstainReason != null;
+
+  String get routeLabel => switch (route) {
+        'PRICE_DOMINANT' => '가격지배형',
+        'QUALIFICATION' => '적격심사형',
+        'COMPREHENSIVE' => '종합평가형',
+        'NEGOTIATION' => '협상형',
+        'UNSUPPORTED' => '지원 확인 필요',
+        _ => '규칙 추천',
+      };
+
   factory SmartBidRecommendation.fromJson(Map<String, dynamic> json) {
-    final expectedPrice = json['expected_planned_price'] ?? {};
-    final priceRange = expectedPrice['range'] ?? {};
-    final bidRate = json['bid_rate'] ?? {};
+    final expectedPrice = _asMap(json['expected_planned_price']);
+    final priceRange = _asMap(expectedPrice['range']);
+    final bidRate = _asMap(json['bid_rate']);
+    final competition = _asMap(json['competition']);
+    final evidence = _asMap(json['evidence']);
+    final probabilities = _asMap(json['probabilities']);
 
     return SmartBidRecommendation(
-      optimalBid: (json['optimal_bid'] ?? 0).toDouble(),
-      lowerLimit: (json['lower_limit'] ?? 0).toDouble(),
-      lowerLimitPct: json['lower_limit_pct'] ?? '',
-      appliedMarginPct: (json['applied_margin_pct'] ?? 0).toDouble(),
-      effectiveRate: (json['effective_rate'] ?? 0).toDouble(),
-      expectedPlannedPriceMean: (expectedPrice['mean'] ?? 0).toDouble(),
-      expectedPlannedPriceLow: (priceRange['low'] ?? 0).toDouble(),
-      expectedPlannedPriceHigh: (priceRange['high'] ?? 0).toDouble(),
-      bidRateAtMean: (bidRate['at_mean'] ?? 0).toDouble(),
-      tieRisk: json['tie_risk'] ?? 'medium',
-      dangerZone: (json['danger_zone'] ?? 0).toDouble(),
-      recommendation: json['recommendation'] ?? '',
-      competition: json['competition'] != null
-          ? CompetitionInfo.fromJson(json['competition'])
+      optimalBid: _asDouble(json['optimal_bid']),
+      lowerLimit: _asDouble(json['lower_limit']),
+      lowerLimitPct: json['lower_limit_pct']?.toString() ?? '',
+      appliedMarginPct: _asDouble(json['applied_margin_pct']),
+      effectiveRate: _asDouble(json['effective_rate']),
+      expectedPlannedPriceMean: _asDouble(expectedPrice['mean']),
+      expectedPlannedPriceLow: _asNullableDouble(priceRange['low']),
+      expectedPlannedPriceHigh: _asNullableDouble(priceRange['high']),
+      expectedPlannedPriceRangeSource: _asNullableString(priceRange['source']),
+      expectedPlannedPriceRangeUnavailableReason: _asNullableString(
+        priceRange['unavailable_reason'],
+      ),
+      bidRateAtMean: _asDouble(bidRate['at_mean']),
+      tieRisk: json['tie_risk']?.toString() ?? 'medium',
+      dangerZone: _asDouble(json['danger_zone']),
+      recommendation: json['recommendation']?.toString() ?? '',
+      competition:
+          competition.isNotEmpty ? CompetitionInfo.fromJson(competition) : null,
+      recommendationId: json['recommendation_id']?.toString() ?? '',
+      asOf: _asNullableString(json['as_of']),
+      route: json['route']?.toString() ?? '',
+      strategyVersion: _asNullableString(json['strategy_version']),
+      decisionStatus: json['decision_status']?.toString() ?? 'recommended',
+      abstainCode: _asNullableString(json['abstain_code']),
+      abstainReason: _asNullableString(json['abstain_reason']),
+      evidence: evidence.isNotEmpty
+          ? RecommendationEvidence.fromJson(evidence)
           : null,
+      probabilities: probabilities.isNotEmpty
+          ? RecommendationProbabilities.fromJson(probabilities)
+          : null,
+      competitionUnavailableReason: _asNullableString(
+        json['competition_unavailable_reason'],
+      ),
+    );
+  }
+}
+
+class RecommendationEvidence {
+  final String? basis;
+  final String validationStatus;
+  final String? bidNo;
+  final String? bidMethod;
+  final int? sampleSize;
+  final String? latestObservationAt;
+
+  RecommendationEvidence({
+    this.basis,
+    required this.validationStatus,
+    this.bidNo,
+    this.bidMethod,
+    this.sampleSize,
+    this.latestObservationAt,
+  });
+
+  factory RecommendationEvidence.fromJson(Map<String, dynamic> json) {
+    return RecommendationEvidence(
+      basis: _asNullableString(json['basis']),
+      validationStatus: json['validation_status']?.toString() ?? 'not_provided',
+      bidNo: _asNullableString(json['bid_no']),
+      bidMethod: _asNullableString(json['bid_method']),
+      sampleSize: _asNullableInt(json['sample_size']),
+      latestObservationAt: _asNullableString(json['latest_observation_at']),
+    );
+  }
+}
+
+class RecommendationProbabilities {
+  final double? belowLowerLimit;
+  final double? priceRankOne;
+  final double? finalAward;
+  final String? unavailableReason;
+
+  RecommendationProbabilities({
+    this.belowLowerLimit,
+    this.priceRankOne,
+    this.finalAward,
+    this.unavailableReason,
+  });
+
+  factory RecommendationProbabilities.fromJson(Map<String, dynamic> json) {
+    return RecommendationProbabilities(
+      belowLowerLimit: _asNullableDouble(json['below_lower_limit']),
+      priceRankOne: _asNullableDouble(json['price_rank_one']),
+      finalAward: _asNullableDouble(json['final_award']),
+      unavailableReason: _asNullableString(json['unavailable_reason']),
     );
   }
 }
@@ -154,8 +291,7 @@ class CompetitionInfo {
     return CompetitionInfo(
       predictedParticipants: json['predicted_participants'] ?? 0,
       competitionLevel: json['competition_level'] ?? '',
-      blueOceanProbability:
-          (json['blue_ocean_probability'] ?? 0).toDouble(),
+      blueOceanProbability: (json['blue_ocean_probability'] ?? 0).toDouble(),
       recommendedMargin: (json['recommended_margin'] ?? 0).toDouble(),
     );
   }
@@ -163,9 +299,12 @@ class CompetitionInfo {
 
 /// bidType 정규화 (한국어/영어 혼재 → 백엔드 기대값)
 String normalizeBidType(String? raw) {
-  if (raw == null || raw.isEmpty) return 'construction';
+  if (raw == null || raw.trim().isEmpty) return 'unknown';
   final lower = raw.toLowerCase();
   if (lower.contains('물품') || lower.contains('goods')) return 'goods';
   if (lower.contains('용역') || lower.contains('service')) return 'service';
-  return 'construction';
+  if (lower.contains('공사') || lower.contains('construction')) {
+    return 'construction';
+  }
+  return 'unknown';
 }

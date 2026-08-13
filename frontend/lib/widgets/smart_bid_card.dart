@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/format_utils.dart';
@@ -5,18 +7,27 @@ import '../theme/style.dart';
 import '../models/notice.dart';
 import '../models/smart_bid.dart';
 import '../services/api_service.dart';
+import '../utils/bid_calculation.dart';
 import 'competition_badge.dart';
 import 'glossary_chip.dart';
 
 /// 스마트 투찰 추천 카드
+typedef SmartBidApplyCallback = void Function(
+  double adjustmentRate,
+  String recommendationId,
+  int recommendedPrice,
+);
+
 class SmartBidCard extends StatefulWidget {
   final Notice notice;
-  final ValueChanged<double>? onApplyRate;
+  final SmartBidApplyCallback? onApplyRate;
+  final ApiService? apiService;
 
   const SmartBidCard({
     super.key,
     required this.notice,
     this.onApplyRate,
+    this.apiService,
   });
 
   @override
@@ -25,7 +36,7 @@ class SmartBidCard extends StatefulWidget {
 
 class _SmartBidCardState extends State<SmartBidCard>
     with SingleTickerProviderStateMixin {
-  final ApiService _apiService = ApiService();
+  late final ApiService _apiService;
 
   CompetitionPrediction? _competition;
   SmartBidRecommendation? _recommendation;
@@ -39,6 +50,7 @@ class _SmartBidCardState extends State<SmartBidCard>
   @override
   void initState() {
     super.initState();
+    _apiService = widget.apiService ?? ApiService();
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -65,29 +77,38 @@ class _SmartBidCardState extends State<SmartBidCard>
       _error = null;
     });
 
+    final bidType = normalizeBidType(
+      widget.notice.bidType ?? widget.notice.contractType,
+    );
+
     try {
-      final bidType = normalizeBidType(widget.notice.bidType);
-      final results = await Future.wait([
-        _apiService.predictCompetition(
-          bidType: bidType,
-          estimatedAmount: widget.notice.basicPrice,
-          agencyName: widget.notice.organization ?? '',
-        ),
-        _apiService.getSmartRecommendation(
-          baseAmount: widget.notice.basicPrice,
-          bidType: bidType,
-          aValue: (widget.notice.aValue ?? 0).toDouble(),
-          agencyName: widget.notice.organization ?? '',
-        ),
-      ]);
+      final recommendation = await _apiService.getSmartRecommendation(
+        baseAmount: widget.notice.confirmedBasisAmount,
+        basisStatus: widget.notice.basisStatus,
+        bidType: bidType,
+        bidNo: widget.notice.bidNo,
+        bidMethod: widget.notice.bidMethod,
+        contractMethod: widget.notice.contractMethod,
+        aValue: BidCalculationPolicy.effectiveAValue(widget.notice).toDouble(),
+        aValueStatus: BidCalculationPolicy.aValueStatus(widget.notice),
+        lowerLimitRate: widget.notice.lowerLimitRate,
+        prdprcRangeBgn: widget.notice.prdprcRangeBgn,
+        prdprcRangeEnd: widget.notice.prdprcRangeEnd,
+        estimatedAmount: widget.notice.budgetAmount,
+        agencyName: widget.notice.organization ?? '',
+        bidDate: (widget.notice.startDate ?? widget.notice.endDate)
+            ?.toIso8601String()
+            .split('T')
+            .first,
+      );
 
       if (mounted) {
         setState(() {
-          _competition = results[0] as CompetitionPrediction;
-          _recommendation = results[1] as SmartBidRecommendation;
+          _recommendation = recommendation;
           _isLoading = false;
         });
         _animationController.forward();
+        unawaited(_recordExposure(recommendation));
       }
     } catch (e) {
       if (mounted) {
@@ -97,18 +118,72 @@ class _SmartBidCardState extends State<SmartBidCard>
         });
       }
     }
+
+    // 참여수 ML은 선택 기능이다. 규칙 추천을 먼저 렌더링한 뒤 별도로 호출하고,
+    // 실패는 흡수한다. 기권 또는 추천 실패 상태에서는 불필요한 ML을 호출하지 않는다.
+    if (_recommendation?.isAbstained != false) return;
+    final competition = await _fetchOptionalCompetition(bidType);
+    if (mounted && competition != null && _recommendation != null) {
+      setState(() => _competition = competition);
+    }
+  }
+
+  Future<CompetitionPrediction?> _fetchOptionalCompetition(
+    String bidType,
+  ) async {
+    try {
+      return await _apiService.predictCompetition(
+        bidType: bidType,
+        estimatedAmount: widget.notice.budgetAmount ?? widget.notice.basicPrice,
+        agencyName: widget.notice.organization ?? '',
+        bidDate: widget.notice.endDate?.toIso8601String().split('T').first,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _recordExposure(SmartBidRecommendation recommendation) async {
+    if (recommendation.recommendationId.isEmpty) return;
+    try {
+      await _apiService.recordRecommendationDecision(
+        recommendationId: recommendation.recommendationId,
+        eventType: 'EXPOSED',
+        idempotencyKey: '${recommendation.recommendationId}:exposed',
+        selectedPolicy: recommendation.isAbstained ? null : 'balanced',
+        details: {'route': recommendation.route},
+      );
+    } catch (_) {
+      // 계측 장애가 이미 계산된 추천 또는 명시적 기권 카드를 가리면 안 된다.
+    }
+  }
+
+  Future<void> _recordApply(SmartBidRecommendation recommendation) async {
+    if (recommendation.recommendationId.isEmpty) return;
+    try {
+      await _apiService.recordRecommendationDecision(
+        recommendationId: recommendation.recommendationId,
+        eventType: 'APPLIED',
+        idempotencyKey: '${recommendation.recommendationId}:applied',
+        selectedPolicy: 'balanced',
+        details: {
+          'route': recommendation.route,
+          'applied_price': recommendation.optimalBid.round(),
+        },
+      );
+    } catch (_) {
+      // 계측 장애가 사용자의 로컬 계산기 적용을 막으면 안 된다.
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return _buildLoading();
     if (_error != null) return _buildError();
+    if (_recommendation == null) return _buildError();
     return FadeTransition(
       opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: _buildContent(),
-      ),
+      child: SlideTransition(position: _slideAnimation, child: _buildContent()),
     );
   }
 
@@ -176,7 +251,7 @@ class _SmartBidCardState extends State<SmartBidCard>
           Icon(Icons.cloud_off_rounded, color: Colors.grey[400], size: 32),
           const SizedBox(height: 8),
           Text(
-            'AI 분석을 불러올 수 없습니다',
+            '투찰 추천을 불러올 수 없습니다',
             style: AppTextStyles.caption.copyWith(color: Colors.grey[500]),
           ),
           const SizedBox(height: 12),
@@ -192,9 +267,12 @@ class _SmartBidCardState extends State<SmartBidCard>
   }
 
   Widget _buildContent() {
-    final comp = _competition!;
     final rec = _recommendation!;
-    final level = comp.level;
+    if (rec.isAbstained) return _buildAbstain(rec);
+
+    final comp = _competition;
+    final level = comp?.level;
+    final accentColor = level?.color ?? AppColors.primaryBlue;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -215,13 +293,20 @@ class _SmartBidCardState extends State<SmartBidCard>
                 ),
               ),
               const Spacer(),
-              CompetitionBadge(level: level, compact: false),
+              if (level != null) CompetitionBadge(level: level, compact: false),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _buildRouteChip(rec.routeLabel),
+          ),
+          if (comp != null) ...[
+            const SizedBox(height: 20),
 
-          // Competition Gauge
-          _buildCompetitionGauge(comp.predictedCount, level),
+            // Competition Gauge — 선택 ML이 성공한 경우에만 표시한다.
+            _buildCompetitionGauge(comp.predictedCount, comp.level),
+          ],
           const SizedBox(height: 20),
 
           // Info Grid (2x2)
@@ -239,7 +324,7 @@ class _SmartBidCardState extends State<SmartBidCard>
                 child: _buildInfoTile(
                   icon: Icons.percent_rounded,
                   label: '투찰률',
-                  value: '${rec.effectiveRate.toStringAsFixed(3)}%',
+                  value: '${rec.bidRateAtMean.toStringAsFixed(3)}%',
                   glossaryTerm: '투찰률',
                 ),
               ),
@@ -273,7 +358,7 @@ class _SmartBidCardState extends State<SmartBidCard>
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: level.color.withValues(alpha: 0.06),
+              color: accentColor.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -284,7 +369,7 @@ class _SmartBidCardState extends State<SmartBidCard>
                   child: Text(
                     rec.recommendation.isNotEmpty
                         ? rec.recommendation
-                        : comp.strategy,
+                        : comp?.strategy ?? '증거가 연결된 규칙 기반 가격 후보예요.',
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -297,19 +382,38 @@ class _SmartBidCardState extends State<SmartBidCard>
               ],
             ),
           ),
+          if (rec.probabilities?.unavailableReason != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              rec.probabilities!.unavailableReason!,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSub,
+                fontFamily: 'Pretendard',
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
 
           // Apply button
-          if (widget.onApplyRate != null)
+          if (widget.onApplyRate != null && rec.optimalBid > 0)
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
                   HapticFeedback.mediumImpact();
-                  // Convert effective rate to slider offset from 100%
-                  // Slider rate = effective_rate - 100 (e.g. 87.755% → -12.245%)
-                  final sliderRate = rec.effectiveRate - 100.0;
-                  widget.onApplyRate!(sliderRate);
+                  unawaited(_recordApply(rec));
+                  // The backend exposes the inverse rate for the same
+                  // (basis-A)*rate+A formula used by the local calculator.
+                  // Using the lower-bound target (`effectiveRate`) here would
+                  // apply a different price whenever reserved-price adjustment
+                  // or A-value is present.
+                  final sliderRate = rec.bidRateAtMean - 100.0;
+                  widget.onApplyRate!(
+                    sliderRate,
+                    rec.recommendationId,
+                    rec.optimalBid.round(),
+                  );
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryBlue,
@@ -335,6 +439,80 @@ class _SmartBidCardState extends State<SmartBidCard>
     );
   }
 
+  Widget _buildAbstain(SmartBidRecommendation rec) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.shield_outlined,
+                color: AppColors.textSub,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '추천가를 제시하지 않았어요',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textMain,
+                    fontFamily: 'Pretendard',
+                  ),
+                ),
+              ),
+              _buildRouteChip(rec.routeLabel),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            rec.abstainReason ?? '현재 정보로는 안전한 추천가를 만들 수 없어요.',
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textMain,
+              height: 1.5,
+              fontFamily: 'Pretendard',
+            ),
+          ),
+          if (rec.evidence?.bidMethod != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              '확인된 입찰방법: ${rec.evidence!.bidMethod}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSub,
+                fontFamily: 'Pretendard',
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRouteChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.primaryBlue.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primaryBlue,
+          fontFamily: 'Pretendard',
+        ),
+      ),
+    );
+  }
+
   /// 경쟁도 게이지 (그라데이션 바 + 마커)
   Widget _buildCompetitionGauge(int count, CompetitionLevel level) {
     // Normalize position (non-linear scale)
@@ -355,10 +533,7 @@ class _SmartBidCardState extends State<SmartBidCard>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '예상 참여 업체수',
-          style: AppTextStyles.caption,
-        ),
+        const Text('예상 참여 업체수', style: AppTextStyles.caption),
         const SizedBox(height: 8),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -395,10 +570,7 @@ class _SmartBidCardState extends State<SmartBidCard>
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                            color: level.color,
-                            width: 2.5,
-                          ),
+                          border: Border.all(color: level.color, width: 2.5),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.15),
@@ -416,8 +588,14 @@ class _SmartBidCardState extends State<SmartBidCard>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('1명', style: TextStyle(fontSize: 10, color: Colors.grey[400])),
-                    Text('51+명', style: TextStyle(fontSize: 10, color: Colors.grey[400])),
+                    Text(
+                      '1명',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+                    ),
+                    Text(
+                      '51+명',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+                    ),
                   ],
                 ),
               ],

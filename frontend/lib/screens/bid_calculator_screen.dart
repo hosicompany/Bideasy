@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -15,46 +17,84 @@ import '../widgets/agency_profile_sheet.dart';
 import '../services/api_service.dart';
 import '../utils/snackbar_utils.dart';
 import '../services/analytics_service.dart';
+import '../utils/bid_calculation.dart';
 
 /// 공고 상세 화면 (통합)
 /// - 개찰 완료: 낙찰 결과 표시
 /// - 진행 중: 투찰가 계산기
 class BidCalculatorScreen extends StatefulWidget {
   final Notice notice;
+  final ApiService? apiService;
 
-  const BidCalculatorScreen({super.key, required this.notice});
+  const BidCalculatorScreen({
+    super.key,
+    required this.notice,
+    this.apiService,
+  });
 
   @override
   State<BidCalculatorScreen> createState() => _BidCalculatorScreenState();
 }
 
 class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
-  final ApiService _apiService = ApiService();
+  late final ApiService _apiService;
+  late Notice _notice;
   double _rate = -5.0; // 사정률 (기본값 -5%)
-
-  // A값 (고정비용)
-  int _aValue = 0;
-  bool _aValueApplied = false;
-
-  // 순공사원가 (투찰 하한선 방어용)
-  int _netCost = 0;
-  bool _netCostApplied = false;
+  bool _isContextLoading = false;
+  String? _contextLoadError;
 
   // 일일 무료 복사
   bool _hasFreeToday = false;
+  String? _activeRecommendationId;
+  int? _activeRecommendedPrice;
+  bool _recommendationOverridden = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.notice.aValue != null && widget.notice.aValue! > 0) {
-      _aValue = widget.notice.aValue!;
-      _aValueApplied = true;
+    _apiService = widget.apiService ?? ApiService();
+    _notice = widget.notice;
+    if (!_isClosed) {
+      _resolveCalculationContext();
     }
-    if (widget.notice.netCost != null && widget.notice.netCost! > 0) {
-      _netCost = widget.notice.netCost!;
-      _netCostApplied = true;
+  }
+
+  bool get _needsCalculationContext =>
+      _notice.confirmedBasisAmount == null || _notice.lowerLimitRate == null;
+
+  Future<void> _resolveCalculationContext() async {
+    if (!_needsCalculationContext) {
+      _loadFreeStatus();
+      return;
     }
-    _loadFreeStatus();
+
+    setState(() {
+      _isContextLoading = true;
+      _contextLoadError = null;
+    });
+    try {
+      final context = await _apiService.fetchBidContext(_notice.bidNo);
+      if (!mounted) return;
+      setState(() {
+        if (context['found'] == true) {
+          _notice = _notice.withCalculationContext(context);
+        } else {
+          _contextLoadError = '공고에서 확정 계산 기준을 확인하지 못했어요.';
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _contextLoadError = '공고 계산 기준을 불러오지 못했어요.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isContextLoading = false);
+        if (_calculationAbstainReason == null) {
+          _loadFreeStatus();
+        }
+      }
+    }
   }
 
   Future<void> _loadFreeStatus() async {
@@ -67,17 +107,36 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
   }
 
   /// 스마트 투찰 추천 적용 (슬라이더 사정률 업데이트)
-  void _applySmartRate(double rate) {
+  void _applySmartRate(
+    double rate,
+    String recommendationId,
+    int recommendedPrice,
+  ) {
     setState(() {
       _rate = rate.clamp(-15.0, 5.0);
+      _activeRecommendationId = recommendationId;
+      _activeRecommendedPrice = recommendedPrice;
+      _recommendationOverridden = false;
     });
     HapticFeedback.mediumImpact();
   }
 
-  // 법정 낙찰하한율 (공사: 87.745%)
-  static const double _lowerLimitRate = 87.745;
+  String? get _calculationAbstainReason =>
+      BidCalculationPolicy.abstainReason(_notice);
+
+  bool get _canCalculate => _calculationAbstainReason == null;
+
+  double get _lowerLimitRate => _notice.lowerLimitRate ?? 0;
 
   double get _minRate => _lowerLimitRate - 100;
+
+  int get _aValue => BidCalculationPolicy.effectiveAValue(_notice);
+
+  bool get _aValueApplied => _aValue > 0;
+
+  int get _netCost => _notice.netCost ?? 0;
+
+  bool get _netCostApplied => _netCost > 0;
 
   double get _minSafeRate {
     if (!_netCostApplied || _netCost <= 0) return -15.0;
@@ -92,24 +151,28 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
     return safeRate + 0.1;
   }
 
-  double get _basicPrice => widget.notice.basicPrice;
-  double get _estimatedMin => _basicPrice * 0.97;
-  double get _estimatedMax => _basicPrice * 1.03;
+  double get _basicPrice => _notice.confirmedBasisAmount ?? 0;
+  double? get _estimatedMin => _notice.prdprcRangeBgn == null
+      ? null
+      : _basicPrice * (1 + _notice.prdprcRangeBgn! / 100);
+  double? get _estimatedMax => _notice.prdprcRangeEnd == null
+      ? null
+      : _basicPrice * (1 + _notice.prdprcRangeEnd! / 100);
 
   int get _bidPrice {
-    double target;
-    if (_aValueApplied) {
-      final variablePart = _basicPrice - _aValue;
-      target = (variablePart * (1 + _rate / 100)) + _aValue;
-    } else {
-      target = _basicPrice * (1 + _rate / 100);
-    }
-    return (target ~/ 10) * 10;
+    return BidCalculationPolicy.calculateBidPrice(
+      basisAmount: _basicPrice,
+      adjustmentRate: _rate,
+      aValue: _aValue,
+    );
   }
 
   int get _lowerLimitPrice {
-    final target = _basicPrice * (_lowerLimitRate / 100);
-    return (target ~/ 10) * 10;
+    return BidCalculationPolicy.calculateLowerLimitPrice(
+      basisAmount: _basicPrice,
+      lowerLimitRate: _lowerLimitRate,
+      aValue: _aValue,
+    );
   }
 
   double get _distanceFromLimit {
@@ -120,6 +183,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
   bool get _isBelowNetCost => _netCostApplied && _bidPrice < _netCost;
 
   String get _safetyLevel {
+    if (!_canCalculate) return "ABSTAIN";
     if (_isBelowNetCost) return "DANGER";
     if (_bidPrice < _lowerLimitPrice) return "DANGER";
     if (_bidPrice < _lowerLimitPrice * 1.02) return "WARNING";
@@ -128,7 +192,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
 
   bool get _isDanger => _safetyLevel == "DANGER";
   bool get _isWarning => _safetyLevel == "WARNING";
-  bool get _isClosed => widget.notice.isClosed;
+  bool get _isClosed => _notice.isClosed;
 
   @override
   Widget build(BuildContext context) {
@@ -181,7 +245,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             gradient: LinearGradient(
               colors: [
                 AppColors.primaryBlue,
-                AppColors.primaryBlue.withValues(alpha:0.8),
+                AppColors.primaryBlue.withValues(alpha: 0.8),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -189,7 +253,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primaryBlue.withValues(alpha:0.3),
+                color: AppColors.primaryBlue.withValues(alpha: 0.3),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -209,17 +273,19 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                "기초금액: ${_formatPriceKorean(_basicPrice)}",
+                _notice.confirmedBasisAmount != null
+                    ? "기초금액: ${_formatPriceKorean(_basicPrice)}"
+                    : "추정가격: ${_formatPriceKorean(_notice.basicPrice)}",
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 ),
               ),
-              if (widget.notice.openingDate != null) ...[
+              if (_notice.openingDate != null) ...[
                 const SizedBox(height: 8),
                 Text(
-                  "개찰일: ${DateFormat('yyyy.MM.dd HH:mm').format(widget.notice.openingDate!)}",
+                  "개찰일: ${DateFormat('yyyy.MM.dd HH:mm').format(_notice.openingDate!)}",
                   style: const TextStyle(
                     fontSize: 13,
                     color: Colors.white70,
@@ -232,12 +298,18 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
         const SizedBox(height: 24),
 
         // 개찰 순위 테이블
-        OpeningResultTable(notice: widget.notice),
+        OpeningResultTable(notice: _notice),
         const SizedBox(height: 24),
 
         // 역검증 카드
-        BidVerifyCard(notice: widget.notice),
-        const SizedBox(height: 24),
+        if (_notice.confirmedBasisAmount != null) ...[
+          BidVerifyCard(
+            notice: _notice.copyWith(
+              basicPrice: _notice.confirmedBasisAmount,
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
 
         // AI 분석 (참고용)
         const Text(
@@ -249,11 +321,11 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        AiAnalysisCard(notice: widget.notice),
+        AiAnalysisCard(notice: _notice),
         const SizedBox(height: 24),
 
         // 첨부파일 심층 분석
-        DeepAnalysisCard(bidNo: widget.notice.bidNo),
+        DeepAnalysisCard(bidNo: _notice.bidNo),
         const SizedBox(height: 24),
 
         // 과학적 분석
@@ -266,13 +338,22 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        ScientificAnalysisDashboard(bidNo: widget.notice.bidNo, notice: widget.notice),
+        ScientificAnalysisDashboard(bidNo: _notice.bidNo, notice: _notice),
       ],
     );
   }
 
   /// 진행 중 컨텐츠 (기존 투찰 계산기)
   Widget _buildActiveContent() {
+    if (_isContextLoading) {
+      return _buildCalculationLoadingCard();
+    }
+
+    final abstainReason = _calculationAbstainReason;
+    if (abstainReason != null) {
+      return _buildCalculationAbstainCard(abstainReason);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -290,17 +371,18 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
 
         // 스마트 투찰 추천
         SmartBidCard(
-          notice: widget.notice,
-          onApplyRate: (rate) => _applySmartRate(rate),
+          notice: _notice,
+          apiService: _apiService,
+          onApplyRate: _applySmartRate,
         ),
         const SizedBox(height: 24),
 
         // AI 분석
-        AiAnalysisCard(notice: widget.notice),
+        AiAnalysisCard(notice: _notice),
         const SizedBox(height: 24),
 
         // 첨부파일 심층 분석
-        DeepAnalysisCard(bidNo: widget.notice.bidNo),
+        DeepAnalysisCard(bidNo: _notice.bidNo),
         const SizedBox(height: 24),
 
         // 과학적 분석
@@ -313,12 +395,88 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        ScientificAnalysisDashboard(bidNo: widget.notice.bidNo, notice: widget.notice),
+        ScientificAnalysisDashboard(bidNo: _notice.bidNo, notice: _notice),
         const SizedBox(height: 40),
 
         // 액션 버튼
         _buildActionButtons(),
       ],
+    );
+  }
+
+  Widget _buildCalculationLoadingCard() {
+    return Container(
+      key: const ValueKey('calculation-context-loading'),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: const Column(
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text('공고의 확정 계산 기준을 확인하고 있어요.'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalculationAbstainCard(String reason) {
+    return Container(
+      key: const ValueKey('calculation-abstain'),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.warningOrange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.warningOrange.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.pause_circle_outline_rounded,
+                  color: AppColors.warningOrange),
+              SizedBox(width: 8),
+              Text(
+                '투찰가 계산을 멈췄어요',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textMain,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(reason, style: const TextStyle(color: AppColors.textSub)),
+          const SizedBox(height: 8),
+          const Text(
+            '추정가격을 기초금액으로 대신해 계산하지 않았어요.',
+            style: TextStyle(fontSize: 12, color: AppColors.textSub),
+          ),
+          if (_contextLoadError != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _contextLoadError!,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.dangerRed,
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _resolveCalculationContext,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('다시 확인'),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -339,8 +497,8 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: _isClosed
-                  ? AppColors.primaryBlue.withValues(alpha:0.1)
-                  : AppColors.safeGreen.withValues(alpha:0.1),
+                  ? AppColors.primaryBlue.withValues(alpha: 0.1)
+                  : AppColors.safeGreen.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
@@ -354,7 +512,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            widget.notice.title,
+            _notice.title,
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -366,17 +524,17 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
           const SizedBox(height: 8),
           GestureDetector(
             onTap: () {
-              final org = widget.notice.organization;
+              final org = _notice.organization;
               if (org != null && org.isNotEmpty) {
                 AgencyProfileSheet.show(context, org);
               }
             },
             child: Text(
-              widget.notice.organization ?? "발주처 미상",
+              _notice.organization ?? "발주처 미상",
               style: TextStyle(
                 fontSize: 13,
                 color: AppColors.textSub,
-                decoration: widget.notice.organization != null
+                decoration: _notice.organization != null
                     ? TextDecoration.underline
                     : null,
                 decorationColor: AppColors.textSub,
@@ -399,11 +557,19 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
       ),
       child: Column(
         children: [
-          _buildPriceRow("기초금액", _formatPriceKorean(_basicPrice), isBold: true, glossaryTerm: '기초금액'),
+          _buildPriceRow("기초금액", _formatPriceKorean(_basicPrice),
+              isBold: true, glossaryTerm: '기초금액'),
           const Divider(height: 20),
-          _buildPriceRow("예정가격 범위",
-              "${_formatPriceKorean(_estimatedMin)} ~ ${_formatPriceKorean(_estimatedMax)}",
-              glossaryTerm: '예정가격'),
+          if (_estimatedMin != null && _estimatedMax != null)
+            _buildPriceRow("예정가격 범위",
+                "${_formatPriceKorean(_estimatedMin!)} ~ ${_formatPriceKorean(_estimatedMax!)}",
+                glossaryTerm: '예정가격')
+          else
+            _buildPriceRow(
+              "예정가격 범위",
+              "공고별 범위 미확인",
+              glossaryTerm: '예정가격',
+            ),
           const SizedBox(height: 8),
           _buildPriceRow("낙찰하한선 ($_lowerLimitRate%)",
               _formatPriceKorean(_lowerLimitPrice.toDouble()),
@@ -430,9 +596,9 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.safeGreen.withValues(alpha:0.1),
+        color: AppColors.safeGreen.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.safeGreen.withValues(alpha:0.3)),
+        border: Border.all(color: AppColors.safeGreen.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -495,7 +661,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _isDanger
-            ? AppColors.dangerRed.withValues(alpha:0.1)
+            ? AppColors.dangerRed.withValues(alpha: 0.1)
             : AppColors.surfaceWhite,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
@@ -527,7 +693,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
                 enabledThumbRadius: 14,
                 elevation: 4,
               ),
-              overlayColor: activeColor.withValues(alpha:0.2),
+              overlayColor: activeColor.withValues(alpha: 0.2),
             ),
             child: Slider(
               value: _rate < _minSafeRate ? _minSafeRate : _rate,
@@ -558,13 +724,13 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
               children: [
                 Text(
                     "${(_minSafeRate > -15.0 ? _minSafeRate : -15.0).toStringAsFixed(1)}%",
-                    style:
-                        const TextStyle(fontSize: 11, color: AppColors.textSub)),
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.textSub)),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: AppColors.dangerRed.withValues(alpha:0.1),
+                    color: AppColors.dangerRed.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -591,13 +757,13 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          border: Border.all(color: color.withValues(alpha:0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
           borderRadius: BorderRadius.circular(8),
-          color: color.withValues(alpha:0.05),
+          color: color.withValues(alpha: 0.05),
         ),
         child: Text(label,
-            style:
-                TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color)),
+            style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w600, color: color)),
       ),
     );
   }
@@ -629,7 +795,7 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha:0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -655,8 +821,8 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: _isDanger
-                  ? Colors.white.withValues(alpha:0.2)
-                  : statusColor.withValues(alpha:0.1),
+                  ? Colors.white.withValues(alpha: 0.2)
+                  : statusColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -704,8 +870,10 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
           onPressed: (_isDanger || _isCopying) ? null : _copyBidPrice,
           icon: _isCopying
               ? const SizedBox(
-                  width: 18, height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
               : const Icon(Icons.copy_rounded, size: 20),
           label: Text(_isDanger
               ? "하한선 미달 - 복사 불가"
@@ -731,12 +899,13 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: AppColors.primaryBlue.withValues(alpha:0.05),
+            color: AppColors.primaryBlue.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(10),
           ),
           child: const Row(
             children: [
-              Icon(Icons.school_outlined, size: 18, color: AppColors.primaryBlue),
+              Icon(Icons.school_outlined,
+                  size: 18, color: AppColors.primaryBlue),
               SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -759,6 +928,22 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
     final minRate = _minSafeRate > -15.0 ? _minSafeRate : -15.0;
     final clampedRate = newRate.clamp(minRate, 5.0);
     setState(() => _rate = clampedRate);
+    final recommendationId = _activeRecommendationId;
+    if (recommendationId != null && !_recommendationOverridden) {
+      _recommendationOverridden = true;
+      unawaited(
+        _recordRecommendationEvent(
+          recommendationId: recommendationId,
+          eventType: 'OVERRIDDEN',
+          idempotencyKey: '$recommendationId:overridden',
+          details: {
+            'recommended_price': _activeRecommendedPrice,
+            'overridden_rate': clampedRate,
+            'overridden_price': _bidPrice,
+          },
+        ),
+      );
+    }
     if (_isDanger) {
       HapticFeedback.heavyImpact();
     } else {
@@ -769,33 +954,88 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
   bool _isCopying = false;
 
   Future<void> _copyBidPrice() async {
-    if (_isCopying) return;
+    if (_isCopying || !_canCalculate) return;
     setState(() => _isCopying = true);
 
     try {
-      final result = await _apiService.deductPoints(widget.notice.bidNo);
-      Clipboard.setData(ClipboardData(text: _bidPrice.toString()));
+      final authoritative = await _apiService.calculateBidDetailed(
+        basicPrice: _basicPrice,
+        rate: _rate,
+        aValueStatus: BidCalculationPolicy.aValueStatus(_notice),
+        contractType: _notice.contractType,
+        aValue: _aValue,
+        lowerLimitRate: _lowerLimitRate,
+        bidDate: _notice.startDate?.toIso8601String().split('T').first,
+      );
+      final authoritativePrice =
+          (authoritative['result_price'] as num?)?.toInt();
+      final authoritativeLowerRate =
+          (authoritative['lower_limit_rate'] as num?)?.toDouble();
+      final safetyLevel =
+          authoritative['safety_level']?.toString().toUpperCase();
+      if (authoritativePrice == null || authoritativePrice != _bidPrice) {
+        throw const BidCalculationVerificationException(
+          '서버 계산과 화면 계산이 일치하지 않아 복사를 멈췄어요.',
+        );
+      }
+      if (authoritativeLowerRate == null ||
+          (authoritativeLowerRate - _lowerLimitRate).abs() > 0.000001) {
+        throw const BidCalculationVerificationException(
+          '서버와 화면의 낙찰하한율이 달라 복사를 멈췄어요.',
+        );
+      }
+      if (safetyLevel != 'SAFE' && safetyLevel != 'WARNING') {
+        throw const BidCalculationVerificationException(
+          '서버 안전성 검증을 통과하지 못해 복사를 멈췄어요.',
+        );
+      }
+
+      final result = await _apiService.deductPoints(_notice.bidNo);
+      await Clipboard.setData(
+        ClipboardData(text: authoritativePrice.toString()),
+      );
+      final recommendationId = _activeRecommendationId;
+      if (recommendationId != null) {
+        unawaited(
+          _recordRecommendationEvent(
+            recommendationId: recommendationId,
+            eventType: 'COPIED',
+            idempotencyKey: '$recommendationId:copied:$authoritativePrice',
+            selectedPolicy: _recommendationOverridden ? null : 'balanced',
+            details: {
+              'copied_price': authoritativePrice,
+              'recommended_price': _activeRecommendedPrice,
+              'overridden': _recommendationOverridden,
+            },
+          ),
+        );
+      }
       HapticFeedback.mediumImpact();
       final wasFree = result['was_free'] == true;
-      AnalyticsService().logBidCopied(bidNo: widget.notice.bidNo, wasFree: wasFree);
+      AnalyticsService().logBidCopied(bidNo: _notice.bidNo, wasFree: wasFree);
       if (mounted) {
         if (wasFree) {
           setState(() => _hasFreeToday = false);
-          SnackBarUtils.showSuccess(context, '무료 복사 완료! ${_formatPriceKorean(_bidPrice.toDouble())}');
+          SnackBarUtils.showSuccess(context,
+              '무료 복사 완료! ${_formatPriceKorean(authoritativePrice.toDouble())}');
         } else {
-          SnackBarUtils.showCopied(context, _formatPriceKorean(_bidPrice.toDouble()));
+          SnackBarUtils.showCopied(
+              context, _formatPriceKorean(authoritativePrice.toDouble()));
         }
       }
     } catch (e) {
       HapticFeedback.heavyImpact();
       if (mounted) {
         final msg = e.toString().replaceFirst('Exception: ', '');
-        if (msg.contains('포인트') || msg.contains('402')) {
+        if (e is BidCalculationVerificationException) {
+          SnackBarUtils.showError(context, e.message);
+        } else if (msg.contains('포인트') || msg.contains('402')) {
           SnackBarUtils.showError(context, '포인트가 부족합니다. 충전 후 이용해주세요');
         } else {
-          // 네트워크 에러 등의 경우 무료 복사 허용
-          Clipboard.setData(ClipboardData(text: _bidPrice.toString()));
-          SnackBarUtils.showCopied(context, _formatPriceKorean(_bidPrice.toDouble()));
+          SnackBarUtils.showError(
+            context,
+            '서버 계산을 검증하지 못해 복사하지 않았어요.',
+          );
         }
       }
     } finally {
@@ -803,5 +1043,34 @@ class _BidCalculatorScreenState extends State<BidCalculatorScreen> {
     }
   }
 
+  Future<void> _recordRecommendationEvent({
+    required String recommendationId,
+    required String eventType,
+    required String idempotencyKey,
+    String? selectedPolicy,
+    Map<String, dynamic>? details,
+  }) async {
+    try {
+      await _apiService.recordRecommendationDecision(
+        recommendationId: recommendationId,
+        eventType: eventType,
+        idempotencyKey: idempotencyKey,
+        selectedPolicy: selectedPolicy,
+        details: details,
+      );
+    } catch (_) {
+      // 계측 장애는 검증이 끝난 사용자 동작 자체를 실패시키지 않는다.
+    }
+  }
+
   String _formatPriceKorean(double price) => formatPriceKorean(price);
+}
+
+class BidCalculationVerificationException implements Exception {
+  final String message;
+
+  const BidCalculationVerificationException(this.message);
+
+  @override
+  String toString() => message;
 }
