@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "experiment_id": "ratio-error-segments-20260813",
+  "frozen_at": "2026-08-13T23:00:43+09:00",
+  "code_sha": "a7423e4c56e0bbf9b175e6d6ba07a769add4a10c",
+  "data_snapshot": {
+    "source": "production-read-only",
+    "query_version": "ratio-error-active-latest-v1",
+    "as_of": "2026-08-13T14:01:17.430021+00:00",
+    "latest_active_rows": 2792,
+    "sha256": "29b724e566d6808d157930a52b9307cd2c19b070d38755313a156f1a9d40210f"
+  },
+  "formula_sha256": "5e758a8ca85870384ecede5b01d69c93458c79435083eedb999d7ef34ebf2e3e",
+  "cohort": {
+    "sample_unit": "distinct_notice_active_arm_latest_scoring_rev",
+    "judged_outcomes": ["WIN", "LOST", "DROPOUT"],
+    "basis_ratio_min": 0.94,
+    "basis_ratio_max": 1.06,
+    "report_exclusions": ["basis_inconsistent", "basis_unknown"],
+    "time_axis": "mock_bid.deadline_at"
+  },
+  "segments": {
+    "dimensions": ["amount_bracket", "bid_method", "organization", "a_value_present"],
+    "amount_brackets": ["small", "medium", "large", "xlarge", "xxlarge"],
+    "minimum_cell_n_for_worst_segment": 20,
+    "sparse_cells": "report_only_no_ranking"
+  },
+  "metrics": {
+    "primary": "reserved_ratio_mae",
+    "secondary": ["reserved_ratio_median_absolute_error", "reserved_ratio_p90_absolute_error"],
+    "units": "reserved_price/basic_price ratio",
+    "report_counts": ["raw_judged", "included", "excluded_basis_inconsistent", "excluded_basis_unknown"]
+  },
+  "candidate": {
+    "baseline": "active_arm_registered_adjustment",
+    "family": "past-only hierarchical reserved-ratio predictor",
+    "allowed_features": ["bid_method", "amount_bracket", "organization", "a_value_present"],
+    "selection_rule": "pooled out-of-fold MAE must improve and no evaluated year may regress by more than 0.0001",
+    "maximum_iterations": 3
+  },
+  "walk_forward": {
+    "scheme": "expanding_year",
+    "train_rule": "record.year < holdout_year",
+    "train_rule_applies_to": "candidate_only",
+    "baseline_is_walk_forward": false,
+    "baseline_note": "기준선(active v20260527)은 2021~2025 전체로 적합된 저장본이라 2022~2025 holdout 에서 미래를 본다. 기준선에 유리한 방향이므로 후보 우위 결론은 견고하지만 delta 는 개선폭의 하한이다. 동일 조건 재적합 대조는 scripts/analyze_ratio_error.py 가 담당한다.",
+    "holdout_rule": "one complete year",
+    "minimum_train_years": 1,
+    "report": ["baseline_mae", "candidate_mae", "delta", "overfit_gap"]
+  },
+  "amendments": [
+    {
+      "at": "2026-08-14",
+      "field": "walk_forward",
+      "reason": "동결 당시 train_rule 이 후보에만 적용된다는 사실이 빠져 있었다. 계약과 실행의 불일치를 남기지 않도록 사실을 명시했다(수치·코호트·선택 규칙은 무변경).",
+      "found_by": "교차검증 — 두 에이전트 결과 대조"
+    }
+  ],
+  "stop_rules": [
+    "stop after two consecutive candidate iterations miss the frozen selection rule",
+    "stop on unexplained temporal leakage or basis inconsistency",
+    "never tune against the production mock-bid snapshot after it is opened"
+  ],
+  "prohibitions": [
+    "no automatic strategy promotion",
+    "no active strategy mutation",
+    "no arm superiority interpretation while G-A is below 60 percent",
+    "no production database writes",
+    "no external win-rate marketing claim"
+  ]
+}

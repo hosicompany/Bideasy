@@ -193,6 +193,24 @@ class ReservedRatioModel:
         # 극단 폴백 — 데이터 전무
         return SegmentRiskParams(mu=0.95, sigma=0.03, n_effective=0, n_raw=0, source="fallback")
 
+    def predict_reserved_ratio(self, method: str, bracket: str) -> float:
+        """사정비율 점예측 — 세그먼트 분포의 중앙값.
+
+        기존 모의투찰은 입찰가 최적화 파라미터인 ``adjustment`` 를 그대로
+        사정비율 예측값으로도 기록했다. 하지만 adjustment 는 무효 위험과
+        가격 경쟁까지 함께 최적화한 의사결정값이지 사정비율 추정량이 아니다.
+
+        절대오차(MAE)의 최적 점예측은 평균이 아니라 중앙값이므로, 이미
+        autocalibrate 가 과거 데이터만으로 적합한 분포의 0.5 분위수를 쓴다.
+        희소 세그먼트의 계층 폴백도 ``get_segment`` 계약을 그대로 따른다.
+        이 메서드는 후보 검증용이며 active 전략을 바꾸지 않는다.
+        """
+        params = self.get_segment(method, bracket)
+        median = params.quantiles.get(0.5)
+        if median is not None and median > 0:
+            return float(median)
+        return float(params.mu)
+
     # ── 핵심: 탈락 확률 계산 ────────────────────────────────
     @staticmethod
     def critical_ratio(adjustment: float, margin: float, lower_rate: float) -> float:

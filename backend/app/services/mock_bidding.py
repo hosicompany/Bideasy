@@ -14,6 +14,8 @@
 from __future__ import annotations
 
 import json
+import math
+import statistics
 import subprocess
 from dataclasses import dataclass
 from datetime import date as date_cls, datetime, timedelta, timezone
@@ -62,6 +64,7 @@ G_A_KILL_DAYS = 56
 G_B_MIN_QUALIFICATION_NOTICES = 400
 G_C_MAX_DROPOUT_PCT = 11.0
 QUALIFICATION_METHOD = "적격심사제"
+RATIO_ERROR_SEGMENT_MIN_N = 20
 
 _KST = ZoneInfo("Asia/Seoul")
 
@@ -1692,6 +1695,255 @@ def ratio_error_trend(db: Session, arm: str = "active") -> list[dict]:
         .all()
     )
     return [{"date": str(d), "mean_error": round(float(e), 6), "n": n} for d, e, n in rows]
+
+
+def _ratio_error_metrics(values: list[float]) -> dict:
+    """ratio 단위 절대오차의 MAE·중앙값·p90."""
+    if not values:
+        return {"n": 0, "mae": None, "median": None, "p90": None}
+    ordered = sorted(values)
+    index = (len(ordered) - 1) * 0.9
+    lower = math.floor(index)
+    upper = math.ceil(index)
+    if lower == upper:
+        p90 = ordered[lower]
+    else:
+        p90 = (
+            ordered[lower] * (upper - index)
+            + ordered[upper] * (index - lower)
+        )
+    return {
+        "n": len(values),
+        "mae": round(statistics.fmean(values), 6),
+        "median": round(statistics.median(values), 6),
+        "p90": round(p90, 6),
+    }
+
+
+def _ratio_error_cell(key: tuple, bucket: dict, overall_mae: float | None) -> dict:
+    metrics = _ratio_error_metrics(bucket["errors"])
+    actual = bucket["actual"]
+    predicted = bucket["predicted"]
+    tag_stats = []
+    for tag, errors in bucket["tags"].items():
+        row = {"tag": tag, **_ratio_error_metrics(errors)}
+        row["delta_vs_overall"] = (
+            round(row["mae"] - overall_mae, 6)
+            if row["mae"] is not None and overall_mae is not None
+            else None
+        )
+        tag_stats.append(row)
+    tag_stats.sort(key=lambda row: (row["mae"] or -1, row["n"]), reverse=True)
+    return {
+        "bracket": key[0],
+        "bid_method": key[1],
+        **({"organization": key[2], "a_value_present": key[3]}
+           if len(key) == 4 else {"a_value_present": key[2]}),
+        "raw_judged": bucket["raw_judged"],
+        "included": metrics["n"],
+        "excluded_basis_inconsistent": bucket["basis_inconsistent"],
+        "excluded_basis_unknown": bucket["basis_unknown"],
+        "excluded_ratio_error_unknown": bucket["error_unknown"],
+        **metrics,
+        "actual_ratio_mean": (
+            round(statistics.fmean(actual), 6) if actual else None
+        ),
+        "predicted_ratio_mean": (
+            round(statistics.fmean(predicted), 6) if predicted else None
+        ),
+        "signed_actual_minus_predicted": (
+            round(statistics.fmean(bucket["signed"]), 6)
+            if bucket["signed"]
+            else None
+        ),
+        "eligible_for_worst_ranking": metrics["n"] >= RATIO_ERROR_SEGMENT_MIN_N,
+        "failure_tags": tag_stats,
+    }
+
+
+def ratio_error_segment_report(db: Session, arm: str = "active") -> dict:
+    """사정률 오차를 금액대×방법×기관×A값 유무로 완전 분해한다.
+
+    최신 scoring rev와 기초금액 일관성 가드는 다른 성능 집계와 동일하다.
+    제외 건도 원래 속한 셀에 남겨 표본 품질을 함께 보고한다. 완전 4축 셀이
+    희소하면 기관을 뺀 부모축을 진단 보조로 내되, n<20 기관 셀은 최악 순위에
+    올리지 않는다.
+
+    기관은 등록 스냅샷 컬럼이 없어서 개찰/공고 원장의 현재 값을 쓴다. 기관명은
+    사전에도 알 수 있는 값이지만 이 한계는 응답에 명시한다.
+    """
+    bp = models.MockBid.snapshot_basic_price
+    bracket = case(
+        (bp < 1e8, "small"),
+        (bp < 5e8, "medium"),
+        (bp < 1e9, "large"),
+        (bp < 5e9, "xlarge"),
+        else_="xxlarge",
+    )
+    organization = func.coalesce(
+        models.OpeningResult.organization,
+        models.Notice.organization,
+        "?",
+    )
+    sq = _latest_rev_sq(db)
+    rows = (
+        db.query(
+            bracket.label("bracket"),
+            models.MockBid.snapshot_bid_method,
+            organization.label("organization"),
+            models.MockBid.snapshot_a_value,
+            models.MockBid.snapshot_basic_price,
+            models.MockBidResult.actual_reserved_price,
+            models.MockBidResult.reserved_ratio_predicted,
+            models.MockBidResult.ratio_error,
+            models.MockBidResult.failure_tags,
+        )
+        .join(models.MockBidResult, models.MockBidResult.mock_bid_id == models.MockBid.id)
+        .join(
+            sq,
+            and_(
+                models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
+                models.MockBidResult.scoring_rev == sq.c.max_rev,
+            ),
+        )
+        .outerjoin(models.Notice, models.Notice.bid_no == models.MockBid.bid_no)
+        .outerjoin(
+            models.OpeningResult,
+            models.OpeningResult.bid_no == models.MockBid.bid_no,
+        )
+        .filter(
+            models.MockBid.arm == arm,
+            models.MockBidResult.outcome.in_(_JUDGED),
+        )
+        .all()
+    )
+
+    def new_bucket() -> dict:
+        return {
+            "raw_judged": 0,
+            "basis_inconsistent": 0,
+            "basis_unknown": 0,
+            "error_unknown": 0,
+            "errors": [],
+            "actual": [],
+            "predicted": [],
+            "signed": [],
+            "tags": {},
+        }
+
+    full: dict[tuple, dict] = {}
+    parent: dict[tuple, dict] = {}
+    overall = new_bucket()
+
+    for brk, method, org, a_value, basic_price, reserved, predicted, error, tags in rows:
+        has_a = bool(a_value and a_value > 0)
+        full_key = (brk, method or "?", org or "?", has_a)
+        parent_key = (brk, method or "?", has_a)
+        buckets = (
+            full.setdefault(full_key, new_bucket()),
+            parent.setdefault(parent_key, new_bucket()),
+            overall,
+        )
+        for bucket in buckets:
+            bucket["raw_judged"] += 1
+
+        validity = classify_base_consistency(basic_price, reserved)
+        if validity != "valid":
+            field = "basis_inconsistent" if validity == "mismatch" else "basis_unknown"
+            for bucket in buckets:
+                bucket[field] += 1
+            continue
+        if error is None or predicted is None:
+            for bucket in buckets:
+                bucket["error_unknown"] += 1
+            continue
+
+        actual_ratio = float(reserved) / float(basic_price)
+        error_value = float(error)
+        predicted_value = float(predicted)
+        for bucket in buckets:
+            bucket["errors"].append(error_value)
+            bucket["actual"].append(actual_ratio)
+            bucket["predicted"].append(predicted_value)
+            bucket["signed"].append(actual_ratio - predicted_value)
+            for tag in tags or []:
+                bucket["tags"].setdefault(tag, []).append(error_value)
+
+    overall_metrics = _ratio_error_metrics(overall["errors"])
+    overall_mae = overall_metrics["mae"]
+    full_cells = [
+        _ratio_error_cell(key, bucket, overall_mae)
+        for key, bucket in full.items()
+    ]
+    full_cells.sort(
+        key=lambda row: (
+            row["bracket"], row["bid_method"], row["organization"],
+            row["a_value_present"],
+        )
+    )
+    parent_cells = [
+        _ratio_error_cell(key, bucket, overall_mae)
+        for key, bucket in parent.items()
+    ]
+    parent_cells.sort(
+        key=lambda row: (row["mae"] is not None, row["mae"] or -1, row["n"]),
+        reverse=True,
+    )
+    eligible_full = [
+        row for row in full_cells if row["eligible_for_worst_ranking"]
+    ]
+    eligible_full.sort(key=lambda row: (row["mae"], row["n"]), reverse=True)
+    eligible_parent = [
+        row for row in parent_cells if row["eligible_for_worst_ranking"]
+    ]
+
+    overall_tag_stats = []
+    for tag, errors in overall["tags"].items():
+        row = {"tag": tag, **_ratio_error_metrics(errors)}
+        row["delta_vs_overall"] = (
+            round(row["mae"] - overall_mae, 6)
+            if row["mae"] is not None and overall_mae is not None
+            else None
+        )
+        row["eligible"] = row["n"] >= RATIO_ERROR_SEGMENT_MIN_N
+        overall_tag_stats.append(row)
+    overall_tag_stats.sort(
+        key=lambda row: (row["eligible"], row["mae"] or -1, row["n"]),
+        reverse=True,
+    )
+
+    return {
+        "arm": arm,
+        "minimum_cell_n": RATIO_ERROR_SEGMENT_MIN_N,
+        "sample": {
+            "raw_judged": overall["raw_judged"],
+            "included": overall_metrics["n"],
+            "excluded_basis_inconsistent": overall["basis_inconsistent"],
+            "excluded_basis_unknown": overall["basis_unknown"],
+            "excluded_ratio_error_unknown": overall["error_unknown"],
+        },
+        "overall": overall_metrics,
+        "four_way": {
+            "dimensions": [
+                "bracket", "bid_method", "organization", "a_value_present"
+            ],
+            "cell_count": len(full_cells),
+            "eligible_cell_count": len(eligible_full),
+            "worst_eligible": eligible_full[:10],
+            "cells": full_cells,
+        },
+        "parent_without_organization": {
+            "dimensions": ["bracket", "bid_method", "a_value_present"],
+            "worst_eligible": eligible_parent[:10],
+            "cells": parent_cells,
+        },
+        "failure_tags": overall_tag_stats,
+        "caveats": [
+            "기관은 MockBid 스냅샷에 없어 개찰/공고 원장의 현재 기관명을 사용한다.",
+            "n 미달 4축 셀은 표에 남기되 최악 세그먼트 순위에는 쓰지 않는다.",
+            "A값 없음은 기초금액 불일치와 강하게 겹칠 수 있어 인과효과로 해석하지 않는다.",
+        ],
+    }
 
 
 def segment_stats(db: Session, arm: str = "active") -> list[dict]:

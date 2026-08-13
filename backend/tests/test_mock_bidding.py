@@ -15,9 +15,10 @@ from app.services import mock_bidding as mb
 def _notice(bid_no="MB-1", *, basic_price=100_000_000, bid_method="적격심사제",
             contract_type="CONSTRUCTION", notice_kind="등록공고",
             end_offset_h=1, llr=89.745, a_value=0, prdprc=(15, 4),
-            re_notice="N"):
+            re_notice="N", organization="테스트기관"):
     return models.Notice(
         bid_no=bid_no, title="테스트 공고", basic_price=basic_price,
+        organization=organization,
         contract_type=contract_type, bid_method=bid_method,
         notice_kind=notice_kind, lower_limit_rate=llr, a_value=a_value,
         # Notice.end_date 는 opengDt(KST 표기) 축이므로 픽스처도 KST 로 만든다
@@ -1215,8 +1216,8 @@ class TestRankAxisHealth:
 class TestChartAggregates:
     """시각화 집계 — 전부 최신 rev 기준. 데이터 형태만 계약으로 고정한다."""
 
-    def _prepare_scored(self, db_session, bid_no):
-        n = _notice(bid_no)
+    def _prepare_scored(self, db_session, bid_no, *, organization="테스트기관"):
+        n = _notice(bid_no, organization=organization)
         db_session.add(n)
         db_session.commit()
         mb.register_notice(db_session, n)
@@ -1267,6 +1268,67 @@ class TestChartAggregates:
 
         assert any(row["date"] == "2026-01-02" for row in trend)
         assert not any(row["date"] == "2026-01-12" for row in trend)
+
+    def test_ratio_error_report_uses_all_four_dimensions_and_reports_exclusions(
+        self, db_session
+    ):
+        before = mb.ratio_error_segment_report(db_session, arm="active")
+        # 이 클래스의 다른 테스트도 같은 기관·방법·금액대로 채점 행을 쌓는다.
+        # 기본 기관을 쓰면 셀이 누적돼 최소 표본(n<20) 조건이 조용히 뒤집힌다
+        # — 단독 실행만 통과하고 전체 실행에서 깨진다. 셀을 이 테스트 전용으로 격리한다.
+        self._prepare_scored(
+            db_session, "MB-RATIO-SEGMENT-1", organization="세그먼트리포트전용기관"
+        )
+        report = mb.ratio_error_segment_report(db_session, arm="active")
+
+        assert report["four_way"]["dimensions"] == [
+            "bracket",
+            "bid_method",
+            "organization",
+            "a_value_present",
+        ]
+        assert report["sample"]["raw_judged"] == before["sample"]["raw_judged"] + 1
+        assert report["sample"]["included"] == before["sample"]["included"] + 1
+        cell = next(
+            row
+            for row in report["four_way"]["cells"]
+            if row["organization"] == "세그먼트리포트전용기관"
+            and row["bid_method"] == "적격심사제"
+            and row["bracket"] == "medium"
+            and row["a_value_present"] is False
+        )
+        assert cell["bracket"] == "medium"
+        assert cell["bid_method"] == "적격심사제"
+        assert cell["organization"] == "세그먼트리포트전용기관"
+        assert cell["a_value_present"] is False
+        assert cell["eligible_for_worst_ranking"] is False
+
+        bad = _notice("MB-RATIO-SEGMENT-BAD", organization="오류기관")
+        db_session.add(bad)
+        db_session.commit()
+        mb.register_notice(db_session, bad)
+        db_session.commit()
+        db_session.add(
+            _opening(
+                "MB-RATIO-SEGMENT-BAD",
+                reserved=110_000_000,
+                winner=100_000_000,
+            )
+        )
+        db_session.commit()
+        for bid in db_session.query(models.MockBid).filter_by(
+            bid_no="MB-RATIO-SEGMENT-BAD"
+        ):
+            bid.deadline_at = mb.now_kst() - timedelta(hours=1)
+        db_session.commit()
+        mb.score_pending(db_session)
+
+        report = mb.ratio_error_segment_report(db_session, arm="active")
+        assert report["sample"]["raw_judged"] == before["sample"]["raw_judged"] + 2
+        assert report["sample"]["included"] == before["sample"]["included"] + 1
+        assert report["sample"]["excluded_basis_inconsistent"] == (
+            before["sample"]["excluded_basis_inconsistent"] + 1
+        )
 
     def test_segment_stats_bracket_vocab(self, db_session):
         """금액대 어휘는 autocalibrate dataset.get_bracket 과 동일해야 한다."""
