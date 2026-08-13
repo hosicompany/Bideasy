@@ -7,6 +7,8 @@
 - 부트스트랩 동등성: 동적 로딩 전환이 무손실인지
 """
 
+from dataclasses import replace
+
 import pytest
 
 from app.services.autocalibrate.strategy_store import (
@@ -17,6 +19,7 @@ from app.services.autocalibrate.strategy_store import (
 )
 from app.services.autocalibrate import dataset as ds
 from app.services.autocalibrate import guard
+from app.services.autocalibrate.ratio_error import TIE_MARGIN, walk_forward_validate
 from app.services.autocalibrate.risk_model import ReservedRatioModel
 from app.services.calculator import BID_STRATEGY
 
@@ -34,6 +37,40 @@ def records():
     if not recs:
         pytest.skip("opening_results_*.json 데이터 없음")
     return recs
+
+
+def test_ratio_error_walk_forward_uses_past_only_and_selects_shadow_candidate(records):
+    report = walk_forward_validate(records, BID_STRATEGY)
+
+    assert report["selected_shadow_candidate"] == "segment_median"
+    assert report["promotion_allowed"] is False
+    assert report["pooled"]["segment_median"]["mae"] < report["pooled"][
+        "active_adjustment"
+    ]["mae"]
+    for fold in report["folds"]:
+        assert all(year < fold["holdout_year"] for year in fold["train_years"])
+        assert fold["segment_median"]["delta_vs_active"] < 0
+
+
+def test_ratio_error_future_outcome_cannot_change_earlier_fold(records):
+    before = walk_forward_validate(records, BID_STRATEGY)
+    mutated = list(records)
+    future_index = next(i for i, record in enumerate(mutated) if record.year == 2025)
+    future = mutated[future_index]
+    mutated[future_index] = replace(
+        future,
+        reserved_price=future.basic_price * 1.05,
+    )
+
+    after = walk_forward_validate(mutated, BID_STRATEGY)
+    before_2024 = next(
+        fold for fold in before["folds"] if fold["holdout_year"] == 2024
+    )
+    after_2024 = next(
+        fold for fold in after["folds"] if fold["holdout_year"] == 2024
+    )
+
+    assert after_2024 == before_2024
 
 
 # ── strategy_store ───────────────────────────────────────────
@@ -211,3 +248,38 @@ def test_db_records_pre_revision_keeps_old_rate(db_session):
 
     rec = next(r for r in load_records(db=db_session) if r.bid_no == "LLRTEST-2")
     assert rec.lower_limit_rate == 87.745
+
+
+def test_ratio_error_reports_that_baseline_is_not_walk_forward(records):
+    """기준선이 fold 별 재적합이 아니라는 사실이 결과에 박혀 있어야 한다.
+
+    기준선은 2021~2025 로 적합된 저장본이라 2022~2025 holdout 에서 미래를
+    본다. 방향은 안전하지만(기준선에 유리) delta 를 성과로 인용하면 과대평가가
+    아니라 과소평가된 수치를 근거로 쓰게 된다. JSON 만 보고 판단하는 다음
+    세션이 속지 않도록 페이로드가 스스로 밝히게 한다.
+    """
+    report = walk_forward_validate(records, BID_STRATEGY)
+
+    assert report["baseline_is_walk_forward"] is False
+    assert any("walk-forward 가 아니다" in note for note in report["notes"])
+
+
+def test_ratio_error_prefers_simpler_candidate_when_indistinguishable(records):
+    """두 후보가 구분되지 않으면 덜 쪼갠 쪽이 이긴다.
+
+    실측 pooled MAE 는 세그먼트 중앙값과 기관 부분풀링이 0.00001 수준으로
+    갈린다 — 연도 하나만 바뀌어도 순위가 뒤집히는 차이다. 순수 MAE 최소로
+    고르면 그 노이즈가 기관 차원을 채택시킨다.
+
+    차이가 TIE_MARGIN 을 넘어서면 이 단언이 깨지는데, 그건 테스트의 실패가
+    아니라 **기관 차원이 실제로 신호를 갖게 됐다는 신호**다. 그때는 다시 재라.
+    """
+    report = walk_forward_validate(records, BID_STRATEGY)
+    simple = report["pooled"]["segment_median"]["mae"]
+    complex_ = report["pooled"]["organization_shrunk"]["mae"]
+
+    assert abs(complex_ - simple) <= TIE_MARGIN, (
+        f"기관 차원이 구분 가능해졌다 (차이 {abs(complex_ - simple):.6f} "
+        f"> TIE_MARGIN {TIE_MARGIN}) — 후보 선택을 재검토할 것"
+    )
+    assert report["selected_shadow_candidate"] == "segment_median"

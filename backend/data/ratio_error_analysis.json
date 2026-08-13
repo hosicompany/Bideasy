@@ -1,0 +1,860 @@
+{
+  "generated_for": "docs/MOCK_BIDDING_DESIGN.md §0.2 4차 지표",
+  "data": {
+    "records_raw": 4848,
+    "records_used": 4848,
+    "excluded_base_inconsistent": 0,
+    "by_year": {
+      "2021": {
+        "raw": 2115,
+        "kept": 2115,
+        "excluded": 0,
+        "excluded_pct": 0.0
+      },
+      "2022": {
+        "raw": 821,
+        "kept": 821,
+        "excluded": 0,
+        "excluded_pct": 0.0
+      },
+      "2023": {
+        "raw": 734,
+        "kept": 734,
+        "excluded": 0,
+        "excluded_pct": 0.0
+      },
+      "2024": {
+        "raw": 695,
+        "kept": 695,
+        "excluded": 0,
+        "excluded_pct": 0.0
+      },
+      "2025": {
+        "raw": 483,
+        "kept": 483,
+        "excluded": 0,
+        "excluded_pct": 0.0
+      }
+    },
+    "base_ratio_band": [
+      0.94,
+      1.06
+    ],
+    "include_db": false,
+    "years": [
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ]
+  },
+  "active_version": "v20260527_152034_bc77aa",
+  "identifiability": {
+    "objective_parity": [
+      {
+        "segment": "소액수의견적/small",
+        "n": 2575,
+        "free_2axis": {
+          "adj": -0.3,
+          "margin": 1.3,
+          "objective": 0.05232,
+          "multiplier": 88.7779
+        },
+        "pinned_1axis": {
+          "adj": -0.1,
+          "margin": 1.14,
+          "objective": 0.052313,
+          "multiplier": 88.7961
+        },
+        "objective_delta": -7e-06
+      },
+      {
+        "segment": "소액수의견적/medium",
+        "n": 1096,
+        "free_2axis": {
+          "adj": -0.4,
+          "margin": 1.3,
+          "objective": 0.072933,
+          "multiplier": 88.6888
+        },
+        "pinned_1axis": {
+          "adj": -0.1,
+          "margin": 1.06,
+          "objective": 0.070255,
+          "multiplier": 88.7162
+        },
+        "objective_delta": -0.002677
+      },
+      {
+        "segment": "적격심사제/medium",
+        "n": 619,
+        "free_2axis": {
+          "adj": 0.1,
+          "margin": 0.8,
+          "objective": 0.265372,
+          "multiplier": 88.6335
+        },
+        "pinned_1axis": {
+          "adj": -0.1,
+          "margin": 0.98,
+          "objective": 0.263757,
+          "multiplier": 88.6363
+        },
+        "objective_delta": -0.001616
+      },
+      {
+        "segment": "적격심사제/large",
+        "n": 204,
+        "free_2axis": {
+          "adj": 0.8,
+          "margin": 0.2,
+          "objective": 0.257102,
+          "multiplier": 88.6486
+        },
+        "pinned_1axis": {
+          "adj": -0.1,
+          "margin": 0.92,
+          "objective": 0.257161,
+          "multiplier": 88.5763
+        },
+        "objective_delta": 5.8e-05
+      },
+      {
+        "segment": "적격심사제/xlarge",
+        "n": 189,
+        "free_2axis": {
+          "adj": -0.1,
+          "margin": 0.9,
+          "objective": 0.354359,
+          "multiplier": 87.5574
+        },
+        "pinned_1axis": {
+          "adj": -0.1,
+          "margin": 0.9,
+          "objective": 0.354359,
+          "multiplier": 87.5574
+        },
+        "objective_delta": 0.0
+      }
+    ],
+    "note": "J 는 (adj, margin) 을 곱 (1+adj/100)×(하한율+margin) 으로만 본다 — 가격(simulate_params)도 임계비율(risk_model.critical_ratio)도 그렇다. 따라서 곱이 같은 조합은 목적함수가 동일하고, adj 를 사정률로 식별할 근거가 최적화 안에 없다.",
+    "active_segments": [
+      {
+        "segment": "소액수의견적/large",
+        "adjustment": 0.6,
+        "margin": 0.3,
+        "implied_ratio_pred": 1.006,
+        "multiplier": 90.5853,
+        "effective_margin_pp": 0.8403
+      },
+      {
+        "segment": "소액수의견적/medium",
+        "adjustment": 0.5,
+        "margin": 0.5,
+        "implied_ratio_pred": 1.005,
+        "multiplier": 90.6962,
+        "effective_margin_pp": 0.9512
+      },
+      {
+        "segment": "소액수의견적/small",
+        "adjustment": -0.3,
+        "margin": 1.2,
+        "implied_ratio_pred": 0.997,
+        "multiplier": 90.6722,
+        "effective_margin_pp": 0.9272
+      },
+      {
+        "segment": "소액수의견적/xlarge",
+        "adjustment": 0.6,
+        "margin": 0.3,
+        "implied_ratio_pred": 1.006,
+        "multiplier": 90.5853,
+        "effective_margin_pp": 0.8403
+      },
+      {
+        "segment": "소액수의견적/xxlarge",
+        "adjustment": 0.6,
+        "margin": 0.3,
+        "implied_ratio_pred": 1.006,
+        "multiplier": 90.5853,
+        "effective_margin_pp": 0.8403
+      },
+      {
+        "segment": "적격심사제/large",
+        "adjustment": -0.4,
+        "margin": 1.3,
+        "implied_ratio_pred": 0.996,
+        "multiplier": 90.6808,
+        "effective_margin_pp": 0.9358
+      },
+      {
+        "segment": "적격심사제/medium",
+        "adjustment": 0.9,
+        "margin": 0.1,
+        "implied_ratio_pred": 1.009,
+        "multiplier": 90.6536,
+        "effective_margin_pp": 0.9086
+      },
+      {
+        "segment": "적격심사제/small",
+        "adjustment": -1.0,
+        "margin": 1.4,
+        "implied_ratio_pred": 0.99,
+        "multiplier": 90.2336,
+        "effective_margin_pp": 0.4886
+      },
+      {
+        "segment": "적격심사제/xlarge",
+        "adjustment": -0.4,
+        "margin": 1.2,
+        "implied_ratio_pred": 0.996,
+        "multiplier": 90.5812,
+        "effective_margin_pp": 0.8362
+      },
+      {
+        "segment": "적격심사제/xxlarge",
+        "adjustment": -0.6,
+        "margin": 1.4,
+        "implied_ratio_pred": 0.994,
+        "multiplier": 90.5981,
+        "effective_margin_pp": 0.8531
+      }
+    ],
+    "adjustment_spread_pp": 1.9,
+    "effective_margin_spread_pp": 0.463,
+    "iso_product_swap": {
+      "pinned_adjustment": -0.1,
+      "before": {
+        "n": 4848,
+        "win_rate": 13.861,
+        "win_ci95": [
+          12.917,
+          14.863
+        ],
+        "dropout_rate": 5.281,
+        "ratio_mae": 0.007108,
+        "ratio_bias": 0.001378,
+        "ratio_p90": 0.014543
+      },
+      "after": {
+        "n": 4848,
+        "win_rate": 13.861,
+        "win_ci95": [
+          12.917,
+          14.863
+        ],
+        "dropout_rate": 5.281,
+        "ratio_mae": 0.005859,
+        "ratio_bias": 0.000216,
+        "ratio_p90": 0.011869
+      },
+      "win_delta_pp": 0.0,
+      "dropout_delta_pp": 0.0,
+      "ratio_mae_delta": -0.001249
+    }
+  },
+  "segments_static": {
+    "by_segment": [
+      {
+        "segment": "적격심사제/small",
+        "n": 54,
+        "adjustment": -1.0,
+        "margin": 1.4,
+        "ratio_mae": 0.00916,
+        "ratio_bias": -0.009156,
+        "actual_ratio_median": 0.999906,
+        "actual_ratio_sd": 0.005063,
+        "oracle_const_mae": 0.004105,
+        "headroom": 0.005055,
+        "win_rate": 50.0,
+        "dropout_rate": 7.407
+      },
+      {
+        "segment": "적격심사제/medium",
+        "n": 619,
+        "adjustment": 0.9,
+        "margin": 0.1,
+        "ratio_mae": 0.010394,
+        "ratio_bias": 0.009857,
+        "actual_ratio_median": 0.998995,
+        "actual_ratio_sd": 0.007136,
+        "oracle_const_mae": 0.005789,
+        "headroom": 0.004605,
+        "win_rate": 30.372,
+        "dropout_rate": 6.3
+      },
+      {
+        "segment": "제한적최저가(낙찰하한율)/medium",
+        "n": 23,
+        "adjustment": 0.3,
+        "margin": 1.3,
+        "ratio_mae": 0.008442,
+        "ratio_bias": 0.007657,
+        "actual_ratio_median": 0.995238,
+        "actual_ratio_sd": 0.006894,
+        "oracle_const_mae": 0.005247,
+        "headroom": 0.003195,
+        "win_rate": 8.696,
+        "dropout_rate": 0.0
+      },
+      {
+        "segment": "소액수의견적/medium",
+        "n": 1096,
+        "adjustment": 0.5,
+        "margin": 0.5,
+        "ratio_mae": 0.007762,
+        "ratio_bias": 0.006128,
+        "actual_ratio_median": 0.99873,
+        "actual_ratio_sd": 0.007187,
+        "oracle_const_mae": 0.005747,
+        "headroom": 0.002015,
+        "win_rate": 9.672,
+        "dropout_rate": 5.292
+      },
+      {
+        "segment": "적격심사제/xxlarge",
+        "n": 51,
+        "adjustment": -0.6,
+        "margin": 1.4,
+        "ratio_mae": 0.006601,
+        "ratio_bias": -0.004126,
+        "actual_ratio_median": 0.99783,
+        "actual_ratio_sd": 0.007252,
+        "oracle_const_mae": 0.00587,
+        "headroom": 0.000731,
+        "win_rate": 31.373,
+        "dropout_rate": 5.882
+      },
+      {
+        "segment": "적격심사제/xlarge",
+        "n": 189,
+        "adjustment": -0.4,
+        "margin": 1.2,
+        "ratio_mae": 0.005944,
+        "ratio_bias": -0.00318,
+        "actual_ratio_median": 0.999358,
+        "actual_ratio_sd": 0.006617,
+        "oracle_const_mae": 0.005407,
+        "headroom": 0.000537,
+        "win_rate": 38.095,
+        "dropout_rate": 4.233
+      },
+      {
+        "segment": "적격심사제/large",
+        "n": 204,
+        "adjustment": -0.4,
+        "margin": 1.3,
+        "ratio_mae": 0.006232,
+        "ratio_bias": -0.002586,
+        "actual_ratio_median": 0.998465,
+        "actual_ratio_sd": 0.007276,
+        "oracle_const_mae": 0.005884,
+        "headroom": 0.000348,
+        "win_rate": 27.451,
+        "dropout_rate": 3.922
+      },
+      {
+        "segment": "제한적최저가(낙찰하한율)/small",
+        "n": 30,
+        "adjustment": -0.6,
+        "margin": 1.2,
+        "ratio_mae": 0.006421,
+        "ratio_bias": -0.001469,
+        "actual_ratio_median": 0.996384,
+        "actual_ratio_sd": 0.007421,
+        "oracle_const_mae": 0.00609,
+        "headroom": 0.000331,
+        "win_rate": 10.0,
+        "dropout_rate": 0.0
+      },
+      {
+        "segment": "소액수의견적/small",
+        "n": 2575,
+        "adjustment": -0.3,
+        "margin": 1.2,
+        "ratio_mae": 0.006152,
+        "ratio_bias": -0.001731,
+        "actual_ratio_median": 0.998769,
+        "actual_ratio_sd": 0.007403,
+        "oracle_const_mae": 0.005969,
+        "headroom": 0.000183,
+        "win_rate": 7.806,
+        "dropout_rate": 5.243
+      }
+    ]
+  },
+  "walkforward": {
+    "2022": {
+      "n_train": 2115,
+      "n_holdout": 821,
+      "train_years": [
+        2021
+      ],
+      "baseline_refit": {
+        "train": {
+          "n": 2115,
+          "win_rate": 9.598,
+          "win_ci95": [
+            8.415,
+            10.928
+          ],
+          "dropout_rate": 2.08,
+          "ratio_mae": 0.007405,
+          "ratio_bias": 0.003053,
+          "ratio_p90": 0.01519
+        },
+        "holdout": {
+          "n": 821,
+          "win_rate": 9.501,
+          "win_ci95": [
+            7.679,
+            11.699
+          ],
+          "dropout_rate": 2.436,
+          "ratio_mae": 0.00724,
+          "ratio_bias": 0.00321,
+          "ratio_p90": 0.014875
+        }
+      },
+      "proposed_pinned": {
+        "train": {
+          "n": 2115,
+          "win_rate": 9.551,
+          "win_ci95": [
+            8.371,
+            10.878
+          ],
+          "dropout_rate": 2.553,
+          "ratio_mae": 0.00585,
+          "ratio_bias": 0.00019,
+          "ratio_p90": 0.011803
+        },
+        "holdout": {
+          "n": 821,
+          "win_rate": 9.135,
+          "win_ci95": [
+            7.35,
+            11.301
+          ],
+          "dropout_rate": 3.045,
+          "ratio_mae": 0.005838,
+          "ratio_bias": 0.000463,
+          "ratio_p90": 0.011743
+        }
+      },
+      "deployed_active": {
+        "holdout": {
+          "n": 821,
+          "win_rate": 9.988,
+          "win_ci95": [
+            8.119,
+            12.229
+          ],
+          "dropout_rate": 4.872,
+          "ratio_mae": 0.006909,
+          "ratio_bias": 0.001339,
+          "ratio_p90": 0.01407
+        }
+      },
+      "oracle_ratio_mae_holdout": 0.005764,
+      "pinned_adjustments": {
+        "적격심사제/large": [
+          -0.1,
+          1.0
+        ],
+        "적격심사제/medium": [
+          -0.1,
+          1.0
+        ],
+        "적격심사제/small": [
+          -0.0,
+          0.6
+        ],
+        "적격심사제/xlarge": [
+          -0.0,
+          0.8
+        ],
+        "적격심사제/xxlarge": [
+          -0.2,
+          1.2
+        ],
+        "소액수의견적/large": [
+          -0.1,
+          0.3
+        ],
+        "소액수의견적/medium": [
+          -0.1,
+          1.2
+        ],
+        "소액수의견적/small": [
+          -0.1,
+          1.3
+        ],
+        "소액수의견적/xlarge": [
+          -0.1,
+          0.3
+        ],
+        "소액수의견적/xxlarge": [
+          -0.1,
+          0.3
+        ]
+      }
+    },
+    "2023": {
+      "n_train": 2936,
+      "n_holdout": 734,
+      "train_years": [
+        2021,
+        2022
+      ],
+      "baseline_refit": {
+        "train": {
+          "n": 2936,
+          "win_rate": 9.605,
+          "win_ci95": [
+            8.591,
+            10.724
+          ],
+          "dropout_rate": 2.146,
+          "ratio_mae": 0.007368,
+          "ratio_bias": 0.003079,
+          "ratio_p90": 0.015191
+        },
+        "holdout": {
+          "n": 734,
+          "win_rate": 9.128,
+          "win_ci95": [
+            7.252,
+            11.43
+          ],
+          "dropout_rate": 2.725,
+          "ratio_mae": 0.007605,
+          "ratio_bias": 0.00352,
+          "ratio_p90": 0.01523
+        }
+      },
+      "proposed_pinned": {
+        "train": {
+          "n": 2936,
+          "win_rate": 9.332,
+          "win_ci95": [
+            8.333,
+            10.438
+          ],
+          "dropout_rate": 2.623,
+          "ratio_mae": 0.005842,
+          "ratio_bias": 0.000223,
+          "ratio_p90": 0.011743
+        },
+        "holdout": {
+          "n": 734,
+          "win_rate": 9.264,
+          "win_ci95": [
+            7.374,
+            11.579
+          ],
+          "dropout_rate": 3.27,
+          "ratio_mae": 0.005918,
+          "ratio_bias": 0.000211,
+          "ratio_p90": 0.012175
+        }
+      },
+      "deployed_active": {
+        "holdout": {
+          "n": 734,
+          "win_rate": 9.537,
+          "win_ci95": [
+            7.618,
+            11.877
+          ],
+          "dropout_rate": 5.586,
+          "ratio_mae": 0.00719,
+          "ratio_bias": 0.001637,
+          "ratio_p90": 0.014602
+        }
+      },
+      "oracle_ratio_mae_holdout": 0.005865,
+      "pinned_adjustments": {
+        "적격심사제/large": [
+          -0.1,
+          1.1
+        ],
+        "적격심사제/medium": [
+          -0.1,
+          1.0
+        ],
+        "적격심사제/small": [
+          -0.0,
+          0.6
+        ],
+        "적격심사제/xlarge": [
+          -0.1,
+          0.9
+        ],
+        "적격심사제/xxlarge": [
+          -0.1,
+          1.1
+        ],
+        "소액수의견적/large": [
+          -0.1,
+          0.3
+        ],
+        "소액수의견적/medium": [
+          -0.1,
+          1.2
+        ],
+        "소액수의견적/small": [
+          -0.1,
+          1.3
+        ],
+        "소액수의견적/xlarge": [
+          -0.1,
+          0.3
+        ],
+        "소액수의견적/xxlarge": [
+          -0.1,
+          0.3
+        ]
+      }
+    },
+    "2024": {
+      "n_train": 3670,
+      "n_holdout": 695,
+      "train_years": [
+        2021,
+        2022,
+        2023
+      ],
+      "baseline_refit": {
+        "train": {
+          "n": 3670,
+          "win_rate": 9.51,
+          "win_ci95": [
+            8.602,
+            10.501
+          ],
+          "dropout_rate": 2.207,
+          "ratio_mae": 0.00742,
+          "ratio_bias": 0.003098,
+          "ratio_p90": 0.01522
+        },
+        "holdout": {
+          "n": 695,
+          "win_rate": 16.403,
+          "win_ci95": [
+            13.836,
+            19.339
+          ],
+          "dropout_rate": 2.446,
+          "ratio_mae": 0.00742,
+          "ratio_bias": 0.003814,
+          "ratio_p90": 0.01554
+        }
+      },
+      "proposed_pinned": {
+        "train": {
+          "n": 3670,
+          "win_rate": 9.455,
+          "win_ci95": [
+            8.55,
+            10.445
+          ],
+          "dropout_rate": 2.779,
+          "ratio_mae": 0.005856,
+          "ratio_bias": 0.00021,
+          "ratio_p90": 0.011823
+        },
+        "holdout": {
+          "n": 695,
+          "win_rate": 18.705,
+          "win_ci95": [
+            15.981,
+            21.773
+          ],
+          "dropout_rate": 2.878,
+          "ratio_mae": 0.005741,
+          "ratio_bias": 0.000427,
+          "ratio_p90": 0.011626
+        }
+      },
+      "deployed_active": {
+        "holdout": {
+          "n": 695,
+          "win_rate": 24.892,
+          "win_ci95": [
+            21.821,
+            28.239
+          ],
+          "dropout_rate": 4.46,
+          "ratio_mae": 0.006955,
+          "ratio_bias": 0.002019,
+          "ratio_p90": 0.014652
+        }
+      },
+      "oracle_ratio_mae_holdout": 0.005655,
+      "pinned_adjustments": {
+        "적격심사제/large": [
+          -0.1,
+          1.0
+        ],
+        "적격심사제/medium": [
+          -0.1,
+          1.0
+        ],
+        "적격심사제/small": [
+          -0.0,
+          0.6
+        ],
+        "적격심사제/xlarge": [
+          -0.1,
+          0.9
+        ],
+        "적격심사제/xxlarge": [
+          -0.2,
+          1.2
+        ],
+        "소액수의견적/large": [
+          -0.1,
+          0.3
+        ],
+        "소액수의견적/medium": [
+          -0.1,
+          1.2
+        ],
+        "소액수의견적/small": [
+          -0.1,
+          1.3
+        ],
+        "소액수의견적/xlarge": [
+          -0.1,
+          0.3
+        ],
+        "소액수의견적/xxlarge": [
+          -0.1,
+          0.3
+        ]
+      }
+    },
+    "2025": {
+      "n_train": 4365,
+      "n_holdout": 483,
+      "train_years": [
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "baseline_refit": {
+        "train": {
+          "n": 4365,
+          "win_rate": 11.959,
+          "win_ci95": [
+            11.029,
+            12.955
+          ],
+          "dropout_rate": 4.353,
+          "ratio_mae": 0.007039,
+          "ratio_bias": 0.001523,
+          "ratio_p90": 0.014452
+        },
+        "holdout": {
+          "n": 483,
+          "win_rate": 27.536,
+          "win_ci95": [
+            23.742,
+            31.685
+          ],
+          "dropout_rate": 5.59,
+          "ratio_mae": 0.007374,
+          "ratio_bias": 0.00114,
+          "ratio_p90": 0.014505
+        }
+      },
+      "proposed_pinned": {
+        "train": {
+          "n": 4365,
+          "win_rate": 11.455,
+          "win_ci95": [
+            10.544,
+            12.434
+          ],
+          "dropout_rate": 4.101,
+          "ratio_mae": 0.005838,
+          "ratio_bias": 0.000255,
+          "ratio_p90": 0.011803
+        },
+        "holdout": {
+          "n": 483,
+          "win_rate": 27.122,
+          "win_ci95": [
+            23.349,
+            31.256
+          ],
+          "dropout_rate": 4.762,
+          "ratio_mae": 0.005982,
+          "ratio_bias": -0.000306,
+          "ratio_p90": 0.012717
+        }
+      },
+      "deployed_active": {
+        "holdout": {
+          "n": 483,
+          "win_rate": 29.4,
+          "win_ci95": [
+            25.512,
+            33.612
+          ],
+          "dropout_rate": 6.418,
+          "ratio_mae": 0.007418,
+          "ratio_bias": 0.001036,
+          "ratio_p90": 0.014495
+        }
+      },
+      "oracle_ratio_mae_holdout": 0.005897,
+      "pinned_adjustments": {
+        "적격심사제/large": [
+          -0.1,
+          1.0
+        ],
+        "적격심사제/medium": [
+          -0.1,
+          1.0
+        ],
+        "적격심사제/small": [
+          -0.0,
+          0.6
+        ],
+        "적격심사제/xlarge": [
+          -0.1,
+          0.9
+        ],
+        "적격심사제/xxlarge": [
+          -0.1,
+          1.1
+        ],
+        "소액수의견적/large": [
+          -0.1,
+          0.3
+        ],
+        "소액수의견적/medium": [
+          -0.1,
+          1.0
+        ],
+        "소액수의견적/small": [
+          -0.1,
+          1.2
+        ],
+        "소액수의견적/xlarge": [
+          -0.1,
+          0.3
+        ],
+        "소액수의견적/xxlarge": [
+          -0.1,
+          0.3
+        ]
+      }
+    }
+  },
+  "margin_step": 0.1
+}

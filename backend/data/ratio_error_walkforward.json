@@ -1,0 +1,184 @@
+{
+  "sample": {
+    "raw": 4848,
+    "included": 4848,
+    "excluded_basis_inconsistent": 0,
+    "years": [
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ]
+  },
+  "scheme": "expanding_year",
+  "folds": [
+    {
+      "holdout_year": 2022,
+      "train_years": [
+        2021
+      ],
+      "train_n": 2115,
+      "holdout_n": 821,
+      "active_adjustment": {
+        "n": 821,
+        "mae": 0.006909,
+        "median": 0.005891,
+        "p90": 0.01407
+      },
+      "segment_median": {
+        "n": 821,
+        "mae": 0.005855,
+        "median": 0.00512,
+        "p90": 0.011731,
+        "delta_vs_active": -0.001054,
+        "overfit_gap": 1.6e-05
+      },
+      "organization_shrunk": {
+        "n": 821,
+        "mae": 0.005851,
+        "median": 0.005129,
+        "p90": 0.01176,
+        "delta_vs_active": -0.001058,
+        "overfit_gap": 0.000227
+      }
+    },
+    {
+      "holdout_year": 2023,
+      "train_years": [
+        2021,
+        2022
+      ],
+      "train_n": 2936,
+      "holdout_n": 734,
+      "active_adjustment": {
+        "n": 734,
+        "mae": 0.00719,
+        "median": 0.006122,
+        "p90": 0.014756
+      },
+      "segment_median": {
+        "n": 734,
+        "mae": 0.005941,
+        "median": 0.005,
+        "p90": 0.011968,
+        "delta_vs_active": -0.001249,
+        "overfit_gap": 9.2e-05
+      },
+      "organization_shrunk": {
+        "n": 734,
+        "mae": 0.005946,
+        "median": 0.005052,
+        "p90": 0.012021,
+        "delta_vs_active": -0.001244,
+        "overfit_gap": 0.000308
+      }
+    },
+    {
+      "holdout_year": 2024,
+      "train_years": [
+        2021,
+        2022,
+        2023
+      ],
+      "train_n": 3670,
+      "holdout_n": 695,
+      "active_adjustment": {
+        "n": 695,
+        "mae": 0.006955,
+        "median": 0.005982,
+        "p90": 0.014654
+      },
+      "segment_median": {
+        "n": 695,
+        "mae": 0.00575,
+        "median": 0.004965,
+        "p90": 0.01179,
+        "delta_vs_active": -0.001205,
+        "overfit_gap": -9.9e-05
+      },
+      "organization_shrunk": {
+        "n": 695,
+        "mae": 0.005768,
+        "median": 0.004965,
+        "p90": 0.011557,
+        "delta_vs_active": -0.001187,
+        "overfit_gap": 0.000127
+      }
+    },
+    {
+      "holdout_year": 2025,
+      "train_years": [
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "train_n": 4365,
+      "holdout_n": 483,
+      "active_adjustment": {
+        "n": 483,
+        "mae": 0.007418,
+        "median": 0.006457,
+        "p90": 0.014503
+      },
+      "segment_median": {
+        "n": 483,
+        "mae": 0.005998,
+        "median": 0.005118,
+        "p90": 0.012966,
+        "delta_vs_active": -0.00142,
+        "overfit_gap": 0.000166
+      },
+      "organization_shrunk": {
+        "n": 483,
+        "mae": 0.006026,
+        "median": 0.005114,
+        "p90": 0.013015,
+        "delta_vs_active": -0.001392,
+        "overfit_gap": 0.000401
+      }
+    }
+  ],
+  "pooled": {
+    "active_adjustment": {
+      "n": 2733,
+      "mae": 0.007086,
+      "median": 0.006087,
+      "p90": 0.014453
+    },
+    "segment_median": {
+      "n": 2733,
+      "mae": 0.005876,
+      "median": 0.005051,
+      "p90": 0.011894
+    },
+    "organization_shrunk": {
+      "n": 2733,
+      "mae": 0.005886,
+      "median": 0.005085,
+      "p90": 0.011984
+    }
+  },
+  "selection": {
+    "segment_median": {
+      "pooled_delta_vs_active": -0.00121,
+      "max_yearly_regression": -0.001054,
+      "selection_rule_passed": true
+    },
+    "organization_shrunk": {
+      "pooled_delta_vs_active": -0.0012,
+      "max_yearly_regression": -0.001058,
+      "selection_rule_passed": true
+    }
+  },
+  "selected_shadow_candidate": "segment_median",
+  "promotion_allowed": false,
+  "baseline_is_walk_forward": false,
+  "notes": [
+    "후보의 holdout 예측은 해당 연도보다 앞선 데이터만 사용한다.",
+    "기준선(active)은 2021~2025 로 적합된 저장본이라 walk-forward 가 아니다 — 기준선에 유리하므로 delta 는 개선폭의 하한이다. 동일 조건 재적합 대조는 scripts/analyze_ratio_error.py 참조.",
+    "A값은 과거 사전시점 스냅샷이 없어 후보 특성에서 제외했다.",
+    "결과는 제안·검증 전용이며 active 전략을 변경하지 않는다."
+  ]
+}

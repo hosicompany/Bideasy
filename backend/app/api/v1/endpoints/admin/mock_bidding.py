@@ -71,6 +71,7 @@ def charts(
         "gap_distribution": mb.gap_distribution(db),
         "gap_buckets": list(mb.GAP_BUCKETS),
         "ratio_error_trend": mb.ratio_error_trend(db, arm=arm),
+        "ratio_error_segments": mb.ratio_error_segment_report(db, arm=arm),
         "failure_tags": mb.failure_tag_stats(db),
         "segments": mb.segment_stats(db, arm=arm),
         "trend_arm": arm,
