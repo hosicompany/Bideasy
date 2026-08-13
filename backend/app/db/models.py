@@ -262,6 +262,316 @@ class UserBid(Base):
     notice = relationship("Notice", back_populates="bids")
 
 
+class RawSourceSnapshot(Base):
+    """Immutable source artifact used by an algorithm evaluation."""
+
+    __tablename__ = "raw_source_snapshots"
+
+    snapshot_hash = Column(String(64), primary_key=True)
+    source_type = Column(String(40), nullable=False, index=True)
+    source_uri = Column(String(500))
+    captured_at = Column(DateTime, nullable=False, index=True)
+    as_of_cutoff = Column(DateTime, nullable=False, index=True)
+    artifact_hash = Column(String(64), nullable=False)
+    # API 응답 원문. `snapshot_hash` 는 이 값의 canonical content hash 로부터
+    # 만들어지며, 같은 원문을 다시 받아도 행이 늘지 않는다. 파일처럼 DB 밖에
+    # 원본이 있는 source 는 NULL 로 두고 `source_uri`/`artifact_hash` 만 쓸 수 있다.
+    raw_payload = Column(JSON)
+    attributes = Column(JSON)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+class NoticeRevision(Base):
+    """Append-only notice revision; corrections point to the prior revision."""
+
+    __tablename__ = "notice_revisions"
+    __table_args__ = (
+        UniqueConstraint("bid_no", "content_hash", name="uq_notice_revision_content"),
+    )
+
+    id = Column(String(64), primary_key=True)
+    bid_no = Column(String(100), nullable=False, index=True)
+    source_snapshot_hash = Column(
+        String(64), ForeignKey("raw_source_snapshots.snapshot_hash"), nullable=False
+    )
+    content_hash = Column(String(64), nullable=False)
+    supersedes_revision_id = Column(String(64), ForeignKey("notice_revisions.id"))
+    effective_at = Column(DateTime, nullable=False, index=True)
+    payload_hash = Column(String(64), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+class OpeningResultRevision(Base):
+    """Append-only authoritative opening-result correction lineage.
+
+    `OpeningResult` remains the current query projection.  Every authoritative
+    change is first represented here, linked to the immutable public-API item
+    that supplied it.  Participant-count refreshes are deliberately outside
+    this payload because they are collection-completeness metadata, not an
+    opening-outcome correction.
+    """
+
+    __tablename__ = "opening_result_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "bid_no", "revision_no", name="uq_opening_result_revision_number"
+        ),
+    )
+
+    id = Column(String(64), primary_key=True)
+    bid_no = Column(
+        String(100), ForeignKey("opening_results.bid_no"), nullable=False, index=True
+    )
+    revision_no = Column(Integer, nullable=False)
+    source_snapshot_hash = Column(
+        String(64), ForeignKey("raw_source_snapshots.snapshot_hash"), nullable=False
+    )
+    content_hash = Column(String(64), nullable=False, index=True)
+    payload = Column(JSON, nullable=False)
+    supersedes_revision_id = Column(
+        String(64), ForeignKey("opening_result_revisions.id")
+    )
+    observed_at = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+class DatasetManifest(Base):
+    """Content-addressed population and feature lineage for one evaluation."""
+
+    __tablename__ = "dataset_manifests"
+
+    manifest_hash = Column(String(64), primary_key=True)
+    as_of_cutoff = Column(DateTime, nullable=False, index=True)
+    code_sha = Column(String(64), nullable=False)
+    formula_hash = Column(String(64), nullable=False)
+    feature_version = Column(String(80), nullable=False)
+    source_snapshot_hashes = Column(JSON, nullable=False)
+    population = Column(JSON, nullable=False)
+    filters = Column(JSON, nullable=False)
+    exclusions = Column(JSON, nullable=False)
+    distinct_notice_count = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+class ExperimentManifest(Base):
+    """Pre-registered evaluation contract; metrics cannot redefine it later."""
+
+    __tablename__ = "experiment_manifests"
+
+    experiment_id = Column(String(64), primary_key=True)
+    as_of_cutoff = Column(DateTime, nullable=False, index=True)
+    data_manifest_hash = Column(
+        String(64), ForeignKey("dataset_manifests.manifest_hash"), nullable=False
+    )
+    code_sha = Column(String(64), nullable=False)
+    formula_hash = Column(String(64), nullable=False)
+    route = Column(String(32), nullable=False, index=True)
+    feature_whitelist = Column(JSON, nullable=False)
+    temporal_folds = Column(JSON, nullable=False)
+    baselines = Column(JSON, nullable=False)
+    metrics = Column(JSON, nullable=False)
+    minimum_practical_effect = Column(JSON, nullable=False)
+    stop_rules = Column(JSON, nullable=False)
+    approval_id = Column(String(120))
+    status = Column(String(24), nullable=False, default="REGISTERED", index=True)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+class StrategyCandidate(Base):
+    """A route-scoped challenger tied to exact code, data and formula."""
+
+    __tablename__ = "strategy_candidates"
+    __table_args__ = (
+        UniqueConstraint("route", "strategy_version", name="uq_strategy_route_version"),
+    )
+
+    candidate_id = Column(String(64), primary_key=True)
+    strategy_version = Column(String(80), nullable=False)
+    route = Column(String(32), nullable=False, index=True)
+    parent_candidate_id = Column(String(64), ForeignKey("strategy_candidates.candidate_id"))
+    experiment_id = Column(
+        String(64), ForeignKey("experiment_manifests.experiment_id"), nullable=False
+    )
+    data_manifest_hash = Column(
+        String(64), ForeignKey("dataset_manifests.manifest_hash"), nullable=False
+    )
+    code_sha = Column(String(64), nullable=False)
+    formula_hash = Column(String(64), nullable=False)
+    parameters_hash = Column(String(64), nullable=False)
+    status = Column(String(24), nullable=False, default="CANDIDATE", index=True)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+class AlgorithmEvalRun(Base):
+    """One paired temporal evaluation and its independent verifier result."""
+
+    __tablename__ = "algorithm_eval_runs"
+
+    eval_run_id = Column(String(64), primary_key=True)
+    experiment_id = Column(
+        String(64), ForeignKey("experiment_manifests.experiment_id"), nullable=False
+    )
+    candidate_id = Column(
+        String(64), ForeignKey("strategy_candidates.candidate_id"), nullable=False
+    )
+    data_manifest_hash = Column(
+        String(64), ForeignKey("dataset_manifests.manifest_hash"), nullable=False
+    )
+    route = Column(String(32), nullable=False, index=True)
+    fold_name = Column(String(32), nullable=False)
+    predictions_hash = Column(String(64), nullable=False)
+    metrics = Column(JSON, nullable=False)
+    distinct_notice_count = Column(Integer, nullable=False)
+    maker_group = Column(String(80), nullable=False)
+    verifier_group = Column(String(80), nullable=False)
+    verifier_decision = Column(String(20))
+    status = Column(String(24), nullable=False, index=True)
+    sealed_test_opened_at = Column(DateTime)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+class AlgorithmGateDecision(Base):
+    """Append-only gate decision. Only PASS may authorize a deployment."""
+
+    __tablename__ = "algorithm_gate_decisions"
+    __table_args__ = (
+        UniqueConstraint("eval_run_id", "gate_name", name="uq_eval_gate_decision"),
+    )
+
+    decision_id = Column(String(64), primary_key=True)
+    eval_run_id = Column(
+        String(64), ForeignKey("algorithm_eval_runs.eval_run_id"), nullable=False
+    )
+    gate_name = Column(String(20), nullable=False)
+    decision = Column(String(12), nullable=False, index=True)  # PASS | FAIL | BLOCKED
+    reason = Column(JSON, nullable=False)
+    approval_id = Column(String(120))
+    decided_by = Column(String(120), nullable=False)
+    decided_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+class AlgorithmApproval(Base):
+    """Scoped human authorization; an ID string alone is not approval evidence."""
+
+    __tablename__ = "algorithm_approvals"
+
+    approval_id = Column(String(120), primary_key=True)
+    scope = Column(String(24), nullable=False, index=True)
+    status = Column(String(16), nullable=False, index=True)
+    route = Column(String(32), nullable=False, index=True)
+    strategy_version = Column(String(80), nullable=False)
+    approved_by = Column(String(120), nullable=False)
+    approved_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+class AlgorithmDeployment(Base):
+    """Deployment evidence. Creation is only allowed through the guard service."""
+
+    __tablename__ = "algorithm_deployments"
+    __table_args__ = (
+        UniqueConstraint("route", "strategy_version", name="uq_deployment_route_version"),
+    )
+
+    deployment_id = Column(String(64), primary_key=True)
+    route = Column(String(32), nullable=False, index=True)
+    strategy_version = Column(String(80), nullable=False)
+    candidate_id = Column(
+        String(64), ForeignKey("strategy_candidates.candidate_id"), nullable=False
+    )
+    gate_decision_id = Column(
+        String(64), ForeignKey("algorithm_gate_decisions.decision_id"), nullable=False
+    )
+    approval_id = Column(
+        String(120), ForeignKey("algorithm_approvals.approval_id"), nullable=False
+    )
+    code_sha = Column(String(64), nullable=False)
+    status = Column(
+        String(24), nullable=False, default="PENDING_ACTIVATION", index=True
+    )
+    deployed_at = Column(DateTime)
+    rolled_back_at = Column(DateTime)
+    rollback_of_id = Column(String(64), ForeignKey("algorithm_deployments.deployment_id"))
+
+
+class RecommendationEvent(Base):
+    """Lineage from one user-visible recommendation back to its evidence."""
+
+    __tablename__ = "recommendation_events"
+
+    recommendation_id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    notice_id = Column(String(100), index=True, nullable=False)
+    as_of = Column(DateTime, nullable=False, index=True)
+    route = Column(String(32), nullable=False, index=True)
+    strategy_version = Column(String(80), nullable=False)
+    data_manifest_hash = Column(String(64))
+    code_sha = Column(String(64), nullable=False)
+    formula_hash = Column(String(64), nullable=False)
+    public_input_snapshot = Column(JSON, nullable=False)
+    input_snapshot_hash = Column(String(64), nullable=False)
+    policies = Column(JSON, nullable=False)
+    abstain_reason = Column(String(80))
+    evidence = Column(JSON, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
+class UserDecisionEvent(Base):
+    """Append-only exposure/copy/override/submission/outcome event."""
+
+    __tablename__ = "user_decision_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    idempotency_key = Column(String(120), nullable=False, unique=True, index=True)
+    recommendation_id = Column(
+        String(64), ForeignKey("recommendation_events.recommendation_id"), nullable=False, index=True
+    )
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    event_type = Column(String(24), nullable=False, index=True)
+    selected_policy = Column(String(24))
+    submitted_price = Column(BigInteger)
+    opening_bid_no = Column(String(100), ForeignKey("opening_results.bid_no"), index=True)
+    event_details = Column(JSON)
+    central_training_opt_in = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    occurred_at = Column(DateTime, nullable=False, default=_utcnow, index=True)
+
+
+class CompetitorObservation(Base):
+    """Terms-compliant, cutoff-matched competitor output artifact."""
+
+    __tablename__ = "competitor_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "notice_id", "as_of_cutoff", "observed_at",
+            name="uq_competitor_observation_cutoff",
+        ),
+    )
+
+    observation_id = Column(String(64), primary_key=True)
+    provider = Column(String(40), nullable=False, index=True)
+    plan_tier = Column(String(80))
+    notice_id = Column(String(100), nullable=False, index=True)
+    as_of_cutoff = Column(DateTime, nullable=False, index=True)
+    observed_at = Column(DateTime, nullable=False)
+    deadline_at = Column(DateTime, nullable=False)
+    recommendation_price = Column(BigInteger)
+    recommendation_low = Column(BigInteger)
+    recommendation_high = Column(BigInteger)
+    confidence = Column(Float)
+    abstain_reason = Column(String(100))
+    artifact_hash = Column(String(64), nullable=False)
+    artifact_uri = Column(String(500), nullable=False)
+    terms_scope = Column(String(300), nullable=False)
+    comparison_eligible = Column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
+    exclusion_reason = Column(String(120))
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+
 class OpeningResult(Base):
     __tablename__ = "opening_results"
 
@@ -1028,6 +1338,9 @@ class MockBid(Base):
     # 스냅샷이 없으면 성적이 나쁠 때 "그 사이 값이 바뀌었다"는 사후 변명이 가능해진다.
     snapshot_basic_price = Column(Float, nullable=False)
     snapshot_a_value = Column(BigInteger, default=0)
+    # confirmed | not_applicable. NULL 은 이 마이그레이션 이전 레거시 행이며,
+    # 새 등록 경로가 UNKNOWN 을 저장하는 용도로 재사용하면 안 된다.
+    a_value_status = Column(String(20))
     a_value_source = Column(String(10))          # tier1|tier2|none
     snapshot_lower_limit_rate = Column(Float)
     llr_source = Column(String(10))              # notice|table  (어느 쪽을 썼는지)
