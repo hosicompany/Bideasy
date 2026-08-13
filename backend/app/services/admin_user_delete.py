@@ -5,8 +5,8 @@
 FK 제약 RESTRICT 위반 발생. 그 경험을 코드로 구조화.
 
 정책:
-- 5개 종속 테이블 → DELETE (Notification, DeviceToken, UserBid,
-  PointTransaction, Favorite)
+- 사용자 종속 테이블 → DELETE (Notification, DeviceToken, UserBid,
+  PointTransaction, Favorite, UserDecisionEvent, RecommendationEvent)
 - PaymentOrder → user_id SET NULL (회계·세무 분쟁 증거 보존)
 - 활성 구독자 (force=False) → 409 거부 (먼저 환불 처리 안내)
 
@@ -87,12 +87,20 @@ def delete_user_cascade(db: Session, user_id: int, force: bool = False) -> dict:
         models.PointTransaction.user_id == user_id
     ).delete(synchronize_session=False)
 
-    # 5. 결제 주문 → user_id NULL (회계 기록 보존)
+    # 5. 추천 행동/추천 계보. 행동이 recommendation을 참조하므로 자식부터 지운다.
+    deleted["user_decision_events"] = db.query(models.UserDecisionEvent).filter(
+        models.UserDecisionEvent.user_id == user_id
+    ).delete(synchronize_session=False)
+    deleted["recommendation_events"] = db.query(models.RecommendationEvent).filter(
+        models.RecommendationEvent.user_id == user_id
+    ).delete(synchronize_session=False)
+
+    # 6. 결제 주문 → user_id NULL (회계 기록 보존)
     payment_orders_nullified = db.query(models.PaymentOrder).filter(
         models.PaymentOrder.user_id == user_id
     ).update({"user_id": None}, synchronize_session=False)
 
-    # 6. User
+    # 7. User
     db.delete(user)
 
     return {

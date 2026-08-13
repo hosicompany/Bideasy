@@ -171,6 +171,30 @@ def test_delete_user_cascade(admin_client, db_session):
     db_session.add(models.DeviceToken(
         user_id=user_id, fcm_token="X_DEL", device_type="web",
     ))
+    now = datetime.now(timezone.utc)
+    db_session.add(models.RecommendationEvent(
+        recommendation_id="rec-delete-cascade",
+        user_id=user_id,
+        notice_id="DELETE-CASCADE-NOTICE",
+        as_of=now,
+        route="QUALIFICATION",
+        strategy_version="test",
+        code_sha="test-code-sha",
+        formula_hash="a" * 64,
+        public_input_snapshot={"basis_amount": 100_000_000},
+        input_snapshot_hash="b" * 64,
+        policies=[],
+        abstain_reason="test",
+        evidence={},
+    ))
+    db_session.flush()
+    db_session.add(models.UserDecisionEvent(
+        idempotency_key="rec-delete-cascade:exposed",
+        recommendation_id="rec-delete-cascade",
+        user_id=user_id,
+        event_type="EXPOSED",
+        occurred_at=now,
+    ))
     db_session.commit()
 
     resp = admin_client.delete(f"/api/v1/admin/users/{user_id}")
@@ -180,6 +204,8 @@ def test_delete_user_cascade(admin_client, db_session):
     assert data["deleted"]["point_transactions"] >= 1
     assert data["deleted"]["notifications"] >= 1
     assert data["deleted"]["device_tokens"] >= 1
+    assert data["deleted"]["user_decision_events"] == 1
+    assert data["deleted"]["recommendation_events"] == 1
 
     assert db_session.query(models.User).filter_by(id=user_id).first() is None
     assert db_session.query(models.PointTransaction).filter_by(user_id=user_id).count() == 0
