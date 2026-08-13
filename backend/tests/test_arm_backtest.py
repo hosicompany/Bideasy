@@ -17,12 +17,13 @@ from app.services.mock_bidding import judge
 
 
 def _rec(bid_no="X", basic=100_000_000, reserved=100_000_000,
-         winner=92_000_000, llr=87.745, method="적격심사제", year=2025):
+         winner=92_000_000, llr=87.745, method="적격심사제", year=2025,
+         a_value=0):
     return BidRecord(
         bid_no=bid_no, title="", org="", bid_method=method,
         basic_price=basic, estimated_price=basic, reserved_price=reserved,
         winner_price=winner, winner_rate=winner / basic * 100,
-        lower_limit_rate=llr, year=year,
+        lower_limit_rate=llr, year=year, a_value=a_value,
     )
 
 
@@ -43,20 +44,25 @@ class TestWilsonCI:
 
 class TestPricing:
     def test_flat_matches_calculator(self):
-        """price_flat 은 calculator.calculate_safe_bid(a_value=0) 와 같아야 한다."""
+        """price_flat 은 calculator.calculate_safe_bid 와 A값까지 같아야 한다."""
         from app.services.calculator import CalculatorService
 
-        r = _rec(basic=100_000_000)
+        r = _rec(basic=100_000_000, a_value=7_654_321)
         assert ab.price_flat(r, -2.5) == CalculatorService.calculate_safe_bid(
-            r.basic_price, -2.5, 0)
+            r.basic_price, -2.5, r.a_value)
 
     def test_params_matches_simulate_params_formula(self):
         """price_params 는 optimizer.simulate_params 의 가격 공식과 같아야 한다."""
-        r = _rec()
+        r = _rec(a_value=7_654_321)
         params = {"적격심사제": {"medium": [-0.5, 1.0]}}
         adj, margin = -0.5, 1.0
         expected = math.floor(
-            r.basic_price * (1 + adj / 100.0) * (r.lower_limit_rate + margin) / 100.0 / 10
+            (
+                (
+                    r.basic_price * (1 + adj / 100.0) - r.a_value
+                ) * (r.lower_limit_rate + margin) / 100.0
+                + r.a_value
+            ) / 10
         ) * 10
         assert ab.price_params(r, params) == expected
 
@@ -97,7 +103,9 @@ class TestTallyMatchesJudge:
 
         wins = sum(
             1 for r in recs
-            if judge(price_fn(r), r.reserved_price * r.lower_limit_rate / 100.0,
+            if judge(price_fn(r),
+                     (r.reserved_price - r.a_value) * r.lower_limit_rate / 100.0
+                     + r.a_value,
                      r.winner_price) == "WIN"
         )
         assert got["win_rate"] == pytest.approx(wins / len(recs) * 100, abs=0.01)

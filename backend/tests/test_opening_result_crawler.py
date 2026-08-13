@@ -747,6 +747,184 @@ class TestBasisAmountMapping:
         assert kw["winner_rate"] == expected
 
 
+class TestOpeningResultCorrectionLineage:
+    def _upsert(self, db_session, item, *, seen=None):
+        kwargs = crawler._parse_item_to_kwargs(item)
+        assert kwargs is not None
+        return crawler._upsert_opening_result(
+            db_session,
+            kwargs,
+            seen if seen is not None else set(),
+            source_item=item,
+        )
+
+    def test_identical_recrawl_is_content_addressed_and_idempotent(self, db_session):
+        item = _opening_item()
+
+        assert self._upsert(db_session, item) == crawler._UPSERT_INSERTED
+        db_session.flush()
+        first_projection = db_session.get(models.OpeningResult, "R26BK99999999-000")
+        first_crawled_at = first_projection.crawled_at
+        revision = (
+            db_session.query(models.OpeningResultRevision)
+            .filter_by(bid_no="R26BK99999999-000")
+            .one()
+        )
+        snapshot = db_session.get(
+            models.RawSourceSnapshot, revision.source_snapshot_hash
+        )
+
+        # 입력 dict 를 나중에 바꿔도 저장된 원문은 변하지 않아야 한다.
+        item["fnlSucsfCorpNm"] = "호출자 쪽에서 바꾼 값"
+        assert snapshot.raw_payload["fnlSucsfCorpNm"] == "다건기업"
+        assert snapshot.snapshot_hash != snapshot.artifact_hash
+        assert len(snapshot.snapshot_hash) == len(snapshot.artifact_hash) == 64
+        assert revision.source_snapshot_hash == snapshot.snapshot_hash
+        assert revision.payload["winner_price"] == 55_037_188.0
+
+        # 같은 raw item 과 같은 outcome 을 새 크롤 세션에서 다시 받아도 늘지 않는다.
+        identical = _opening_item()
+        assert self._upsert(db_session, identical) == crawler._UPSERT_UNCHANGED
+        db_session.flush()
+        assert (
+            db_session.query(models.RawSourceSnapshot)
+            .filter_by(snapshot_hash=snapshot.snapshot_hash)
+            .count()
+        ) == 1
+        assert (
+            db_session.query(models.OpeningResultRevision)
+            .filter_by(bid_no="R26BK99999999-000")
+            .count()
+        ) == 1
+        assert first_projection.crawled_at == first_crawled_at
+
+        # 참가자 행의 비권위 필드만 달라져도 outcome 은 같으므로, 연결되지 않는
+        # raw snapshot 을 별도로 남기지 않는다.
+        same_outcome_other_participant = _opening_item(
+            bidprcCorpNm="다른 참가자",
+            bidprcAmt="54999999",
+        )
+        assert (
+            self._upsert(db_session, same_outcome_other_participant)
+            == crawler._UPSERT_UNCHANGED
+        )
+        db_session.flush()
+        linked_snapshot_hashes = {
+            row.source_snapshot_hash
+            for row in db_session.query(models.OpeningResultRevision)
+            .filter_by(bid_no="R26BK99999999-000")
+            .all()
+        }
+        assert linked_snapshot_hashes == {snapshot.snapshot_hash}
+
+    def test_authoritative_correction_appends_revision_and_updates_projection(
+        self, db_session
+    ):
+        original = _opening_item()
+        self._upsert(db_session, original)
+        db_session.flush()
+        # 개찰 API 가 제공하지 않는 지역은 다른 소스의 enrichment 로 간주한다.
+        db_session.get(models.OpeningResult, "R26BK99999999-000").region = "부산"
+
+        corrected = _opening_item(
+            ntceInsttNm="부경대학교 산학협력단",
+            bssAmt="61000000",
+            rsrvtnPrce="61100000",
+            sucsfLwstlmtRt="87.745",
+            fnlSucsfAmt="54876540",
+            fnlSucsfRt="89.813",
+            fnlSucsfCorpNm="정정된낙찰사",
+            bidwinrDcsnMthdNm="적격심사제",
+        )
+
+        assert self._upsert(db_session, corrected) == crawler._UPSERT_UPDATED
+        db_session.flush()
+
+        projection = db_session.get(models.OpeningResult, "R26BK99999999-000")
+        assert projection.organization == "부경대학교 산학협력단"
+        assert projection.region == "부산"
+        assert projection.basic_price == 61_000_000.0
+        assert projection.reserved_price == 61_100_000.0
+        assert projection.lower_limit_rate == 87.745
+        assert projection.bid_method == "적격심사제"
+        assert projection.winner_company == "정정된낙찰사"
+        assert projection.winner_price == 54_876_540.0
+        assert projection.winner_rate == 89.813
+
+        revisions = (
+            db_session.query(models.OpeningResultRevision)
+            .filter_by(bid_no="R26BK99999999-000")
+            .order_by(models.OpeningResultRevision.revision_no)
+            .all()
+        )
+        assert len(revisions) == 2
+        assert revisions[0].revision_no == 1
+        assert revisions[0].supersedes_revision_id is None
+        assert revisions[1].revision_no == 2
+        assert revisions[1].supersedes_revision_id == revisions[0].id
+        assert revisions[1].content_hash != revisions[0].content_hash
+        assert revisions[1].payload["winner_company"] == "정정된낙찰사"
+        assert revisions[1].source_snapshot_hash != revisions[0].source_snapshot_hash
+
+    def test_reversion_is_a_new_revision_but_participant_count_is_not(self, db_session):
+        original = _opening_item()
+        corrected = _opening_item(fnlSucsfAmt="54876540", fnlSucsfRt="89.813")
+        self._upsert(db_session, original)
+        self._upsert(db_session, corrected)
+        self._upsert(db_session, original)
+        db_session.flush()
+
+        revisions = (
+            db_session.query(models.OpeningResultRevision)
+            .filter_by(bid_no="R26BK99999999-000")
+            .order_by(models.OpeningResultRevision.revision_no)
+            .all()
+        )
+        assert [r.revision_no for r in revisions] == [1, 2, 3]
+        assert revisions[2].content_hash == revisions[0].content_hash
+        assert revisions[2].supersedes_revision_id == revisions[1].id
+
+        assert crawler._apply_participant_counts(
+            db_session, {"R26BK99999999-000": 37}
+        ) == 1
+        db_session.flush()
+        assert (
+            db_session.query(models.OpeningResultRevision)
+            .filter_by(bid_no="R26BK99999999-000")
+            .count()
+        ) == 3
+        assert db_session.get(
+            models.OpeningResult, "R26BK99999999-000"
+        ).participants_count == 37
+
+    def test_transient_missing_optional_value_does_not_erase_confirmed_value(
+        self, db_session
+    ):
+        self._upsert(db_session, _opening_item())
+        missing_optional = _opening_item(
+            rsrvtnPrce="",
+            sucsfLwstlmtRt="",
+            ntceInsttNm="",
+            bidwinrDcsnMthdNm="",
+            fnlSucsfCorpNm="",
+        )
+
+        self._upsert(db_session, missing_optional)
+        db_session.flush()
+
+        projection = db_session.get(models.OpeningResult, "R26BK99999999-000")
+        assert projection.reserved_price == 60_990_925.0
+        assert projection.lower_limit_rate == 89.745
+        assert projection.organization == "부경대학교"
+        assert projection.bid_method == "소액수의견적"
+        assert projection.winner_company == "다건기업"
+        assert (
+            db_session.query(models.OpeningResultRevision)
+            .filter_by(bid_no="R26BK99999999-000")
+            .count()
+        ) == 1
+
+
 def test_db_records_prefer_stored_lower_limit_rate(db_session):
     """공고가 명시한 하한율이 있으면 금액대 테이블보다 그것을 쓴다."""
     from app.services.autocalibrate.dataset import load_records
@@ -777,8 +955,8 @@ class TestParticipantCount:
     def test_apply_fills_count_even_when_winner_price_exists(self, db_session):
         """낙찰가가 이미 있는 행도 채워져야 한다.
 
-        `_upsert_opening_result` 는 낙찰가가 있으면 갱신을 건너뛴다(실 결과는
-        안 바뀐다는 규칙). 그 경로에 얹으면 기존 행은 영영 0 으로 남는다.
+        `_upsert_opening_result` 는 참가자 수를 outcome revision 에 넣지 않는다.
+        그 경로에 얹으면 기존 행은 영영 0 으로 남는다.
         """
         db_session.add(models.OpeningResult(
             bid_no="PC-1", organization="A기관", bid_method="적격심사제",

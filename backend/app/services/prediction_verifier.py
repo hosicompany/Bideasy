@@ -1,25 +1,23 @@
 """
-예측 검증 서비스 — Pre-launch 내부 자동 학습
-============================================
-사용자가 BidEasy 로 추천받은 가격이 실제 개찰 결과 대비 어떻게 성과를 냈는지
-(낙찰/탈락/통과 후 짐) 자동 누적 측정. 자가보정 알고리즘의 핵심 입력 데이터.
+현재 전략 사후 재생 서비스 — 진단 전용
+=======================================
+개찰 뒤 현재 전략을 과거 공고에 다시 적용하는 counterfactual 진단이다.
+마감 전에 고정된 사용자 추천이 아니므로 성과 검증이나 자가보정 학습 증거로
+사용하지 않는다. 실제 추천 성과는 RecommendationEvent 계보로만 측정한다.
 
 호출처:
 - CLI: scripts/verify_predictions.py (수동)
 - Celery: app/tasks/verification_tasks.py:daily_verify_predictions (자동)
 
 내부 학습 파이프라인:
-1. 사용자가 BidEasy 분석 (calculator/AI) → 추천가 결정 (현재는 알고리즘만)
-2. opening_result_crawler 가 매일 새 개찰 결과를 opening_results 테이블에 적재
-3. 본 모듈: notices 와 opening_results 를 bid_no 로 조인 → 추천 vs 실제 비교
-4. predictions_log.jsonl 에 누적
-5. 매주 자가보정 사이클이 이 로그를 학습 입력으로 사용
+1. opening_result_crawler 가 개찰 결과를 적재
+2. 본 모듈이 현재 전략을 사후 재생
+3. 결과를 COUNTERFACTUAL로 명시해 별도 진단 로그에 남김
 """
 
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +26,9 @@ from typing import Iterable
 from sqlalchemy.orm import Session
 
 from app.db import models
+from app.services import basis as basis_service
+from app.services.bid_data_quality import base_is_consistent
+from app.services.bid_route import classify_bid_route
 from app.services.calculator import CalculatorService
 from app.services.lower_limits import get_lower_limit_rate
 
@@ -66,27 +67,54 @@ class PolicyResult:
 
 
 def compute_recommendations(notice: models.Notice) -> dict[str, dict]:
-    """단일 notice 에 대해 BidEasy 가 추천했을 가격 3가지 산출.
+    """단일 notice 에 대해 현재 정책의 사후 counterfactual을 산출한다.
 
     1) standard       — 사용자 슬라이더 기본값 (사정률 -2.5%)
     2) auto_recommended — BID_STRATEGY 기반 자동 추천
     3) aggressive_mc  — 시장 평균 추격 (Monte Carlo 가설, -12%)
     """
-    bp = notice.basic_price or 0
-    if bp <= 0:
+    bp = basis_service.confirmed_basis(notice)
+    if bp is None:
+        return {}
+    route = classify_bid_route(notice.bid_method, notice.contract_method)
+    if route.value not in {"QUALIFICATION", "PRICE_DOMINANT"}:
+        return {}
+    if not notice.bid_method:
         return {}
 
+    a_applicable = str(notice.a_value_applicable or "").upper()
+    if a_applicable == "N":
+        a_value = 0
+    elif (notice.a_value or 0) > 0 and notice.a_value_source:
+        a_value = int(notice.a_value)
+    else:
+        return {}
+
+    lower_rate = float(notice.lower_limit_rate or 0) or None
+    bid_date = notice.start_date.date() if notice.start_date else None
+    if lower_rate is None:
+        if (notice.contract_type or "").upper() != "CONSTRUCTION":
+            return {}
+        lower_rate = get_lower_limit_rate("CONSTRUCTION", bp, bid_date)
+
     std_rate = -2.5
-    std_price = CalculatorService.calculate_safe_bid(basic_price=bp, rate=std_rate, a_value=0)
+    std_price = CalculatorService.calculate_safe_bid(
+        basic_price=bp, rate=std_rate, a_value=a_value
+    )
 
     auto = CalculatorService.recommend_bid_price(
         basic_price=bp,
-        bid_method=(notice.bid_method or "DEFAULT"),
+        bid_method=notice.bid_method,
         contract_type=notice.contract_type or "CONSTRUCTION",
+        a_value=a_value,
+        lower_limit_rate=lower_rate,
+        bid_date=bid_date,
     )
 
     mc_rate = -12.0
-    mc_price = math.floor(bp * (100 + mc_rate) / 100 / 10) * 10
+    mc_price = CalculatorService.calculate_safe_bid(
+        basic_price=bp, rate=mc_rate, a_value=a_value
+    )
 
     return {
         "standard": {"rate": std_rate, "price": std_price},
@@ -115,21 +143,36 @@ def evaluate_against_actual(
     if not actual or not actual.winner_price:
         return None
 
-    bp = float(notice.basic_price or 0)
-    if bp <= 0:
+    bp = basis_service.confirmed_basis(notice)
+    if bp is None:
         return None
 
     wp = float(actual.winner_price)
     wr = float(actual.winner_rate or 0) or (wp / bp * 100)
 
     # 하한율 — 공사 금액대·시행일 티어드 (검증 대상은 최근 30일 공고라 오늘 기준 적용)
-    lower_rate = get_lower_limit_rate(notice.contract_type or "CONSTRUCTION", bp)
+    lower_rate = float(actual.lower_limit_rate or notice.lower_limit_rate or 0)
+    if lower_rate <= 0:
+        if (notice.contract_type or "").upper() != "CONSTRUCTION":
+            return None
+        bid_date = notice.start_date.date() if notice.start_date else None
+        lower_rate = get_lower_limit_rate("CONSTRUCTION", bp, bid_date)
 
-    # 하한선 가격 — reserved_price 가 있으면 정확 계산, 없으면 기초금액 기준 추정
-    if actual.reserved_price and actual.reserved_price > 0:
-        ll_price = float(actual.reserved_price) * lower_rate / 100.0
+    # 실제 예정가격 없이 하한선을 추정하지 않는다.
+    if not actual.reserved_price or actual.reserved_price <= 0:
+        return None
+    if not base_is_consistent(bp, actual.reserved_price):
+        return None
+    a_applicable = str(notice.a_value_applicable or "").upper()
+    if a_applicable == "N":
+        a_value = 0.0
+    elif (notice.a_value or 0) > 0 and notice.a_value_source:
+        a_value = float(notice.a_value)
     else:
-        ll_price = bp * lower_rate / 100.0
+        return None
+    ll_price = (
+        (float(actual.reserved_price) - a_value) * lower_rate / 100.0
+    ) + a_value
 
     recs = compute_recommendations(notice)
     if not recs:
@@ -155,7 +198,10 @@ def evaluate_against_actual(
 
     return {
         "bid_no": notice.bid_no,
-        "status": "VERIFIED",
+        # 개찰 뒤 현재 전략을 재계산한 값이다. 마감 전 고정 추천의 성과가
+        # 아니므로 VERIFIED prediction이나 낙찰률 증거로 집계하지 않는다.
+        "status": "COUNTERFACTUAL",
+        "evidence_kind": "post_opening_current_strategy_replay",
         "title": notice.title,
         "basic_price": bp,
         "bid_method": notice.bid_method,
@@ -180,7 +226,7 @@ def verify_notices(
     """notices 리스트를 일괄 검증. log_path 가 있으면 JSONL 에 append.
 
     Returns:
-        집계 통계 dict (verified, pending, errors, per-policy win/drop counts)
+        진단 통계 dict (counterfactual, pending, errors, per-policy counts).
     """
     bid_nos = [n.bid_no for n in notices]
     if not bid_nos:
@@ -223,12 +269,16 @@ def verify_notices(
                 "verified_at": datetime.now(timezone.utc).isoformat(),
             })
 
-    verified_results = [r for r in results if r.get("status") == "VERIFIED"]
+    counterfactual_results = [
+        r for r in results if r.get("status") == "COUNTERFACTUAL"
+    ]
 
     # 집계
     def tally(key: str) -> tuple[int, int]:
-        w = sum(1 for r in verified_results if r[key]["won"])
-        d = sum(1 for r in verified_results if r[key]["result"] == "DROPOUT")
+        w = sum(1 for r in counterfactual_results if r[key]["won"])
+        d = sum(
+            1 for r in counterfactual_results if r[key]["result"] == "DROPOUT"
+        )
         return w, d
 
     std_w, std_d = tally("standard")
@@ -243,7 +293,8 @@ def verify_notices(
                 f.write(json.dumps(r, ensure_ascii=False, default=str) + "\n")
 
     return {
-        "verified": len(verified_results),
+        "verified": 0,
+        "counterfactual": len(counterfactual_results),
         "pending": pending,
         "errors": errors,
         "policies": {

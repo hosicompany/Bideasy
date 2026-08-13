@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 
 from app.core.logging import get_logger
@@ -29,6 +28,7 @@ from app.services.bid_data_quality import (
     base_is_consistent as prices_are_consistent,
 )
 from app.services.bid_metrics import wilson_ci
+from app.services.calculator import CalculatorService
 from app.services.mock_bidding import (
     AGGRESSIVE_RATE, STANDARD_RATE, judge,
 )
@@ -42,7 +42,7 @@ _BENCHMARK_RESULTS = _DATA_DIR / "benchmark_win_reach_results.json"
 HOLDOUT_YEARS = (2025,)
 
 ARM_DESC = {
-    "standard": "슬라이더 기본 −2.5% — 실사용자 다수의 실제 행동",
+    "standard": "기존 사전등록 고정 대조군 −2.5% — 사용자 행동 기준선 아님",
     "active": "현 자가보정 전략 (운영 정본)",
     "frontier_c5": "무효율 캡 5% 최적 — 안전 우선",
     "frontier_c10": "무효율 캡 10% 최적 — 균형",
@@ -68,11 +68,12 @@ def base_is_consistent(r: ds.BidRecord) -> bool:
 
 
 def price_flat(r: ds.BidRecord, rate_pct: float) -> int:
-    """사정률 고정 정책 — 기초금액 × (1+rate/100), 10원 절사.
-
-    calculator.calculate_safe_bid(a_value=0) 와 같은 공식.
-    """
-    return math.floor(r.basic_price * (1 + rate_pct / 100.0) / 10) * 10
+    """사정률 고정 정책 — 정본 A값 공식과 10원 절사를 적용한다."""
+    return CalculatorService.calculate_safe_bid(
+        r.basic_price,
+        rate_pct,
+        r.a_value,
+    )
 
 
 def price_params(r: ds.BidRecord, params: dict) -> int:
@@ -80,16 +81,24 @@ def price_params(r: ds.BidRecord, params: dict) -> int:
     mp = params.get(r.bid_method, params.get("DEFAULT", {}))
     p = mp.get(r.bracket) or params.get("DEFAULT", {}).get(r.bracket, [-0.3, 1.0])
     adj, margin = float(p[0]), float(p[1])
-    predicted = r.basic_price * (1 + adj / 100.0)
     target_rate = r.lower_limit_rate + margin
-    return math.floor(predicted * target_rate / 100.0 / 10) * 10
+    return CalculatorService.calculate_strategy_price(
+        r.basic_price,
+        adj,
+        target_rate,
+        r.a_value,
+    )
 
 
 def tally(records: list[ds.BidRecord], price_fn) -> dict:
     """arm 하나의 무효/적중/밀림 집계 + Wilson CI."""
     win = drop = 0
     for r in records:
-        lower_limit = r.reserved_price * r.lower_limit_rate / 100.0
+        lower_limit = CalculatorService.calculate_price_at_rate(
+            r.reserved_price,
+            r.lower_limit_rate,
+            r.a_value,
+        )
         v = judge(price_fn(r), lower_limit, r.winner_price)
         if v == "WIN":
             win += 1

@@ -3,16 +3,15 @@
 ========================
 매일 자동으로 다음 작업 수행:
 1. 어제 개찰된 공사 입찰 결과 크롤 → opening_results 테이블 적재
-2. 우리가 분석했던 (notices 에 있는) 공고 중 개찰된 것 → 추천 vs 실 결과 비교
-3. predictions_log.jsonl 에 누적
-4. 매주 자가보정 사이클 (weekly-strategy-recalibration) 이 이 로그를 학습 입력으로 사용
+2. notices 에 있는 공고에 현재 전략을 사후 재생해 진단
+
+마감 전에 고정된 추천이 아니므로 결과를 파일이나 자가보정 학습 증거에
+자동 적재하지 않는다. 실제 성과는 RecommendationEvent 계보만 사용한다.
 
 타임존: celery_app.py 가 Asia/Seoul 이므로 schedule 의 hour 는 KST.
 """
 
 from datetime import datetime, timedelta
-from pathlib import Path
-
 from app.core.celery_app import celery_app
 from app.core.logging import get_logger
 from app.db import models
@@ -69,17 +68,21 @@ def daily_verify_predictions(days_back: int = 30, limit: int = 500) -> dict:
 
     now = datetime.now()
     cutoff = now - timedelta(days=days_back)
-    log_path = Path(__file__).resolve().parent.parent.parent / "data" / "predictions_log.jsonl"
-
     db = SessionLocal()
     try:
-        notices = db.query(models.Notice).filter(
-            models.Notice.end_date < now,
-            models.Notice.end_date > cutoff,
-        ).limit(limit).all()
+        notices = (
+            db.query(models.Notice)
+            .filter(
+                models.Notice.end_date < now,
+                models.Notice.end_date > cutoff,
+            )
+            .order_by(models.Notice.end_date.desc(), models.Notice.bid_no)
+            .limit(limit)
+            .all()
+        )
         logger.info(f"[daily_verify] {len(notices)} candidates")
 
-        summary = verify_notices(db, notices, log_path=log_path)
+        summary = verify_notices(db, notices, log_path=None)
         # 결과 클래스 정리 (results 는 너무 길어 로그에서 제외)
         compact = {k: v for k, v in summary.items() if k != "results"}
         logger.info(f"[daily_verify] {compact}")

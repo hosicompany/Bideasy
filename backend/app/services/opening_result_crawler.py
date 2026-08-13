@@ -16,8 +16,11 @@ API 특성:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import time
+from datetime import date as date_type
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -40,6 +43,26 @@ _BASE_URL = "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetO
 _BSNS_DIV_CONSTRUCTION = "3"  # 공사
 _PAGE_SIZE = 999  # API accepts at most 999; 1000 falls back to 10 rows.
 
+# `participants_count` 와 `crawled_at` 은 결과 자체가 아니라 수집 상태다. 이 둘이
+# 바뀔 때마다 outcome revision 을 만들면 매일 같은 개찰 결과가 새 정정처럼
+# 쌓인다. 아래 필드만 authoritative opening-outcome payload 로 고정한다.
+_OUTCOME_FIELDS = (
+    "bid_no",
+    "organization",
+    "open_date",
+    "basic_price",
+    "reserved_price",
+    "lower_limit_rate",
+    "bid_method",
+    "winner_company",
+    "winner_price",
+    "winner_rate",
+)
+_OPENING_SOURCE_TYPE = "G2B_OPENING_RESULT_ITEM"
+_UPSERT_INSERTED = "inserted"
+_UPSERT_UPDATED = "updated"
+_UPSERT_UNCHANGED = "unchanged"
+
 #: 저장 실패를 **구조적 고장**으로 볼 예외들 — 테이블·컬럼 부재, 연결 단절.
 #: 1건만 나와도 전 건에 해당하므로 "몇 건이 실패했나"로 판정하면 안 된다.
 #: 나머지(값 범위 초과 등)는 그 건만의 데이터 결함이다.
@@ -50,6 +73,98 @@ _STRUCTURAL_DB_ERRORS = (
     OperationalError, ProgrammingError, InternalError,
     InterfaceError, PendingRollbackError,
 )
+
+
+def _json_safe(value):
+    """Return a stable JSON value without mutating the public-API item."""
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, date_type):
+        return value.isoformat()
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _content_hash(value: object) -> str:
+    payload = json.dumps(
+        _json_safe(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _effective_outcome_payload(
+    kwargs: dict,
+    existing: models.OpeningResult | None,
+) -> tuple[dict, dict]:
+    """Build projection values plus their canonical JSON representation.
+
+    The public API sometimes omits an optional field on a later crawl.  Existing
+    crawler semantics preserve the last known non-null value, so a transient
+    omission cannot erase a confirmed reserved price or lower-limit rate.
+    """
+    projection: dict = {}
+    for field in _OUTCOME_FIELDS:
+        incoming = kwargs.get(field)
+        if existing is not None:
+            current = getattr(existing, field)
+            if incoming is None or (
+                isinstance(incoming, str) and not incoming and current
+            ):
+                incoming = current
+        projection[field] = incoming
+    return projection, _json_safe(projection)
+
+
+def _persist_raw_snapshot(
+    db: Session,
+    *,
+    item: dict,
+    bid_no: str,
+    captured_at: datetime,
+) -> str:
+    """Persist one accepted API item by content address, idempotently."""
+    raw_payload = _json_safe(item)
+    artifact_hash = _content_hash(raw_payload)
+    snapshot_hash = _content_hash(
+        {"source_type": _OPENING_SOURCE_TYPE, "artifact_hash": artifact_hash}
+    )
+    existing = db.get(models.RawSourceSnapshot, snapshot_hash)
+    if existing is None:
+        snapshot = models.RawSourceSnapshot(
+            snapshot_hash=snapshot_hash,
+            source_type=_OPENING_SOURCE_TYPE,
+            source_uri=_BASE_URL,
+            captured_at=captured_at,
+            as_of_cutoff=captured_at,
+            artifact_hash=artifact_hash,
+            raw_payload=raw_payload,
+            attributes={
+                "bid_no": bid_no,
+                "business_division": _BSNS_DIV_CONSTRUCTION,
+            },
+            created_at=captured_at,
+        )
+        db.add(snapshot)
+        # OpeningResultRevision references this PK but there is no ORM
+        # relationship for SQLAlchemy to infer insert order. Flush the parent
+        # explicitly so immediate PostgreSQL/SQLite foreign keys cannot see the
+        # revision first and roll back the whole crawl window.
+        db.flush([snapshot])
+    elif (
+        existing.source_type != _OPENING_SOURCE_TYPE
+        or existing.artifact_hash != artifact_hash
+        or _content_hash(existing.raw_payload) != artifact_hash
+    ):
+        # A SHA-256 collision or manual row corruption must never be hidden by
+        # treating the snapshot as an idempotent duplicate.
+        raise RuntimeError(f"raw snapshot hash collision: {snapshot_hash}")
+    return snapshot_hash
 
 
 def _fetch_page(
@@ -221,7 +336,7 @@ def _parse_item_to_kwargs(item: dict) -> dict | None:
         "winner_rate": winner_rate,
         # 참여사수는 여기서 못 채운다 — item 하나는 참가자 한 명이라 행 수를
         # 세야 한다. 창 전체를 훑은 뒤 `_apply_participant_counts` 가 채운다.
-        # (None 이면 upsert 가 기존 값을 안 지운다 — `_upsert_opening_result`)
+        # (outcome revision 대상에서 제외돼 `_apply_participant_counts` 만 갱신한다)
         "participants_count": None,
         "crawled_at": datetime.now(timezone.utc),
     }
@@ -400,8 +515,8 @@ def _apply_participant_counts(db: Session, counts: dict[str, int]) -> int:
 
     **왜 따로 도나**: API 는 참가자 한 명당 item 하나를 주므로 참여사수는
     "그 공고의 행이 몇 개였나"다. item 하나만 보는 `_parse_item_to_kwargs` 는
-    셀 수 없고, `_upsert_opening_result` 는 낙찰가가 이미 있는 행을 건드리지
-    않으므로(실 결과는 안 바뀐다는 규칙) 그 경로로도 못 채운다.
+    셀 수 없고, `_upsert_opening_result` 의 권위 outcome payload 에서도 의도적으로
+    제외한다. 참가자 수 정정이 낙찰 결과 정정 revision 으로 기록되면 안 된다.
 
     ⚠️ 이 값은 **그 조회 창에서 API 가 준 행 수**다. 창 전체를 다 훑었을
     때만 참이며, 페이지 상한에 걸리면 크롤이 RuntimeError 로 멈추므로
@@ -430,32 +545,110 @@ def _apply_participant_counts(db: Session, counts: dict[str, int]) -> int:
     return updated
 
 
-def _upsert_opening_result(db: Session, kwargs: dict, seen: set[str]) -> bool:
-    """OpeningResult upsert. 반환: 신규 삽입 True / 업데이트 False.
+def _upsert_opening_result(
+    db: Session,
+    kwargs: dict,
+    seen: set[tuple[str, str]],
+    *,
+    source_item: dict | None = None,
+) -> str:
+    """OpeningResult upsert. 반환: inserted / updated / unchanged.
 
-    `seen` 은 이번 크롤 세션 내 처리한 bid_no 집합. DB 조회는 미커밋 행을
-    못 봐서, 동일 bid_no 가 응답에 여러 번(참가자 분리) 나오는 경우
-    중복 INSERT → IntegrityError 가 발생하므로 set 으로 차단.
+    `OpeningResult` 는 현재값 projection 이고 `OpeningResultRevision` 이 정본
+    변경 이력이다. 같은 결과를 다시 받으면 snapshot/revision/projection 모두
+    그대로이며, 권위 필드가 달라졌을 때만 새 revision 을 이전 revision 에
+    연결하고 projection 을 갱신한다.
+
+    `seen` 은 `(bid_no, outcome_content_hash)` 집합이다. 참가자별로 반복된 같은
+    낙찰결과는 막되, 한 응답 안에서 실제 정정 결과가 함께 온 경우까지 버리지
+    않는다. `source_item` 은 실제 크롤 경로에서 항상 raw API item 이며, 직접
+    호출하는 레거시 코드에는 kwargs 를 원문 대용으로 허용한다.
     """
     bid_no = kwargs["bid_no"]
-    if bid_no in seen:
-        # 이미 이 세션에서 처리한 bid_no — skip
-        return False
-    seen.add(bid_no)
-
     existing = db.query(models.OpeningResult).filter(
         models.OpeningResult.bid_no == bid_no
     ).first()
-    if existing:
-        # winner_price 가 채워져있으면 갱신 안 함 (실 결과는 변경 X)
-        if existing.winner_price:
-            return False
-        for k, v in kwargs.items():
-            if v is not None:
-                setattr(existing, k, v)
-        return False
-    db.add(models.OpeningResult(**kwargs))
-    return True
+    projection, payload = _effective_outcome_payload(kwargs, existing)
+    content_hash = _content_hash(payload)
+    seen_key = (bid_no, content_hash)
+    if seen_key in seen:
+        # 이미 이 세션에서 처리한 동일 결과 — skip
+        return _UPSERT_UNCHANGED
+    seen.add(seen_key)
+
+    captured_at = kwargs.get("crawled_at") or datetime.now(timezone.utc)
+    latest_revision = (
+        db.query(models.OpeningResultRevision)
+        .filter(models.OpeningResultRevision.bid_no == bid_no)
+        .order_by(models.OpeningResultRevision.revision_no.desc())
+        .first()
+    )
+    stored_payload = None
+    if existing is not None:
+        _, stored_payload = _effective_outcome_payload({}, existing)
+    projection_changed = stored_payload is None or _content_hash(stored_payload) != content_hash
+
+    inserted = existing is None
+    if inserted:
+        projection_kwargs = {
+            field: projection[field]
+            for field in _OUTCOME_FIELDS
+        }
+        # 이 API 는 지역을 주지 않으므로 region 은 outcome content hash 에 넣지
+        # 않는다. 삽입 시 호환 필드만 채우고, 후속 크롤이 다른 소스의 지역값을
+        # 정정으로 오인하거나 빈 문자열로 지우지 않게 한다.
+        projection_kwargs["region"] = kwargs.get("region")
+        projection_kwargs["participants_count"] = kwargs.get("participants_count")
+        projection_kwargs["crawled_at"] = captured_at
+        existing = models.OpeningResult(**projection_kwargs)
+        db.add(existing)
+        # OpeningResultRevision.bid_no has a FK to this projection.  Flush just
+        # the new projection so the revision can be inserted in the same txn.
+        db.flush([existing])
+    elif projection_changed:
+        for field in _OUTCOME_FIELDS:
+            if field != "bid_no":
+                setattr(existing, field, projection[field])
+        existing.crawled_at = captured_at
+
+    # A legacy projection can exist without lineage.  Its first post-migration
+    # crawl creates revision 1 even if the value itself did not change.  After
+    # that, identical content is a strict no-op.  A→B→A still creates revision
+    # 3 because the current head (B), not the historic hash set, is compared.
+    revision_appended = (
+        latest_revision is None or latest_revision.content_hash != content_hash
+    )
+    if revision_appended:
+        snapshot_hash = _persist_raw_snapshot(
+            db,
+            item=source_item if source_item is not None else kwargs,
+            bid_no=bid_no,
+            captured_at=captured_at,
+        )
+        revision_no = 1 if latest_revision is None else latest_revision.revision_no + 1
+        revision_id = _content_hash({
+            "bid_no": bid_no,
+            "revision_no": revision_no,
+            "content_hash": content_hash,
+            "supersedes_revision_id": latest_revision.id if latest_revision else None,
+        })
+        db.add(models.OpeningResultRevision(
+            id=revision_id,
+            bid_no=bid_no,
+            revision_no=revision_no,
+            source_snapshot_hash=snapshot_hash,
+            content_hash=content_hash,
+            payload=payload,
+            supersedes_revision_id=latest_revision.id if latest_revision else None,
+            observed_at=captured_at,
+            created_at=captured_at,
+        ))
+
+    if inserted:
+        return _UPSERT_INSERTED
+    if projection_changed or revision_appended:
+        return _UPSERT_UPDATED
+    return _UPSERT_UNCHANGED
 
 
 def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
@@ -472,10 +665,16 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
 
     db = SessionLocal()
     inserted = 0
+    # `updated` 는 기존 모니터링 계약상 "신규가 아닌 winner row" 수다. 실제
+    # 권위 필드 정정 수는 `corrected` 로 따로 내보내 호환성과 의미를 둘 다 지킨다.
     updated = 0
+    corrected = 0
+    unchanged = 0
     skipped = 0
     pages_fetched = 0
-    seen: set[str] = set()  # 이번 세션 dedupe (API 가 동일 bid_no 를 여러 row 로 반환)
+    # API 가 동일 bid_no 를 참가자별 여러 행으로 반복한다. 결과 content hash 까지
+    # 함께 봐야 동일 결과만 dedupe 하고 실제 정정은 놓치지 않는다.
+    seen: set[tuple[str, str]] = set()
 
     # 참가자 저장 대상 = 모의투찰 등록 공고만 (설계 §P4 — 전수 저장 금지).
     # API 는 참가자별로 row 를 쪼개 주므로, 낙찰자 판별과 별개로 여기서 줍는다.
@@ -491,6 +690,8 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             end_str = window_end.strftime("%Y%m%d%H%M")
             window_inserted = 0
             window_updated = 0
+            window_corrected = 0
+            window_unchanged = 0
             window_skipped = 0
             # 참여사수 = 이 창에서 그 공고로 온 참가자 행 수. 창 단위로 세고
             # 창 단위로 반영한다(창을 넘겨 누적하면 재크롤 겹침에서 부풀어 오른다).
@@ -519,10 +720,21 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
                     if kwargs is None:
                         window_skipped += 1
                         continue
-                    if _upsert_opening_result(db, kwargs, seen):
+                    action = _upsert_opening_result(
+                        db, kwargs, seen, source_item=item
+                    )
+                    # bool 처리는 이 private helper 를 monkeypatch 하는 오래된
+                    # 회귀 테스트와의 호환용이다. 실제 구현은 세 상태 문자열만 준다.
+                    if action == _UPSERT_INSERTED or action is True:
                         window_inserted += 1
                     else:
+                        # 기존 summary 의 updated 의미를 보존한다. 대시보드/로그의
+                        # 장기 시계열이 배포 날 갑자기 0으로 꺾이지 않게 한다.
                         window_updated += 1
+                    if action == _UPSERT_UPDATED:
+                        window_corrected += 1
+                    elif action != _UPSERT_INSERTED and action is not True:
+                        window_unchanged += 1
                 # 요청 건수 미만 = 마지막 페이지
                 if len(items) < _PAGE_SIZE:
                     break
@@ -543,6 +755,8 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             db.commit()
             inserted += window_inserted
             updated += window_updated
+            corrected += window_corrected
+            unchanged += window_unchanged
             skipped += window_skipped
     except Exception as e:  # noqa: BLE001
         db.rollback()
@@ -552,6 +766,8 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
             "error": f"{type(e).__name__}: {e}",
             "inserted": inserted,
             "updated": updated,
+            "corrected": corrected,
+            "unchanged": unchanged,
             "skipped": skipped,
         }
     finally:
@@ -627,6 +843,8 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200) -> dict:
         "pages_fetched": pages_fetched,
         "inserted": inserted,
         "updated": updated,
+        "corrected": corrected,
+        "unchanged": unchanged,
         "skipped": skipped,
         "participants_counted": counted,
         **p_summary,

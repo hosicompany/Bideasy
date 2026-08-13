@@ -12,14 +12,30 @@ from app.db import models
 from app.services import mock_bidding as mb
 
 
+_USE_BASIC_AS_CONFIRMED_BASIS = object()
+
+
 def _notice(bid_no="MB-1", *, basic_price=100_000_000, bid_method="적격심사제",
             contract_type="CONSTRUCTION", notice_kind="등록공고",
             end_offset_h=1, llr=89.745, a_value=0, prdprc=(15, 4),
-            re_notice="N"):
+            re_notice="N", basis_amount=_USE_BASIC_AS_CONFIRMED_BASIS,
+            a_value_applicable=None, a_value_source=None):
+    confirmed_basis = (
+        basic_price
+        if basis_amount is _USE_BASIC_AS_CONFIRMED_BASIS
+        else basis_amount
+    )
     return models.Notice(
         bid_no=bid_no, title="테스트 공고", basic_price=basic_price,
+        basis_amount=confirmed_basis,
         contract_type=contract_type, bid_method=bid_method,
         notice_kind=notice_kind, lower_limit_rate=llr, a_value=a_value,
+        a_value_applicable=(
+            a_value_applicable if a_value_applicable is not None else ("Y" if a_value else "N")
+        ),
+        a_value_source=(
+            a_value_source if a_value_source is not None else ("tier2" if a_value else "none")
+        ),
         # Notice.end_date 는 opengDt(KST 표기) 축이므로 픽스처도 KST 로 만든다
         end_date=mb.now_kst() + timedelta(hours=end_offset_h),
         prdprc_total=prdprc[0], prdprc_draw=prdprc[1], re_notice_yn=re_notice,
@@ -98,11 +114,15 @@ class TestEligibility:
     def test_no_basis_amount_excluded(self):
         """금액 기준을 못 구하면 등록하지 않는다.
 
-        시행 전(BASIS_AMOUNT_ENFORCE=False)에는 basic_price 가 그 역할을 하고,
-        시행 후에는 basis_amount 가 없으면 같은 사유로 제외된다.
+        추정가격(basic_price)이 있어도 확정 basis_amount가 없으면 제외한다.
         """
-        ok, reason = mb.is_eligible(_notice(basic_price=0))
+        ok, reason = mb.is_eligible(_notice(basis_amount=None))
         assert ok is False and reason == "no_basis_amount"
+
+    def test_unknown_a_value_excluded(self):
+        notice = _notice(a_value_applicable="", a_value_source="", a_value=0)
+        ok, reason = mb.is_eligible(notice)
+        assert ok is False and reason == "a_value_unknown"
 
 
 # ── §0.3 arm 구성 ─────────────────────────────────────────────
@@ -135,6 +155,16 @@ class TestLowerLimitSource:
     def test_notice_value_preferred(self):
         rate, src = mb.resolve_lower_limit_rate(_notice(llr=89.745))
         assert rate == 89.745 and src == "notice"
+
+    def test_notice_lower_rate_drives_active_and_frontier_prices(self, monkeypatch):
+        strategy = {"적격심사제": {"medium": [0.0, 0.2]}, "DEFAULT": {}}
+        monkeypatch.setattr(mb, "_active_params", lambda: (strategy, "active-test"))
+        monkeypatch.setattr(mb, "_frontier_params", lambda _cap: strategy)
+        explicit = {row.arm: row.price for row in mb.compute_arm_prices(_notice(llr=92.6))}
+        table = {row.arm: row.price for row in mb.compute_arm_prices(_notice(llr=89.745))}
+
+        assert explicit["active"] > table["active"]
+        assert explicit["frontier_c5"] > table["frontier_c5"]
 
     def test_table_fallback_when_missing(self):
         rate, src = mb.resolve_lower_limit_rate(_notice(llr=None))
@@ -404,16 +434,20 @@ class TestScoring:
         }
         assert before == after
 
-    def test_failure_tag_a_value_missing(self, db_session):
-        """A값 결측(실측 99.99%)이 태깅돼야 영향을 정량화할 수 있다."""
-        self._prepare(db_session, "MB-TAG-1", winner=95_000_000)
-        mb.score_pending(db_session)
+    def test_unknown_a_value_never_enters_prospective_sample(self, db_session):
+        notice = _notice(
+            "MB-TAG-1",
+            a_value=0,
+            a_value_applicable="",
+            a_value_source="",
+        )
+        db_session.add(notice)
+        db_session.commit()
 
-        row = (db_session.query(models.MockBidResult)
-               .join(models.MockBid)
-               .filter(models.MockBid.bid_no == "MB-TAG-1",
-                       models.MockBid.arm == "active").first())
-        assert "A값_결측" in (row.failure_tags or [])
+        result = mb.register_notice(db_session, notice)
+
+        assert result == {"registered": 0, "skipped": "a_value_unknown"}
+        assert db_session.query(models.MockBid).filter_by(bid_no="MB-TAG-1").count() == 0
 
     def test_gap_metrics_computed(self, db_session):
         self._prepare(db_session, "MB-GAP-1", winner=95_000_000)
@@ -468,8 +502,7 @@ class TestSummary:
         mb.score_pending(db_session)
 
         stats = mb.failure_tag_stats(db_session)
-        assert "A값_결측" in stats
-        assert stats["A값_결측"]["total"] >= 1
+        assert "A값_결측" not in stats
 
     def test_base_mismatch_is_excluded_and_reported(self, db_session):
         """추정가격이 스냅샷에 섞인 구 표본은 원장에 남기되 성적에서 뺀다."""
@@ -546,14 +579,29 @@ class TestStrategyGates:
             "win_ci95": [round(lo, 3), round(hi, 3)] if judged else None,
         }
 
+    @staticmethod
+    def _paired(n=400, primary_lower=0.05, dropout_upper=0.0):
+        metric = {
+            "paired_notices": n,
+            "primary_delta": primary_lower + 0.01,
+            "primary_delta_ci95": [primary_lower, primary_lower + 0.02],
+            "dropout_delta": min(0.0, dropout_upper),
+            "dropout_delta_one_sided_95_upper": dropout_upper,
+        }
+        return {
+            "active_vs_standard": dict(metric),
+            "frontier_vs_active": dict(metric),
+        }
+
     def test_g_a_blocks_strategy_interpretation(self):
         gates = mb._evaluate_strategy_gates(
             {"status": "OBSERVING", "interpretation_allowed": False},
             {
                 "standard": self._arm(400, 20, 40),
                 "active": self._arm(400, 80, 20),
-                "frontier_c10": self._arm(400, 160, 40),
+                "frontier_c10": self._arm(400, 160, 20),
             },
+            self._paired(),
         )
 
         assert gates["g_b"]["status"] == "BLOCKED_G_A"
@@ -566,6 +614,7 @@ class TestStrategyGates:
                 "standard": self._arm(399, 20, 40),
                 "active": self._arm(399, 80, 20),
             },
+            self._paired(n=399),
         )
 
         assert gates["g_b"]["sample_notices"] == 399
@@ -579,6 +628,7 @@ class TestStrategyGates:
                 "standard": self._arm(400, 20, 40),
                 "active": self._arm(400, 80, 20),
             },
+            self._paired(),
         )
 
         assert gates["g_b"]["sample_requirement_met"] is True
@@ -593,6 +643,7 @@ class TestStrategyGates:
                 "standard": self._arm(400, 20, 20),
                 "active": self._arm(400, 80, 40),
             },
+            self._paired(dropout_upper=0.05),
         )
 
         assert gates["g_b"]["active_win_ci_lower_gt_standard_upper"] is True
@@ -605,14 +656,33 @@ class TestStrategyGates:
             {
                 "standard": self._arm(400, 20, 40),
                 "active": self._arm(400, 80, 20),
-                "frontier_c10": self._arm(400, 160, 40),
+                "frontier_c10": self._arm(400, 160, 20),
             },
+            self._paired(),
         )
 
         assert gates["g_b"]["status"] == "PASS"
         assert gates["g_c"]["frontier_c10_win_ci_lower_gt_active_upper"] is True
         assert gates["g_c"]["frontier_c10_dropout_condition_met"] is True
         assert gates["g_c"]["status"] == "PASS"
+
+    def test_g_c_never_passes_on_one_paired_notice(self):
+        gates = mb._evaluate_strategy_gates(
+            {"status": "PASS", "interpretation_allowed": True},
+            {
+                "standard": self._arm(400, 20, 40),
+                "active": self._arm(400, 80, 20),
+                "frontier_c10": self._arm(400, 1, 0),
+            },
+            {
+                **self._paired(),
+                "frontier_vs_active": self._paired(n=1)["frontier_vs_active"],
+            },
+        )
+
+        assert gates["g_b"]["status"] == "PASS"
+        assert gates["g_c"]["sample_requirement_met"] is False
+        assert gates["g_c"]["status"] == "NOT_READY"
 
 
 # ── Phase 2 — 참가자 데이터로 등수 재구성 (§4-3) ──────────────

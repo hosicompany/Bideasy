@@ -1,5 +1,5 @@
 """
-예측 검증 CLI — 수동 실행 진입점
+사후 전략 재생 CLI — 수동 진단 진입점
 ================================
 일상적 자동 실행은 Celery beat 가 담당 (app/tasks/verification_tasks.py).
 본 CLI 는 수동 점검·디버깅용.
@@ -22,11 +22,13 @@ from app.db import models
 from app.db.session import SessionLocal
 from app.services.prediction_verifier import verify_notices
 
-LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "predictions_log.jsonl"
+LOG_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "counterfactual_replay.jsonl"
+)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="예측 vs 실 결과 검증 (CLI)")
+    parser = argparse.ArgumentParser(description="개찰 후 현재 전략 재생 진단 (CLI)")
     parser.add_argument("--bid-no", help="특정 공고 1건만 검증")
     parser.add_argument("--days", type=int, default=30, help="최근 N일 (기본 30)")
     parser.add_argument("--limit", type=int, default=200, help="최대 건수 (기본 200)")
@@ -45,7 +47,9 @@ def main():
             notices = db.query(models.Notice).filter(
                 models.Notice.end_date < now,
                 models.Notice.end_date > cutoff,
-            ).limit(args.limit).all()
+            ).order_by(models.Notice.end_date.desc(), models.Notice.bid_no).limit(
+                args.limit
+            ).all()
 
         print(f"검증 대상: {len(notices)}건")
         if not notices:
@@ -59,7 +63,7 @@ def main():
             bid_no = r["bid_no"]
             title = (r.get("title") or "")[:50]
             status = r["status"]
-            if status == "VERIFIED":
+            if status == "COUNTERFACTUAL":
                 std = r["standard"]
                 auto = r["auto_recommended"]
                 agg = r["aggressive_mc"]
@@ -77,9 +81,12 @@ def main():
         print("=" * 60)
         print("  집계")
         print("=" * 60)
-        print(f"  검증 완료: {summary['verified']}건  /  대기: {summary['pending']}  /  에러: {summary['errors']}")
-        if summary["verified"] > 0:
-            n = summary["verified"]
+        print(
+            f"  사후 재생: {summary['counterfactual']}건  /  "
+            f"대기: {summary['pending']}  /  에러: {summary['errors']}"
+        )
+        if summary["counterfactual"] > 0:
+            n = summary["counterfactual"]
             for label, stats in summary["policies"].items():
                 w = stats["wins"]
                 d = stats["dropouts"]

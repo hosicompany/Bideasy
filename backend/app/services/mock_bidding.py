@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import random
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -164,19 +165,34 @@ def resolve_lower_limit_rate(notice: models.Notice) -> tuple[float, str]:
         return float(llr), "notice"
     # 금액대 티어는 **기초금액** 기준이다. 추정가격을 넣으면 한 티어 아래로
     # 떨어져 하한율이 틀린다(예: 10억 경계).
+    bid_datetime = getattr(notice, "start_date", None) or getattr(
+        notice, "end_date", None
+    )
+    bid_date = bid_datetime.date() if bid_datetime is not None else None
     return (
-        get_lower_limit_rate(notice.contract_type or "CONSTRUCTION",
-                             basis_svc.confirmed_basis(notice)),
+        get_lower_limit_rate(
+            notice.contract_type or "CONSTRUCTION",
+            basis_svc.confirmed_basis(notice),
+            bid_date,
+        ),
         "table",
     )
 
 
-def _a_value_of(notice: models.Notice) -> tuple[int, str]:
+def _a_value_of(notice: models.Notice) -> tuple[int, str, str]:
+    """Return value, source and fail-closed applicability status.
+
+    Zero means `not_applicable` only when the notice explicitly says so.  A
+    missing value must never silently become zero in prospective evidence.
+    """
     a = int(getattr(notice, "a_value", 0) or 0)
-    src = getattr(notice, "a_value_source", None)
-    if a > 0:
-        return (a, src or "tier2")
-    return (0, src or "none")
+    src = (getattr(notice, "a_value_source", None) or "").strip().lower()
+    applicable = str(getattr(notice, "a_value_applicable", None) or "").strip().upper()
+    if applicable in {"N", "NO", "FALSE", "0"} and a == 0:
+        return (0, src or "none", "not_applicable")
+    if a > 0 and src and applicable not in {"N", "NO", "FALSE", "0"}:
+        return (a, src, "confirmed")
+    return (a, src or "none", "unknown")
 
 
 # ── arm 별 가격 산출 ──────────────────────────────────────────
@@ -193,9 +209,16 @@ def compute_arm_prices(notice: models.Notice) -> list[ArmPrice]:
     if bp <= 0:
         return []
 
-    a_value, _ = _a_value_of(notice)
+    a_value, _, a_value_status = _a_value_of(notice)
+    if a_value_status == "unknown":
+        return []
     method = notice.bid_method or "DEFAULT"
     ctype = notice.contract_type or "CONSTRUCTION"
+    lower_limit_rate, _ = resolve_lower_limit_rate(notice)
+    bid_datetime = getattr(notice, "start_date", None) or getattr(
+        notice, "end_date", None
+    )
+    bid_date = bid_datetime.date() if bid_datetime is not None else None
     out: list[ArmPrice] = []
 
     def _flat(arm: str, rate: float) -> ArmPrice:
@@ -210,6 +233,7 @@ def compute_arm_prices(notice: models.Notice) -> list[ArmPrice]:
         r = CalculatorService.recommend_bid_price(
             basic_price=bp, bid_method=method, contract_type=ctype,
             a_value=a_value, strategy_override=active,
+            lower_limit_rate=lower_limit_rate, bid_date=bid_date,
         )
         out.append(ArmPrice("active", r["recommended_price"], r["bid_rate"],
                             r["adjustment"], r["margin"], version))
@@ -221,6 +245,7 @@ def compute_arm_prices(notice: models.Notice) -> list[ArmPrice]:
         r = CalculatorService.recommend_bid_price(
             basic_price=bp, bid_method=method, contract_type=ctype,
             a_value=a_value, strategy_override=params,
+            lower_limit_rate=lower_limit_rate, bid_date=bid_date,
         )
         out.append(ArmPrice(arm, r["recommended_price"], r["bid_rate"],
                             r["adjustment"], r["margin"], f"frontier_cap{cap}"))
@@ -241,6 +266,9 @@ def is_eligible(notice: models.Notice) -> tuple[bool, str]:
 
     if not basis_svc.confirmed_basis(notice):
         return False, "no_basis_amount"
+    _a_value, _a_source, a_value_status = _a_value_of(notice)
+    if a_value_status == "unknown":
+        return False, "a_value_unknown"
     if not notice.end_date:
         return False, "no_deadline"
     if (notice.notice_kind or "") in EXCLUDED_NOTICE_KINDS:
@@ -274,7 +302,7 @@ def register_notice(db: Session, notice: models.Notice, now: datetime | None = N
         return {"registered": 0, "skipped": "no_arm_price"}
 
     llr, llr_src = resolve_lower_limit_rate(notice)
-    a_value, a_src = _a_value_of(notice)
+    a_value, a_src, a_value_status = _a_value_of(notice)
     rev = _code_rev()
 
     n = 0
@@ -295,6 +323,7 @@ def register_notice(db: Session, notice: models.Notice, now: datetime | None = N
             snapshot_basic_price=float(basis_svc.confirmed_basis(notice) or 0),
             snapshot_a_value=a_value,
             a_value_source=a_src,
+            a_value_status=a_value_status,
             snapshot_lower_limit_rate=llr,
             llr_source=llr_src,
             snapshot_bid_method=notice.bid_method,
@@ -367,7 +396,9 @@ def _failure_tags(mb: models.MockBid, actual: models.OpeningResult,
                   notice: models.Notice | None, outcome: str) -> list[str]:
     """오답노트 태깅 (§6) — 태그별 실패율이 곧 제품 경고가 된다."""
     tags: list[str] = []
-    if not mb.snapshot_a_value:
+    if getattr(mb, "a_value_status", None) == "unknown" or (
+        getattr(mb, "a_value_status", None) is None and not mb.snapshot_a_value
+    ):
         tags.append("A값_결측")
     if mb.llr_source == "table":
         tags.append("하한율_테이블폴백")
@@ -1054,7 +1085,8 @@ def summarize(db: Session, bid_method: str | None = None) -> dict:
         db.query(models.MockBid.arm, models.MockBidResult.outcome,
                  models.MockBidResult.ratio_error,
                  models.MockBid.snapshot_basic_price,
-                 models.MockBidResult.actual_reserved_price)
+                 models.MockBidResult.actual_reserved_price,
+                 models.MockBid.a_value_status)
         .join(models.MockBidResult, models.MockBidResult.mock_bid_id == models.MockBid.id)
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
                        models.MockBidResult.scoring_rev == sq.c.max_rev))
@@ -1063,13 +1095,16 @@ def summarize(db: Session, bid_method: str | None = None) -> dict:
         q = q.filter(models.MockBid.snapshot_bid_method == bid_method)
 
     per: dict[str, dict] = {}
-    for arm, outcome, ratio_err, basic_price, reserved_price in q.all():
+    for arm, outcome, ratio_err, basic_price, reserved_price, a_status in q.all():
         d = per.setdefault(arm, {"WIN": 0, "LOST": 0, "DROPOUT": 0,
                                  "NO_RESULT": 0, "VOID": 0, "_err": [],
                                  "_raw_judged": 0, "_mismatch": 0,
-                                 "_unknown": 0})
+                                 "_unknown": 0, "_a_unknown": 0})
         if outcome in _JUDGED:
             d["_raw_judged"] += 1
+            if a_status not in {"confirmed", "not_applicable"}:
+                d["_a_unknown"] += 1
+                continue
             validity = classify_base_consistency(basic_price, reserved_price)
             if validity == "mismatch":
                 d["_mismatch"] += 1
@@ -1097,6 +1132,7 @@ def summarize(db: Session, bid_method: str | None = None) -> dict:
             "raw_judged": d["_raw_judged"],
             "excluded_base_mismatch": d["_mismatch"],
             "excluded_base_unknown": d["_unknown"],
+            "excluded_a_value_unknown": d["_a_unknown"],
             # 1차 지표
             "dropout_rate": round(d["DROPOUT"] / judged * 100, 3) if judged else None,
             "win_rate": round(d["WIN"] / judged * 100, 3) if judged else None,
@@ -1123,7 +1159,8 @@ def sample_validity(db: Session, bid_method: str | None = None) -> dict:
     q = (
         db.query(models.MockBidResult.outcome,
                  models.MockBid.snapshot_basic_price,
-                 models.MockBidResult.actual_reserved_price)
+                 models.MockBidResult.actual_reserved_price,
+                 models.MockBid.a_value_status)
         .join(models.MockBid, models.MockBid.id == models.MockBidResult.mock_bid_id)
         .join(sq, and_(models.MockBidResult.mock_bid_id == sq.c.mock_bid_id,
                        models.MockBidResult.scoring_rev == sq.c.max_rev))
@@ -1132,8 +1169,8 @@ def sample_validity(db: Session, bid_method: str | None = None) -> dict:
     if bid_method:
         q = q.filter(models.MockBid.snapshot_bid_method == bid_method)
 
-    raw_judged = valid = mismatch = unknown = no_result = void = 0
-    for outcome, basic_price, reserved_price in q.all():
+    raw_judged = valid = mismatch = unknown = a_unknown = no_result = void = 0
+    for outcome, basic_price, reserved_price, a_status in q.all():
         if outcome == "NO_RESULT":
             no_result += 1
             continue
@@ -1143,6 +1180,9 @@ def sample_validity(db: Session, bid_method: str | None = None) -> dict:
         if outcome not in _JUDGED:
             continue
         raw_judged += 1
+        if a_status not in {"confirmed", "not_applicable"}:
+            a_unknown += 1
+            continue
         state = classify_base_consistency(basic_price, reserved_price)
         if state == "valid":
             valid += 1
@@ -1157,12 +1197,15 @@ def sample_validity(db: Session, bid_method: str | None = None) -> dict:
         "valid_judged_notices": valid,
         "excluded_base_mismatch": mismatch,
         "excluded_base_unknown": unknown,
+        "excluded_a_value_unknown": a_unknown,
         "no_result_notices": no_result,
         "void_notices": void,
         "valid_pct": round(valid / raw_judged * 100, 2) if raw_judged else None,
         "base_ratio_band": [BASE_RATIO_MIN, BASE_RATIO_MAX],
         "status": "EMPTY" if raw_judged == 0 else (
-            "CLEAN" if mismatch == 0 and unknown == 0 else "MIXED"
+            "CLEAN"
+            if mismatch == 0 and unknown == 0 and a_unknown == 0
+            else "MIXED"
         ),
     }
 
@@ -1251,23 +1294,125 @@ def _gate_arm_view(arm: dict | None) -> dict:
     }
 
 
-def _evaluate_strategy_gates(reach: dict, qualification_arms: dict) -> dict:
+def _percentile(values: list[float], probability: float) -> float:
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * probability
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+def _paired_strategy_metrics(
+    db: Session,
+    *,
+    champion_arm: str,
+    challenger_arm: str,
+    bid_method: str,
+    bootstrap_samples: int = 4000,
+) -> dict:
+    """Same-notice paired effect and dropout intervals for two shadow arms."""
+    latest = _latest_rev_sq(db)
+    rows = (
+        db.query(
+            models.MockBid.bid_no,
+            models.MockBid.arm,
+            models.MockBidResult.outcome,
+        )
+        .join(
+            models.MockBidResult,
+            models.MockBidResult.mock_bid_id == models.MockBid.id,
+        )
+        .join(
+            latest,
+            and_(
+                models.MockBidResult.mock_bid_id == latest.c.mock_bid_id,
+                models.MockBidResult.scoring_rev == latest.c.max_rev,
+            ),
+        )
+        .filter(
+            models.MockBid.arm.in_((champion_arm, challenger_arm)),
+            models.MockBid.snapshot_bid_method == bid_method,
+            models.MockBidResult.outcome.in_(_JUDGED),
+            models.MockBid.a_value_status.in_(("confirmed", "not_applicable")),
+            _valid_base_filter(),
+        )
+        .all()
+    )
+    by_notice: dict[str, dict[str, str]] = {}
+    for bid_no, arm, outcome in rows:
+        by_notice.setdefault(bid_no, {})[arm] = outcome
+    pairs = [
+        arms
+        for arms in by_notice.values()
+        if champion_arm in arms and challenger_arm in arms
+    ]
+    primary_diffs = [
+        float((pair[challenger_arm] == "WIN") - (pair[champion_arm] == "WIN"))
+        for pair in pairs
+    ]
+    dropout_diffs = [
+        float(
+            (pair[challenger_arm] == "DROPOUT")
+            - (pair[champion_arm] == "DROPOUT")
+        )
+        for pair in pairs
+    ]
+    if not pairs:
+        return {
+            "paired_notices": 0,
+            "primary_delta": None,
+            "primary_delta_ci95": None,
+            "dropout_delta": None,
+            "dropout_delta_one_sided_95_upper": None,
+        }
+    rng = random.Random(f"{bid_method}:{champion_arm}:{challenger_arm}:v1")
+    size = len(pairs)
+    primary_bootstrap: list[float] = []
+    dropout_bootstrap: list[float] = []
+    for _ in range(bootstrap_samples):
+        indices = [rng.randrange(size) for _ in range(size)]
+        primary_bootstrap.append(sum(primary_diffs[i] for i in indices) / size)
+        dropout_bootstrap.append(sum(dropout_diffs[i] for i in indices) / size)
+    return {
+        "paired_notices": size,
+        "primary_delta": round(sum(primary_diffs) / size, 6),
+        "primary_delta_ci95": [
+            round(_percentile(primary_bootstrap, 0.025), 6),
+            round(_percentile(primary_bootstrap, 0.975), 6),
+        ],
+        "dropout_delta": round(sum(dropout_diffs) / size, 6),
+        "dropout_delta_one_sided_95_upper": round(
+            _percentile(dropout_bootstrap, 0.95), 6
+        ),
+    }
+
+
+def _evaluate_strategy_gates(
+    reach: dict,
+    qualification_arms: dict,
+    paired: dict | None = None,
+) -> dict:
     """사전 등록 §0.4의 G-B/G-C를 결과와 무관한 순수 함수로 판정한다."""
     standard = _gate_arm_view(qualification_arms.get("standard"))
     active = _gate_arm_view(qualification_arms.get("active"))
     frontier = _gate_arm_view(qualification_arms.get("frontier_c10"))
 
-    g_b_n = min(standard["judged_notices"], active["judged_notices"])
+    paired = paired or {}
+    active_vs_standard = paired.get("active_vs_standard") or {}
+    frontier_vs_active = paired.get("frontier_vs_active") or {}
+    g_b_n = int(active_vs_standard.get("paired_notices") or 0)
     g_b_sample_ok = g_b_n >= G_B_MIN_QUALIFICATION_NOTICES
     dropout_ok = (
         active["dropout_rate"] is not None
         and standard["dropout_rate"] is not None
         and active["dropout_rate"] <= standard["dropout_rate"]
+        and active_vs_standard.get("dropout_delta_one_sided_95_upper") is not None
+        and active_vs_standard["dropout_delta_one_sided_95_upper"] <= 0
     )
-    active_ci = active["win_ci95"]
-    standard_ci = standard["win_ci95"]
     win_ci_ok = bool(
-        active_ci and standard_ci and active_ci[0] > standard_ci[1]
+        active_vs_standard.get("primary_delta_ci95")
+        and active_vs_standard["primary_delta_ci95"][0] > 0
     )
 
     if not reach.get("interpretation_allowed"):
@@ -1279,15 +1424,24 @@ def _evaluate_strategy_gates(reach: dict, qualification_arms: dict) -> dict:
     else:
         g_b_status = "FAIL"
 
-    g_c_n = min(frontier["judged_notices"], active["judged_notices"])
-    frontier_ci = frontier["win_ci95"]
-    c_win_ci_ok = bool(frontier_ci and active_ci and frontier_ci[0] > active_ci[1])
+    g_c_n = int(frontier_vs_active.get("paired_notices") or 0)
+    g_c_sample_ok = g_c_n >= G_B_MIN_QUALIFICATION_NOTICES
+    c_win_ci_ok = bool(
+        frontier_vs_active.get("primary_delta_ci95")
+        and frontier_vs_active["primary_delta_ci95"][0] > 0
+    )
     c_dropout_ok = (
         frontier["dropout_rate"] is not None
         and frontier["dropout_rate"] <= G_C_MAX_DROPOUT_PCT
+        and active["dropout_rate"] is not None
+        and frontier["dropout_rate"] <= active["dropout_rate"]
+        and frontier_vs_active.get("dropout_delta_one_sided_95_upper") is not None
+        and frontier_vs_active["dropout_delta_one_sided_95_upper"] <= 0
     )
     if g_b_status != "PASS":
         g_c_status = "LOCKED_G_B"
+    elif not g_c_sample_ok:
+        g_c_status = "NOT_READY"
     elif c_win_ci_ok and c_dropout_ok:
         g_c_status = "PASS"
     else:
@@ -1305,16 +1459,20 @@ def _evaluate_strategy_gates(reach: dict, qualification_arms: dict) -> dict:
             "active_win_ci_lower_gt_standard_upper": win_ci_ok,
             "active": active,
             "standard": standard,
+            "paired": active_vs_standard,
         },
         "g_c": {
             "status": g_c_status,
             "bid_method": QUALIFICATION_METHOD,
             "sample_notices": g_c_n,
+            "minimum_notices": G_B_MIN_QUALIFICATION_NOTICES,
+            "sample_requirement_met": g_c_sample_ok,
             "frontier_c10_win_ci_lower_gt_active_upper": c_win_ci_ok,
             "frontier_c10_dropout_lte_pct": G_C_MAX_DROPOUT_PCT,
             "frontier_c10_dropout_condition_met": c_dropout_ok,
             "frontier_c10": frontier,
             "active": active,
+            "paired": frontier_vs_active,
         },
     }
 
@@ -1322,8 +1480,62 @@ def _evaluate_strategy_gates(reach: dict, qualification_arms: dict) -> dict:
 def evaluate_gates(db: Session) -> dict:
     """운영 DB의 최신 유효 표본으로 G-A/G-B/G-C를 자동 판정한다."""
     reach = scoring_reach(db)
+    queue = score_queue_health(db)
+    rank_health = rank_axis_health(db)
+    last_crawl = db.query(func.max(models.OpeningResult.crawled_at)).scalar()
+    utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
+    crawler_age_hours = (
+        max(0.0, (utc_now - last_crawl).total_seconds() / 3600.0)
+        if last_crawl else None
+    )
+    due_reach = reach.get("due_reach_pct")
+    pipeline_health = {
+        "due_cohort_threshold_met": (
+            due_reach is not None and due_reach >= G_A_THRESHOLD_PCT
+        ),
+        "ready_queue_drained": queue["ready_with_opening_result_arm_rows"] == 0,
+        "crawler_fresh": crawler_age_hours is not None and crawler_age_hours < 30,
+        "crawler_age_hours": (
+            round(crawler_age_hours, 2) if crawler_age_hours is not None else None
+        ),
+        "rank_axis_healthy": rank_health.get("healthy") is True,
+    }
+    reach["pipeline_health"] = pipeline_health
+    reach["interpretation_allowed"] = bool(
+        reach.get("threshold_met") and all(
+            pipeline_health[key]
+            for key in (
+                "due_cohort_threshold_met",
+                "ready_queue_drained",
+                "crawler_fresh",
+                "rank_axis_healthy",
+            )
+        )
+    )
+    if reach["interpretation_allowed"]:
+        reach["status"] = "PASS"
+    elif reach.get("observation_window_complete"):
+        reach["status"] = "FAIL"
+    elif reach.get("registered"):
+        reach["status"] = "OBSERVING"
+    else:
+        reach["status"] = "NOT_READY"
     qualification_arms = summarize(db, bid_method=QUALIFICATION_METHOD)
-    return _evaluate_strategy_gates(reach, qualification_arms)
+    paired = {
+        "active_vs_standard": _paired_strategy_metrics(
+            db,
+            champion_arm="standard",
+            challenger_arm="active",
+            bid_method=QUALIFICATION_METHOD,
+        ),
+        "frontier_vs_active": _paired_strategy_metrics(
+            db,
+            champion_arm="active",
+            challenger_arm="frontier_c10",
+            bid_method=QUALIFICATION_METHOD,
+        ),
+    }
+    return _evaluate_strategy_gates(reach, qualification_arms, paired)
 
 
 def collect_weekly_report(db: Session, now: datetime | None = None) -> dict:
