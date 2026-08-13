@@ -27,7 +27,10 @@ class BidDetailService:
     ]
 
     @staticmethod
-    def _fetch_by_bidno_search(bid_ntce_no: str) -> Optional[Dict]:
+    def _fetch_by_bidno_search(
+        bid_ntce_no: str,
+        bid_ntce_ord: str | None = None,
+    ) -> Optional[Dict]:
         """공고번호 직접검색 (inqryDiv=2) — 공사→용역→물품 순차 시도.
 
         스파이크(prod 라이브) 확정: BidPublicInfoService 3종에
@@ -57,20 +60,31 @@ class BidDetailService:
                     items = [items]
                 if not items:
                     continue
-                # 정확 일치 우선, 없으면 첫 항목
+                # 공고번호와 요청 차수를 함께 맞춘다. 변경공고의 다른 차수는
+                # 금액·A값·하한율이 다를 수 있어 절대 대체하지 않는다.
                 for it in items:
-                    if it.get("bidNtceNo") == base:
+                    same_base = it.get("bidNtceNo") == base
+                    same_ord = (
+                        bid_ntce_ord is None
+                        or str(it.get("bidNtceOrd", "")).zfill(3)
+                        == str(bid_ntce_ord).zfill(3)
+                    )
+                    if same_base and same_ord:
                         logger.info(f"[bidno-search] MATCH {cat}: {it.get('bidNtceNm','')[:30]}")
-                        return BidDetailService._format_bid_detail(it)
-                logger.info(f"[bidno-search] {cat}: items but no exact bidNtceNo match")
-                return BidDetailService._format_bid_detail(items[0])
+                        return BidDetailService._format_bid_detail(it, cat)
+                logger.info(f"[bidno-search] {cat}: no exact notice revision match")
             except Exception as e:
                 logger.warning(f"[bidno-search] {cat} error: {e}")
                 continue
         return None
 
     @staticmethod
-    def fetch_bid_detail_robust(bid_ntce_no: str, bid_ntce_ord: str = "00") -> Optional[Dict]:
+    def fetch_bid_detail_robust(
+        bid_ntce_no: str,
+        bid_ntce_ord: str = "00",
+        *,
+        strict_ordinal: bool = False,
+    ) -> Optional[Dict]:
         """
         단건 공고 조회 — 우선순위:
           1) 공고번호 직접검색 (inqryDiv=2, 공사/용역/물품) ← prod 라이브 확정, 신뢰도 1순위
@@ -78,23 +92,36 @@ class BidDetailService:
           3) 공사 목록 100건 스캔 (구 fallback) ← 윈도우·카테고리 한계
         """
         # 1순위: 공고번호 직접검색
-        result = BidDetailService._fetch_by_bidno_search(bid_ntce_no)
+        requested_ord = bid_ntce_ord if strict_ordinal else None
+        result = BidDetailService._fetch_by_bidno_search(bid_ntce_no, requested_ord)
         if result:
             return result
 
         # 2순위: 기존 primary (표준데이터셋) — 호환 유지
         logger.info("bidno-search 실패 → primary(표준데이터셋) 시도")
-        result = BidDetailService.fetch_bid_detail(bid_ntce_no, bid_ntce_ord)
+        result = BidDetailService.fetch_bid_detail(
+            bid_ntce_no,
+            bid_ntce_ord,
+            strict_ordinal=strict_ordinal,
+        )
         if result:
             return result
 
         # 3순위: 구 fallback (공사 목록 100건 스캔)
         logger.warning("Primary 도 None → 구 list fallback 시도")
         clean_bid_no = bid_ntce_no.split("-")[0] if "-" in bid_ntce_no else bid_ntce_no
-        return BidDetailService._fetch_from_list_api(clean_bid_no)
+        return BidDetailService._fetch_from_list_api(
+            clean_bid_no,
+            bid_ntce_ord if strict_ordinal else None,
+        )
 
     @staticmethod
-    def fetch_bid_detail(bid_ntce_no: str, bid_ntce_ord: str = "00") -> Optional[Dict]:
+    def fetch_bid_detail(
+        bid_ntce_no: str,
+        bid_ntce_ord: str = "00",
+        *,
+        strict_ordinal: bool = False,
+    ) -> Optional[Dict]:
         """
         Fetch detailed bid information from Public Data Portal API.
         
@@ -142,12 +169,16 @@ class BidDetailService:
             
             # Find matching bid by order
             for item in items:
-                if item.get("bidNtceOrd", "") == bid_ntce_ord or bid_ntce_ord == "00":
+                if (
+                    str(item.get("bidNtceOrd", "")).zfill(3)
+                    == str(bid_ntce_ord).zfill(3)
+                    or (bid_ntce_ord == "00" and not strict_ordinal)
+                ):
                     logger.info(f"Found: {item.get('bidNtceNm', 'N/A')[:50]}")
                     return BidDetailService._format_bid_detail(item)
             
             # Return first item if no exact match
-            if items:
+            if items and not strict_ordinal:
                 return BidDetailService._format_bid_detail(items[0])
             
             return None
@@ -156,10 +187,16 @@ class BidDetailService:
             logger.error(f"Error: {e}")
             
         logger.warning("Primary API failed. Trying Fallback (List API - Construction)...")
-        return BidDetailService._fetch_from_list_api(bid_ntce_no)
+        return BidDetailService._fetch_from_list_api(
+            bid_ntce_no,
+            bid_ntce_ord if strict_ordinal else None,
+        )
 
     @staticmethod
-    def _fetch_from_list_api(bid_ntce_no: str) -> Optional[Dict]:
+    def _fetch_from_list_api(
+        bid_ntce_no: str,
+        bid_ntce_ord: str | None = None,
+    ) -> Optional[Dict]:
         """Fallback: Fetch from Construction List API (Client-side filtering)"""
         url = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk"
         
@@ -194,7 +231,14 @@ class BidDetailService:
             
             # Client-side Filter
             for item in items:
-                if item.get("bidNtceNo") == bid_ntce_no:
+                if (
+                    item.get("bidNtceNo") == bid_ntce_no
+                    and (
+                        bid_ntce_ord is None
+                        or str(item.get("bidNtceOrd", "")).zfill(3)
+                        == str(bid_ntce_ord).zfill(3)
+                    )
+                ):
                     logger.info(f"Found via Fallback List: {item.get('bidNtceNm', 'N/A')[:30]}")
                     return BidDetailService._format_bid_detail(item)
                     
@@ -206,7 +250,7 @@ class BidDetailService:
         return None
     
     @staticmethod
-    def _format_bid_detail(item: Dict) -> Dict:
+    def _format_bid_detail(item: Dict, contract_type: str | None = None) -> Dict:
         """Format API response into a structured dictionary for LLM analysis."""
         # ⚠️ 필드명은 2026-08-02 에 공사/용역/물품 3종 응답을 실측해 교정했다.
         # 이전 키(cntrctMthdNm·bidMthdNm·ppncRgnNm·bidClsfcNm·ntceSttusNm·
@@ -215,6 +259,9 @@ class BidDetailService:
         return {
             "bid_no": f"{item.get('bidNtceNo', '')}-{item.get('bidNtceOrd', '000')}",
             "title": item.get("bidNtceNm", ""),
+            "contract_type": (
+                contract_type.upper() if contract_type else None
+            ),
             "announcement_date": item.get("bidNtceDt", ""),
             "opening_date": item.get("opengDt", ""),
             "estimated_price": item.get("presmptPrce", 0),

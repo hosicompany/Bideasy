@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from datetime import date, datetime
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -22,20 +23,26 @@ def calculate_bid(
     current_user: Optional[models.User] = Depends(get_current_user_optional),
 ):
     """
-    Calculate safe bid price based on basic price and rate.
-    Applies strict 1-won truncation.
+    Calculate a bid from a confirmed/manual basis and rate.
+    Uses the same A-value, notice-rate, and 10-won truncation rules as the
+    detailed endpoint.
 
     인증은 선택(익명 계산도 허용) — 로그인 사용자면 활성화 계측(첫 안전 판정)을 함께 기록한다.
     """
     try:
         contract_type = request.contract_type or "CONSTRUCTION"
 
-        final_price = CalculatorService.calculate_safe_bid(request.basic_price, request.rate)
-
-        lower_limit_rate = CalculatorService.get_lower_limit_rate(contract_type, request.basic_price)
-        limit_price = request.basic_price * (lower_limit_rate / 100)
-
-        is_safe = final_price >= limit_price
+        result = CalculatorService.calculate_detailed_bid(
+            basic_price=request.basic_price,
+            rate=request.rate,
+            contract_type=contract_type,
+            a_value=request.a_value or 0,
+            lower_limit_rate=request.lower_limit_rate,
+            bid_date=request.bid_date,
+            prdprc_range_bgn=request.prdprc_range_bgn,
+            prdprc_range_end=request.prdprc_range_end,
+        )
+        is_safe = result.safety_level.value != "DANGER"
 
         # 활성화 계측: 로그인 사용자의 첫 "안전 판정" 시각 기록 (계산 성공 후에만).
         record_first_activation(db, current_user, source="bid_calculate")
@@ -43,9 +50,9 @@ def calculate_bid(
         return schemas.BidCalculationResponse(
             original_price=request.basic_price,
             rate=request.rate,
-            result_price=final_price,
+            result_price=result.result_price,
             is_safe=is_safe,
-            warning_message=None if is_safe else f"투찰금액이 낙찰하한선({lower_limit_rate}%) 미만입니다."
+            warning_message=result.warning_message,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))  # 검증 메시지(의도적 노출)
@@ -62,7 +69,7 @@ def calculate_bid_detailed(
 ):
     """
     상세 투찰가 계산 (Advanced Calculator)
-    - 예정가격 범위 (±3%)
+    - 공고가 명시한 예정가격 범위 (없으면 미제공)
     - 낙찰하한선 분석
     - 안전도 레벨 (SAFE/WARNING/DANGER)
     - A값 반영 (고정비용 미적용 보장)
@@ -79,7 +86,11 @@ def calculate_bid_detailed(
             basic_price=request.basic_price,
             rate=request.rate,
             contract_type=contract_type,
-            a_value=a_value
+            a_value=a_value,
+            lower_limit_rate=request.lower_limit_rate,
+            bid_date=request.bid_date,
+            prdprc_range_bgn=request.prdprc_range_bgn,
+            prdprc_range_end=request.prdprc_range_end,
         )
 
         # 활성화 계측: 로그인 사용자의 첫 "안전 판정" 시각 기록 (계산 성공 후에만).
@@ -236,24 +247,76 @@ def trigger_crawl(
 # 라우트 순서 주의: 정적 경로(/batch-context)를 동적 경로(/{bid_no}/...)보다
 # 먼저 선언해야 FastAPI 가 batch-context 를 bid_no 로 오인하지 않는다.
 
+
+def _parse_bid_date(value) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+    except ValueError:
+        pass
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if len(digits) >= 8:
+        try:
+            return datetime.strptime(digits[:8], "%Y%m%d").date()
+        except ValueError:
+            return None
+    return None
+
 def _notice_to_context(notice: models.Notice, source: str) -> schemas.BidContextResponse:
-    """DB Notice → BidContextResponse (A값 제외)."""
+    """DB Notice → BidContextResponse without price-basis inference.
+
+    ``Notice.basic_price`` is presmptPrce.  Only ``basis_amount`` may be
+    exposed as a confirmed basis amount; missing data stays missing.
+    """
+    from app.services import basis as basis_service
+
+    confirmed = basis_service.confirmed_basis(notice)
+    explicit_lower = float(getattr(notice, "lower_limit_rate", 0) or 0)
+    lower_rate: float | None = explicit_lower or None
+    lower_source: str | None = "notice" if lower_rate is not None else None
+    # Construction has one versioned deterministic table.  Service/goods do
+    # not have a universal rate, so they abstain unless the notice supplied it.
+    if lower_rate is None and confirmed and (notice.contract_type or "").upper() == "CONSTRUCTION":
+        from app.services.lower_limits import get_lower_limit_rate
+
+        bid_date = notice.start_date.date() if notice.start_date else None
+        lower_rate = get_lower_limit_rate("CONSTRUCTION", confirmed, bid_date)
+        lower_source = "table"
+
     return schemas.BidContextResponse(
         bid_ntce_no=notice.bid_no,
         found=True,
         source=source,
         title=notice.title,
         estimated_price=notice.basic_price,        # crawler 가 presmptPrce → basic_price 로 매핑
+        basis_amount=confirmed,
+        basis_status=basis_service.basis_status(notice),
+        basis_amount_at=getattr(notice, "basis_amount_at", None),
         budget_amount=notice.budget_amount,
         organization=notice.organization,
         demand_organization=getattr(notice, "demand_organization", None),
         opening_date=getattr(notice, "opening_date", None)
         or (notice.end_date.isoformat() if notice.end_date else None),
+        bid_date=notice.start_date.date() if notice.start_date else None,
         contract_method=getattr(notice, "contract_method", None),
         bid_method=getattr(notice, "bid_method", None),
         qualification=getattr(notice, "bid_qualification", None),
         region=getattr(notice, "region", None),
         contract_type=getattr(notice, "contract_type", None),
+        lower_limit_rate=lower_rate,
+        lower_limit_source=lower_source,
+        prdprc_range_bgn=getattr(notice, "prdprc_range_bgn", None),
+        prdprc_range_end=getattr(notice, "prdprc_range_end", None),
+        a_value=int(getattr(notice, "a_value", 0) or 0),
+        a_value_source=getattr(notice, "a_value_source", None),
+        a_value_applicable=getattr(notice, "a_value_applicable", None),
+        net_cost=int(getattr(notice, "net_cost", 0) or 0),
     )
 
 
@@ -263,25 +326,25 @@ def _normalize_bid_no(raw: str) -> str:
 
 
 def _lookup_notice(db: Session, bid_ntce_no: str) -> Optional[models.Notice]:
-    """DB Notice 캐시 조회 — 정확 일치 → prefix(공고번호) 일치 순."""
+    """DB Notice cache lookup without crossing notice ordinals."""
     norm = _normalize_bid_no(bid_ntce_no)
     # 1) 정확 일치 (bid_no = 'R25...-000')
     notice = db.query(models.Notice).filter(models.Notice.bid_no == norm).first()
     if notice:
         return notice
-    # 2) 공고번호만 들어온 경우 prefix 매칭 ('R25...' → 'R25...-000')
-    base = norm.split("-")[0]
-    if base and base != norm:
-        return (
-            db.query(models.Notice)
-            .filter(models.Notice.bid_no.like(f"{base}-%"))
-            .first()
-        )
-    return (
+    # An explicit ordinal is an immutable revision identity. Falling back to
+    # another ordinal can mix changed basis/A/lower-rate facts.
+    if "-" in norm:
+        return None
+    # A bare base number is accepted only when it resolves unambiguously.
+    matches = (
         db.query(models.Notice)
-        .filter(models.Notice.bid_no.like(f"{norm}%"))
-        .first()
+        .filter(models.Notice.bid_no.like(f"{norm}-%"))
+        .order_by(models.Notice.bid_no)
+        .limit(2)
+        .all()
     )
+    return matches[0] if len(matches) == 1 else None
 
 
 @router.post("/batch-context", response_model=schemas.BatchContextResponse)
@@ -324,8 +387,8 @@ def get_batch_context(
 def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
     """단건 공고 컨텍스트 — DB 캐시 우선 → OpenAPI → DB 적재.
 
-    A값은 반환하지 않음 (OpenAPI 부재, 익스텐션 DOM 추출 담당).
-    found=false 면 익스텐션이 DOM 추출로 fallback.
+    found=false 면 익스텐션이 DOM 추출로 fallback. 단, 추정가격을 기초금액으로
+    fallback 해서는 안 된다.
     """
     # 1) DB 캐시
     notice = _lookup_notice(db, bid_no)
@@ -339,7 +402,11 @@ def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
     base = norm.split("-")[0]
     ord_part = norm.split("-")[1] if "-" in norm else "00"
     try:
-        detail = BidDetailService.fetch_bid_detail_robust(base, ord_part)
+        detail = BidDetailService.fetch_bid_detail_robust(
+            base,
+            ord_part,
+            strict_ordinal="-" in norm,
+        )
     except Exception as e:
         logger.warning(f"context fetch_bid_detail_robust error for {bid_no}: {e}")
         detail = None
@@ -351,6 +418,45 @@ def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
         )
 
     raw = detail.get("raw_data", {}) or {}
+    def _optional_number(*values):
+        for value in values:
+            if value in (None, ""):
+                continue
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError):
+                continue
+            if parsed != 0:
+                return parsed
+        return None
+
+    raw_basis = _optional_number(raw.get("bssAmt"), raw.get("bssamt"))
+    raw_lower = _optional_number(
+        raw.get("sucsfLwstlmtRt"), raw.get("sucsfbidLwltRate")
+    )
+    raw_range_bgn = _optional_number(raw.get("rsrvtnPrceRngBgnRate"))
+    raw_range_end = _optional_number(raw.get("rsrvtnPrceRngEndRate"))
+    raw_a_value = int(_optional_number(raw.get("bidPrceCalclA")) or 0)
+    raw_a_applicable = raw.get("bidPrceCalclAYn") or None
+    raw_a_source = (
+        "tier0" if raw_a_applicable is not None or raw.get("bidPrceCalclA") else None
+    )
+    raw_net_cost = int(_optional_number(raw.get("purcnstcst")) or 0)
+    contract_type = (detail.get("contract_type") or "").upper() or None
+    raw_bid_date = _parse_bid_date(
+        detail.get("announcement_date") or raw.get("bidNtceDt")
+    )
+    context_lower = raw_lower
+    context_lower_source = "notice" if raw_lower else None
+    if context_lower is None and raw_basis and contract_type == "CONSTRUCTION":
+        from app.services.lower_limits import get_lower_limit_rate
+
+        context_lower = get_lower_limit_rate(
+            "CONSTRUCTION",
+            raw_basis,
+            raw_bid_date,
+        )
+        context_lower_source = "table"
     # OpenAPI 응답을 Notice 로 적재 (다음 호출부터 캐시 히트)
     try:
         bid_no_full = detail.get("bid_no") or norm
@@ -359,14 +465,29 @@ def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
                 bid_no=bid_no_full,
                 title=detail.get("title", ""),
                 basic_price=float(raw.get("presmptPrce", 0) or 0),
-                budget_amount=float(raw.get("asignBdgtAmt", 0) or 0),
+                basis_amount=raw_basis,
+                prdprc_range_bgn=raw_range_bgn,
+                prdprc_range_end=raw_range_end,
+                budget_amount=float(detail.get("budget_amount", 0) or 0),
                 organization=detail.get("organization", ""),
                 demand_organization=detail.get("demand_organization", ""),
                 contract_method=detail.get("contract_method", ""),
                 bid_method=detail.get("bid_method", ""),
+                bid_method_detail=detail.get("bid_method", ""),
+                bid_method_code=raw.get("sucsfbidMthdCd"),
+                lower_limit_rate=raw_lower,
+                a_value=raw_a_value,
+                a_value_source=raw_a_source,
+                a_value_applicable=raw_a_applicable,
+                net_cost=raw_net_cost,
                 region=raw.get("prtcptLmtRgnNm", ""),
                 opening_date=detail.get("opening_date", ""),
-                contract_type="CONSTRUCTION",
+                start_date=(
+                    datetime.combine(raw_bid_date, datetime.min.time())
+                    if raw_bid_date
+                    else None
+                ),
+                contract_type=contract_type,
             ))
             db.commit()
     except Exception as e:
@@ -379,15 +500,26 @@ def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
         source="api",
         title=detail.get("title"),
         estimated_price=float(raw.get("presmptPrce", 0) or 0) or None,
-        budget_amount=float(raw.get("asignBdgtAmt", 0) or 0) or None,
+        basis_amount=raw_basis,
+        basis_status="confirmed" if raw_basis else "unconfirmed",
+        budget_amount=float(detail.get("budget_amount", 0) or 0) or None,
         organization=detail.get("organization"),
         demand_organization=detail.get("demand_organization"),
         opening_date=detail.get("opening_date"),
+        bid_date=raw_bid_date,
         contract_method=detail.get("contract_method"),
         bid_method=detail.get("bid_method"),
         qualification=raw.get("bidQlfctRgstDt"),
         region=raw.get("prtcptLmtRgnNm"),
-        contract_type="CONSTRUCTION",
+        contract_type=contract_type,
+        lower_limit_rate=context_lower,
+        lower_limit_source=context_lower_source,
+        prdprc_range_bgn=raw_range_bgn,
+        prdprc_range_end=raw_range_end,
+        a_value=raw_a_value,
+        a_value_source=raw_a_source,
+        a_value_applicable=raw_a_applicable,
+        net_cost=raw_net_cost,
     )
 
 
@@ -641,4 +773,3 @@ def get_opening_results(bid_no: str, db: Session = Depends(get_db)):
     contract_type = notice.contract_type if notice else "CONSTRUCTION"
     
     return OpeningResultService.fetch_opening_results(bid_no, contract_type)
-

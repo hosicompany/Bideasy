@@ -1,13 +1,36 @@
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
+from pydantic import BaseModel, Field, computed_field, model_validator
+from typing import Literal, Optional, List
+from datetime import date, datetime
 
 # --- Calculator Schemas ---
 class BidCalculationRequest(BaseModel):
-    basic_price: float
-    rate: float  # e.g., -5.0 for 사정률 -5%
+    basic_price: float = Field(gt=0)
+    rate: float = Field(gt=-100, le=100)  # e.g., -5.0 for 사정률 -5%
     contract_type: Optional[str] = "CONSTRUCTION"
-    a_value: Optional[int] = 0  # A값 (고정비용)
+    a_value: Optional[int] = Field(default=0, ge=0)  # A값 (고정비용)
+    # 0원은 "못 찾음"이 아니라 공고에서 비대상임을 확인한 경우만 허용한다.
+    # 양수 A값은 공고/사용자 입력으로 확인된 값이어야 한다.
+    # Additive compatibility: legacy manual-calculator callers that omit this
+    # field are accepted only for A=0. Notice-backed clients must still send an
+    # explicit provenance status and all positive A values require confirmation.
+    a_value_status: Optional[Literal["confirmed", "not_applicable"]] = None
+    # 용역·물품은 보편 하한율이 없으므로 공고 명시값이 있어야 계산한다.
+    lower_limit_rate: Optional[float] = Field(default=None, gt=0, le=100)
+    # 공사 하한율 시행일과 공고별 복수예비가격 범위를 재현하기 위한 입력.
+    bid_date: Optional[date] = None
+    prdprc_range_bgn: Optional[float] = Field(default=None, ge=-20, le=20)
+    prdprc_range_end: Optional[float] = Field(default=None, ge=-20, le=20)
+
+    @model_validator(mode="after")
+    def validate_a_value_provenance(self):
+        value = self.a_value or 0
+        if value > 0 and self.a_value_status != "confirmed":
+            raise ValueError("양수 A값은 a_value_status=confirmed 여야 합니다.")
+        if value == 0 and self.a_value_status == "confirmed":
+            raise ValueError(
+                "A값 0원은 a_value_status=confirmed 로 표시할 수 없습니다."
+            )
+        return self
 
 class BidCalculationResponse(BaseModel):
     original_price: float
@@ -24,8 +47,8 @@ class DetailedBidCalculationResponse(BaseModel):
     result_price: int               # 투찰금액 (1원 절사)
     
     # 예정가격 정보
-    estimated_price_min: float      # 예정가격 최소 (기초금액 -3%)
-    estimated_price_max: float      # 예정가격 최대 (기초금액 +3%)
+    estimated_price_min: Optional[float] = None
+    estimated_price_max: Optional[float] = None
     
     # 하한선 정보
     lower_limit_rate: float         # 낙찰하한율 (%)
@@ -77,8 +100,32 @@ class NoticeBase(BaseModel):
     attachment_url: Optional[str] = None  # 첨부파일 URL
     attachment_name: Optional[str] = None  # 첨부파일명
 
+    # `basic_price` is the public API's presmptPrce (estimated price), not the
+    # confirmed basis amount used by safety calculations.  These additive
+    # fields let new clients refuse unsafe fallback while old clients keep
+    # parsing the existing response.
+    basis_amount: Optional[float] = None
+    basis_amount_at: Optional[datetime] = None
+    lower_limit_rate: Optional[float] = None
+    prdprc_range_bgn: Optional[float] = None
+    prdprc_range_end: Optional[float] = None
+    a_value: Optional[int] = None
+    a_value_source: Optional[str] = None
+    a_value_applicable: Optional[str] = None
+    net_cost: Optional[int] = None
+
 
 class Notice(NoticeBase):
+    @computed_field
+    @property
+    def basis_status(self) -> str:
+        return "confirmed" if (self.basis_amount or 0) > 0 else "unconfirmed"
+
+    @computed_field
+    @property
+    def lower_limit_source(self) -> Optional[str]:
+        return "notice" if self.lower_limit_rate is not None else None
+
     class Config:
         from_attributes = True
 
@@ -92,15 +139,27 @@ class BidContextResponse(BaseModel):
     source: str                       # "cache" | "api" | "none"
     title: Optional[str] = None
     estimated_price: Optional[float] = None   # presmptPrce (추정가격)
+    basis_amount: Optional[float] = None      # bssAmt/bssamt (확정 기초금액)
+    basis_status: str = "unconfirmed"        # confirmed | unconfirmed
+    basis_amount_at: Optional[datetime] = None
     budget_amount: Optional[float] = None     # asignBdgtAmt (배정예산)
     organization: Optional[str] = None        # 공고기관
     demand_organization: Optional[str] = None # 수요기관
     opening_date: Optional[str] = None        # 개찰일시 (= 사실상 마감)
+    bid_date: Optional[date] = None           # 공고일/입찰 규칙 시행일 판정 기준
     contract_method: Optional[str] = None     # 계약방법
     bid_method: Optional[str] = None          # 입찰방법
     qualification: Optional[str] = None       # 입찰자격 관련 텍스트 (있으면)
     region: Optional[str] = None              # prtcptLmtRgnNm (참가제한지역)
     contract_type: Optional[str] = None       # CONSTRUCTION/SERVICE/GOODS
+    lower_limit_rate: Optional[float] = None  # 공고 명시값만; 임의 기본값 금지
+    lower_limit_source: Optional[str] = None  # notice | table | none
+    prdprc_range_bgn: Optional[float] = None
+    prdprc_range_end: Optional[float] = None
+    a_value: Optional[int] = None
+    a_value_source: Optional[str] = None
+    a_value_applicable: Optional[str] = None
+    net_cost: Optional[int] = None
 
 
 class BatchContextRequest(BaseModel):

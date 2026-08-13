@@ -162,11 +162,13 @@
       {% if basis_unconfirmed %}<div class="hint">기초금액이 아직 공개되지 않아 자동 입력하지 못했어요.</div>{% endif %}
       <label>사정률 (%) — 보통 -3 ~ +3</label>
       <input type="number" id="calc-rate" value="-2" step="0.01">
-      {% if contract_type != 'GOODS' %}
       <label>A값 (사후정산 비목 합계, 원) <span class="muted">— 공고문/첨부에서 확인</span></label>
-      <input type="number" id="calc-avalue" value="{{ a_value }}">
-      {% if a_value > 0 %}<div class="src-note">✓ A값 자동 표시됨 (BidEasy 캐시)</div>{% else %}<button id="av-auto" style="margin-top:6px;background:#fff;border:1px solid #C6DCFF;color:#3182F6;border-radius:8px;font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;">📄 첨부에서 자동 추정</button><div class="hint" id="av-hint">A값을 모르면 0으로 두세요 (공사 정밀도에만 영향).</div>{% endif %}
-      {% endif %}
+      <input type="number" id="calc-avalue" value="{% if a_value_status == 'confirmed' %}{{ a_value }}{% endif %}" placeholder="공고의 확정 A값을 입력하세요">
+      <label style="display:flex;align-items:flex-start;gap:7px;margin-top:8px;font-size:12px;color:#4E5968;">
+        <input type="checkbox" id="calc-avalue-na" style="width:auto;margin-top:2px;" {% if a_value_status == 'not_applicable' %}checked{% endif %}>
+        <span>공고에서 A값 산정 비대상임을 확인했습니다.</span>
+      </label>
+      {% if a_value_status == 'confirmed' %}<div class="src-note">✓ 출처가 확인된 A값 자동 표시됨</div>{% else %}<button id="av-auto" style="margin-top:6px;background:#fff;border:1px solid #C6DCFF;color:#3182F6;border-radius:8px;font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;">📄 첨부에서 자동 추출</button><div class="hint" id="av-hint">A값 미확인과 비대상(0원)은 다릅니다. 공고문을 확인해 주세요.</div>{% endif %}
       <button class="btn btn-primary" id="calc-btn">투찰가 계산 →</button>
       <div class="result" id="calc-result"></div>
     </div>
@@ -189,6 +191,11 @@
     const API_BASE = "{{ api_base }}";
     const CONTRACT_TYPE = "{{ contract_type }}";
     const BID_NO = "{{ bid_no }}";
+    const NOTICE_LOWER_RATE = {{ lower_limit_pct if lower_limit_pct is not none else 'null' }};
+    const NOTICE_RANGE_BGN = {{ prdprc_range_bgn if prdprc_range_bgn is not none else 'null' }};
+    const NOTICE_RANGE_END = {{ prdprc_range_end if prdprc_range_end is not none else 'null' }};
+    const NOTICE_BID_DATE = "{{ bid_date or '' }}" || null;
+    let aValueStatus = "{{ a_value_status }}";
     function getToken(){ try { return localStorage.getItem('access_token') || localStorage.getItem('jwt') || null; } catch { return null; } }
 
     // 관심공고 + 자격 (로그인 시)
@@ -287,6 +294,11 @@
         const avEl = document.getElementById('calc-avalue');
         if (d.found && d.total) {
           if (avEl) avEl.value = d.total;
+          aValueStatus = 'confirmed';
+          const na = document.getElementById('calc-avalue-na');
+          if (na) na.checked = false;
+          const prior = document.getElementById('calc-result');
+          if (prior) { prior.innerHTML = ''; prior.classList.remove('show'); }
           if (hint) hint.innerHTML = '✓ 첨부에서 추출한 A값 (' + Number(d.total).toLocaleString('ko-KR') + '원) — 공고문 확인 권장.';
           b.style.display = 'none';
         } else {
@@ -300,19 +312,74 @@
 
     const btn = document.getElementById('calc-btn');
     if (btn) {
+      const calcResult = document.getElementById('calc-result');
+      const invalidateCalculation = () => {
+        calcResult.innerHTML = '';
+        calcResult.classList.remove('show');
+      };
+      ['calc-basic', 'calc-rate', 'calc-avalue'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', ev => {
+          if (id === 'calc-avalue') {
+            const value = Number(ev.target.value) || 0;
+            aValueStatus = value > 0 ? 'confirmed' : 'unknown';
+            const na = document.getElementById('calc-avalue-na');
+            if (value > 0 && na) na.checked = false;
+          }
+          invalidateCalculation();
+        });
+      });
+      document.getElementById('calc-avalue-na')?.addEventListener('change', ev => {
+        const avEl = document.getElementById('calc-avalue');
+        if (ev.target.checked) {
+          if (avEl) avEl.value = '';
+          aValueStatus = 'not_applicable';
+        } else {
+          aValueStatus = avEl && Number(avEl.value) > 0 ? 'confirmed' : 'unknown';
+        }
+        invalidateCalculation();
+      });
       btn.addEventListener('click', async () => {
         const basic = Number(document.getElementById('calc-basic').value) || 0;
         const rate = Number(document.getElementById('calc-rate').value) || 0;
         const avEl = document.getElementById('calc-avalue');
-        const aValue = avEl ? (Number(avEl.value) || 0) : 0;
+        const aValue = aValueStatus === 'not_applicable' ? 0 : (avEl ? (Number(avEl.value) || 0) : 0);
         const box = document.getElementById('calc-result');
+        if (!basic) {
+          box.innerHTML = '<span class="muted">확정 기초금액을 먼저 입력해 주세요.</span>';
+          box.classList.add('show'); return;
+        }
+        if (aValueStatus === 'unknown') {
+          box.innerHTML = '<span class="muted">A값을 입력하거나 공고상 비대상을 확인해 주세요.</span>';
+          box.classList.add('show'); return;
+        }
+        if (aValue < 0 || aValue >= basic) {
+          box.innerHTML = '<span class="muted">A값은 0 이상이며 기초금액보다 작아야 합니다.</span>';
+          box.classList.add('show'); return;
+        }
+        if (!NOTICE_LOWER_RATE) {
+          box.innerHTML = '<span class="muted">공고별 낙찰하한율을 확인하지 못해 계산을 보류합니다.</span>';
+          box.classList.add('show'); return;
+        }
         btn.disabled = true; btn.textContent = '계산 중...';
         try {
           const resp = await fetch(API_BASE + '/bids/calculate/detailed', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ basic_price: basic, rate: rate, contract_type: CONTRACT_TYPE, a_value: aValue }),
+            body: JSON.stringify({
+              basic_price: basic,
+              rate: rate,
+              contract_type: CONTRACT_TYPE,
+              a_value: aValue,
+              a_value_status: aValueStatus,
+              lower_limit_rate: NOTICE_LOWER_RATE,
+              bid_date: NOTICE_BID_DATE,
+              prdprc_range_bgn: NOTICE_RANGE_BGN,
+              prdprc_range_end: NOTICE_RANGE_END,
+            }),
           });
-          if (!resp.ok) throw new Error('계산 실패');
+          if (!resp.ok) {
+            const detail = await resp.json().catch(() => null);
+            throw new Error(detail?.detail || '계산 실패');
+          }
           const r = await resp.json();
           const lvl = r.safety_level;
           const cls = lvl === 'SAFE' ? 'safe' : (lvl === 'DANGER' ? 'danger' : 'warn');

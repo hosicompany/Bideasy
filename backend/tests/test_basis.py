@@ -6,8 +6,8 @@
 2. **없으면 안전 판정을 보류한다** — 하한선을 못 구하니 "안전"도 "위험"도
    말할 수 없다.
 
-그리고 시행 스위치(BASIS_AMOUNT_ENFORCE)가 OFF 인 동안에는 기존 동작이
-그대로여야 한다 — 배포와 시행을 분리하기 위함이다.
+시행 스위치의 값과 무관하게 계산 안전 규칙은 항상 적용한다. 설정 누락으로
+추정가격 fallback이 되살아나면 안 된다.
 """
 import pytest
 
@@ -27,18 +27,22 @@ def _notice(basic=100_000_000.0, basis_amount=None):
     return n
 
 
-class TestBeforeEnforcement:
-    """시행 전에는 동작이 바뀌지 않는다 — 배포해도 안전하다."""
+class TestEnforcementCannotBeDisabled:
+    """오래된 env 값이 추정가격 fallback을 다시 열지 못한다."""
 
-    def test_status_is_legacy(self):
-        assert basis.basis_status(_notice()) == basis.LEGACY
+    def test_status_stays_unconfirmed_when_setting_is_false(self, monkeypatch):
+        monkeypatch.setattr(basis.settings, "BASIS_AMOUNT_ENFORCE", False, raising=False)
+        assert basis.enforcing() is True
+        assert basis.basis_status(_notice()) == basis.UNCONFIRMED
 
-    def test_falls_back_to_basic_price(self):
-        assert basis.confirmed_basis(_notice(basic=100_000_000.0)) == 100_000_000.0
+    def test_does_not_fall_back_when_setting_is_false(self, monkeypatch):
+        monkeypatch.setattr(basis.settings, "BASIS_AMOUNT_ENFORCE", False, raising=False)
+        assert basis.confirmed_basis(_notice(basic=100_000_000.0)) is None
 
-    def test_display_shows_basic_price(self):
+    def test_display_withholds_estimated_price(self, monkeypatch):
+        monkeypatch.setattr(basis.settings, "BASIS_AMOUNT_ENFORCE", False, raising=False)
         amount, st = basis.display_basis(_notice(basic=123.0))
-        assert amount == 123 and st == basis.LEGACY
+        assert amount == 0 and st == basis.UNCONFIRMED
 
 
 class TestAfterEnforcement:
@@ -90,6 +94,7 @@ class TestMockBiddingIntegration:
 
         n = _notice(basic=100_000_000.0, basis_amount=110_000_000.0)
         n.bid_method = "적격심사제"
+        n.a_value_applicable = "N"
         prices = mb.compute_arm_prices(n)
         std = next(p for p in prices if p.arm == "standard")
         # standard = 기초금액 × 97.5%
@@ -129,6 +134,9 @@ class TestNoticeDetailPage:
 
         assert "기초금액 미확인" not in html
         assert "110,000,000원" in html
+        assert "A값 미확인과 비대상(0원)은 다릅니다" in html
+        assert 'const NOTICE_BID_DATE = "' in html
+        assert "&#34;" not in html
 
 
 class TestOpeningAsBasisSource:

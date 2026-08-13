@@ -1,6 +1,8 @@
 import asyncio
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -14,6 +16,7 @@ from app.db.session import get_db
 from app.db import models
 from app.schemas.subscription import tier_at_least, TIER_PRO_PLUS, get_effective_tier
 from app.services.activation import record_first_activation
+from app.services.basis import basis_status as get_basis_status, confirmed_basis
 from app.services.tips_generator import generate_tips
 from app.services.scraper import ScraperService
 
@@ -32,6 +35,52 @@ AI_DAILY_LIMIT = {
 # Redis 미가용(dev/test) 시 폴백용 in-memory 카운터.
 # ⚠️ 멀티워커/재시작에 취약하므로 운영에서는 Redis 경로가 1차다.
 _user_call_log: dict[int, deque[datetime]] = defaultdict(deque)
+
+# Old cached analyses called ``presmptPrce`` a basis amount and invented a
+# +/-3% planned-price range.  Never serve those artifacts after the price
+# semantics contract changes.
+PRICE_CONTEXT_CONTRACT_VERSION = "confirmed-basis-v2"
+
+
+def _price_context_fingerprint(data: dict) -> str:
+    fields = (
+        "estimated_price",
+        "basis_amount",
+        "basis_status",
+        "contract_type",
+        "lower_limit_rate",
+        "prdprc_range_bgn",
+        "prdprc_range_end",
+        "a_value",
+        "a_value_source",
+        "a_value_applicable",
+    )
+    payload = {key: data.get(key) for key in fields}
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _notice_price_context(notice) -> dict:
+    if notice is None:
+        return {}
+    return {
+        "estimated_price": notice.basic_price,
+        "basis_amount": confirmed_basis(notice),
+        "basis_status": get_basis_status(notice),
+        "contract_type": getattr(notice, "contract_type", None),
+        "lower_limit_rate": getattr(notice, "lower_limit_rate", None),
+        "prdprc_range_bgn": getattr(notice, "prdprc_range_bgn", None),
+        "prdprc_range_end": getattr(notice, "prdprc_range_end", None),
+        "a_value": getattr(notice, "a_value", None),
+        "a_value_source": getattr(notice, "a_value_source", None),
+        "a_value_applicable": getattr(notice, "a_value_applicable", None),
+    }
 
 
 def _kst_date() -> str:
@@ -148,7 +197,19 @@ async def analyze_bid(
     bid_no: str,
     # Core fields
     title: Optional[str] = Query(None),
+    # ``basic_price`` is a legacy query name. Flutter used to put
+    # Notice.basic_price (presmptPrce) here, so it is treated as an estimate,
+    # never as a confirmed basis amount.
     basic_price: Optional[float] = Query(None),
+    estimated_price: Optional[float] = Query(None),
+    basis_amount: Optional[float] = Query(None),
+    basis_status: Optional[str] = Query(None),
+    lower_limit_rate: Optional[float] = Query(None),
+    prdprc_range_bgn: Optional[float] = Query(None),
+    prdprc_range_end: Optional[float] = Query(None),
+    a_value: Optional[int] = Query(None),
+    a_value_source: Optional[str] = Query(None),
+    a_value_applicable: Optional[str] = Query(None),
     organization: Optional[str] = Query(None),
     # Extended fields
     demand_organization: Optional[str] = Query(None),
@@ -189,6 +250,27 @@ async def analyze_bid(
     used_count = check_ai_rate_limit(current_user)
     logger.info(f"AI rate check passed: user={current_user.id} tier={current_user.tier} used_today={used_count}")
 
+    notice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
+    price_override_requested = any(
+        value is not None
+        for value in (
+            basic_price,
+            estimated_price,
+            basis_amount,
+            basis_status,
+            contract_type,
+            lower_limit_rate,
+            prdprc_range_bgn,
+            prdprc_range_end,
+            a_value,
+            a_value_source,
+            a_value_applicable,
+        )
+    )
+    current_price_fingerprint = _price_context_fingerprint(
+        _notice_price_context(notice)
+    )
+
     # 1. Check Cache
     cached_log = db.query(models.AIAnalysisLog).filter(
         models.AIAnalysisLog.bid_no == bid_no
@@ -197,11 +279,20 @@ async def analyze_bid(
     if cached_log and cached_log.summary_json:
         logger.info(f"Cache hit for {bid_no}")
         # 캐시된 결과가 새 형식인지 확인
-        if isinstance(cached_log.summary_json, dict) and "tips" in cached_log.summary_json:
+        if (
+            isinstance(cached_log.summary_json, dict)
+            and "tips" in cached_log.summary_json
+            and cached_log.summary_json.get("meta", {}).get("price_context_contract")
+            == PRICE_CONTEXT_CONTRACT_VERSION
+            and not price_override_requested
+            and cached_log.summary_json.get("meta", {}).get(
+                "price_context_fingerprint"
+            )
+            == current_price_fingerprint
+        ):
             # 자격은 사용자별이라 캐시에 두지 않음 → 현재 사용자 기준 재계산 후 주입.
-            cnotice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
-            c_title = (title or (cnotice.title if cnotice else "")) or ""
-            c_region = (region or (getattr(cnotice, "region", "") if cnotice else "")) or ""
+            c_title = (title or (notice.title if notice else "")) or ""
+            c_region = (region or (getattr(notice, "region", "") if notice else "")) or ""
             # 활성화 계측: 캐시 히트도 사용자에겐 성공한 분석이다 — 여기서도 기록.
             record_first_activation(db, current_user, source="ai_analysis")
             return _apply_qualification(
@@ -212,8 +303,6 @@ async def analyze_bid(
     bid_data = {}
     
     # Try to get from DB first
-    notice = db.query(models.Notice).filter(models.Notice.bid_no == bid_no).first()
-    
     if notice:
         logger.info(f"Using Notice from DB: {notice.title[:50] if notice.title else 'N/A'}...")
         try:
@@ -222,20 +311,34 @@ async def analyze_bid(
             # Fallback
             bid_data = {
                 "title": notice.title,
-                "basic_price": notice.basic_price,
+                "estimated_price": notice.basic_price,
                 "organization": getattr(notice, "organization", None),
                 "contract_type": getattr(notice, "contract_type", "CONSTRUCTION"),
             }
+
+        # Notice.basic_price is presmptPrce.  Keep it available only under the
+        # honest estimate name and derive the calculation basis from the
+        # dedicated confirmed field.
+        bid_data["estimated_price"] = notice.basic_price
+        bid_data.pop("basic_price", None)
+        bid_data["basis_amount"] = confirmed_basis(notice)
+        bid_data["basis_status"] = get_basis_status(notice)
+        bid_data["lower_limit_rate"] = getattr(notice, "lower_limit_rate", None)
+        bid_data["prdprc_range_bgn"] = getattr(notice, "prdprc_range_bgn", None)
+        bid_data["prdprc_range_end"] = getattr(notice, "prdprc_range_end", None)
+        bid_data["a_value"] = getattr(notice, "a_value", None)
+        bid_data["a_value_source"] = getattr(notice, "a_value_source", None)
+        bid_data["a_value_applicable"] = getattr(notice, "a_value_applicable", None)
     
     # Override/supplement with query params (they are more recent)
     param_data = {
         "title": title,
-        "basic_price": basic_price,
+        "estimated_price": estimated_price if estimated_price is not None else basic_price,
         "organization": organization,
         "demand_organization": demand_organization,
         "bid_method": bid_method,
         "contract_method": contract_method,
-        "contract_type": contract_type or "CONSTRUCTION",
+        "contract_type": contract_type,
         "bid_type": bid_type,
         "status": status,
         "region": region,
@@ -252,6 +355,23 @@ async def analyze_bid(
         "start_date": start_date,
         "end_date": end_date,
     }
+
+    # A caller may explicitly confirm a manually checked basis/A value. A bare
+    # amount is insufficient: without the status it remains untrusted.
+    if basis_status and basis_status.lower() == "confirmed" and basis_amount and basis_amount > 0:
+        param_data["basis_amount"] = basis_amount
+        param_data["basis_status"] = "confirmed"
+    if lower_limit_rate is not None:
+        param_data["lower_limit_rate"] = lower_limit_rate
+    if prdprc_range_bgn is not None:
+        param_data["prdprc_range_bgn"] = prdprc_range_bgn
+    if prdprc_range_end is not None:
+        param_data["prdprc_range_end"] = prdprc_range_end
+    if a_value is not None:
+        param_data["a_value"] = a_value
+        param_data["a_value_source"] = a_value_source or "user"
+    if a_value_applicable is not None:
+        param_data["a_value_applicable"] = a_value_applicable
     
     # Merge: query params take precedence if not None
     for key, value in param_data.items():
@@ -259,10 +379,12 @@ async def analyze_bid(
             bid_data[key] = value
     
     # 3. Validate minimum data
-    if not bid_data.get("title") and not bid_data.get("basic_price"):
+    if not bid_data.get("title") and not (
+        bid_data.get("estimated_price") or bid_data.get("basis_amount")
+    ):
         raise HTTPException(
             status_code=400,
-            detail="분석에 필요한 공고 정보가 부족합니다. (제목 또는 기초금액 필요)"
+            detail="분석에 필요한 공고 정보가 부족합니다. (제목 또는 금액 정보 필요)"
         )
     
     logger.info(f"Generating tips for: {bid_data.get('title', 'Unknown')[:30]}...")
@@ -280,6 +402,12 @@ async def analyze_bid(
             }
         
         analysis_result = generate_tips(bid_data, user_profile)
+        analysis_result.setdefault("meta", {})[
+            "price_context_contract"
+        ] = PRICE_CONTEXT_CONTRACT_VERSION
+        analysis_result["meta"]["price_context_fingerprint"] = (
+            _price_context_fingerprint(bid_data)
+        )
         
         # 4.1. Qualification Check (Phase 4)
         if user:

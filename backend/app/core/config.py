@@ -198,7 +198,12 @@ class Settings(BaseSettings):
     # OFF 면 기존 동작(추정가격을 기초금액처럼 사용). ON 이면 확인된 기초금액만
     # 쓰고, 없는 공고는 "기초금액 미확인"으로 **안전 판정을 보류**한다.
     # 수집이 며칠 쌓여 커버리지가 안정된 뒤 켠다 — 지금 켜면 대부분이 미확인이다.
-    BASIS_AMOUNT_ENFORCE: bool = False
+    # Safety calculations must never treat `presmptPrce` (estimated price) as
+    # the confirmed basis amount.  This used to default to False as a rollout
+    # switch, which meant a missing production env var silently restored the
+    # unsafe fallback.  Keep the setting for env-file compatibility, but the
+    # domain service now enforces confirmed-only semantics unconditionally.
+    BASIS_AMOUNT_ENFORCE: bool = True
     AWS_REGION: str = "ap-northeast-2"
     # 자격증명은 IAM 역할이 있으면 비워둔다(boto3 기본 체인). Lightsail 은 키 주입 필요.
     AWS_ACCESS_KEY_ID: str = ""

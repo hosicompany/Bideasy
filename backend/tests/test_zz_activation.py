@@ -208,7 +208,12 @@ class TestFirstActivationHookCalculator:
     없으면 지표가 "AI 분석을 눌러본 사람"만 세게 되므로 두 경로 모두 검증한다.
     """
 
-    _PAYLOAD = {"basic_price": 100000000, "a_value": 0, "rate": -2.0}
+    _PAYLOAD = {
+        "basic_price": 100000000,
+        "a_value": 0,
+        "a_value_status": "not_applicable",
+        "rate": -2.0,
+    }
 
     def test_detailed_records_activation(self, client, db_session):
         user = _make_user(db_session, "activation-calc-1@test.com")

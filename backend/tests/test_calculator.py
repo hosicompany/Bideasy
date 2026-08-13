@@ -2,6 +2,7 @@ def test_calculate(client):
     resp = client.post("/api/v1/bids/calculate", json={
         "basic_price": 100000000,
         "a_value": 0,
+        "a_value_status": "not_applicable",
         "rate": -2.0,
     })
     assert resp.status_code == 200

@@ -93,6 +93,31 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
 
     _basis_amount, _basis_status = basis_svc.display_basis(notice, opening)
     _basis_unconfirmed = _basis_status == basis_svc.UNCONFIRMED
+    _notice_lower = float(getattr(notice, "lower_limit_rate", 0) or 0) if notice else 0
+    _a_value = int(getattr(notice, "a_value", 0) or 0) if notice else 0
+    _a_source = getattr(notice, "a_value_source", None) if notice else None
+    _a_applicable = str(
+        getattr(notice, "a_value_applicable", None) or ""
+    ).strip().upper() if notice else ""
+    if _a_applicable in {"N", "NO", "FALSE", "미적용", "비대상"} and _a_value == 0:
+        _a_status = "not_applicable"
+    elif _a_value > 0 and _a_source:
+        _a_status = "confirmed"
+    else:
+        _a_status = "unknown"
+    _bid_date = notice.start_date.date() if notice and notice.start_date else None
+    if _basis_unconfirmed:
+        _lower_limit_pct = None
+    elif _notice_lower > 0:
+        _lower_limit_pct = _notice_lower
+    elif ct == "CONSTRUCTION" and _basis_amount:
+        _lower_limit_pct = get_lower_limit_rate(
+            ct,
+            float(_basis_amount),
+            _bid_date,
+        )
+    else:
+        _lower_limit_pct = None
 
     # 개찰 결과 블록 — 사정률은 마감 후에만 알 수 있는 값이라 특히 유용하다
     _result = None
@@ -132,13 +157,16 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
         "opening_date": (getattr(notice, "opening_date", None) if notice else None) or deadline_iso,
         "deadline_iso": deadline_iso,
         "detail_url": getattr(notice, "content", None) if notice else None,
-        "a_value": int(getattr(notice, "a_value", 0) or 0) if notice else 0,
-        # 공사는 금액대·시행일 티어드 (단일 소스: lower_limits) — notice 없으면 legacy 폴백.
-        # 기초금액 미확인이면 금액대를 모르니 하한율도 확정할 수 없다 → None.
-        "lower_limit_pct": (
-            None if _basis_unconfirmed
-            else get_lower_limit_rate(ct, float(_basis_amount) if _basis_amount else None)
-        ),
+        "a_value": _a_value if _a_status == "confirmed" else 0,
+        "a_value_status": _a_status,
+        "a_value_source": _a_source,
+        "a_value_applicable": _a_applicable or None,
+        # 공고 명시값을 우선하고, 시설공사에만 시행일·금액대 표를 쓴다.
+        # 용역·물품의 보편 기본값은 만들지 않는다.
+        "lower_limit_pct": _lower_limit_pct,
+        "prdprc_range_bgn": getattr(notice, "prdprc_range_bgn", None) if notice else None,
+        "prdprc_range_end": getattr(notice, "prdprc_range_end", None) if notice else None,
+        "bid_date": _bid_date.isoformat() if _bid_date else None,
         "is_closed": is_closed,
         "result": _result,
         "site_url": SITE_URL,

@@ -2,8 +2,9 @@
 Advanced Bidding Calculator Service
 정밀 투찰가 계산 및 안전도 분석
 """
-import math
 from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal, ROUND_FLOOR
 from enum import Enum
 
 from app.services.lower_limits import LEGACY_RATES, get_lower_limit_rate as _shared_lower_limit
@@ -20,17 +21,17 @@ class BidCalculationResult:
     """상세 계산 결과"""
     original_price: float           # 기초금액
     rate: float                     # 사정률 (%)
-    result_price: int               # 투찰금액 (1원 절사)
+    result_price: int               # 투찰금액 (10원 미만 절사)
     
     # 예정가격 정보
-    estimated_price_min: float      # 예정가격 최소 (기초금액 -3%)
-    estimated_price_max: float      # 예정가격 최대 (기초금액 +3%)
+    estimated_price_min: float | None
+    estimated_price_max: float | None
     
     # 하한선 정보
     lower_limit_rate: float         # 낙찰하한율 (%)
     lower_limit_price: int          # 낙찰하한선 금액 (기초금액 기준)
-    lower_limit_price_est_min: int  # 낙찰하한선 (예정가 최소 기준)
-    lower_limit_price_est_max: int  # 낙찰하한선 (예정가 최대 기준)
+    lower_limit_price_est_min: int | None
+    lower_limit_price_est_max: int | None
     
     # A값 정보
     a_value: int                    # A값 (국민연금, 건강보험 등 고정비)
@@ -41,16 +42,13 @@ class BidCalculationResult:
     distance_from_limit: float      # 하한선 대비 여유율 (%)
     
     # 메시지
-    warning_message: str = None
+    warning_message: str | None = None
 
 
 # 법정 낙찰하한선 — 정본은 app.services.lower_limits (2026-07-17 통합).
 # 이 별칭은 하위 호환용. 공사는 금액대·시행일 티어드라 상수 참조 대신
 # CalculatorService.get_lower_limit_rate(contract_type, basic_price) 를 쓸 것.
 LOWER_LIMIT_RATES = LEGACY_RATES
-
-# 예정가격 산정 범위
-ESTIMATED_PRICE_VARIANCE = 0.03  # ±3%
 
 # 입찰방법 + 금액대별 최적 전략
 # 5년치 4,848건 가중 그리드 서치 (최근 연도 가중치 3x, 하한통과 90%+)
@@ -100,31 +98,65 @@ def _get_price_bracket(basic_price: float) -> str:
 # 저장소 접근 실패 시 BID_STRATEGY 로 안전하게 폴백.
 _strategy_cache: dict | None = None
 _strategy_mtime: float | None = None
+_strategy_version_cache: str | None = None
+_strategy_parameters_hash_cache: str | None = None
+_strategy_data_manifest_hash_cache: str | None = None
 
 
-def _get_active_strategy() -> dict:
-    """현재 active 전략 파라미터를 반환 (캐시 + mtime 무효화)."""
-    global _strategy_cache, _strategy_mtime
+def _get_active_strategy_snapshot() -> tuple[dict, str, str, str | None]:
+    """한 번 읽은 active 전략과 그 provenance를 같은 snapshot으로 반환한다."""
+    global _strategy_cache, _strategy_mtime, _strategy_version_cache
+    global _strategy_parameters_hash_cache, _strategy_data_manifest_hash_cache
     try:
-        from app.services.autocalibrate.strategy_store import get_default_store
+        from app.services.autocalibrate.strategy_store import (
+            get_default_store,
+            strategy_parameters_hash,
+        )
 
         store = get_default_store()
         store.ensure_bootstrap(BID_STRATEGY)  # 최초 1회 v0_bootstrap 저장
         mtime = store.active_mtime()
         if _strategy_cache is None or mtime != _strategy_mtime:
-            _strategy_cache = store.load_active().params
+            active = store.load_active()
+            _strategy_cache = active.params
+            _strategy_version_cache = active.version_id
+            _strategy_parameters_hash_cache = strategy_parameters_hash(active.params)
+            _strategy_data_manifest_hash_cache = getattr(
+                active, "data_manifest_hash", None
+            )
             _strategy_mtime = mtime
-        return _strategy_cache
+        return (
+            _strategy_cache,
+            _strategy_version_cache or "unknown",
+            _strategy_parameters_hash_cache or strategy_parameters_hash(_strategy_cache),
+            _strategy_data_manifest_hash_cache,
+        )
     except Exception:
         # 저장소 미초기화/오류 시 정적 기본값으로 폴백
-        return BID_STRATEGY
+        from app.services.autocalibrate.strategy_store import strategy_parameters_hash
+
+        return (
+            BID_STRATEGY,
+            "v0_static_fallback",
+            strategy_parameters_hash(BID_STRATEGY),
+            None,
+        )
+
+
+def _get_active_strategy() -> dict:
+    """하위 호환용 파라미터 조회. 추천은 snapshot API를 직접 사용한다."""
+    return _get_active_strategy_snapshot()[0]
 
 
 def reload_strategy_cache() -> None:
     """전략 캐시 강제 무효화 (자가보정 사이클 채택 직후 호출용)."""
-    global _strategy_cache, _strategy_mtime
+    global _strategy_cache, _strategy_mtime, _strategy_version_cache
+    global _strategy_parameters_hash_cache, _strategy_data_manifest_hash_cache
     _strategy_cache = None
     _strategy_mtime = None
+    _strategy_version_cache = None
+    _strategy_parameters_hash_cache = None
+    _strategy_data_manifest_hash_cache = None
 
 
 class CalculatorService:
@@ -144,8 +176,31 @@ class CalculatorService:
     
     @staticmethod
     def truncate_to_10_won(price: float) -> int:
-        """1원 단위 절사 (10원 미만 버림)"""
-        return math.floor(price / 10) * 10
+        """10원 단위 절사 (10원 미만 버림)."""
+        amount = price if isinstance(price, Decimal) else Decimal(str(price))
+        return int(
+            (amount / Decimal("10")).to_integral_value(rounding=ROUND_FLOOR)
+            * Decimal("10")
+        )
+
+    @staticmethod
+    def calculate_price_at_rate(
+        reference_price: float,
+        rate_pct: float,
+        a_value: float = 0,
+    ) -> int:
+        """``(reference-A) * rate + A``를 십진수로 계산해 10원 절사한다.
+
+        금액·비율을 이진 부동소수점으로 곱한 뒤 ``floor``하면
+        정확히 10원 경계인 값이 9.999999원으로 표현돼 10원이
+        더 깎일 수 있다. 외부 입력을 문자열 기반 Decimal로 변환해
+        공고 공식의 십진 의미를 보존한다.
+        """
+        reference = Decimal(str(reference_price))
+        fixed = Decimal(str(a_value))
+        rate = Decimal(str(rate_pct)) / Decimal("100")
+        raw = ((reference - fixed) * rate) + fixed
+        return CalculatorService.truncate_to_10_won(raw)
     
     @staticmethod
     def calculate_safe_bid(basic_price: float, rate: float, a_value: float = 0) -> int:
@@ -161,20 +216,40 @@ class CalculatorService:
             A값이 있는 경우: ((기초금액 - A값) * 사정률) + A값
             A값이 없는 경우: 기초금액 * 사정률
         """
-        if a_value > 0:
-            # A값은 사정률을 적용하지 않고 그대로 유지
-            variable_part = basic_price - a_value
-            target_price = (variable_part * (1 + rate / 100)) + a_value
-        else:
-            target_price = basic_price * (1 + rate / 100)
-        return CalculatorService.truncate_to_10_won(target_price)
+        return CalculatorService.calculate_price_at_rate(
+            basic_price,
+            100 + rate,
+            a_value,
+        )
+
+    @staticmethod
+    def calculate_strategy_price(
+        basic_price: float,
+        adjustment_pct: float,
+        target_rate_pct: float,
+        a_value: float = 0,
+    ) -> int:
+        """Authoritative strategy formula for production and evaluation."""
+        basic = Decimal(str(basic_price))
+        adjustment = Decimal(str(adjustment_pct)) / Decimal("100")
+        predicted_reserved = basic * (Decimal("1") + adjustment)
+        return CalculatorService.calculate_price_at_rate(
+            predicted_reserved,
+            target_rate_pct,
+            a_value,
+        )
     
     @staticmethod
     def calculate_detailed_bid(
         basic_price: float, 
         rate: float, 
         contract_type: str = "CONSTRUCTION",
-        a_value: int = 0
+        a_value: int = 0,
+        *,
+        lower_limit_rate: float | None = None,
+        bid_date: date | None = None,
+        prdprc_range_bgn: float | None = None,
+        prdprc_range_end: float | None = None,
     ) -> BidCalculationResult:
         """
         상세 투찰금액 계산 (A값 반영)
@@ -184,33 +259,86 @@ class CalculatorService:
             rate: 사정률 (%)
             contract_type: 계약 유형
             a_value: A값 (고정비용, 낙찰률 미적용)
+            lower_limit_rate: 공고가 명시한 낙찰하한율. 공사도 이 값이
+                있으면 금액대 표보다 우선한다.
+            bid_date: 공사 하한율 시행일 판단 기준일
+            prdprc_range_bgn/end: 공고가 명시한 예정가격 범위(%)
         
         Returns:
             BidCalculationResult with all calculation details
         """
+        if basic_price <= 0:
+            raise ValueError("기초금액은 0보다 커야 합니다")
+        if a_value < 0 or a_value >= basic_price:
+            raise ValueError("A값은 0 이상 기초금액 미만이어야 합니다")
+
+        normalized_contract = (contract_type or "").strip().upper()
+        explicit_lower = (
+            float(lower_limit_rate) if lower_limit_rate is not None else None
+        )
+        if explicit_lower is not None and not 0 < explicit_lower <= 100:
+            raise ValueError("낙찰하한율은 0 초과 100 이하여야 합니다")
+        if normalized_contract != "CONSTRUCTION" and explicit_lower is None:
+            raise ValueError(
+                "용역·물품 계산에는 공고가 명시한 낙찰하한율이 필요합니다"
+            )
+        if (prdprc_range_bgn is None) != (prdprc_range_end is None):
+            raise ValueError("예정가격 범위의 시작·끝 값을 함께 입력해야 합니다")
+        if (
+            prdprc_range_bgn is not None
+            and prdprc_range_end is not None
+            and prdprc_range_bgn > prdprc_range_end
+        ):
+            raise ValueError("예정가격 범위 시작값이 끝값보다 클 수 없습니다")
+
         # 1. 투찰금액 계산 (A값 반영)
         result_price = CalculatorService.calculate_safe_bid(basic_price, rate, a_value)
         
-        # 2. 예정가격 범위 계산 (기초금액 ±3%)
-        est_min = basic_price * (1 - ESTIMATED_PRICE_VARIANCE)
-        est_max = basic_price * (1 + ESTIMATED_PRICE_VARIANCE)
+        # 2. 공고가 밝힌 예정가격 범위만 계산한다. ±3%를 임의 대입하지 않는다.
+        est_min = (
+            basic_price * (1 + prdprc_range_bgn / 100)
+            if prdprc_range_bgn is not None
+            else None
+        )
+        est_max = (
+            basic_price * (1 + prdprc_range_end / 100)
+            if prdprc_range_end is not None
+            else None
+        )
         
-        # 3. 낙찰하한선 계산 (A값 반영) — 공사는 금액대·시행일 티어드
-        lower_rate = CalculatorService.get_lower_limit_rate(contract_type, basic_price)
+        # 3. 낙찰하한선 계산 (A값 반영). 공고 명시값이 표보다 우선한다.
+        lower_rate = (
+            explicit_lower
+            if explicit_lower is not None
+            else CalculatorService.get_lower_limit_rate(
+                normalized_contract, basic_price, bid_date
+            )
+        )
         
         # 기초금액 기준 하한선 (A값 적용 공식: (기초금액 - A) * 하한율 + A)
-        if a_value > 0:
-            limit_base_raw = ((basic_price - a_value) * (lower_rate / 100)) + a_value
-            limit_est_min_raw = ((est_min - a_value) * (lower_rate / 100)) + a_value
-            limit_est_max_raw = ((est_max - a_value) * (lower_rate / 100)) + a_value
-        else:
-            limit_base_raw = basic_price * (lower_rate / 100)
-            limit_est_min_raw = est_min * (lower_rate / 100)
-            limit_est_max_raw = est_max * (lower_rate / 100)
-
-        limit_base = CalculatorService.truncate_to_10_won(limit_base_raw)
-        limit_est_min = CalculatorService.truncate_to_10_won(limit_est_min_raw)
-        limit_est_max = CalculatorService.truncate_to_10_won(limit_est_max_raw)
+        limit_base = CalculatorService.calculate_price_at_rate(
+            basic_price,
+            lower_rate,
+            a_value,
+        )
+        limit_est_min = (
+            CalculatorService.calculate_price_at_rate(
+                est_min,
+                lower_rate,
+                a_value,
+            )
+            if est_min is not None
+            else None
+        )
+        limit_est_max = (
+            CalculatorService.calculate_price_at_rate(
+                est_max,
+                lower_rate,
+                a_value,
+            )
+            if est_max is not None
+            else None
+        )
         
         # 4. 안전도 계산
         # 기초금액 기준 하한선으로 판단 (보수적)
@@ -291,6 +419,9 @@ class CalculatorService:
         contract_type: str = "CONSTRUCTION",
         a_value: float = 0,
         strategy_override: dict | None = None,
+        *,
+        lower_limit_rate: float | None = None,
+        bid_date: date | None = None,
     ) -> dict:
         """
         입찰방법 + 금액대별 최적 투찰가 추천 (실전용)
@@ -307,34 +438,72 @@ class CalculatorService:
             a_value: A값 (고정비용)
             strategy_override: 임의 파라미터셋 주입 (백테스트/최적화/가드 검증용).
                 None 이면 autocalibrate 저장소의 active 파라미터 사용.
+            lower_limit_rate: 공고가 명시한 낙찰하한율. 주어지면 공통
+                표 계산값보다 우선한다.
+            bid_date: 명시 하한율이 없을 때 공사 하한율 시행일을
+                판단할 기준일.
 
         Returns:
             dict with recommended_price, bid_rate, margin, strategy_desc
         """
-        lower_rate = CalculatorService.get_lower_limit_rate(contract_type, basic_price)
+        if basic_price <= 0:
+            raise ValueError("기초금액은 0보다 커야 합니다")
+        if a_value < 0 or a_value >= basic_price:
+            raise ValueError("A값은 0 이상 기초금액 미만이어야 합니다")
+
+        explicit_lower = (
+            float(lower_limit_rate) if lower_limit_rate is not None else None
+        )
+        if explicit_lower is not None and not 0 < explicit_lower <= 100:
+            raise ValueError("낙찰하한율은 0 초과 100 이하여야 합니다")
+        lower_rate = (
+            explicit_lower
+            if explicit_lower is not None
+            else CalculatorService.get_lower_limit_rate(
+                contract_type, basic_price, bid_date
+            )
+        )
         bracket = _get_price_bracket(basic_price)
 
         # 입찰방법 + 금액대별 최적 파라미터 조회 (동적 또는 주입)
-        strategy = strategy_override if strategy_override is not None else _get_active_strategy()
+        if strategy_override is not None:
+            from app.services.autocalibrate.strategy_store import strategy_parameters_hash
+
+            strategy = strategy_override
+            strategy_version = "strategy_override"
+            parameters_hash = strategy_parameters_hash(strategy_override)
+            data_manifest_hash = None
+        else:
+            (
+                strategy,
+                strategy_version,
+                parameters_hash,
+                data_manifest_hash,
+            ) = _get_active_strategy_snapshot()
         default_method = strategy.get("DEFAULT", BID_STRATEGY["DEFAULT"])
         method_strategy = strategy.get(bid_method, default_method)
         _params = method_strategy.get(bracket, (-0.3, 1.0))
         # JSON 저장소는 list, 정적 딕셔너리는 tuple — 둘 다 호환
         adjustment, margin = float(_params[0]), float(_params[1])
 
-        # 예정가격 예측: 기초금액에 보정값 적용
-        predicted_reserved = basic_price * (1 + adjustment / 100)
+        # 예정가격 예측: 기초금액에 보정값 적용. 금액 경계에서
+        # 이진 float 오차로 10원이 더 절사되지 않도록 Decimal을 유지한다.
+        basic_decimal = Decimal(str(basic_price))
+        a_decimal = Decimal(str(a_value))
+        adjustment_decimal = Decimal(str(adjustment)) / Decimal("100")
+        predicted_reserved = basic_decimal * (Decimal("1") + adjustment_decimal)
+        if a_decimal >= predicted_reserved:
+            raise ValueError("A값은 보정 예정가격 미만이어야 합니다")
 
         # 투찰률 = 하한율 + 여유분
         target_rate_pct = lower_rate + margin
 
-        if a_value > 0:
-            variable = predicted_reserved - a_value
-            target_price = (variable * (target_rate_pct / 100)) + a_value
-        else:
-            target_price = predicted_reserved * (target_rate_pct / 100)
-
-        recommended_price = CalculatorService.truncate_to_10_won(target_price)
+        recommended_price = CalculatorService.calculate_strategy_price(
+            basic_price,
+            adjustment,
+            target_rate_pct,
+            a_value,
+        )
         bid_rate = (recommended_price / basic_price) * 100 if basic_price > 0 else 0
 
         return {
@@ -343,6 +512,10 @@ class CalculatorService:
             "lower_limit_rate": lower_rate,
             "margin": margin,
             "adjustment": adjustment,
+            "strategy_version": strategy_version,
+            "strategy_parameters_hash": parameters_hash,
+            "data_manifest_hash": data_manifest_hash,
+            "predicted_reserved_price": float(predicted_reserved),
             "bracket": bracket,
             "target_rate_pct": round(target_rate_pct, 3),
             "bid_method": bid_method,

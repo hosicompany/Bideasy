@@ -2,6 +2,7 @@
 import pytest
 
 from app.core.rate_limit import limiter
+from app.services.tips_generator import generate_tips
 
 
 @pytest.fixture(autouse=True)
@@ -48,6 +49,26 @@ class TestAiAnalysis:
         data = resp.json()
         assert "tips" in data or "summary" in data
 
+    def test_legacy_basic_price_is_displayed_only_as_estimate(
+        self, pro_client, sample_notice, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "app.services.scraper.ScraperService.fetch_page_content",
+            lambda url: None,
+        )
+        resp = pro_client.get(
+            "/api/v1/ai/TEST-001/analysis",
+            params={"title": "가격 의미 테스트", "basic_price": 500_000_000},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "추정가격" in data["summary"]
+        assert data["price_info"]["basis_status"] == "unconfirmed"
+        assert data["price_info"]["basic_price"] is None
+        assert data["price_info"]["lower_limit"] is None
+        assert "기초금액" in data["price_info"]["abstain_reason"]
+
     def test_qualification_not_leaked_via_cache(self, client, db_session, monkeypatch):
         """사용자별 자격이 캐시로 타인에게 노출되지 않음 (A FAIL → B PASS)."""
         monkeypatch.setattr("app.services.scraper.ScraperService.fetch_page_content", lambda url: None)
@@ -83,6 +104,38 @@ class TestAiAnalysis:
         assert r1.status_code == 200
         assert r2.status_code == 200
 
+    def test_price_context_correction_invalidates_cached_analysis(
+        self, pro_client, db_session, monkeypatch
+    ):
+        from app.db import models
+
+        monkeypatch.setattr(
+            "app.services.scraper.ScraperService.fetch_page_content",
+            lambda url: None,
+        )
+        notice = models.Notice(
+            bid_no="AI-PRICE-REV-000",
+            title="가격 정정 캐시 테스트",
+            basic_price=90_000_000,
+            contract_type="CONSTRUCTION",
+        )
+        db_session.add(notice)
+        db_session.commit()
+
+        before = pro_client.get("/api/v1/ai/AI-PRICE-REV-000/analysis")
+        assert before.status_code == 200
+        assert before.json()["price_info"]["basis_status"] == "unconfirmed"
+
+        notice.basis_amount = 100_000_000
+        notice.lower_limit_rate = 89.745
+        notice.a_value_applicable = "N"
+        db_session.commit()
+
+        after = pro_client.get("/api/v1/ai/AI-PRICE-REV-000/analysis")
+        assert after.status_code == 200
+        assert after.json()["price_info"]["basis_status"] == "confirmed"
+        assert after.json()["price_info"]["lower_limit"]["amount"] == 89_745_000
+
     def test_clear_cache(self, pro_client, admin_client, sample_notice, monkeypatch):
         """DELETE cache endpoint works (관리자 전용)."""
         monkeypatch.setattr(
@@ -99,3 +152,44 @@ class TestAiAnalysis:
         # 관리자는 삭제 가능
         resp = admin_client.delete("/api/v1/ai/TEST-001/analysis/cache")
         assert resp.status_code == 200
+
+
+def test_tips_require_public_range_and_known_a_value_context():
+    result = generate_tips(
+        {
+            "title": "확정 공사",
+            "estimated_price": 90_000_000,
+            "basis_amount": 100_000_000,
+            "basis_status": "confirmed",
+            "contract_type": "CONSTRUCTION",
+            "lower_limit_rate": 89.745,
+            "prdprc_range_bgn": -2,
+            "prdprc_range_end": 2,
+            "a_value_applicable": "N",
+        }
+    )
+
+    price = result["price_info"]
+    assert price["basic_price"] == 100_000_000
+    assert price["estimated_price"] == 90_000_000
+    assert price["estimated_price_range"]["min"] == 98_000_000
+    assert price["estimated_price_range"]["max"] == 102_000_000
+    assert price["lower_limit"]["amount"] == 89_745_000
+    assert price.get("abstain_reason") is None
+
+
+def test_tips_abstain_when_a_value_applicability_is_unknown():
+    result = generate_tips(
+        {
+            "title": "A값 미확인 공사",
+            "basis_amount": 100_000_000,
+            "basis_status": "confirmed",
+            "contract_type": "CONSTRUCTION",
+            "lower_limit_rate": 89.745,
+        }
+    )
+
+    price = result["price_info"]
+    assert price["lower_limit"] is None
+    assert price["a_value_status"] == "unknown"
+    assert "A값" in price["abstain_reason"]

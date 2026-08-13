@@ -25,17 +25,6 @@ class BidTip:
     for_beginners: Optional[str] = None  # 초보자용 추가 설명
 
 
-# 법정 낙찰하한선 (국가계약법 기준)
-LOWER_LIMIT_RATES = {
-    "CONSTRUCTION": 87.745,  # 공사
-    "SERVICE": 0,            # 용역 (적격심사 방식에 따라 다름)
-    "GOODS": 0,              # 물품 (최저가 방식)
-}
-
-# 예정가격 산정 범위 (기초금액 기준 ±3%)
-ESTIMATED_PRICE_RANGE = 0.03
-
-
 class TipsGenerator:
     """규칙 기반 입찰 전략 팁 생성기"""
     
@@ -86,21 +75,18 @@ class TipsGenerator:
         """공고 한줄 요약 (데이터 기반)"""
         title = self.data.get("title", "제목 없음")
         org = self.data.get("organization", "")
-        price = self.data.get("basic_price", 0)
-        
-        try:
-            val = self._safe_float(price)
-            if val > 0:
-                price_formatted = f"{val:,.0f}원"
-            else:
-                price_formatted = "금액 미상"
-        except Exception:
-            price_formatted = "금액 미상"
+        basis = self._confirmed_basis()
+        estimate = self._safe_float(self.data.get("estimated_price"))
         
         contract_method = self.data.get("contract_method", "")
         
         summary = f"{org}에서 발주한 '{title[:30]}...' 공고입니다. "
-        summary += f"기초금액 {price_formatted}"
+        if basis is not None:
+            summary += f"확정 기초금액 {basis:,.0f}원"
+        elif estimate > 0:
+            summary += f"추정가격 {estimate:,.0f}원(기초금액 미확인)"
+        else:
+            summary += "금액 미상"
         if contract_method:
             summary += f", {contract_method} 방식입니다."
         else:
@@ -163,52 +149,131 @@ class TipsGenerator:
         except (ValueError, TypeError):
             return 0.0
 
+    def _confirmed_basis(self) -> float | None:
+        """Return only an explicitly confirmed basis amount.
+
+        ``basic_price`` is intentionally ignored: historical callers used the
+        name for presmptPrce, which is an estimate on a different VAT basis.
+        """
+        if str(self.data.get("basis_status") or "").lower() != "confirmed":
+            return None
+        value = self._safe_float(self.data.get("basis_amount"))
+        return value if value > 0 else None
+
+    def _contract_type(self) -> str:
+        raw = str(self.data.get("contract_type") or "").strip().upper()
+        if raw in {"CONSTRUCTION", "WORKS", "공사"}:
+            return "CONSTRUCTION"
+        if raw in {"SERVICE", "용역"}:
+            return "SERVICE"
+        if raw in {"GOODS", "물품"}:
+            return "GOODS"
+        return "UNKNOWN"
+
+    def _a_value_context(self, basis: float) -> tuple[int | None, str]:
+        applicable = str(self.data.get("a_value_applicable") or "").strip().upper()
+        value = int(self._safe_float(self.data.get("a_value")))
+        source = str(self.data.get("a_value_source") or "").strip()
+
+        if applicable in {"N", "NO", "FALSE", "미적용", "비대상"}:
+            if value > 0:
+                return None, "invalid"
+            return 0, "not_applicable"
+        if value > 0 and source:
+            if value >= basis:
+                return None, "invalid"
+            return value, "confirmed"
+        return None, "unknown"
+
     def _get_price_info(self) -> Dict:
-        """가격 정보"""
-        basic_price = self.data.get("basic_price", 0)
+        """가격 정보. 확인되지 않은 금액으로 안전 수치를 만들지 않는다."""
+        basis = self._confirmed_basis()
+        estimate = self._safe_float(self.data.get("estimated_price"))
         budget = self.data.get("budget_amount", 0)
-        contract_type = self.data.get("contract_type", "CONSTRUCTION")
-        
+        contract_type = self._contract_type()
+
+        result: Dict[str, Any] = {
+            "basis_status": "confirmed" if basis is not None else "unconfirmed",
+            "basic_price": basis,
+            "basic_price_formatted": f"{basis:,.0f}원" if basis is not None else None,
+            "estimated_price": estimate if estimate > 0 else None,
+            "estimated_price_formatted": f"{estimate:,.0f}원" if estimate > 0 else None,
+            "estimated_price_range": None,
+            "lower_limit": None,
+            "budget": self._safe_float(budget),
+            "source": "공공데이터 API + 확정값 기반 계산",
+        }
+        if basis is None:
+            result["abstain_reason"] = (
+                "확정 기초금액이 없어 가격·하한 계산을 보류합니다. "
+                "추정가격을 기초금액으로 대체하지 않습니다."
+            )
+            return result
+
         try:
-            basic = self._safe_float(basic_price)
-            # 공사는 금액대·시행일 티어드(단일 소스), 용역·물품은 팁 정책상 0 유지
-            if contract_type == "CONSTRUCTION":
-                from app.services.lower_limits import get_lower_limit_rate
-                lower_rate = get_lower_limit_rate(contract_type, basic)
-            else:
-                lower_rate = LOWER_LIMIT_RATES.get(contract_type, 87.745)
-            
-            # 예정가격 범위 (±3%)
-            est_min = basic * (1 - ESTIMATED_PRICE_RANGE)
-            est_max = basic * (1 + ESTIMATED_PRICE_RANGE)
-            
-            # 낙찰하한선
-            lower_limit = basic * (lower_rate / 100)
-            
-            return {
-                "basic_price": basic,
-                "basic_price_formatted": f"{basic:,.0f}원",
-                "estimated_price_range": {
-                    "min": est_min,
-                    "max": est_max,
-                    "min_formatted": f"{est_min:,.0f}원",
-                    "max_formatted": f"{est_max:,.0f}원"
-                },
-                "lower_limit": {
-                    "rate": lower_rate,
-                    "amount": lower_limit,
-                    "formatted": f"{lower_limit:,.0f}원"
-                },
-                "budget": self._safe_float(budget),
-                "source": "API 데이터 + 법률 기반 계산"
+            range_bgn = self.data.get("prdprc_range_bgn")
+            range_end = self.data.get("prdprc_range_end")
+            if range_bgn is not None and range_end is not None:
+                low = self._safe_float(range_bgn)
+                high = self._safe_float(range_end)
+                if low <= high:
+                    est_min = basis * (1 + low / 100)
+                    est_max = basis * (1 + high / 100)
+                    result["estimated_price_range"] = {
+                        "min": est_min,
+                        "max": est_max,
+                        "min_formatted": f"{est_min:,.0f}원",
+                        "max_formatted": f"{est_max:,.0f}원",
+                        "range_bgn": low,
+                        "range_end": high,
+                    }
+
+            if contract_type == "UNKNOWN":
+                result["abstain_reason"] = "계약 유형을 확인하지 못해 하한 계산을 보류합니다."
+                return result
+
+            a_value, a_status = self._a_value_context(basis)
+            result["a_value_status"] = a_status
+            if a_value is None:
+                result["abstain_reason"] = (
+                    "A값 산정 대상 여부 또는 확정 A값을 확인하지 못해 하한 계산을 보류합니다."
+                    if a_status == "unknown"
+                    else "A값은 0 이상이며 기초금액보다 작아야 합니다."
+                )
+                return result
+
+            lower_rate = self.data.get("lower_limit_rate")
+            if lower_rate is None:
+                result["abstain_reason"] = (
+                    "공고가 명시한 낙찰하한율을 확인하지 못해 하한 계산을 보류합니다."
+                )
+                return result
+
+            from app.services.calculator import CalculatorService
+
+            calculated = CalculatorService.calculate_detailed_bid(
+                basic_price=basis,
+                rate=0,
+                contract_type=contract_type,
+                a_value=a_value,
+                lower_limit_rate=self._safe_float(lower_rate),
+                prdprc_range_bgn=(
+                    self._safe_float(range_bgn) if range_bgn is not None else None
+                ),
+                prdprc_range_end=(
+                    self._safe_float(range_end) if range_end is not None else None
+                ),
+            )
+            result["lower_limit"] = {
+                "rate": calculated.lower_limit_rate,
+                "amount": calculated.lower_limit_price,
+                "formatted": f"{calculated.lower_limit_price:,.0f}원",
             }
+            return result
         except Exception as e:
-             # 부분 실패 시에도 에러가 아닌 기본값 반환 시도
-            return {
-                "basic_price": 0, 
-                "basic_price_formatted": "0원",
-                "error": f"가격 계산 오류: {str(e)}"
-            }
+            result["error"] = f"가격 계산 오류: {str(e)}"
+            result["abstain_reason"] = "가격 입력 검증에 실패해 계산을 보류합니다."
+            return result
     
     # ==================== 팁 생성 메서드들 ====================
     
@@ -310,10 +375,25 @@ class TipsGenerator:
     def _generate_price_tips(self):
         """가격 관련 팁"""
         price_info = self._get_price_info()
-        
+
+        abstain_reason = price_info.get("abstain_reason")
+        if abstain_reason:
+            self.tips.append(BidTip(
+                category="price",
+                icon="⚠️",
+                title="가격 안전 판정 보류",
+                content=abstain_reason,
+                source="입력 완전성 검증",
+                importance="HIGH",
+                for_beginners=(
+                    "기초금액·A값 적용 여부·공고별 하한율 중 하나라도 확인되지 않으면 "
+                    "그럴듯한 기본값으로 채우지 않고 계산을 멈춥니다."
+                ),
+            ))
+
         if "error" not in price_info:
-            lower_limit = price_info.get("lower_limit", {})
-            est_range = price_info.get("estimated_price_range", {})
+            lower_limit = price_info.get("lower_limit") or {}
+            est_range = price_info.get("estimated_price_range") or {}
             
             # 예정가격 범위 안내
             if est_range:
@@ -321,10 +401,17 @@ class TipsGenerator:
                     category="price",
                     icon="💰",
                     title="예정가격 범위",
-                    content=f"예정가격은 기초금액의 ±3% 범위에서 결정됩니다.\n• 최소: {est_range.get('min_formatted')}\n• 최대: {est_range.get('max_formatted')}",
-                    source="법률 기반 (기초금액 ±3%)",
+                    content=(
+                        "공고가 명시한 복수예비가격 범위를 확정 기초금액에 적용한 값입니다."
+                        f"\n• 최소: {est_range.get('min_formatted')}"
+                        f"\n• 최대: {est_range.get('max_formatted')}"
+                    ),
+                    source="공고 명시 범위 + 확정 기초금액",
                     importance="HIGH",
-                    for_beginners="예정가격이란 발주기관이 입찰 전에 미리 정해두는 가격입니다. 기초금액을 기준으로 ±3% 범위에서 무작위로 결정되며, 개찰 시까지 비공개입니다."
+                    for_beginners=(
+                        "예정가격 범위는 공고마다 다를 수 있습니다. 범위가 공개되지 않은 "
+                        "공고에는 임의의 ±3%를 적용하지 않습니다."
+                    ),
                 ))
             
             # 낙찰하한선 안내
@@ -332,11 +419,17 @@ class TipsGenerator:
                 self.tips.append(BidTip(
                     category="price",
                     icon="📉",
-                    title="법정 낙찰하한선",
-                    content=f"이 공고의 낙찰하한선은 예정가격의 {lower_limit.get('rate')}%입니다.\n이 금액 미만 투찰 시 자동 탈락합니다.",
-                    source="법률 기반 (국가계약법)",
+                    title="공고 명시 낙찰하한선",
+                    content=(
+                        f"이 공고의 낙찰하한율은 {lower_limit.get('rate')}%이며, "
+                        f"확정 입력 기준 하한금액은 {lower_limit.get('formatted')}입니다."
+                    ),
+                    source="공고 명시 하한율 + 확정 입력 계산",
                     importance="HIGH",
-                    for_beginners="낙찰하한선이란 투찰할 수 있는 최저 금액입니다. 공사 입찰은 금액 구간별 법정 하한율(2026년 기준 87.495~89.745%) 미만으로 투찰하면 자동으로 탈락합니다. 이는 덤핑(저가 투찰)을 방지하기 위한 제도입니다."
+                    for_beginners=(
+                        "하한미달, 입찰무효, 적격탈락은 서로 다른 상태입니다. "
+                        "가격 하한 통과만으로 최종 낙찰이 보장되지는 않습니다."
+                    ),
                 ))
     
     def _generate_restriction_tips(self):
@@ -398,7 +491,7 @@ class TipsGenerator:
     
     def _generate_strategy_tips(self):
         """투찰 전략 팁"""
-        contract_type = self.data.get("contract_type", "CONSTRUCTION")
+        contract_type = self._contract_type()
         
         # 계약 유형별 기본 전략
         if contract_type == "CONSTRUCTION":
@@ -406,10 +499,15 @@ class TipsGenerator:
                 category="strategy",
                 icon="🎯",
                 title="공사 입찰 투찰 전략",
-                content="공사 입찰은 예정가격에 가장 가까운 금액을 제시한 업체가 낙찰됩니다.\n• 통상 예정가격의 90~95% 범위가 많이 사용됩니다.\n• 법정 하한선(금액 구간별 상이) 바로 위는 경쟁이 치열할 수 있습니다.",
-                source="법률 기반 + 일반 가이드",
+                content=(
+                    "공고의 낙찰자 결정 방식·적격심사 기준·A값·원가 조건을 함께 확인하세요. "
+                    "가격 1순위와 최종 낙찰은 같은 결과가 아닙니다."
+                ),
+                source="안전 가이드",
                 importance="MEDIUM",
-                for_beginners="공사 입찰에서 '사정률'이란 예정가격 대비 투찰 금액의 비율입니다. 예를 들어 사정률 90%는 예정가격의 90%로 투찰한다는 의미입니다."
+                for_beginners=(
+                    "확정 기초금액과 공고별 공식이 확인되기 전에는 추천가를 만들지 않습니다."
+                ),
             ))
         elif contract_type == "SERVICE":
             self.tips.append(BidTip(
