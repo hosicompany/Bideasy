@@ -47,6 +47,7 @@ from app.services.autocalibrate.risk_model import ReservedRatioModel    # noqa: 
 from app.services.autocalibrate.strategy_store import get_default_store  # noqa: E402
 from app.services.bid_data_quality import base_is_consistent             # noqa: E402
 from app.services.bid_metrics import wilson_ci                           # noqa: E402
+from app.services.calculator import CalculatorService                   # noqa: E402
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 RESULTS_PATH = DATA_DIR / "benchmark_win_reach_results.json"
@@ -84,16 +85,20 @@ def interval_of(r: ds.BidRecord) -> tuple[float, float] | None:
     """
     if r.basic_price <= 0:
         return None
-    L = r.reserved_ratio * r.lower_limit_rate
+    L = floor_price(r) / r.basic_price * 100.0
     U = r.winner_price / r.basic_price * 100.0 + 1000.0 / r.basic_price
     if U < L:
         return None
     return (L, U)
 
 
-def floor_price(r: ds.BidRecord) -> float:
+def floor_price(r: ds.BidRecord) -> int:
     """실제 하한선 금액 (evaluate_params 와 동일 공식)."""
-    return r.reserved_price * r.lower_limit_rate / 100.0
+    return CalculatorService.calculate_price_at_rate(
+        r.reserved_price,
+        r.lower_limit_rate,
+        r.a_value,
+    )
 
 
 def judge(r: ds.BidRecord, price: int) -> str:
@@ -106,11 +111,12 @@ def judge(r: ds.BidRecord, price: int) -> str:
 
 
 def price_flat(r: ds.BidRecord, rate_pct: float) -> int:
-    """사정률 정책 가격 = 기초금액×(1+rate/100), 10원 절사.
-
-    calculator.calculate_safe_bid(a_value=0) 와 동일 공식.
-    """
-    return math.floor(r.basic_price * (1 + rate_pct / 100.0) / 10) * 10
+    """사정률 정책 가격 — A값 포함 정본 공식과 10원 절사."""
+    return CalculatorService.calculate_safe_bid(
+        r.basic_price,
+        rate_pct,
+        r.a_value,
+    )
 
 
 def price_params(r: ds.BidRecord, params: dict) -> int:
@@ -118,9 +124,13 @@ def price_params(r: ds.BidRecord, params: dict) -> int:
     mp = params.get(r.bid_method, params.get("DEFAULT", {}))
     p = mp.get(r.bracket) or params.get("DEFAULT", {}).get(r.bracket, [-0.3, 1.0])
     adj, margin = float(p[0]), float(p[1])
-    predicted = r.basic_price * (1 + adj / 100.0)
     target_rate = r.lower_limit_rate + margin
-    return math.floor(predicted * target_rate / 100.0 / 10) * 10
+    return CalculatorService.calculate_strategy_price(
+        r.basic_price,
+        adj,
+        target_rate,
+        r.a_value,
+    )
 
 
 def tally(records: list[ds.BidRecord], price_fn) -> dict:
@@ -452,7 +462,14 @@ def run_oracle(records: list[ds.BidRecord]) -> dict:
         if not o_train or not o_test:
             continue
         t = o_train["t_star"]
-        applied = tally(test, lambda r, _t=t: math.floor(r.basic_price * _t / 100.0 / 10) * 10)
+        applied = tally(
+            test,
+            lambda r, _t=t: CalculatorService.calculate_price_at_rate(
+                r.basic_price,
+                _t,
+                r.a_value,
+            ),
+        )
         walk_forward.append({
             "year": y,
             "n": len(test),

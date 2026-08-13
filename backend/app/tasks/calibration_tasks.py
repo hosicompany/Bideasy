@@ -1,9 +1,9 @@
 """
 자가보정 Celery 태스크
 ========================
-정기적으로 자가보정 사이클을 실행한다. celery_app.py 의 beat_schedule 이
-이 태스크를 매주 호출하고, should_recalibrate() 가드가 새 데이터가 없으면
-즉시 스킵하므로 불필요한 비용이 발생하지 않는다.
+정기적으로 자가보정 후보를 생성·평가한다. celery_app.py 의 beat_schedule 이
+이 태스크를 매주 호출하지만, 운영 active 전략은 변경하지 않는다. 이 루프에는
+승격 인자 자체를 전달할 수 없고, 승격은 별도의 검증·승인 경로가 담당한다.
 
 수동 실행은 scripts/run_autocalibrate.py 사용.
 """
@@ -16,11 +16,11 @@ logger = get_logger(__name__)
 
 @celery_app.task(name="autocalibrate.recalibrate_strategy")
 def recalibrate_strategy() -> str:
-    """주기적 자가보정 사이클.
+    """주기적 자가보정 후보 평가 사이클.
 
     새 개찰 데이터가 누적됐으면 입찰가 산정 파라미터를 재최적화하고,
-    regression 가드 통과 시 채택한다. 채택 시 model_accuracy_report 로
-    accuracy_history.jsonl 에 지표를 누적한다.
+    regression 가드 결과와 후보를 기록한다. 스케줄 실행은 사람 승인 증적을
+    가질 수 없으므로 active 전략을 절대 승격하지 않는다.
     """
     # 지연 import — Celery worker 부팅 시 무거운 의존성 회피
     from app.services.autocalibrate.loop import run_calibration_cycle
@@ -29,7 +29,10 @@ def recalibrate_strategy() -> str:
     # 누적 opening_results(매일 크롤) 도 학습 데이터에 병합 → 최신 시장 반영
     db = SessionLocal()
     try:
-        report = run_calibration_cycle(trigger="scheduled", db=db)
+        report = run_calibration_cycle(
+            trigger="scheduled",
+            db=db,
+        )
     finally:
         db.close()
     summary = report.summary()

@@ -64,15 +64,18 @@ def run_recalibrate(_admin=Depends(require_admin)):
 
 @router.post("/autocalibrate/rollback/{version_id}")
 def rollback_version(version_id: str, _admin=Depends(require_admin)):
-    """과거 버전으로 롤백 (active 교체) + 계산기 캐시 재로드."""
+    """직접 롤백은 차단한다.
+
+    active 변경은 route/version이 명시된 APPROVE_PROMOTION과 검증된 evidence
+    graph를 원자적으로 연결하는 별도 운영 경로에서만 수행할 수 있다.
+    """
     store = _store()
     if not store.get(version_id):
         raise HTTPException(status_code=404, detail="버전을 찾을 수 없습니다.")
-    restored = store.rollback(version_id)
-    try:
-        from app.services.calculator import reload_strategy_cache
-        reload_strategy_cache()
-    except Exception as e:
-        logger.warning(f"reload_strategy_cache failed after rollback: {e}")
-    logger.info(f"autocalibrate rollback → {restored.version_id}")
-    return {"rolled_back_to": version_id, "active_version": restored.version_id}
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "직접 rollback은 비활성화되었습니다. 검증된 GateDecision과 "
+            "route/version별 운영 승인을 사용하세요."
+        ),
+    )

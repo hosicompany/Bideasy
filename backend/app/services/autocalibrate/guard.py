@@ -1,10 +1,10 @@
 """
 regression 가드 (특허 신규성 핵심)
 ====================================
-자가보정 루프가 자동으로 파라미터를 바꿀 때, 새 후보가 직전 운영본보다
-나쁘면 **자동 거부·롤백**한다. 자동화에 따른 성능 퇴행을 구조적으로 차단.
+자가보정 후보가 직전 운영본보다 나쁘면 거부한다. 이 판정은 승격의 필요조건일
+뿐이며, 통과해도 별도 GateDecision과 사람 승인 없이는 active를 바꾸지 않는다.
 
-가드 게이트 (모두 통과해야 채택):
+내부 가드 (모두 통과해야 승격 후보가 됨):
   ① dropout_rate  — 직전 대비 개선 또는 동일 필수 (1차 목표)
   ② win_rate      — 직전 대비 −허용폭 이내
   ③ rate_error    — 직전 대비 악화폭 제한
@@ -45,6 +45,7 @@ class GuardDecision:
     baseline_metrics: dict        # 기준선의 전체 지표
     holdout_metrics: dict = field(default_factory=dict)
     baseline_holdout: dict = field(default_factory=dict)
+    sample_counts: dict = field(default_factory=dict)
 
 
 def _segment_dropout(records: list, params: dict) -> dict:
@@ -64,19 +65,49 @@ def evaluate_candidate(
     baseline_params: dict,
     records: list,
     holdout_years: tuple[int, ...] = (2025, 2026),
+    *,
+    holdout_records: list | None = None,
+    min_validation_samples: int = 0,
+    min_holdout_samples: int = 0,
 ) -> GuardDecision:
-    """후보 파라미터셋을 기준선과 비교해 채택 여부 판정."""
+    """후보 파라미터셋을 기준선과 비교해 채택 여부 판정.
+
+    ``holdout_records``를 주면 ``records``는 이미 분리된 validation으로 보고,
+    sealed holdout을 절대 후보 생성에 돌려주지 않는다. 인자를 생략한 기존 호출은
+    종전처럼 ``holdout_years``로 내부 분리해 호환한다.
+    """
     reasons: list[str] = []
     accepted = True
 
-    # in-sample 전체 백테스트
-    cand = evaluate_params(records, candidate_params)
-    base = evaluate_params(records, baseline_params)
+    if holdout_records is None:
+        evaluation_records = records
+        _, holdout = ds.split_by_year(records, holdout_years)
+        holdout_label = str(holdout_years)
+    else:
+        evaluation_records = records
+        holdout = holdout_records
+        holdout_label = "sealed"
 
-    # walk-forward: hold-out 분리
-    _, holdout = ds.split_by_year(records, holdout_years)
+    # 후보 생성에 쓰지 않은 validation 백테스트
+    cand = evaluate_params(evaluation_records, candidate_params)
+    base = evaluate_params(evaluation_records, baseline_params)
+
+    # 마지막 시간창(sealed holdout) 판정
     cand_ho = evaluate_params(holdout, candidate_params) if holdout else {}
     base_ho = evaluate_params(holdout, baseline_params) if holdout else {}
+
+    if len(evaluation_records) < min_validation_samples:
+        accepted = False
+        reasons.append(
+            "✗ validation 표본 부족: "
+            f"{len(evaluation_records)} < {min_validation_samples}"
+        )
+    if len(holdout) < min_holdout_samples:
+        accepted = False
+        reasons.append(
+            "✗ sealed holdout 표본 부족: "
+            f"{len(holdout)} < {min_holdout_samples}"
+        )
 
     # ── 게이트 ① dropout_rate 개선 필수 ──────────────────────
     if cand["dropout_rate"] > base["dropout_rate"] + 1e-6:
@@ -115,7 +146,7 @@ def evaluate_candidate(
         if ho_delta > MAX_HOLDOUT_DROPOUT_INCREASE:
             accepted = False
             reasons.append(
-                f"✗ hold-out({holdout_years}) 탈락률 악화: "
+                f"✗ hold-out({holdout_label}) 탈락률 악화: "
                 f"{base_ho.get('dropout_rate')}% → {cand_ho.get('dropout_rate')}%"
             )
         else:
@@ -125,8 +156,8 @@ def evaluate_candidate(
             )
 
     # ── 게이트 ⑤ 세그먼트 안전성 ────────────────────────────
-    cand_seg = _segment_dropout(records, candidate_params)
-    base_seg = _segment_dropout(records, baseline_params)
+    cand_seg = _segment_dropout(evaluation_records, candidate_params)
+    base_seg = _segment_dropout(evaluation_records, baseline_params)
     unsafe = []
     for seg, cand_dr in cand_seg.items():
         base_dr = base_seg.get(seg, cand_dr)
@@ -154,7 +185,7 @@ def evaluate_candidate(
         reasons.append(f"✗ 파라미터 급변: {', '.join(big_jumps)}")
 
     if accepted:
-        reasons.append("→ 모든 게이트 통과: 채택")
+        reasons.append("→ 내부 가드 통과: 승격 후보")
     else:
         reasons.append("→ 게이트 실패: 거부 (active 불변 = 자동 롤백)")
 
@@ -170,4 +201,8 @@ def evaluate_candidate(
         baseline_metrics=base,
         holdout_metrics=cand_ho,
         baseline_holdout=base_ho,
+        sample_counts={
+            "validation": len(evaluation_records),
+            "sealed_holdout": len(holdout),
+        },
     )

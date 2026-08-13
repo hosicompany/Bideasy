@@ -2,7 +2,7 @@
 BidEasy 자가보정 입찰가 알고리즘 패키지
 =========================================
 입찰 결과 피드백 기반으로 입찰가 산정 파라미터(BID_STRATEGY)를
-자동·지속·폐쇄 루프로 재최적화한다.
+지속적으로 후보를 재최적화하고 승인된 버전만 운영에 반영한다.
 
 ## 모듈 구성
 - strategy_store : 버전 관리 파라미터 저장소 (정적 BID_STRATEGY 대체)
@@ -25,18 +25,22 @@ BidEasy 자가보정 입찰가 알고리즘 패키지
 from app.services.autocalibrate.loop import CycleReport, run_calibration_cycle
 from app.services.autocalibrate.strategy_store import (
     FileStrategyStore,
+    PromotionAuthorizationError,
     StrategyStore,
     StrategyVersion,
     get_default_store,
     make_version_id,
+    strategy_parameters_hash,
 )
 
 __all__ = [
     "FileStrategyStore",
+    "PromotionAuthorizationError",
     "StrategyStore",
     "StrategyVersion",
     "CycleReport",
     "get_default_store",
     "make_version_id",
+    "strategy_parameters_hash",
     "run_calibration_cycle",
 ]

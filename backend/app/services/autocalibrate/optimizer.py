@@ -30,6 +30,7 @@ from app.services.autocalibrate.dataset import (
     iter_segments,
 )
 from app.services.autocalibrate.risk_model import ReservedRatioModel
+from app.services.calculator import CalculatorService
 
 # ── 목적함수 하이퍼파라미터 (Phase 5 에서 dry-run 튜닝) ──────
 # win_rate(0~1)와 E[dropout](0~1)이 비슷한 스케일이라 λ가 크면 위험회피 과치우침.
@@ -87,10 +88,19 @@ def simulate_params(
         w = year_weights.get(r.year, 1.0)
         total_w += w
         total_u += 1
-        predicted = r.basic_price * (1 + adjustment / 100.0)
         target_rate = r.lower_limit_rate + margin
-        target_price = math.floor(predicted * target_rate / 100.0 / 10) * 10
-        lower_limit = r.reserved_price * r.lower_limit_rate / 100.0
+        a_value = float(r.a_value or 0)
+        target_price = CalculatorService.calculate_strategy_price(
+            r.basic_price,
+            adjustment,
+            target_rate,
+            a_value,
+        )
+        lower_limit = CalculatorService.calculate_price_at_rate(
+            r.reserved_price,
+            r.lower_limit_rate,
+            a_value,
+        )
         if target_price >= lower_limit:
             pass_w += w
             pass_u += 1
@@ -157,8 +167,6 @@ def optimize_segment(
     seg_records = filter_segment(records, method, bracket)
     if not seg_records:
         return None
-    lower_rate = seg_records[0].lower_limit_rate
-
     # 희소 세그먼트일수록 변화 억제(η)를 강화 — 베이지안 안정화 (신규성 4).
     # 표본이 적으면 risk_model 예측 신뢰도가 낮으므로 baseline 근처에 머무름.
     n = len(seg_records)
@@ -183,9 +191,21 @@ def optimize_segment(
                 cand_dropout_uw = sim.get("dropout_rate_uw", sim["dropout_rate"])
                 if cand_dropout_uw > baseline_dropout_uw + SEGMENT_DROPOUT_HARD_LIMIT:
                     continue
-            e_dropout = risk_model.dropout_probability(
-                adj, margin, method, bracket, lower_rate
-            )
+            e_dropout = sum(
+                risk_model.dropout_probability(
+                    adj,
+                    margin,
+                    method,
+                    bracket,
+                    record.lower_limit_rate,
+                    (
+                        float(record.a_value or 0) / record.basic_price
+                        if record.basic_price
+                        else 0.0
+                    ),
+                )
+                for record in seg_records
+            ) / len(seg_records)
             j = objective_value(
                 sim, e_dropout, adj, margin, prev_params, lam, gamma, tau, effective_eta
             )
@@ -279,13 +299,32 @@ def evaluate_params(
         mp = params.get(r.bid_method, params.get("DEFAULT", {}))
         p = mp.get(r.bracket) or params.get("DEFAULT", {}).get(r.bracket, [-0.3, 1.0])
         adj, margin = float(p[0]), float(p[1])
-        predicted = r.basic_price * (1 + adj / 100.0)
         target_rate = r.lower_limit_rate + margin
-        target_price = math.floor(predicted * target_rate / 100.0 / 10) * 10
-        lower_limit = r.reserved_price * r.lower_limit_rate / 100.0
-        our_rate = (target_price / r.basic_price * 100.0) if r.basic_price > 0 else 0.0
-        if r.winner_rate > 0:
-            rate_errors.append(abs(our_rate - r.winner_rate))
+        a_value = float(r.a_value or 0)
+        target_price = CalculatorService.calculate_strategy_price(
+            r.basic_price,
+            adj,
+            target_rate,
+            a_value,
+        )
+        lower_limit = CalculatorService.calculate_price_at_rate(
+            r.reserved_price,
+            r.lower_limit_rate,
+            a_value,
+        )
+        # Both sides must use the same denominator.  ``winner_rate`` in the
+        # source is normally winner/reserved, while our former rate used
+        # target/basic; comparing those silently charged the strategy for the
+        # realized reserved-price adjustment.  Guard error is price proximity
+        # on the common confirmed-basis scale.
+        our_basis_rate = (
+            target_price / r.basic_price * 100.0 if r.basic_price > 0 else 0.0
+        )
+        winner_basis_rate = (
+            r.winner_price / r.basic_price * 100.0 if r.basic_price > 0 else 0.0
+        )
+        if r.winner_price > 0:
+            rate_errors.append(abs(our_basis_rate - winner_basis_rate))
         if target_price >= lower_limit:
             pass_w += w
             if target_price <= r.winner_price:

@@ -1,10 +1,11 @@
 """
 자가보정 사이클 CLI
 ====================
-입찰가 산정 파라미터를 자동 재최적화하고 가드 검증 후 채택/롤백한다.
+입찰가 산정 파라미터 후보를 재최적화하고 시간 분리 가드로 검증한다.
+기본 실행은 후보만 기록하며 active 전략을 바꾸지 않는다.
 
 사용법:
-    python scripts/run_autocalibrate.py              # 정식 실행 (채택 시 active 교체)
+    python scripts/run_autocalibrate.py              # 후보 생성·평가·기록
     python scripts/run_autocalibrate.py --dry-run    # 후보 생성·검증만, 저장소 불변
     python scripts/run_autocalibrate.py --force      # 새 데이터 없어도 강제 실행
     python scripts/run_autocalibrate.py --tau 0.05 --lam 0.5   # 하이퍼파라미터 오버라이드
@@ -51,14 +52,17 @@ def main():
 
     print("=" * 64)
     print("  BidEasy 자가보정 사이클")
-    print(f"  모드: {'DRY-RUN' if args.dry_run else '정식 실행'}"
+    mode = "DRY-RUN" if args.dry_run else "후보 평가"
+    print(f"  모드: {mode}"
           f" | 트리거: {trigger}")
     if objective_kwargs:
         print(f"  하이퍼파라미터 오버라이드: {objective_kwargs}")
     print("=" * 64)
 
     report = run_calibration_cycle(
-        trigger=trigger, dry_run=args.dry_run, **objective_kwargs
+        trigger=trigger,
+        dry_run=args.dry_run,
+        **objective_kwargs,
     )
 
     print()
@@ -69,21 +73,29 @@ def main():
     print(f"기준선 버전: {report.baseline_version}")
     print(f"후보 버전:   {report.candidate_version}")
     print(f"적응형 연도 가중치: {report.year_weights}")
+    print(f"시간 분리 표본: {report.temporal_counts}")
+    if report.data_quality:
+        print(
+            "데이터 품질: "
+            f"포함 {report.data_quality.get('included', 0)} / "
+            f"기초금액 불일치 제외 "
+            f"{report.data_quality.get('excluded_base_mismatch', 0)}"
+        )
     print()
 
     d = report.decision
     print("[ 지표 변화 (후보 vs 기준선) ]")
-    print(f"  낙찰률:     {d.baseline_metrics['win_rate']}% → "
+    print(f"  [validation] 낙찰률: {d.baseline_metrics['win_rate']}% → "
           f"{d.insample_metrics['win_rate']}% "
           f"({report.decision.metric_deltas['win_rate']:+.2f}%p)")
-    print(f"  탈락률:     {d.baseline_metrics['dropout_rate']}% → "
+    print(f"  [validation] 탈락률: {d.baseline_metrics['dropout_rate']}% → "
           f"{d.insample_metrics['dropout_rate']}% "
           f"({report.decision.metric_deltas['dropout_rate']:+.2f}%p)")
-    print(f"  사정률오차: {d.baseline_metrics['rate_error']}%p → "
+    print(f"  [validation] 사정률오차: {d.baseline_metrics['rate_error']}%p → "
           f"{d.insample_metrics['rate_error']}%p "
           f"({report.decision.metric_deltas['rate_error']:+.4f}%p)")
     if d.holdout_metrics:
-        print(f"  [hold-out] 탈락률: {d.baseline_holdout.get('dropout_rate')}% → "
+        print(f"  [sealed holdout] 탈락률: {d.baseline_holdout.get('dropout_rate')}% → "
               f"{d.holdout_metrics.get('dropout_rate')}%")
     print(f"  위험모델 캘리브레이션 오차: {report.risk_calibration_error*100:.3f}%p")
     print()
@@ -93,9 +105,14 @@ def main():
         print(f"  {reason}")
     print()
 
-    status = "DRY-RUN (저장 안 함)" if report.dry_run else (
-        "✓ 채택됨 — active 교체" if report.adopted else "✗ 거부됨 — active 불변 (자동 롤백)"
-    )
+    if report.dry_run:
+        status = "DRY-RUN (저장 안 함)"
+    elif report.adopted:
+        status = "✓ 승인·gate 통과 — active 교체"
+    elif report.candidate_saved:
+        status = "후보 기록 완료 — active 불변 (승격 승인 없음)"
+    else:
+        status = "✗ 가드 거부 — active 불변"
     print(f"결과: {status}")
     print("=" * 64)
 

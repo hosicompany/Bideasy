@@ -8,10 +8,13 @@
 탈락 확률 P(r > r*) 를 산출한다.
 
 수식:
-  우리 투찰가  bid   = basic × (1+adj/100) × (lower_rate+margin)/100
-  실제 하한선  limit = reserved × lower_rate/100,   reserved = basic × r
+  우리 투찰가  bid   = (basic × (1+adj/100) - A) ×
+                       (lower_rate+margin)/100 + A
+  실제 하한선  limit = (reserved - A) × lower_rate/100 + A,
+                       reserved = basic × r
   탈락 ⇔ bid < limit ⇔ r > r*(θ)
-  여기서  r*(θ) = (1+adj/100) × (lower_rate+margin) / lower_rate
+  여기서 a=A/basic 일 때
+  r*(θ) = a + (1+adj/100-a) × (lower_rate+margin) / lower_rate
   따라서  P(dropout | θ, s) = P(r > r*(θ) | s)  = 세그먼트 r-분포의 상위 꼬리 확률
 
 희소 세그먼트는 계층적 폴백(세그먼트 → 입찰방법 → 전역) + 베이지안 shrinkage
@@ -27,6 +30,7 @@ import math
 from dataclasses import dataclass, field
 
 from app.services.autocalibrate.dataset import BidRecord
+from app.services.calculator import CalculatorService
 
 # 세그먼트가 자체 분포를 가질 최소 표본 수 (미만이면 부모로 폴백)
 MIN_SEGMENT_SAMPLE = 30
@@ -195,14 +199,23 @@ class ReservedRatioModel:
 
     # ── 핵심: 탈락 확률 계산 ────────────────────────────────
     @staticmethod
-    def critical_ratio(adjustment: float, margin: float, lower_rate: float) -> float:
-        """임계비율 r*(θ) = (1+adj/100) × (lower_rate+margin) / lower_rate.
+    def critical_ratio(
+        adjustment: float,
+        margin: float,
+        lower_rate: float,
+        a_ratio: float = 0.0,
+    ) -> float:
+        """A값을 포함한 임계 예정가격/기초금액 비율을 계산한다.
 
         r 이 이 값을 초과하면 우리 투찰가가 실제 하한선 미만 → 탈락.
         """
         if lower_rate <= 0:
             return float("inf")
-        return (1 + adjustment / 100.0) * (lower_rate + margin) / lower_rate
+        return a_ratio + (
+            (1 + adjustment / 100.0 - a_ratio)
+            * (lower_rate + margin)
+            / lower_rate
+        )
 
     def dropout_probability(
         self,
@@ -211,9 +224,10 @@ class ReservedRatioModel:
         method: str,
         bracket: str,
         lower_rate: float = 87.745,
+        a_ratio: float = 0.0,
     ) -> float:
         """주어진 파라미터로 투찰 시 해당 세그먼트의 탈락 확률 P(r > r*)."""
-        r_star = self.critical_ratio(adjustment, margin, lower_rate)
+        r_star = self.critical_ratio(adjustment, margin, lower_rate, a_ratio)
         seg = self.get_segment(method, bracket)
         return seg.tail_probability(r_star)
 
@@ -232,8 +246,14 @@ class ReservedRatioModel:
             if p is None:
                 p = params.get("DEFAULT", {}).get(r.bracket, [-0.3, 1.0])
             adj, margin = float(p[0]), float(p[1])
+            a_ratio = (float(r.a_value or 0) / r.basic_price) if r.basic_price else 0.0
             total += self.dropout_probability(
-                adj, margin, r.bid_method, r.bracket, r.lower_limit_rate
+                adj,
+                margin,
+                r.bid_method,
+                r.bracket,
+                r.lower_limit_rate,
+                a_ratio,
             )
         return total / len(records)
 
@@ -253,8 +273,18 @@ class ReservedRatioModel:
             if p is None:
                 p = params.get("DEFAULT", {}).get(r.bracket, [-0.3, 1.0])
             adj, margin = float(p[0]), float(p[1])
-            bid = r.basic_price * (1 + adj / 100.0) * (r.lower_limit_rate + margin) / 100.0
-            limit = r.reserved_price * r.lower_limit_rate / 100.0
+            a_value = float(r.a_value or 0)
+            bid = CalculatorService.calculate_strategy_price(
+                r.basic_price,
+                adj,
+                r.lower_limit_rate + margin,
+                a_value,
+            )
+            limit = CalculatorService.calculate_price_at_rate(
+                r.reserved_price,
+                r.lower_limit_rate,
+                a_value,
+            )
             if bid < limit:
                 actual_dropouts += 1
         actual = actual_dropouts / len(records)

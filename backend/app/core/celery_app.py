@@ -64,6 +64,7 @@ celery_app.conf.beat_schedule = {
     "weekly-strategy-recalibration": {
         "task": "autocalibrate.recalibrate_strategy",
         "schedule": crontab(hour=4, minute=0, day_of_week=1),
+        # 후보 생성·평가 전용. 사람 approval_id가 없는 beat는 active를 바꾸지 않는다.
     },
     # 5) 매일 03:00 — 만료 임박 자동결제 구독 갱신 청구
     "daily-billing-renewal": {
