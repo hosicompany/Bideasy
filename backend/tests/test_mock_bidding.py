@@ -1715,3 +1715,69 @@ class _NullDB:
 
     def close(self):
         pass
+
+
+class TestFailureTagBasisAxis:
+    """`기초금액_변경됨` 은 등록 때와 **같은 축**으로 비교해야 한다.
+
+    예전엔 `notice.basic_price`(추정가격, 함정 22)와 비교했는데 스냅샷은
+    `confirmed_basis` 라 두 기준이 어긋난 채 상시 점등했다(실측 58.1%).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _enforce_basis(self, monkeypatch):
+        """운영은 `BASIS_AMOUNT_ENFORCE=true` 다 — 그 모드를 재현한다.
+
+        끈 상태로는 `confirmed_basis` 가 `basic_price` 를 돌려주므로 스냅샷과
+        축이 자동으로 맞아 이 검사가 아무것도 증명하지 못한다.
+        """
+        from app.services import basis as basis_svc
+
+        monkeypatch.setattr(basis_svc, "enforcing", lambda: True)
+
+    def _tag(self, snapshot: float, basis_amount: float | None,
+             basic_price: float = 100_000_000.0) -> list[str]:
+        n = _notice("MB-TAG-BASIS", basic_price=basic_price)
+        n.basis_amount = basis_amount
+        bid = models.MockBid(
+            bid_no="MB-TAG-BASIS", arm="active", price=90_000_000,
+            deadline_at=datetime(2026, 1, 1), snapshot_basic_price=snapshot,
+            snapshot_a_value=1, snapshot_lower_limit_rate=89.745,
+        )
+        opening = models.OpeningResult(
+            bid_no="MB-TAG-BASIS", winner_price=95_000_000,
+            reserved_price=snapshot, basic_price=basic_price,
+        )
+        return mb._failure_tags(bid, opening, n, "LOST")
+
+    def test_same_axis_does_not_flag(self):
+        """스냅샷과 basis_amount 가 같으면 점등하지 않는다."""
+        tags = self._tag(snapshot=110_000_000.0, basis_amount=110_000_000.0)
+        assert "기초금액_변경됨" not in tags
+        assert "기초금액_기준불일치" not in tags
+
+    def test_estimated_price_snapshot_is_not_a_change(self):
+        """1.10 배로 뭉치는 건(08-06 이전 코호트) 변경이 아니라 기준 불일치다.
+
+        같은 태그로 묶으면 진짜 변경이 그 안에 묻힌다 — 실측에서 이 코호트가
+        1,053건이었고 비율이 p5·p50·p95 전부 1.10000 이었다.
+        """
+        tags = self._tag(snapshot=100_000_000.0, basis_amount=110_000_000.0)
+        assert "기초금액_기준불일치" in tags
+        assert "기초금액_변경됨" not in tags
+
+    def test_real_change_inside_band_is_flagged(self):
+        """밴드(0.94~1.06) 안의 실제 변경은 잡는다."""
+        tags = self._tag(snapshot=110_000_000.0, basis_amount=111_000_000.0)
+        assert "기초금액_변경됨" in tags
+        assert "기초금액_기준불일치" not in tags
+
+    def test_legacy_axis_would_have_flagged_everything(self):
+        """회귀 방지 — 옛 축(basic_price)이라면 정상 건도 점등했을 것이다.
+
+        basis_amount 와 스냅샷이 일치(110M)하는데 basic_price 는 추정가격
+        (100M)이다. 옛 비교였다면 여기서 점등한다.
+        """
+        tags = self._tag(snapshot=110_000_000.0, basis_amount=110_000_000.0,
+                         basic_price=100_000_000.0)
+        assert tags.count("기초금액_변경됨") == 0
