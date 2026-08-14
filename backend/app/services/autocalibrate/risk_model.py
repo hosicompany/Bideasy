@@ -203,13 +203,48 @@ class ReservedRatioModel:
         절대오차(MAE)의 최적 점예측은 평균이 아니라 중앙값이므로, 이미
         autocalibrate 가 과거 데이터만으로 적합한 분포의 0.5 분위수를 쓴다.
         희소 세그먼트의 계층 폴백도 ``get_segment`` 계약을 그대로 따른다.
-        이 메서드는 후보 검증용이며 active 전략을 바꾸지 않는다.
+        ⚠️ **`get_segment` 를 그대로 쓰면 안 된다.** 희소 세그먼트는 부모의
+        분위수를 **통째로** 물려받는데(위 `fit`), 그 부모에는 최소 표본 조건이
+        없다 — 실측에서 `실시설계기술제안입찰` 은 입찰방법 **전체가 n=2** 이고
+        그 중앙값 1.0133 이 그대로 예측이 됐다(adj +1.3). 표본이 충분한 방법은
+        전부 0.9987~0.9989(adj −0.1) 로 수렴하므로 그건 신호가 아니라 노이즈다.
+        옛 2축 탐색에서는 adjustment 가 어차피 식별되지 않아 이 결함이 드러나지
+        않았는데, 예측값으로 승격시키는 순간 그대로 가격에 실린다.
+
+        그래서 계층을 직접 밟아 **전역 → 방법 → 세그먼트** 순으로 부분풀링한다
+        (각 층의 가중치 `n/(n+SHRINKAGE_K)`). 얕은 층은 저절로 전역 쪽에 머물고,
+        표본이 쌓이면 자기 값으로 옮겨간다. 세그먼트 층은 `source == "own"` 일
+        때만 섞는다 — 희소 세그먼트의 분위수는 이미 부모 것이라 다시 섞으면
+        같은 값을 두 번 세는 꼴이다.
         """
-        params = self.get_segment(method, bracket)
-        median = params.quantiles.get(0.5)
-        if median is not None and median > 0:
-            return float(median)
-        return float(params.mu)
+
+        def _median(p) -> float | None:
+            q = p.quantiles.get(0.5) if p is not None else None
+            return float(q) if q is not None and q > 0 else None
+
+        pred = _median(self._global)
+        method_params = self._by_method.get(method)
+        method_median = _median(method_params)
+        if method_median is not None:
+            if pred is None:
+                pred = method_median
+            else:
+                w = method_params.n_raw / (method_params.n_raw + SHRINKAGE_K)
+                pred = w * method_median + (1.0 - w) * pred
+
+        seg = self._segments.get((method, bracket))
+        if seg is not None and seg.source == "own":
+            seg_median = _median(seg)
+            if seg_median is not None:
+                if pred is None:
+                    pred = seg_median
+                else:
+                    w = seg.n_raw / (seg.n_raw + SHRINKAGE_K)
+                    pred = w * seg_median + (1.0 - w) * pred
+
+        if pred is not None:
+            return pred
+        return float(self.get_segment(method, bracket).mu)
 
     # ── 핵심: 탈락 확률 계산 ────────────────────────────────
     @staticmethod
