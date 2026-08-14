@@ -383,11 +383,27 @@ def _failure_tags(mb: models.MockBid, actual: models.OpeningResult,
             notice.prdprc_total != 15 or notice.prdprc_draw != 4
         ):
             tags.append("예가_비표준")
-        # 등록 후 기초금액이 바뀐 건 — 스냅샷이 있어서 알 수 있다
-        if notice.basic_price and mb.snapshot_basic_price and (
-            abs(float(notice.basic_price) - float(mb.snapshot_basic_price)) > 1.0
-        ):
-            tags.append("기초금액_변경됨")
+        # 등록 후 기초금액이 바뀐 건 — 스냅샷이 있어서 알 수 있다.
+        #
+        # ⚠️ 비교 대상은 **등록 때와 같은 함수**여야 한다. 예전엔 `notice.basic_price`
+        # 와 비교했는데 그건 추정가격이고(함정 22) 스냅샷은 `confirmed_basis` 라,
+        # 두 기준이 어긋난 채로 상시 점등하고 있었다(실측 58.1%).
+        #
+        # 축을 맞춰도 남는 게 있다 — 08-06 이전 등록분은 스냅샷 자체에 추정가격이
+        # 박혀 있어서 비율이 **1.10 배로 뭉친다**(실측 p5·p50·p95 전부 1.10000).
+        # 그건 기초금액이 바뀐 게 아니라 **기준이 다른 코호트**다. 같은 태그로
+        # 묶으면 진짜 변경이 그 안에 묻힌다. 그래서 사정률 일관성 밴드(§9 유효
+        # 표본 가드와 같은 0.94~1.06)로 갈라 각각 다른 이름을 준다.
+        from app.services import basis as basis_svc
+
+        current_basis = basis_svc.confirmed_basis(notice)
+        snapshot_basis = float(mb.snapshot_basic_price or 0)
+        if current_basis and snapshot_basis > 0:
+            ratio = float(current_basis) / snapshot_basis
+            if ratio < 0.94 or ratio > 1.06:
+                tags.append("기초금액_기준불일치")
+            elif abs(float(current_basis) - snapshot_basis) > 1.0:
+                tags.append("기초금액_변경됨")
     if actual.reserved_price and mb.snapshot_basic_price:
         ratio = float(actual.reserved_price) / float(mb.snapshot_basic_price)
         if ratio < 0.97 or ratio > 1.03:
