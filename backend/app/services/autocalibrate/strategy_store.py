@@ -42,6 +42,14 @@ class StrategyVersion:
     year_weights: Optional[dict] = None
     metrics: Optional[dict] = None
     notes: str = ""
+    # `params` 의 두 숫자가 무엇을 뜻하는지 — 축이 바뀌면 값의 의미도 바뀐다.
+    #   "product_v1"  : (adjustment, margin) 2축 자유 탐색. adjustment 는 사정률
+    #                   예측이 **아니다** — 목적함수가 둘을 곱으로만 보므로
+    #                   식별되지 않고, margin 과 임의로 교환된 값이다.
+    #   "ratio_pinned_v2": adjustment = 데이터에서 적합한 사정률 중심(고정),
+    #                   margin 만 최적화. adjustment 를 예측값으로 읽어도 된다.
+    # ⛔ 두 리비전의 adjustment 를 같은 축에서 비교하지 말 것(§9 2026-08-13).
+    parametrization: str = "product_v1"
 
     def to_dict(self) -> dict:
         return asdict(self)
