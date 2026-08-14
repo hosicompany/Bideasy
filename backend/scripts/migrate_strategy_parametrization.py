@@ -14,10 +14,18 @@ adjustment 가 한 번에 최대 1.0 옮겨간다(예: 적격심사제/small −
 무엇이 바뀌나
 --------------
 adjustment 를 데이터에서 적합한 사정률 중심(중앙값·부모 shrinkage)에 고정하고,
-**곱을 최대한 보존하도록** margin 을 재계산한다. 곱이 보존되면 A값 없는 가격은
-그대로다 — 실측에서 win·무효가 소수점 셋째 자리까지 안 움직였다(§9 ③).
-A값이 있는 공고에서만 가격이 미세하게 달라진다(중앙값 5,730원). 그 차이가
-바로 옛 파라미터화가 흘리던 누수이고, 이 전환이 없애려는 것이다.
+**곱을 최대한 보존하도록** margin 을 재계산한다.
+
+⚠️ **곱 보존은 A값이 0 일 때만 가격 보존을 뜻한다.** 운영 가격식이
+``P = 기초×(1+adj/100)×r − A×(r−1)`` (``r=(하한율+margin)/100``) 라서, 곱(첫 항)이
+같아도 margin 이 오르면 둘째 항이 가격을 끌어내린다. 그래서 "곱 이탈이 전부
+양수" 만 보고 안전하다고 판정하면 안 되고, **하한선까지의 여유**를 A값 비율별로
+따로 재야 한다(아래 출력의 두 번째 표).
+
+실측(2026-08-14): 여유가 빠듯한 A값 0 구간은 **늘고**(+0.06~+0.09%p), 줄어드는
+쪽은 A값이 큰 구간인데 원래 여유가 4%p 넘어 무효 근처가 아니다. 방향이 맞다 —
+옛 adjustment(+0.5) 는 예정가격을 과대평가해 A값 공고의 가격을 과도하게 높게
+만들고 있었고, 그게 §9 가 말한 A값 누수다.
 
 사용법
 ------
@@ -46,6 +54,10 @@ from app.services.autocalibrate.strategy_store import (
     get_default_store,
     make_version_id,
 )
+from app.services.calculator import CalculatorService as C
+
+# 사정률 중앙값 — 예정가격 추정에 쓴다(전 세그먼트 0.995~1.003 의 중심).
+_RATIO_CENTER = 0.99872
 
 
 def main() -> int:
@@ -101,6 +113,42 @@ def main() -> int:
         print(f"⚠️ margin 0.0 클램프(곱 보존 포기, 안전 방향): {', '.join(clamped)}")
     if unsafe:
         print(f"✗ 곱이 줄어든 세그먼트 — 무효 위험 증가: {', '.join(unsafe)}")
+        return 1
+
+    # ── A값 경로 점검 ────────────────────────────────────────────
+    # ⚠️ 위의 "곱 이탈" 만 보면 안 된다. 곱이 안전 방향이어도 **A값이 있으면
+    # 방향이 뒤집힐 수 있다** — 운영 가격식이
+    #     P = 기초×(1+adj/100)×r − A×(r−1)   (r = (하한율+margin)/100)
+    # 라서, 곱(첫 항)이 같아도 margin 이 오르면 둘째 항이 가격을 끌어내린다.
+    # 최적화는 A값 없는 세계에서 적합하는데(§9) 운영은 A값을 넣으므로, 전환의
+    # 실제 안전성은 **하한선까지의 여유**로 재야 한다.
+    print()
+    print("A값 경로 — 하한선 여유 변화 (예정가격 = 기초금액 × 사정률 중앙값)")
+    print(f"{'조건':<20}{'여유 전':>10}{'여유 후':>10}{'변화':>9}")
+    print("-" * 68)
+    tight = None
+    for bp in (100_000_000, 500_000_000):
+        for ratio_a in (0.0, 0.15, 0.35):
+            av = int(bp * ratio_a)
+            before = C.recommend_bid_price(
+                basic_price=bp, bid_method="DEFAULT",
+                contract_type="CONSTRUCTION", a_value=av,
+            )
+            after = C.recommend_bid_price(
+                basic_price=bp, bid_method="DEFAULT",
+                contract_type="CONSTRUCTION", a_value=av, strategy_override=new_params,
+            )
+            floor = bp * _RATIO_CENTER * before["lower_limit_rate"] / 100
+            m0 = (before["recommended_price"] - floor) / bp * 100
+            m1 = (after["recommended_price"] - floor) / bp * 100
+            if tight is None or m1 < tight:
+                tight = m1
+            print(f"{bp // 100_000_000}억·A{int(ratio_a * 100)}%{'':<12}"
+                  f"{m0:>10.3f}{m1:>10.3f}{m1 - m0:>+9.3f}")
+    print("-" * 68)
+    print(f"전환 후 최소 여유 {tight:.3f}%p — 0 밑이면 무효다")
+    if tight <= 0:
+        print("✗ 전환이 투찰가를 하한선 아래로 민다 — 중단")
         return 1
 
     if not args.commit:
