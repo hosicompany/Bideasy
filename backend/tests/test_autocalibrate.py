@@ -364,3 +364,55 @@ def test_strategy_version_carries_parametrization():
         {"version_id": "old", "created_at": "t", "params": {}}
     )
     assert legacy.parametrization == "product_v1"
+
+
+def test_thin_method_does_not_dominate_ratio_prediction(records):
+    """표본이 얕은 입찰방법의 중앙값이 사정률 예측을 지배하면 안 된다.
+
+    `_by_method` 에는 최소 표본 조건이 없어서 n=1~3 짜리 방법도 부모가 되고,
+    희소 세그먼트는 그 분위수를 **통째로** 물려받는다. 실측에서
+    `실시설계기술제안입찰`(방법 전체 n=2)의 중앙값 1.0133 이 그대로 예측이 돼
+    adjustment 가 +1.3 으로 튀었다 — 표본이 충분한 방법은 전부 −0.1 로
+    수렴하므로 신호가 아니라 노이즈다.
+
+    불변식: **얕을수록 전역에 가까워야 한다.** 자기 중앙값보다 전역에서 더
+    멀어지는 일은 없어야 한다.
+    """
+    weights = optimizer.adaptive_year_weights(records)
+    rm = ReservedRatioModel.fit(records, weights)
+    global_median = rm._global.quantiles.get(0.5)
+    assert global_median, "전역 분위수가 없으면 이 검사가 무의미하다"
+
+    checked = 0
+    for method, params in rm._by_method.items():
+        if params.n_raw >= 30:
+            continue
+        own_median = params.quantiles.get(0.5)
+        if not own_median:
+            continue
+        checked += 1
+        for bracket in ("small", "medium", "large"):
+            pred = rm.predict_reserved_ratio(method, bracket)
+            assert abs(pred - global_median) <= abs(own_median - global_median) + 1e-9, (
+                f"{method}/{bracket}(방법 n={params.n_raw}) 의 예측이 자기 중앙값보다 "
+                f"전역에서 멀다 — shrinkage 가 풀렸다"
+            )
+    assert checked, "얕은 방법이 하나도 없어 검증하지 못했다"
+
+
+def test_pinned_adjustment_stays_near_ratio_center(records):
+    """고정되는 adjustment 는 사정률의 현실 범위 안에 있어야 한다.
+
+    사정률은 예정가격÷기초금액이라 1.0 근처다(실측 전 세그먼트 0.995~1.003).
+    ±1%p 를 넘는 adjustment 가 나오면 데이터가 아니라 표본 부족이 만든 값이다
+    — 그대로 두면 A값 가격식을 타고 실사용자 투찰가로 나간다.
+    """
+    weights = optimizer.adaptive_year_weights(records)
+    rm = ReservedRatioModel.fit(records, weights)
+
+    for (method, bracket) in rm._segments:
+        adj = optimizer.pinned_adjustment(rm, method, bracket)
+        assert -1.0 <= adj <= 1.0, (
+            f"{method}/{bracket} 의 고정 adjustment {adj:+.1f} 가 사정률 현실 "
+            f"범위(±1.0%p) 를 벗어났다"
+        )
