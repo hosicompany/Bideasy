@@ -82,13 +82,14 @@ def propose_topics(n: int = 8, db: Session = Depends(get_db), _admin=Depends(req
 
 @router.get("/blog/review-stats")
 def blog_review_stats(db: Session = Depends(get_db), _admin=Depends(require_admin)):
-    """자동 검수 판정 × 사람의 최종 처리 교차표 (Phase 1 그림자 모드 측정).
+    """자동 검수 판정 × 최종 처리 교차표 (K-트랙 Phase 2 포함).
 
-    자동 발행(Phase 2)으로 넘어가도 되는지 판단하는 근거. 보는 법:
+    게이트 품질과 사람 override를 함께 보는 근거. 보는 법:
     - `PASS × published`  → 기계가 맞음 (자동 발행해도 됐을 건)
     - `FAIL × published`  → **거짓 경보**. 게이트가 과하게 엄격 → 규칙 완화 검토
     - `PASS × draft(장기)` → **놓침 가능성**. 기계가 통과시켰는데 사람이 안 냄 → 규칙 보강
-    판단 기준: FAIL×published 가 0에 수렴하고 표본이 쌓이면 Phase 2 착수.
+    K-트랙 자동초안은 완결된 PASS/WARN만 유예 자동발행하고, FAIL·검사 미완료는
+    예약하지 않는다. 수동 publish는 사람이 명시적으로 override할 수 있다.
 
     주의: /blog/{post_id}(int) 보다 먼저 등록해야 경로가 가로채이지 않는다.
     """
@@ -109,10 +110,10 @@ def blog_review_stats(db: Session = Depends(get_db), _admin=Depends(require_admi
         "reviewed": reviewed,
         "unreviewed": unreviewed,
         "false_alarms": false_alarms,
-        "mode": "shadow",
+        "mode": "hybrid",
         "note": (
-            "그림자 모드 — 판정은 발행을 막지 않아요. FAIL 인데 발행된 건(false_alarms)이 "
-            "0에 수렴하고 표본이 충분해지면 Phase 2(자동 발행 연결)를 검토하세요."
+            "K-트랙 주간 자동초안은 PASS/WARN(검사 생략 없음)만 유예 자동발행하고, "
+            "그 외 생성·수동 발행 경로는 판정을 참고 정보로 유지해요."
         ),
     }
 
@@ -204,6 +205,13 @@ def generate_data_story_now(force: bool = False, db: Session = Depends(get_db), 
 def update_blog_post(post_id: int, payload: BlogPostUpdate, db: Session = Depends(get_db), _admin=Depends(require_admin)):
     post = _get_or_404(post_id, db)
     data = payload.model_dump(exclude_unset=True)
+    # 자동 생성 글의 제목/요약/본문이 바뀌면 이전 검수 판정으로 예약 발행하면 안 된다.
+    # 같은 요청에 publish_at 이 있어도 새 본문은 아직 검수되지 않았으므로 예약을
+    # 해제한다. 즉시 내보내려면 사람이 명시적인 publish 액션을 사용한다.
+    review_input_changed = any(
+        field in data and data[field] is not None and data[field] != getattr(post, field)
+        for field in ("title", "summary", "body_md")
+    )
     if data.get("slug") and data["slug"] != post.slug:
         _ensure_unique_slug(data["slug"], db, exclude_id=post.id)
         post.slug = data["slug"]
@@ -225,6 +233,10 @@ def update_blog_post(post_id: int, payload: BlogPostUpdate, db: Session = Depend
     if data.get("body_md") is not None:
         post.body_md = data["body_md"]
         post.body_html, post.reading_time = blog_svc.render(data["body_md"])
+    if post.source == "auto" and review_input_changed:
+        post.review_json = None
+        post.channel_assets_json = None
+        post.publish_at = None
     db.commit()
     db.refresh(post)
     return post

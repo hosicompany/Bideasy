@@ -8,9 +8,9 @@ from app.db import models
 from app.services import content_review as cr
 
 
-def _post(db, slug="rv-1", body="본문", title="제목", status="draft", **kw):
+def _post(db, slug="rv-1", body="본문", title="제목", summary="요약", status="draft", **kw):
     p = models.BlogPost(
-        slug=slug, title=title, summary="요약", body_md=body,
+        slug=slug, title=title, summary=summary, body_md=body,
         body_html=f"<p>{body}</p>", reading_time=3, status=status,
         source="auto", date="", **kw,
     )
@@ -239,6 +239,26 @@ class TestReviewIntegration:
         r = cr.review_post(db_session, p, use_llm=False)
         assert r["verdict"] == cr.PASS and r["blocking"] == []
 
+    def test_public_title_and_summary_are_reviewed(self, db_session):
+        """검색결과·목록에 노출되는 메타 텍스트도 본문과 같은 게이트를 거친다."""
+        db_session.query(models.BlogPost).delete()
+        db_session.commit()
+        title_bad = _post(
+            db_session,
+            "rv-title-bad",
+            title="낙찰률을 높이는 방법",
+            body=_long_body(filler="라"),
+        )
+        assert cr.review_post(db_session, title_bad, use_llm=False)["verdict"] == cr.FAIL
+
+        summary_bad = _post(
+            db_session,
+            "rv-summary-bad",
+            summary="작년 평균 성공은 63%였어요",
+            body=_long_body(filler="마"),
+        )
+        assert cr.review_post(db_session, summary_bad, use_llm=False)["verdict"] == cr.WARN
+
     def test_review_is_stored(self, db_session):
         db_session.query(models.BlogPost).delete()
         db_session.commit()
@@ -288,7 +308,7 @@ class TestReviewEndpoints:
         cr.review_and_store(db_session, b, use_llm=False)
 
         d = admin_client.get("/api/v1/admin/blog/review-stats").json()
-        assert d["mode"] == "shadow"
+        assert d["mode"] == "hybrid"
         assert d["matrix"]["PASS"]["published"] == 1
         assert d["matrix"]["FAIL"]["published"] == 1
         assert d["false_alarms"] == 1        # FAIL 인데 발행됨 = 거짓 경보 후보
