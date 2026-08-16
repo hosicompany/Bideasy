@@ -266,7 +266,7 @@ def render_blocks_to_md(blocks: dict, slug: str = "") -> str:
 # ─── 초안 생성 (검수 게이트: publish_at 없음) ──────────────────
 
 def _review(db, post) -> None:
-    """자동 검수 게이트(그림자 모드) — 판정을 남긴다. 실패해도 초안 생성엔 영향 없음."""
+    """자동 검수 판정을 남긴다. 실패해도 초안은 보존하고 K-트랙 예약은 차단된다."""
     from app.services import content_review
     content_review.review_and_store(db, post)
 
@@ -303,6 +303,7 @@ def create_draft_from_topic(db, code: str, force: bool = False):
         existing.blocks_json = blocks
         existing.channel_assets_json = None  # 정본이 바뀌었으니 파생 캐시 무효화
         existing.review_json = None          # 본문이 바뀌었으니 이전 판정도 무효
+        existing.publish_at = None           # 이전 판정으로 잡힌 자동발행 예약도 무효
         db.commit()
         db.refresh(existing)
         _review(db, existing)

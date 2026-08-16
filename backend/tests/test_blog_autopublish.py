@@ -153,6 +153,29 @@ class TestUnpublishClearsSchedule:
         db_session.refresh(p)
         assert p.publish_at is not None
 
+    def test_editing_auto_post_invalidates_review_and_schedule(self, admin_client, db_session):
+        """유예 중 본문을 고치면 옛 판정으로 자동발행하지 않는다."""
+        p = _mk_post(
+            db_session,
+            "auto-edit-invalidates-review",
+            publish_at=_naive_utc() + timedelta(days=2),
+        )
+        p.source = "auto"
+        p.category = "입찰상식"
+        p.review_json = {"verdict": "WARN", "checks": []}
+        p.channel_assets_json = {"stale": True}
+        db_session.commit()
+
+        r = admin_client.put(
+            f"/api/v1/admin/blog/{p.id}",
+            json={"body_md": "수정한 본문"},
+        )
+        assert r.status_code == 200
+        db_session.refresh(p)
+        assert p.publish_at is None
+        assert p.review_json is None
+        assert p.channel_assets_json is None
+
 
 class TestTzAwareNormalization:
     def test_create_schema_normalizes_tz_aware(self):
@@ -175,14 +198,20 @@ class TestKnowledgeGrace:
     review_json 이 없으면(검수 실패) 판정을 모르므로 예약하지 않는다.
     """
 
-    def _run(self, db_session, monkeypatch, verdict, grace=48):
+    def _run(self, db_session, monkeypatch, verdict, grace=48, *, skipped=False):
         from app.core.config import settings
         from app.tasks.content_tasks import weekly_knowledge_draft
 
         monkeypatch.setattr(settings, "BLOG_KNOWLEDGE_GRACE_HOURS", grace)
-        slug = f"k-grace-{verdict or 'none'}-{grace}"
+        review_kind = "skipped" if skipped else "complete"
+        slug = f"k-grace-{verdict or 'none'}-{grace}-{review_kind}"
         post = _mk_post(db_session, slug)
-        post.review_json = {"verdict": verdict} if verdict else None
+        post.review_json = (
+            {"verdict": verdict, "checks": [
+                {"code": "llm_judge", "level": verdict, "skipped": True}
+            ] if skipped else []}
+            if verdict else None
+        )
         db_session.commit()
         topic = {"code": "K99", "title": "테스트 주제", "angle": "a", "keyword": "k", "priority": "P1"}
         with _patch_session(db_session), \
@@ -217,6 +246,56 @@ class TestKnowledgeGrace:
         _, post = self._run(db_session, monkeypatch, "WARN", grace=0)
         assert post.publish_at is None  # 킬스위치: 종전 수동 승인 유지
 
+    def test_skipped_review_stays_manual(self, db_session, monkeypatch):
+        """LLM 심판 실패 WARN은 정상 advisory가 아니다 — 무검수 자동발행 방지."""
+        _, post = self._run(db_session, monkeypatch, "WARN", grace=48, skipped=True)
+        assert post.publish_at is None
+
+
+class TestKnowledgePublishRecheck:
+    """유예 뒤 실제 발행 시점에도 K-트랙 검수 상태를 다시 확인한다."""
+
+    @staticmethod
+    def _post(db, slug, review):
+        p = _mk_post(db, slug, publish_at=_naive_utc() - timedelta(hours=1))
+        p.source = "auto"
+        p.category = "입찰상식"
+        p.review_json = review
+        db.commit()
+        return p
+
+    def test_missing_review_unschedules_instead_of_publishing(self, db_session):
+        p = self._post(db_session, "k-review-missing", None)
+        with _patch_session(db_session):
+            res = publish_scheduled_posts()
+        db_session.refresh(p)
+        assert p.status == "draft" and p.publish_at is None
+        assert res["blocked"] == [{"slug": p.slug, "reason": "review_missing"}]
+
+    def test_skipped_review_unschedules_instead_of_publishing(self, db_session):
+        review = {
+            "verdict": "WARN",
+            "checks": [{"code": "llm_judge", "level": "WARN", "skipped": True}],
+        }
+        p = self._post(db_session, "k-review-skipped", review)
+        with _patch_session(db_session):
+            res = publish_scheduled_posts()
+        db_session.refresh(p)
+        assert p.status == "draft" and p.publish_at is None
+        assert res["blocked"][0]["reason"] == "review_incomplete"
+
+    def test_complete_warn_still_publishes(self, db_session):
+        review = {
+            "verdict": "WARN",
+            "checks": [{"code": "structure", "level": "WARN"}],
+        }
+        p = self._post(db_session, "k-review-complete", review)
+        with _patch_session(db_session):
+            res = publish_scheduled_posts()
+        db_session.refresh(p)
+        assert p.status == "published"
+        assert p.slug in res["published"] and res["blocked"] == []
+
 
 class TestHeroGuardOnPublish:
     """발행 직전 히어로 파일 확인 — 미배치면 hero 를 비워 깨진 og:image 방지(§5.1)."""
@@ -250,12 +329,12 @@ class TestHeroGuardOnPublish:
         assert p.status == "published"
         assert p.hero == "/assets/blog/hero-200/hero.png" and res["no_hero"] == []
 
-    def test_check_failure_keeps_hero(self, db_session):
-        """확인 자체가 실패하면(네트워크) 히어로를 지우지도, 발행을 막지도 않는다."""
+    def test_check_failure_clears_hero(self, db_session):
+        """확인 자체가 실패해도 깨질 수 있는 공개 URL보다 이미지 없는 발행이 안전하다."""
         p = self._mk_hero_post(db_session, "hero-err")
         with _patch_session(db_session), \
                 patch("app.tasks.content_tasks.requests.head", side_effect=OSError("boom")):
             res = publish_scheduled_posts()
         db_session.refresh(p)
         assert p.status == "published"
-        assert p.hero == "/assets/blog/hero-err/hero.png" and res["no_hero"] == []
+        assert p.hero == "" and res["no_hero"] == ["hero-err"]

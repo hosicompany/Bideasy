@@ -288,7 +288,7 @@ class TestReviewEndpoints:
         cr.review_and_store(db_session, b, use_llm=False)
 
         d = admin_client.get("/api/v1/admin/blog/review-stats").json()
-        assert d["mode"] == "shadow"
+        assert d["mode"] == "hybrid"
         assert d["matrix"]["PASS"]["published"] == 1
         assert d["matrix"]["FAIL"]["published"] == 1
         assert d["false_alarms"] == 1        # FAIL 인데 발행됨 = 거짓 경보 후보

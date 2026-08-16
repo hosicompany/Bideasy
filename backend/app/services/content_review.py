@@ -9,9 +9,9 @@
     WARN  — 사람이 한 번 봐두면 좋은 신호 (자동 발행 후보이되 유예)
     FAIL  — 브랜드·정책 위반 가능성 (사람 필수)
 
-**그림자 모드**: 이 판정은 지금 아무것도 막지 않는다. 발행 경로는 종전 그대로다.
-판정과 사람의 실제 행동(발행/삭제)을 몇 주 모아 일치율을 본 뒤에야 자동 발행에
-연결한다(Phase 2). 검증 안 된 게이트로 발행을 자동화하는 건 도박이다.
+**기본 그림자 모드**: 이 모듈은 판정을 저장할 뿐 발행 API를 직접 막지 않는다.
+다만 검증 표본을 쌓은 K-트랙의 주간 태스크는 Phase 2 소비자로서 완결된 PASS/WARN만
+유예 예약하고, FAIL·검사 생략은 사람에게 보낸다. 다른 트랙은 계속 그림자 모드다.
 
 검사 종류:
   결정적(LLM 불필요·100% 재현) — 금칙어 / 출처 없는 수치 / 중복도 / 구조 / 이미지 참조
@@ -283,7 +283,7 @@ def check_llm_judge(title: str, body_md: str) -> dict:
 # ─── 통합 ─────────────────────────────────────────────────────
 
 def review_post(db, post, use_llm: bool = True) -> dict:
-    """BlogPost 초안 검수 → 판정 dict (그림자 모드: 저장만, 발행 경로 불변)."""
+    """BlogPost 초안 검수 → 판정 dict (이 함수는 저장만, 라우팅은 소비자가 결정)."""
     body = post.body_md or ""
     blocks = getattr(post, "blocks_json", None) or {}
     checks = [
@@ -303,7 +303,7 @@ def review_post(db, post, use_llm: bool = True) -> dict:
         "checks": checks,
         "blocking": [c["code"] for c in checks if c["level"] == FAIL],
         "advisory": [c["code"] for c in checks if c["level"] == WARN],
-        "mode": "shadow",   # Phase 1 — 판정만 기록, 발행 차단 안 함
+        "mode": "shadow",   # 판정 생성 모드. K-트랙 소비자가 별도 Phase 2 라우팅에 사용.
     }
 
 

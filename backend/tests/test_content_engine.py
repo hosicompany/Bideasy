@@ -3,6 +3,8 @@
 =========================================
 주제 큐 → 구조화 정본 블록 → 결정적 렌더 → 검수 게이트 초안.
 """
+from datetime import datetime
+
 import pytest
 
 from app.db import models
@@ -256,6 +258,7 @@ class TestQualityUpgrade:
             slug=slug, title="구버전", body_md="짧은 글", body_html="<p>짧은 글</p>",
             status="draft", source="auto", blocks_json={"old": True},
             channel_assets_json={"stale": True},
+            publish_at=datetime(2026, 8, 20, 0, 0),
         ))
         db_session.commit()
         new_blocks = dict(SAMPLE_BLOCKS)
@@ -265,6 +268,7 @@ class TestQualityUpgrade:
         assert "30초 요약" in post.body_md          # 새 본문으로 교체됨
         assert post.blocks_json.get("old") is None
         assert post.channel_assets_json is None      # 파생 캐시 무효화
+        assert post.publish_at is None                # 이전 판정의 자동발행 예약도 무효화
 
     def test_force_refuses_published(self, db_session, monkeypatch):
         slug = ce.slug_for("K2")
