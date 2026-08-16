@@ -90,6 +90,9 @@ class BidContextResponse(BaseModel):
     bid_ntce_no: str
     found: bool                       # OpenAPI/DB 에서 찾았는지 (false → 익스텐션 DOM fallback)
     source: str                       # "cache" | "api" | "none"
+    # 로그인된 공식 Extension origin에만 발급되는 짧은 수명·1회성 활성화 증표.
+    # 실제 context가 없거나 이미 활성화된 공고, 웹/익명 호출에는 항상 null이다.
+    activation_receipt: Optional[str] = None
     title: Optional[str] = None
     estimated_price: Optional[float] = None   # presmptPrce (추정가격)
     budget_amount: Optional[float] = None     # asignBdgtAmt (배정예산)

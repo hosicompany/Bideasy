@@ -19,7 +19,24 @@ from fastapi import APIRouter, Depends
 
 from app.core.security import require_admin
 
-from . import accuracy, dashboard, users, payments, autocalibrate, system, simulation, blog, leads, consents, outbound, mock_bidding, activation
+from . import (
+    accuracy,
+    activation,
+    autocalibrate,
+    blog,
+    consents,
+    creatives,
+    dashboard,
+    growth,
+    leads,
+    message_validation,
+    mock_bidding,
+    outbound,
+    payments,
+    simulation,
+    system,
+    users,
+)
 
 # 라우터 수준 의존성 — 모든 sub-router 가 자동으로 require_admin 거침.
 # 개별 엔드포인트의 _admin=Depends(require_admin) 는 명시성·테스트 가독성 위해 유지.
@@ -37,3 +54,6 @@ router.include_router(consents.router)        # 수신동의 증적 조회(발�
 router.include_router(outbound.router)        # 아웃바운드 발송 원장·미리보기·테스트
 router.include_router(mock_bidding.router)    # 모의투찰 — 사전등록·채점 조회
 router.include_router(activation.router)      # 활성화 계측 — 프로필 완성·첫 안전 판정
+router.include_router(creatives.router)       # Higgsfield 크리에이티브 brief·검수·게시
+router.include_router(message_validation.router)  # 비보조 5초 메시지 이해도 게이트
+router.include_router(growth.router)           # creative_id별 활성화·28일 반복 사용

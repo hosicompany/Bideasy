@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+import re
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -9,11 +11,19 @@ from app.services.activation import record_first_activation
 from app.services.calculator import CalculatorService
 from app.db import models
 from app.core.logging import get_logger
-from app.core.security import get_current_user, get_current_user_optional, require_admin
+from app.core.config import settings
+from app.core.security import (
+    create_notice_check_receipt,
+    get_current_user,
+    get_current_user_optional,
+    require_admin,
+)
 
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+_CONTEXT_BID_NO_RE = re.compile(r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
 
 @router.post("/calculate", response_model=schemas.BidCalculationResponse)
 def calculate_bid(
@@ -259,27 +269,33 @@ def _notice_to_context(notice: models.Notice, source: str) -> schemas.BidContext
 
 def _normalize_bid_no(raw: str) -> str:
     """공백 제거 + 표시형식(...-000) 통일. DB 는 'bidNtceNo-bidNtceOrd' 로 저장."""
-    return (raw or "").replace(" ", "").strip()
+    return re.sub(r"\s+", "", raw or "")
+
+
+def _valid_context_bid_no(raw: str) -> bool:
+    normalized = _normalize_bid_no(raw)
+    return bool(normalized and len(normalized) <= 100 and _CONTEXT_BID_NO_RE.fullmatch(normalized))
 
 
 def _lookup_notice(db: Session, bid_ntce_no: str) -> Optional[models.Notice]:
     """DB Notice 캐시 조회 — 정확 일치 → prefix(공고번호) 일치 순."""
     norm = _normalize_bid_no(bid_ntce_no)
+    # LIKE wildcard가 실제 공고로 해석되면 임의 입력이 첫 캐시 공고의 context와
+    # activation receipt를 받을 수 있다. 나라장터 공고번호 문자만 허용한다.
+    if not _valid_context_bid_no(norm):
+        return None
     # 1) 정확 일치 (bid_no = 'R25...-000')
     notice = db.query(models.Notice).filter(models.Notice.bid_no == norm).first()
     if notice:
         return notice
-    # 2) 공고번호만 들어온 경우 prefix 매칭 ('R25...' → 'R25...-000')
-    base = norm.split("-")[0]
-    if base and base != norm:
-        return (
-            db.query(models.Notice)
-            .filter(models.Notice.bid_no.like(f"{base}-%"))
-            .first()
-        )
+    # 2) 차수까지 들어온 정본 ID가 없으면 다른 차수로 조용히 바꾸지 않는다.
+    # 차수가 아예 없는 수동 입력만 최신 차수로 결정적으로 보완한다.
+    if "-" in norm:
+        return None
     return (
         db.query(models.Notice)
-        .filter(models.Notice.bid_no.like(f"{norm}%"))
+        .filter(models.Notice.bid_no.like(f"{norm}-%"))
+        .order_by(models.Notice.bid_no.desc())
         .first()
     )
 
@@ -320,8 +336,7 @@ def get_batch_context(
     )
 
 
-@router.get("/{bid_no}/context", response_model=schemas.BidContextResponse)
-def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
+def _get_bid_context_data(bid_no: str, db: Session) -> schemas.BidContextResponse:
     """단건 공고 컨텍스트 — DB 캐시 우선 → OpenAPI → DB 적재.
 
     A값은 반환하지 않음 (OpenAPI 부재, 익스텐션 DOM 추출 담당).
@@ -351,9 +366,26 @@ def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
         )
 
     raw = detail.get("raw_data", {}) or {}
+    bid_no_full = detail.get("bid_no") or norm
+    # robust provider가 같은 base의 다른 차수를 반환해도 명시된 요청 정본으로
+    # 수용하지 않는다. base-only 입력일 때만 반환된 canonical 차수를 허용한다.
+    if "-" in norm:
+        detail_matches = bid_no_full == norm
+    else:
+        detail_matches = str(bid_no_full).startswith(f"{norm}-")
+    if not detail_matches:
+        logger.warning(
+            "context provider order mismatch requested=%r returned=%r",
+            norm,
+            bid_no_full,
+        )
+        return schemas.BidContextResponse(
+            bid_ntce_no=norm,
+            found=False,
+            source="none",
+        )
     # OpenAPI 응답을 Notice 로 적재 (다음 호출부터 캐시 히트)
     try:
-        bid_no_full = detail.get("bid_no") or norm
         if not db.query(models.Notice).filter(models.Notice.bid_no == bid_no_full).first():
             db.add(models.Notice(
                 bid_no=bid_no_full,
@@ -374,7 +406,7 @@ def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
         logger.warning(f"context DB 적재 실패 (non-fatal): {e}")
 
     return schemas.BidContextResponse(
-        bid_ntce_no=bid_no,
+        bid_ntce_no=bid_no_full,
         found=True,
         source="api",
         title=detail.get("title"),
@@ -389,6 +421,59 @@ def get_bid_context(bid_no: str, db: Session = Depends(get_db)):
         region=raw.get("prtcptLmtRgnNm"),
         contract_type="CONSTRUCTION",
     )
+
+
+@router.get("/{bid_no}/context", response_model=schemas.BidContextResponse)
+def get_bid_context(
+    bid_no: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
+    """공고 컨텍스트와, 조건 충족 시 해당 응답에 묶인 활성화 receipt를 반환한다.
+
+    데이터 자체는 기존처럼 공개한다. receipt만 로그인 사용자 + 배포 Extension
+    origin + 실제 DB/OpenAPI 공고에 한정하며, 이미 활성화된 공고에는 재발급하지
+    않는다. 활성화 POST는 이 receipt를 별도로 검증·1회 소비한다.
+    """
+    if not _valid_context_bid_no(bid_no):
+        raise HTTPException(status_code=400, detail="공고번호 형식이 올바르지 않습니다.")
+    if request.headers.get("authorization") and current_user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="유효한 로그인이 필요합니다.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    context = _get_bid_context_data(bid_no, db)
+    expected_origin = f"chrome-extension://{settings.CHROME_EXTENSION_ID}"
+    if (
+        context.found
+        and current_user is not None
+        and request.headers.get("origin") == expected_origin
+    ):
+        activation_exists = (
+            db.query(models.GrowthEvent.id)
+            .filter(
+                models.GrowthEvent.dedupe_key
+                == f"notice-check:{current_user.id}:{context.bid_ntce_no}"
+            )
+            .first()
+        )
+        if activation_exists is None:
+            try:
+                context.activation_receipt = create_notice_check_receipt(
+                    user_id=current_user.id,
+                    bid_no=context.bid_ntce_no,
+                )
+                response.headers["Cache-Control"] = "no-store"
+            except ValueError:
+                # 비정상 legacy 공고번호에는 활성화 증표를 발급하지 않는다.
+                logger.warning(
+                    "notice-check receipt skipped for non-canonical bid_no=%r",
+                    context.bid_ntce_no,
+                )
+    return context
 
 
 @router.post("/{bid_no}/favorite")
@@ -473,7 +558,7 @@ def report_a_value(
     if not notice:
         # 캐시에 없으면 OpenAPI 로 적재 시도 후 재조회
         try:
-            get_bid_context(bid_no, db)
+            _get_bid_context_data(bid_no, db)
         except Exception:
             pass
         notice = _lookup_notice(db, bid_no)
@@ -501,7 +586,7 @@ def scrape_a_value(
     notice = _lookup_notice(db, bid_no)
     if not notice:
         try:
-            get_bid_context(bid_no, db)
+            _get_bid_context_data(bid_no, db)
         except Exception:
             pass
         notice = _lookup_notice(db, bid_no)
@@ -543,7 +628,7 @@ def get_qualification(
     notice = _lookup_notice(db, bid_no)
     if not notice:
         try:
-            get_bid_context(bid_no, db)
+            _get_bid_context_data(bid_no, db)
         except Exception:
             pass
         notice = _lookup_notice(db, bid_no)
@@ -591,7 +676,7 @@ def track_bid(
         # 공고가 캐시에 없으면 적재 시도 (FK·리마인더용)
         if not _lookup_notice(db, bid_no):
             try:
-                get_bid_context(bid_no, db)
+                _get_bid_context_data(bid_no, db)
             except Exception:
                 pass
         db.add(models.BidTrack(bid_no=bid_no, user_id=current_user.id, remind=True))
@@ -641,4 +726,3 @@ def get_opening_results(bid_no: str, db: Session = Depends(get_db)):
     contract_type = notice.contract_type if notice else "CONSTRUCTION"
     
     return OpeningResultService.fetch_opening_results(bid_no, contract_type)
-

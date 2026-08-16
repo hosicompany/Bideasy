@@ -99,6 +99,8 @@ class CaptureRequest(DiagnoseRequest):
     utm_source: Optional[str] = None
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None
+    utm_content: Optional[str] = None
+    creative_id: Optional[str] = None
     referrer: Optional[str] = None
     # ── 동의 (정보통신망법 제50조 / 개인정보보호법 제22조) ──
     # privacy_consent 가 None 이면 동의 UI 가 없던 **구버전(캐시된) 페이지**의 제출이다.
@@ -329,6 +331,13 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
 
     matched = _match_notices(db, industry, licenses, region)
 
+    creative_id = (req.creative_id or "").strip()[:36] or None
+    if creative_id and not db.query(models.CreativeBrief.id).filter(
+        models.CreativeBrief.id == creative_id,
+        models.CreativeBrief.status.in_(("APPROVED", "PUBLISHED")),
+    ).first():
+        creative_id = None
+
     lead = models.Lead(
         email=_normalize_email(req.email),
         phone=(req.phone or None),
@@ -340,6 +349,8 @@ def capture(req: CaptureRequest, request: Request, db: Session = Depends(get_db)
         utm_source=req.utm_source,
         utm_medium=req.utm_medium,
         utm_campaign=req.utm_campaign,
+        utm_content=(req.utm_content or "")[:160] or None,
+        creative_id=creative_id,
         referrer=req.referrer,
         nurture_channel=(req.nurture_channel if req.nurture_channel in ("kakao", "email") else None),
         source="web_diagnose",

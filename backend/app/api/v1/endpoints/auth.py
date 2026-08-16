@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+import re
+from urllib.parse import urlencode
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-import httpx
 
 from app.core.rate_limit import limiter
 from app.db.session import get_db
@@ -18,7 +21,7 @@ from app.core.security import (
     get_password_hash,
     create_token_for_user,
     create_oauth_state,
-    verify_oauth_state,
+    decode_oauth_state,
 )
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -29,6 +32,55 @@ KAKAO_USER_INFO_URL = "https://kapi.kakao.com/v2/user/me"
 NAVER_USER_INFO_URL = "https://openapi.naver.com/v1/nid/me"
 
 router = APIRouter()
+_ATTRIBUTION_VALUE_RE = re.compile(r"^[0-9A-Za-z가-힣._:-]+$")
+
+
+def _validated_signup_attribution(
+    db: Session,
+    *,
+    source: str | None = None,
+    medium: str | None = None,
+    campaign: str | None = None,
+    content: str | None = None,
+    creative_id: str | None = None,
+) -> dict[str, str]:
+    """OAuth state에 넣어도 되는 비민감 first-touch 좌표만 정규화한다."""
+
+    def clean(value: str | None, limit: int) -> str | None:
+        normalized = (value or "").strip()
+        if not normalized or len(normalized) > limit:
+            return None
+        if not _ATTRIBUTION_VALUE_RE.fullmatch(normalized):
+            return None
+        return normalized
+
+    attribution = {
+        "source": clean(source, 120),
+        "medium": clean(medium, 120),
+        "campaign": clean(campaign, 160),
+        "content": clean(content, 160),
+    }
+    candidate_creative_id = clean(creative_id, 36)
+    if candidate_creative_id and db.query(models.CreativeBrief.id).filter(
+        models.CreativeBrief.id == candidate_creative_id,
+        models.CreativeBrief.status.in_(("APPROVED", "PUBLISHED")),
+    ).first():
+        attribution["creative_id"] = candidate_creative_id
+    return {key: value for key, value in attribution.items() if value}
+
+
+def _attribution_from_state(db: Session, payload: dict) -> dict[str, str]:
+    raw = payload.get("attribution")
+    if not isinstance(raw, dict):
+        return {}
+    return _validated_signup_attribution(
+        db,
+        source=raw.get("source"),
+        medium=raw.get("medium"),
+        campaign=raw.get("campaign"),
+        content=raw.get("content"),
+        creative_id=raw.get("creative_id"),
+    )
 
 
 def _find_or_create_social_user(
@@ -38,6 +90,7 @@ def _find_or_create_social_user(
     email: str | None,
     profile_image: str | None,
     email_verified: bool = False,
+    attribution: dict[str, str] | None = None,
 ) -> models.User:
     """Find existing user by social identity, email, or create new one.
 
@@ -76,6 +129,11 @@ def _find_or_create_social_user(
             social_id=social_id,
             profile_image_url=profile_image,
             points=SIGNUP_BONUS,
+            signup_source=(attribution or {}).get("source"),
+            signup_medium=(attribution or {}).get("medium"),
+            signup_campaign=(attribution or {}).get("campaign"),
+            signup_content=(attribution or {}).get("content"),
+            signup_creative_id=(attribution or {}).get("creative_id"),
         )
         db.add(user)
         db.flush()
@@ -118,6 +176,13 @@ def register(request: Request, user_in: user_schemas.UserCreate, db: Session = D
             detail="이미 등록된 이메일입니다.",
         )
 
+    signup_creative_id = (user_in.signup_creative_id or "").strip()[:36] or None
+    if signup_creative_id and not db.query(models.CreativeBrief.id).filter(
+        models.CreativeBrief.id == signup_creative_id,
+        models.CreativeBrief.status.in_(("APPROVED", "PUBLISHED")),
+    ).first():
+        signup_creative_id = None
+
     user = models.User(
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
@@ -132,6 +197,8 @@ def register(request: Request, user_in: user_schemas.UserCreate, db: Session = D
         signup_source=(user_in.signup_source or "")[:120] or None,
         signup_medium=(user_in.signup_medium or "")[:120] or None,
         signup_campaign=(user_in.signup_campaign or "")[:160] or None,
+        signup_content=(user_in.signup_content or "")[:160] or None,
+        signup_creative_id=signup_creative_id,
         signup_referrer=(user_in.signup_referrer or "")[:300] or None,
     )
     db.add(user)
@@ -316,6 +383,14 @@ async def social_login(
     user = _find_or_create_social_user(
         db, provider=payload.provider, social_id=social_id,
         email=email, profile_image=profile_image, email_verified=email_verified,
+        attribution=_validated_signup_attribution(
+            db,
+            source=payload.signup_source,
+            medium=payload.signup_medium,
+            campaign=payload.signup_campaign,
+            content=payload.signup_content,
+            creative_id=payload.signup_creative_id,
+        ),
     )
 
     access_token = create_token_for_user(user)
@@ -324,29 +399,46 @@ async def social_login(
 
 
 @router.get("/social-urls")
-def get_social_login_urls():
+def get_social_login_urls(
+    signup_source: str | None = None,
+    signup_medium: str | None = None,
+    signup_campaign: str | None = None,
+    signup_content: str | None = None,
+    signup_creative_id: str | None = None,
+    db: Session = Depends(get_db),
+):
     """OAuth 인가 URL 반환 (프론트엔드에서 호출)"""
     # CSRF 방어: 서명된 state 를 발급하고 콜백에서 검증 (카카오·네이버 모두)
-    kakao_state = create_oauth_state()
-    naver_state = create_oauth_state()
+    attribution = _validated_signup_attribution(
+        db,
+        source=signup_source,
+        medium=signup_medium,
+        campaign=signup_campaign,
+        content=signup_content,
+        creative_id=signup_creative_id,
+    )
+    kakao_state = create_oauth_state(attribution=attribution)
+    naver_state = create_oauth_state(attribution=attribution)
     base = f"{settings.BACKEND_URL}{settings.API_V1_STR}"
     kakao_cb = f"{base}/auth/callback/kakao"
     naver_cb = f"{base}/auth/callback/naver"
 
     return {
-        "kakao": (
-            f"https://kauth.kakao.com/oauth/authorize"
-            f"?client_id={settings.KAKAO_REST_API_KEY}"
-            f"&redirect_uri={kakao_cb}"
-            f"&response_type=code"
-            f"&state={kakao_state}"
+        "kakao": "https://kauth.kakao.com/oauth/authorize?" + urlencode(
+            {
+                "client_id": settings.KAKAO_REST_API_KEY,
+                "redirect_uri": kakao_cb,
+                "response_type": "code",
+                "state": kakao_state,
+            }
         ),
-        "naver": (
-            f"https://nid.naver.com/oauth2.0/authorize"
-            f"?client_id={settings.NAVER_CLIENT_ID}"
-            f"&redirect_uri={naver_cb}"
-            f"&response_type=code"
-            f"&state={naver_state}"
+        "naver": "https://nid.naver.com/oauth2.0/authorize?" + urlencode(
+            {
+                "client_id": settings.NAVER_CLIENT_ID,
+                "redirect_uri": naver_cb,
+                "response_type": "code",
+                "state": naver_state,
+            }
         ),
     }
 
@@ -355,7 +447,8 @@ def get_social_login_urls():
 async def kakao_callback(code: str, state: str = "", db: Session = Depends(get_db)):
     """카카오 OAuth 콜백 - 인가 코드 → JWT → 프론트엔드 리다이렉트"""
     # CSRF 방어: 서버가 발급한 서명 state 인지 검증
-    if not verify_oauth_state(state):
+    state_payload = decode_oauth_state(state)
+    if state_payload is None:
         logger.warning("Kakao callback: invalid/expired oauth state")
         return RedirectResponse(f"{settings.FRONTEND_URL}/?error=invalid_state")
     callback_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/auth/callback/kakao"
@@ -395,6 +488,7 @@ async def kakao_callback(code: str, state: str = "", db: Session = Depends(get_d
     user = _find_or_create_social_user(
         db, provider="kakao", social_id=social_id,
         email=email, profile_image=profile_image, email_verified=email_verified,
+        attribution=_attribution_from_state(db, state_payload),
     )
 
     jwt_token = create_token_for_user(user)
@@ -407,7 +501,8 @@ async def kakao_callback(code: str, state: str = "", db: Session = Depends(get_d
 async def naver_callback(code: str, state: str, db: Session = Depends(get_db)):
     """네이버 OAuth 콜백 - 인가 코드 → JWT → 프론트엔드 리다이렉트"""
     # CSRF 방어: 서버가 발급한 서명 state 인지 검증
-    if not verify_oauth_state(state):
+    state_payload = decode_oauth_state(state)
+    if state_payload is None:
         logger.warning("Naver callback: invalid/expired oauth state")
         return RedirectResponse(f"{settings.FRONTEND_URL}/?error=invalid_state")
     callback_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/auth/callback/naver"
@@ -450,6 +545,7 @@ async def naver_callback(code: str, state: str, db: Session = Depends(get_db)):
     user = _find_or_create_social_user(
         db, provider="naver", social_id=social_id,
         email=email, profile_image=profile_image, email_verified=email_verified,
+        attribution=_attribution_from_state(db, state_payload),
     )
 
     jwt_token = create_token_for_user(user)

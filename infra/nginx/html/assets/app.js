@@ -3,10 +3,13 @@
    In production these favorites/feed calls would hit your api(). */
 (function () {
   // ── first-touch 유입 귀속: 최초 방문 1회 채널 저장(가입 시 함께 전송) ──
-  // UTM 우선 → 외부 referrer → direct. 이미 저장돼 있으면 덮어쓰지 않음(첫 터치 고정).
+  // UTM 우선 → 외부 referrer → direct. creative_id/utm_content도 같은 봉투에 담는다.
+  // 레거시 bd_attr에 creative_id가 없고 새 Creative 링크로 들어온 경우에만 그 두 필드를
+  // 보강한다. 기존 source/medium/campaign은 first-touch 계약 때문에 덮어쓰지 않는다.
   try {
-    if (!localStorage.getItem('bd_attr')) {
-      var _q = new URLSearchParams(location.search);
+    var _q = new URLSearchParams(location.search);
+    var _storedAttr = localStorage.getItem('bd_attr');
+    if (!_storedAttr) {
       var _ref = document.referrer || '';
       var _internal = _ref.indexOf('//' + location.host) !== -1;
       var _src = _q.get('utm_source') || '', _med = _q.get('utm_medium') || '', _cmp = _q.get('utm_campaign') || '';
@@ -14,7 +17,18 @@
         if (_ref && !_internal) { try { _src = new URL(_ref).hostname.replace(/^www\./, ''); } catch (e) { _src = 'referral'; } _med = _med || 'referral'; }
         else { _src = 'direct'; }
       }
-      localStorage.setItem('bd_attr', JSON.stringify({ source: _src, medium: _med, campaign: _cmp, referrer: _internal ? '' : _ref }));
+      localStorage.setItem('bd_attr', JSON.stringify({
+        source: _src, medium: _med, campaign: _cmp,
+        content: _q.get('utm_content') || '', creativeId: _q.get('creative_id') || '',
+        referrer: _internal ? '' : _ref
+      }));
+    } else if (_q.get('creative_id')) {
+      var _legacyAttr = JSON.parse(_storedAttr || '{}');
+      if (!_legacyAttr.creativeId) {
+        _legacyAttr.creativeId = _q.get('creative_id') || '';
+        _legacyAttr.content = _q.get('utm_content') || '';
+        localStorage.setItem('bd_attr', JSON.stringify(_legacyAttr));
+      }
     }
   } catch (e) {}
   var ICONS = {
@@ -60,6 +74,46 @@
   document.addEventListener('DOMContentLoaded', function () { document.body.setAttribute('data-theme', getTheme()); });
 
   function getToken() { try { return localStorage.getItem('access_token') || localStorage.getItem('jwt') || null; } catch (e) { return null; } }
+
+  function getAttribution() { try { return JSON.parse(localStorage.getItem('bd_attr') || '{}'); } catch (e) { return {}; } }
+  function anonymousCookie() {
+    try {
+      var match = document.cookie.match(/(?:^|;\s*)bd_anon=([^;]+)/);
+      return match ? decodeURIComponent(match[1]) : '';
+    } catch (e) { return ''; }
+  }
+  function anonymousId() {
+    try {
+      // /go가 발급한 first-party cookie를 우선해 qualified_visit과 이후
+      // free-value/install 이벤트가 같은 익명 여정으로 이어지게 한다.
+      var cookieId = anonymousCookie();
+      var id = cookieId || localStorage.getItem('bd_anon');
+      if (!id) {
+        id = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : 'anon-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      }
+      localStorage.setItem('bd_anon', id);
+      if (!cookieId) document.cookie = 'bd_anon=' + encodeURIComponent(id) + '; Path=/; Max-Age=7776000; SameSite=Lax; Secure';
+      return id;
+    } catch (e) { return 'anon-' + Date.now() + '-' + Math.random().toString(36).slice(2); }
+  }
+  function eventId() {
+    try { if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID(); } catch (e) {}
+    return 'event-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  }
+  function trackGrowth(eventName, metadata) {
+    var a = getAttribution(), headers = { 'Content-Type': 'application/json' }, tk = getToken();
+    if (tk) headers.Authorization = 'Bearer ' + tk;
+    var creativeId = (a.creativeId && /^[0-9a-f-]{36}$/i.test(a.creativeId)) ? a.creativeId : null;
+    return fetch('https://api.bideasy.kr/api/v1/growth/events', {
+      method: 'POST', headers: headers, keepalive: true,
+      body: JSON.stringify({
+        event_name: eventName, event_id: eventId(), anonymous_id: anonymousId(),
+        creative_id: creativeId, utm_source: a.source || null, utm_medium: a.medium || null,
+        utm_campaign: a.campaign || null, utm_content: a.content || null,
+        metadata: metadata || {}
+      })
+    }).catch(function () { /* 계측 실패는 본 기능을 막지 않는다. */ });
+  }
 
   function mountNav(active) {
     var authed = !!getToken();
@@ -214,8 +268,15 @@
     });
   }
 
-  window.BD = { icon: icon, won: won, fmt: fmt, esc: esc, mountNav: mountNav, toast: toast, getFavs: getFavs, toggleFav: toggleFav, getTheme: getTheme, setTheme: setTheme, getToken: getToken, mountSupportChat: mountSupportChat, API_BASE: 'https://api.bideasy.kr/api/v1' };
+  window.BD = { icon: icon, won: won, fmt: fmt, esc: esc, mountNav: mountNav, toast: toast, getFavs: getFavs, toggleFav: toggleFav, getTheme: getTheme, setTheme: setTheme, getToken: getToken, getAttribution: getAttribution, trackGrowth: trackGrowth, mountSupportChat: mountSupportChat, API_BASE: 'https://api.bideasy.kr/api/v1' };
+  function bindGrowthLinks() {
+    document.querySelectorAll('a[href*="chromewebstore.google.com"]').forEach(function (link) {
+      if (link.dataset.bdGrowthBound) return;
+      link.dataset.bdGrowthBound = '1';
+      link.addEventListener('click', function () { trackGrowth('chrome_install_clicked', { placement: this.getAttribute('data-ev') || location.pathname }); });
+    });
+  }
   // 전 페이지 자동 마운트 (auth/checkout 등 모두 — 문의 접점 극대화)
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { try { mountSupportChat(); } catch (e) {} });
-  else { try { mountSupportChat(); } catch (e) {} }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { try { mountSupportChat(); bindGrowthLinks(); } catch (e) {} });
+  else { try { mountSupportChat(); bindGrowthLinks(); } catch (e) {} }
 })();

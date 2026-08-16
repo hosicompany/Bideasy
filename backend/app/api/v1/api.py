@@ -1,5 +1,27 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import bids, ai, users, prediction, analysis, auth, points, payments, agency, smart_bid, notifications, admin, autocalibrate, support, leads, unsubscribe, optin, webhooks_ses
+from app.api.v1.endpoints import (
+    admin,
+    agency,
+    ai,
+    analysis,
+    auth,
+    autocalibrate,
+    bids,
+    creative_runner,
+    growth,
+    leads,
+    message_validation,
+    notifications,
+    optin,
+    payments,
+    points,
+    prediction,
+    smart_bid,
+    support,
+    unsubscribe,
+    users,
+    webhooks_ses,
+)
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -17,6 +39,14 @@ api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(autocalibrate.router, prefix="/autocalibrate", tags=["autocalibrate"])
 api_router.include_router(support.router, prefix="/support", tags=["support"])
 api_router.include_router(leads.router, prefix="/leads", tags=["leads"])
+api_router.include_router(growth.router, prefix="/growth", tags=["growth"])
+api_router.include_router(message_validation.router, prefix="/message-test", tags=["message-test"])
+# 인증된 운영자 Mac의 Higgsfield runner 전용(일반 JWT·admin 토큰 미사용).
+api_router.include_router(
+    creative_runner.router,
+    prefix="/creative-runner",
+    tags=["creative-runner"],
+)
 # 수신거부는 공개·무인증(메일 링크에서 바로 도달). prefix 없이 /unsubscribe 로 노출.
 api_router.include_router(unsubscribe.router, tags=["unsubscribe"])
 # 더블 옵트인 확인도 공개·무인증(메일 링크에서 바로 도달). 리드·회원 공용이라 prefix 없음.

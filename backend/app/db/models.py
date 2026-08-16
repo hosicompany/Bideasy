@@ -90,6 +90,13 @@ class User(Base):
     signup_source = Column(String(120), nullable=True)
     signup_medium = Column(String(120), nullable=True)
     signup_campaign = Column(String(160), nullable=True)
+    signup_content = Column(String(160), nullable=True)
+    signup_creative_id = Column(
+        String(36),
+        ForeignKey("creative_briefs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     signup_referrer = Column(String(300), nullable=True)
 
     # === 광고성 정보 수신동의 (선택) ===
@@ -580,6 +587,237 @@ class BlogPost(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class CreativeBrief(Base):
+    """Higgsfield 크리에이티브 작업의 변경 가능한 정본.
+
+    생성 시도와 결과는 아래 append-only 테이블에 남겨, brief 수정이
+    이미 생성된 자산의 출처를 덮어쓰지 않게 한다. UUID 문자열 id는
+    공개 링크·UTM에서 그대로 `creative_id`로 쓴다.
+    """
+
+    __tablename__ = "creative_briefs"
+
+    id = Column(String(36), primary_key=True)
+    source_type = Column(String(30), nullable=False, default="manual", server_default="manual", index=True)
+    source_ref_id = Column(String(120), nullable=True, index=True)
+    source_hash = Column(String(64), nullable=True)
+
+    campaign_key = Column(String(120), nullable=False, index=True)
+    concept_key = Column(String(80), nullable=False, index=True)
+    variant = Column(String(20), nullable=False, default="A", server_default="A")
+    channel = Column(String(40), nullable=False)
+    format = Column(String(40), nullable=False)
+
+    hook = Column(String(500), nullable=False)
+    body_copy = Column(Text, nullable=False, default="", server_default="")
+    cta_copy = Column(String(200), nullable=False)
+    landing_path = Column(String(500), nullable=False)
+    utm_source = Column(String(120), nullable=True)
+    utm_medium = Column(String(120), nullable=True)
+    utm_campaign = Column(String(160), nullable=True)
+
+    generation_spec_json = Column(JSON, nullable=False, default=dict)
+    version = Column(Integer, nullable=False, default=1, server_default="1")
+    status = Column(String(30), nullable=False, default="DRAFT", server_default="DRAFT", index=True)
+
+    approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    published_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utcnow, index=True)
+    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+    approver = relationship("User", foreign_keys=[approved_by])
+    attempts = relationship(
+        "CreativeAttempt",
+        back_populates="brief",
+        cascade="all, delete-orphan",
+        order_by="CreativeAttempt.attempt_no",
+    )
+    input_assets = relationship(
+        "CreativeInputAsset",
+        back_populates="brief",
+        cascade="all, delete-orphan",
+        order_by="CreativeInputAsset.id",
+    )
+
+
+class CreativeInputAsset(Base):
+    """관리자만 올리고 인증된 runner만 내려받는 생성 입력 원본.
+
+    ``creative_outputs``와 달리 공개 URL이나 승인 상태를 갖지 않는다. 실제
+    파일도 ``CREATIVE_ASSET_ROOT/_inputs`` 아래에만 저장해 공개 파생물
+    네임스페이스와 분리한다.
+    """
+
+    __tablename__ = "creative_input_assets"
+    __table_args__ = (
+        UniqueConstraint("storage_path", name="uq_creative_input_asset_storage_path"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    creative_id = Column(
+        String(36),
+        ForeignKey("creative_briefs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role = Column(String(30), nullable=False, index=True)
+    original_filename = Column(String(255), nullable=False)
+    storage_path = Column(String(700), nullable=False)
+    sha256 = Column(String(64), nullable=False, index=True)
+    mime_type = Column(String(100), nullable=False)
+    size_bytes = Column(BigInteger, nullable=False)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    media_metadata_json = Column(JSON, nullable=False, default=dict)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utcnow, index=True)
+
+    brief = relationship("CreativeBrief", back_populates="input_assets")
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class CreativeAttempt(Base):
+    """Brief 큐 시점을 불변 스냅샷으로 남긴 Higgsfield 시도."""
+
+    __tablename__ = "creative_attempts"
+    __table_args__ = (
+        UniqueConstraint("creative_id", "attempt_no", name="uq_creative_attempt_number"),
+        Index("ix_creative_attempt_queue", "status", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    creative_id = Column(
+        String(36),
+        ForeignKey("creative_briefs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    attempt_no = Column(Integer, nullable=False)
+    runner_id = Column(String(120), nullable=True, index=True)
+    lease_expires_at = Column(DateTime, nullable=True, index=True)
+
+    cli_version = Column(String(30), nullable=True)
+    job_type = Column(String(60), nullable=False)
+    prompt = Column(Text, nullable=False, default="", server_default="")
+    params_json = Column(JSON, nullable=False, default=dict)
+    input_files_json = Column(JSON, nullable=False, default=list)
+    prompt_sha256 = Column(String(64), nullable=False)
+    input_hash = Column(String(64), nullable=False, index=True)
+
+    higgsfield_job_id = Column(String(160), nullable=True, index=True)
+    # 영상 생성 job과 최종 합성본 Virality Predictor job은 서로 다른
+    # 외부 작업이다. crash 후 각각을 재조회할 수 있게 별도 ID로 보존한다.
+    virality_job_id = Column(String(160), nullable=True, index=True)
+    status = Column(String(30), nullable=False, default="QUEUED", server_default="QUEUED", index=True)
+    error = Column(String(1000), nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utcnow, index=True)
+    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+    brief = relationship("CreativeBrief", back_populates="attempts")
+    outputs = relationship(
+        "CreativeOutput",
+        back_populates="attempt",
+        cascade="all, delete-orphan",
+        order_by="CreativeOutput.id",
+    )
+
+
+class CreativeOutput(Base):
+    """서버가 파일 해시와 규격을 검증한 생성 결과."""
+
+    __tablename__ = "creative_outputs"
+    __table_args__ = (
+        UniqueConstraint("attempt_id", "kind", "sha256", name="uq_creative_output_content"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    attempt_id = Column(
+        Integer,
+        ForeignKey("creative_attempts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    kind = Column(String(30), nullable=False, index=True)
+    storage_path = Column(String(700), nullable=False)
+    public_url = Column(String(700), nullable=False)
+    sha256 = Column(String(64), nullable=False, index=True)
+    mime_type = Column(String(100), nullable=False)
+    size_bytes = Column(BigInteger, nullable=False)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    review_json = Column(JSON, nullable=True)
+    virality_json = Column(JSON, nullable=True)
+    is_primary = Column(Boolean, nullable=False, default=False, server_default="false")
+    created_at = Column(DateTime, nullable=False, default=_utcnow, index=True)
+
+    attempt = relationship("CreativeAttempt", back_populates="outputs")
+
+
+class GrowthEvent(Base):
+    """creative_id로 연결되는 활성화 퍼널 원장.
+
+    웹의 무료 가치/설치 클릭과 Chrome의 실제 공고 확인을 같은 스키마로 남긴다.
+    ``dedupe_key``는 브라우저 재전송과 동일 공고 새로고침의 중복 집계를 막는다.
+    """
+
+    __tablename__ = "growth_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_name = Column(String(60), nullable=False, index=True)
+    dedupe_key = Column(String(220), nullable=True, unique=True, index=True)
+    anonymous_id = Column(String(80), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
+    creative_id = Column(
+        String(36),
+        ForeignKey("creative_briefs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    bid_no = Column(String(100), nullable=True, index=True)
+    utm_source = Column(String(120), nullable=True)
+    utm_medium = Column(String(120), nullable=True)
+    utm_campaign = Column(String(160), nullable=True)
+    utm_content = Column(String(160), nullable=True)
+    event_metadata_json = Column(JSON, nullable=False, default=dict)
+    occurred_at = Column(DateTime, nullable=False, default=_utcnow, index=True)
+
+
+class MessageTestParticipant(Base):
+    """연락처 없이 진행하는 5초 메시지 이해도 테스트 1인 1행."""
+
+    __tablename__ = "message_test_participants"
+    __table_args__ = (
+        Index("ix_message_test_campaign_variant", "campaign_key", "variant"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    participant_token = Column(String(80), nullable=False, unique=True, index=True)
+    campaign_key = Column(String(120), nullable=False, index=True)
+    cohort_key = Column(String(32), nullable=False, index=True)
+    variant = Column(String(1), nullable=False, index=True)
+    industry = Column(String(40), nullable=False)
+    staff_count = Column(Integer, nullable=False)
+    directly_handles_bids = Column(Boolean, nullable=False)
+    monthly_notice_reviews = Column(Integer, nullable=False)
+    exposure_ms = Column(Integer, nullable=True)
+    service_understanding = Column(Text, nullable=True)
+    usage_moment = Column(Text, nullable=True)
+    checked_items = Column(Text, nullable=True)
+    trust_score = Column(Integer, nullable=True)
+    relevance_score = Column(Integer, nullable=True)
+    coding_json = Column(JSON, nullable=True)
+    codes_hit = Column(Integer, nullable=True)
+    prediction_misunderstood = Column(Boolean, nullable=False, default=False, server_default="false")
+    assigned_at = Column(DateTime, nullable=False, default=_utcnow, index=True)
+    submitted_at = Column(DateTime, nullable=True, index=True)
+
+
 class Lead(Base):
     """무료 자격 진단 리드 — 비로그인 방문자가 남긴 연락처 + 진단 입력.
 
@@ -613,6 +851,13 @@ class Lead(Base):
     utm_source = Column(String(120), nullable=True)
     utm_medium = Column(String(120), nullable=True)
     utm_campaign = Column(String(160), nullable=True)
+    utm_content = Column(String(160), nullable=True)
+    creative_id = Column(
+        String(36),
+        ForeignKey("creative_briefs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     referrer = Column(String(300), nullable=True)
 
     # 육성 채널·상태 (pluggable: kakao | email | null)

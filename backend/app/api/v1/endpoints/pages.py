@@ -17,7 +17,8 @@ from app.db.session import get_db
 from app.db import models
 from app.core.logging import get_logger
 from app.core.config import settings
-from app.api.v1.endpoints.bids import _lookup_notice, get_bid_context
+from app.api.v1.endpoints.bids import _get_bid_context_data as get_bid_context
+from app.api.v1.endpoints.bids import _lookup_notice
 from app.services import blog as blog_svc
 from app.services.bid_data_quality import base_is_consistent
 from app.services.lower_limits import get_lower_limit_rate

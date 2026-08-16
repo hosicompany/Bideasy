@@ -15,7 +15,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 curl && \
+    libpq5 curl ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /install /usr/local
@@ -28,7 +28,7 @@ COPY . .
 # ※ 기존 배포의 strategy_data/celerybeat_data 볼륨은 root 소유이므로, 최초 1회
 #   호스트에서 `chown -R 10001:10001` 적용이 필요할 수 있다(배포 노트 참조).
 RUN useradd --system --no-create-home --uid 10001 appuser \
-    && mkdir -p /app/data/strategy /app/celerybeat \
+    && mkdir -p /app/data/strategy /app/celerybeat /app/creative_assets \
     && chown -R appuser:appuser /app
 USER appuser
 

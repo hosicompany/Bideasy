@@ -183,6 +183,32 @@ class Settings(BaseSettings):
     # 0 이하면 현행 수동 승인 유지(킬스위치). docs/CONTENT_ENGINE.md §10.3 Phase 2.
     BLOG_KNOWLEDGE_GRACE_HOURS: int = 48
 
+    # === Higgsfield creative runner ===
+    # 생성은 인증된 운영자 Mac의 runner가 수행한다. 토큰은 서버
+    # .env.production에만 두고, 교체 중에는 current/previous 두 개를 동시
+    # 인정한다. 두 값이 모두 비어 있으면 runner API는 503으로 닫힌다.
+    CREATIVE_RUNNER_TOKEN_CURRENT: str = ""
+    CREATIVE_RUNNER_TOKEN_PREVIOUS: str = ""
+    CREATIVE_RUNNER_LEASE_SECONDS: int = 300
+    HIGGSFIELD_CLI_VERSION: str = "1.1.23"
+    # app 운영 사용자(uid 10001)가 쓸 수 있는 named volume mount 경로.
+    CREATIVE_ASSET_ROOT: str = "./creative_assets"
+    CREATIVE_ASSET_BASE_URL: str = "/assets/generated"
+    CREATIVE_MAX_UPLOAD_BYTES: int = 150 * 1024 * 1024
+    CREATIVE_INPUT_ALLOWED_HOSTS: str = "bideasy.kr,api.bideasy.kr"
+
+    # === 허가형 메시지 이해도 테스트 / Chrome 활성화 ===
+    # 운영진이 승인한 링크 키가 하나도 없거나 ENABLED=False면 테스트 API는 404로 닫힌다.
+    # 여러 코호트 키는 쉼표로 구분하며 값 자체는 로그/DB에 저장하지 않는다.
+    MESSAGE_TEST_ENABLED: bool = False
+    MESSAGE_TEST_ACCESS_KEYS: str = ""
+    # 운영자가 검수한 타깃 공고 화면만 노출한다. 둘 중 하나라도 비어 있으면
+    # enabled 상태에서도 assign API가 503으로 닫힌다.
+    MESSAGE_TEST_IMAGE_PATH: str = ""
+    MESSAGE_TEST_IMAGE_CAPTION: str = ""
+    # 공개 Web Store ID. 핵심 활성화 이벤트는 이 Chrome Origin + 로그인 + 실제 bid_no를 확인한다.
+    CHROME_EXTENSION_ID: str = "ecdpfnfonccaaneihkdlkhnkpjakmmnp"
+
     # === Firebase (FCM Push Notifications) ===
     FIREBASE_CREDENTIALS_JSON: str = ""  # Path to service account JSON file
 

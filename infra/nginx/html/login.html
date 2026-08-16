@@ -104,7 +104,16 @@
 
     async function social(provider) {
       try {
-        var resp = await fetch(API_BASE + '/auth/social-urls');
+        // 로그인 화면에서 처음 소셜 계정을 만드는 경우에도 승인된 first-touch
+        // 좌표를 OAuth state로 이어 보낸다. 기존 계정에는 서버가 덮어쓰지 않는다.
+        var _a = {}; try { _a = JSON.parse(localStorage.getItem('bd_attr') || '{}'); } catch (e) {}
+        var socialParams = new URLSearchParams();
+        if (_a.source) socialParams.set('signup_source', _a.source);
+        if (_a.medium) socialParams.set('signup_medium', _a.medium);
+        if (_a.campaign) socialParams.set('signup_campaign', _a.campaign);
+        if (_a.content) socialParams.set('signup_content', _a.content);
+        if (_a.creativeId) socialParams.set('signup_creative_id', _a.creativeId);
+        var resp = await fetch(API_BASE + '/auth/social-urls?' + socialParams.toString());
         var data = await resp.json();
         var url = data[provider];
         if (!url) throw new Error('소셜 로그인 URL 없음');

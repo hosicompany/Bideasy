@@ -239,6 +239,16 @@ def update_blog_post(post_id: int, payload: BlogPostUpdate, db: Session = Depend
         post.publish_at = None
     db.commit()
     db.refresh(post)
+    # 승인된 블로그 정본이 바뀌면 이전 Higgsfield 결과가 새 원문에 연결되지
+    # 않도록 모든 이전 brief/attempt를 즉시 STALE 처리한다.
+    from app.services import creative_workflow
+    creative_workflow.mark_source_creatives_stale(
+        db,
+        source_type="blog",
+        source_ref_id=str(post.id),
+        current_hash=creative_workflow.blog_source_hash(post),
+    )
+    db.refresh(post)
     return post
 
 

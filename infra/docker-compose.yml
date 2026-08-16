@@ -15,6 +15,7 @@ services:
     volumes:
       - ../backend/models:/app/models:ro
       - ../backend/data/historical:/app/data/historical:ro
+      - creative_assets:/app/creative_assets
     depends_on:
       db:
         condition: service_healthy
@@ -78,3 +79,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  creative_assets:

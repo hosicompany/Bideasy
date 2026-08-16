@@ -163,7 +163,7 @@ def build_weekly_story(db, ref_date: Optional[date] = None) -> Optional[dict]:
             L.append(f"| {r['title']} | {r['org']} | {_fmt_cnt(r['participants'])} | {_fmt_eok(r['basic_price'])} |")
     L += ["", "## 이번 주 인사이트", "", narr["insight"], "", "---", "",
           "보고 있는 공고가 있다면 [공고 검색](/search)에서 기초금액·A값까지 확인하고, "
-          "[투찰가 계산기](/calculator)로 안전 투찰가를 1원 단위까지 계산해보세요. 회원가입 없이 무료입니다."]
+          "[투찰가 계산기](/calculator)에서 공고 기준의 하한선 계산값을 확인해보세요. 회원가입 없이 무료입니다."]
 
     # 콘텐츠 엔진 정본 스키마 정합 (CONTENT_ENGINE §2) — 숫자는 전부 DB 결정적.
     blocks = {
@@ -187,7 +187,7 @@ def build_weekly_story(db, ref_date: Optional[date] = None) -> Optional[dict]:
              "numbers": [{"title": r["title"], "org": r["org"], "participants": r["participants"]} for r in opps]},
         ],
         "internal_links": ["/search", "/calculator"],
-        "cta": "공고 검색에서 기초금액·A값까지 확인하고, 투찰가 계산기로 안전 투찰가를 계산해보세요.",
+        "cta": "공고 검색에서 기초금액·A값을 확인하고, 투찰가 계산기에서 공고 기준의 하한선 계산값을 검산해보세요.",
     }
 
     return {
