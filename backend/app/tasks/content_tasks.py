@@ -58,15 +58,36 @@ def _knowledge_review_route(review: dict | None) -> tuple[bool, str]:
     `skipped=True`가 남는다. 검사를 못 한 상태를 정상 advisory와 섞으면 사실상
     무검수 자동발행이므로, skipped 검사가 하나라도 있으면 사람 경로로 보낸다.
     """
-    if not review:
+    from app.services import content_review
+
+    if not isinstance(review, dict) or not review:
         return False, "review_missing"
     verdict = review.get("verdict")
-    if verdict == "FAIL":
-        return False, "review_failed"
-    if verdict not in ("PASS", "WARN"):
+    if verdict not in (content_review.PASS, content_review.WARN, content_review.FAIL):
         return False, "review_unknown"
-    if any(check.get("skipped") for check in review.get("checks") or []):
+
+    checks = review.get("checks")
+    if not isinstance(checks, list) or not checks or not all(isinstance(c, dict) for c in checks):
         return False, "review_incomplete"
+
+    codes = [check.get("code") for check in checks]
+    if any(not isinstance(code, str) or not code for code in codes):
+        return False, "review_incomplete"
+    if len(codes) != len(set(codes)):
+        return False, "review_incomplete"
+    if not content_review.AUTO_PUBLISH_REQUIRED_CHECK_CODES.issubset(codes):
+        return False, "review_incomplete"
+    if any(check.get("skipped") for check in checks):
+        return False, "review_incomplete"
+
+    levels = [check.get("level") for check in checks]
+    if any(not isinstance(level, str) or level not in content_review.REVIEW_LEVEL_ORDER for level in levels):
+        return False, "review_incomplete"
+    computed_verdict = max(levels, key=lambda level: content_review.REVIEW_LEVEL_ORDER[level])
+    if computed_verdict != verdict:
+        return False, "review_inconsistent"
+    if verdict == content_review.FAIL:
+        return False, "review_failed"
     return True, verdict.lower()
 
 
@@ -185,10 +206,10 @@ def weekly_knowledge_draft() -> dict:
                     f"[{topic['code']}] {post.title} — 검수 게이트 FAIL. "
                     "/admin-blog 에서 원인을 확인·정정하세요 (자동 발행하지 않습니다)."
                 )
-            elif route == "review_incomplete":
+            elif not eligible:
                 title = "⚠️ 입찰상식 자동 검수 미완료 — 확인 필요"
                 body = (
-                    f"[{topic['code']}] {post.title} — 일부 검사를 실행하지 못해 자동 발행을 예약하지 않았어요. "
+                    f"[{topic['code']}] {post.title} — 검수 결과가 완결되지 않아 자동 발행을 예약하지 않았어요. "
                     "/admin-blog 에서 검수 결과를 확인하세요."
                 )
             else:

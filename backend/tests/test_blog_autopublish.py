@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from app.db import models
-from app.services import data_story
+from app.services import content_review, data_story
 from app.tasks.content_tasks import publish_scheduled_posts
 
 
@@ -176,6 +176,26 @@ class TestUnpublishClearsSchedule:
         assert p.review_json is None
         assert p.channel_assets_json is None
 
+    def test_editing_auto_summary_invalidates_review_and_schedule(self, admin_client, db_session):
+        """목록·검색결과에 공개되는 요약도 옛 검수 판정으로 발행하면 안 된다."""
+        p = _mk_post(
+            db_session,
+            "auto-summary-invalidates-review",
+            publish_at=_naive_utc() + timedelta(days=2),
+        )
+        p.source = "auto"
+        p.category = "입찰상식"
+        p.review_json = TestKnowledgeGrace._review("PASS")
+        db_session.commit()
+
+        r = admin_client.put(
+            f"/api/v1/admin/blog/{p.id}",
+            json={"summary": "수정한 요약"},
+        )
+        assert r.status_code == 200
+        db_session.refresh(p)
+        assert p.publish_at is None and p.review_json is None
+
 
 class TestTzAwareNormalization:
     def test_create_schema_normalizes_tz_aware(self):
@@ -198,19 +218,34 @@ class TestKnowledgeGrace:
     review_json 이 없으면(검수 실패) 판정을 모르므로 예약하지 않는다.
     """
 
-    def _run(self, db_session, monkeypatch, verdict, grace=48, *, skipped=False):
+    @staticmethod
+    def _review(verdict, *, skipped=False, missing_code=None, inconsistent=False):
+        codes = sorted(content_review.AUTO_PUBLISH_REQUIRED_CHECK_CODES)
+        checks = [{"code": code, "level": "PASS"} for code in codes if code != missing_code]
+        if verdict == "WARN":
+            next(c for c in checks if c["code"] == "llm_judge")["level"] = "WARN"
+        elif verdict == "FAIL":
+            next(c for c in checks if c["code"] == "structure")["level"] = "FAIL"
+        if skipped:
+            next(c for c in checks if c["code"] == "llm_judge")["skipped"] = True
+        if inconsistent:
+            next(c for c in checks if c["code"] == "structure")["level"] = "FAIL"
+        return {"verdict": verdict, "checks": checks}
+
+    def _run(self, db_session, monkeypatch, verdict, grace=48, *, review=None, skipped=False):
         from app.core.config import settings
         from app.tasks.content_tasks import weekly_knowledge_draft
 
         monkeypatch.setattr(settings, "BLOG_KNOWLEDGE_GRACE_HOURS", grace)
-        review_kind = "skipped" if skipped else "complete"
+        if review is not None:
+            levels = "-".join(str(c.get("level", "x")) for c in review.get("checks", []))
+            review_kind = f"custom-{len(review.get('checks', []))}-{levels}"
+        else:
+            review_kind = "skipped" if skipped else "complete"
         slug = f"k-grace-{verdict or 'none'}-{grace}-{review_kind}"
         post = _mk_post(db_session, slug)
-        post.review_json = (
-            {"verdict": verdict, "checks": [
-                {"code": "llm_judge", "level": verdict, "skipped": True}
-            ] if skipped else []}
-            if verdict else None
+        post.review_json = review if review is not None else (
+            self._review(verdict, skipped=skipped) if verdict else None
         )
         db_session.commit()
         topic = {"code": "K99", "title": "테스트 주제", "angle": "a", "keyword": "k", "priority": "P1"}
@@ -251,6 +286,25 @@ class TestKnowledgeGrace:
         _, post = self._run(db_session, monkeypatch, "WARN", grace=48, skipped=True)
         assert post.publish_at is None
 
+    def test_missing_required_check_stays_manual(self, db_session, monkeypatch):
+        """필수 검사 코드가 없으면 skipped 표기가 없어도 완결된 검수가 아니다."""
+        review = self._review("PASS", missing_code="llm_judge")
+        _, post = self._run(db_session, monkeypatch, "PASS", review=review)
+        assert post.publish_at is None
+
+    def test_inconsistent_verdict_stays_manual(self, db_session, monkeypatch):
+        """개별 FAIL을 top-level PASS로 잘못 저장한 판정은 fail-closed 한다."""
+        review = self._review("PASS", inconsistent=True)
+        _, post = self._run(db_session, monkeypatch, "PASS", review=review)
+        assert post.publish_at is None
+
+    def test_malformed_check_stays_manual(self, db_session, monkeypatch):
+        """손상된 JSON도 태스크 예외가 아니라 수동 검토 경로로 닫힌다."""
+        review = self._review("PASS")
+        review["checks"][0]["code"] = ["not", "hashable"]
+        _, post = self._run(db_session, monkeypatch, "PASS", review=review)
+        assert post.publish_at is None
+
 
 class TestKnowledgePublishRecheck:
     """유예 뒤 실제 발행 시점에도 K-트랙 검수 상태를 다시 확인한다."""
@@ -285,16 +339,22 @@ class TestKnowledgePublishRecheck:
         assert res["blocked"][0]["reason"] == "review_incomplete"
 
     def test_complete_warn_still_publishes(self, db_session):
-        review = {
-            "verdict": "WARN",
-            "checks": [{"code": "structure", "level": "WARN"}],
-        }
+        review = TestKnowledgeGrace._review("WARN")
         p = self._post(db_session, "k-review-complete", review)
         with _patch_session(db_session):
             res = publish_scheduled_posts()
         db_session.refresh(p)
         assert p.status == "published"
         assert p.slug in res["published"] and res["blocked"] == []
+
+    def test_partial_review_unschedules_instead_of_publishing(self, db_session):
+        review = {"verdict": "PASS", "checks": []}
+        p = self._post(db_session, "k-review-partial", review)
+        with _patch_session(db_session):
+            res = publish_scheduled_posts()
+        db_session.refresh(p)
+        assert p.status == "draft" and p.publish_at is None
+        assert res["blocked"][0]["reason"] == "review_incomplete"
 
 
 class TestHeroGuardOnPublish:

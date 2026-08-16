@@ -205,12 +205,12 @@ def generate_data_story_now(force: bool = False, db: Session = Depends(get_db), 
 def update_blog_post(post_id: int, payload: BlogPostUpdate, db: Session = Depends(get_db), _admin=Depends(require_admin)):
     post = _get_or_404(post_id, db)
     data = payload.model_dump(exclude_unset=True)
-    # 자동 생성 글의 제목/본문이 바뀌면 이전 검수 판정으로 예약 발행하면 안 된다.
+    # 자동 생성 글의 제목/요약/본문이 바뀌면 이전 검수 판정으로 예약 발행하면 안 된다.
     # 같은 요청에 publish_at 이 있어도 새 본문은 아직 검수되지 않았으므로 예약을
     # 해제한다. 즉시 내보내려면 사람이 명시적인 publish 액션을 사용한다.
     review_input_changed = any(
         field in data and data[field] is not None and data[field] != getattr(post, field)
-        for field in ("title", "body_md")
+        for field in ("title", "summary", "body_md")
     )
     if data.get("slug") and data["slug"] != post.slug:
         _ensure_unique_slug(data["slug"], db, exclude_id=post.id)
