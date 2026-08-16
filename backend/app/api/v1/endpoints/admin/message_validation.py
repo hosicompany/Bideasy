@@ -45,4 +45,3 @@ def _decision(variants: dict) -> str:
     if all(data["enough_sample"] for data in variants.values()):
         return "rewrite_and_retest"
     return "collect_more"
-
