@@ -74,6 +74,7 @@ reproduction_scripts/
 # Build outputs
 build/
 dist/
+tools/creative_runner/preproduction-output/
 
 # Patent draft — NEVER commit (internal IP, keep local only)
 PATENT.md

@@ -1,0 +1,129 @@
+{
+  "schema_version": "1.0",
+  "brand": {
+    "name": "BidEasy",
+    "website": "https://bideasy.kr",
+    "official_relationship_disclaimer": "조달청·나라장터의 공식 또는 제휴 서비스가 아닌 민간 서비스",
+    "logos": {
+      "light": "/brand/bideasy-logo.svg",
+      "dark": "/brand/bideasy-logo-on-dark.svg",
+      "mark_light": "/brand/bideasy-mark.svg",
+      "mark_dark": "/brand/bideasy-mark-on-dark.svg"
+    },
+    "logo_sha256": {
+      "light": "0166a205804e10fa14af758d9b58dd0a5c8d7fd3639f6c762a39d8dcd1c3661c",
+      "dark": "3bebffa644de9cb3d4611a052199b9285e203642f7f50fb811d1c556935c2fc3",
+      "mark_light": "77bbaf42dbfa9154ae291bf11b7612555f9ce62358ce90001e63748f7ada793b",
+      "mark_dark": "7840228c92ccb50f09c728a312ee77b6830c4cf147fbfdef1b892aba1cd0dcf0"
+    }
+  },
+  "source_ui_assets": [
+    {
+      "path": "/guide-assets/01-main-g2b-with-sidepanel.png",
+      "sha256": "bdff901a2882995afd19bf0476cb99fb1407abb1011365e9616ec787d006d765",
+      "mime_type": "image/png",
+      "width": 1280,
+      "height": 800,
+      "label": "나라장터 공고와 BidEasy 사이드패널",
+      "campaign_approved": false
+    },
+    {
+      "path": "/guide-assets/02-calculator.png",
+      "sha256": "bf496db63997032ac78a5cc75e7ec8992dfaa47103112206bd7d25174ec399ae",
+      "mime_type": "image/png",
+      "width": 1280,
+      "height": 800,
+      "label": "낙찰하한선 계산기",
+      "campaign_approved": false
+    },
+    {
+      "path": "/guide-assets/03-ai-analysis.png",
+      "sha256": "242619705055a9a8daaa8a027bcbe1d7900cec6a4d71d4f79fa0ef66ca8651d5",
+      "mime_type": "image/png",
+      "width": 1280,
+      "height": 800,
+      "label": "AI 공고 분석 결과",
+      "campaign_approved": false
+    },
+    {
+      "path": "/guide-assets/04-tracking-favorites.png",
+      "sha256": "4a058261766de007037d4bf45e69ce5f147981c03cfda04866b6aa9a43f44b01",
+      "mime_type": "image/png",
+      "width": 1280,
+      "height": 800,
+      "label": "관심공고와 진행상태 추적",
+      "campaign_approved": false
+    },
+    {
+      "path": "/guide-assets/05-profile.png",
+      "sha256": "f6acb93107d52b1c168043c38c619c3c3445bd6b590c1fc0b015100d72a7fa74",
+      "mime_type": "image/png",
+      "width": 1280,
+      "height": 800,
+      "label": "회사 프로필",
+      "campaign_approved": false
+    }
+  ],
+  "visual": {
+    "concept": "Precision Instrument",
+    "colors": {
+      "canvas": "#F6F8FB",
+      "surface": "#FFFFFF",
+      "ink": "#11151C",
+      "muted": "#5A6472",
+      "accent": "#2B50E0",
+      "accent_soft": "#EDF1FE",
+      "safe": "#0E9F6E",
+      "warn": "#B7791F",
+      "danger": "#E5484D"
+    },
+    "fonts": {
+      "korean": "Pretendard",
+      "numbers": "IBM Plex Mono"
+    },
+    "style": [
+      "clean B2B utility",
+      "generous whitespace",
+      "real product UI as the focal point",
+      "no consumer UGC tropes",
+      "no AI avatar"
+    ]
+  },
+  "message": {
+    "acquisition_default": "나라장터 공고 옆에서, 자격·A값·하한선을 한 번에.",
+    "test_variant_b": "이 공고, 우리 회사가 진짜 넣어도 될까요?",
+    "description": "보고 있는 공고 화면에서 참가조건·계산 기준·주의 조항을 확인하세요. 낙찰가는 예측하지 않습니다.",
+    "video_non_prediction_line": "낙찰가는 예측하지 않습니다. 확인 가능한 기준부터 보여드립니다.",
+    "cta": "이 공고 확인하기",
+    "endline": "투찰 전 마지막 확인, BidEasy."
+  },
+  "production_rules": {
+    "generated_background_only": true,
+    "composite_real_ui_after_generation": true,
+    "generate_korean_ui_text": false,
+    "generate_notice_numbers_or_money": false,
+    "representative_real_voice_only": true,
+    "tts": false,
+    "human_review_required": true
+  },
+  "prohibited_claims": [
+    "낙찰 보장",
+    "적중률",
+    "100% 자격 판정",
+    "실격 방지",
+    "무효·적자 0",
+    "안전 투찰가",
+    "낙찰확률",
+    "30초",
+    "근거 없는 시간 절감",
+    "근거 없는 투찰량 증가",
+    "근거 없는 수주 증가"
+  ],
+  "higgsfield": {
+    "cli_version": "1.1.23",
+    "remote_brand_kit_id": "b56c60e7-77df-4675-9b2d-5038b7f6f428",
+    "remote_fetch_status": "completed_with_manual_corrections_required",
+    "remote_extracted_logo_missing": true,
+    "remote_extracted_tagline_approved": false
+  }
+}

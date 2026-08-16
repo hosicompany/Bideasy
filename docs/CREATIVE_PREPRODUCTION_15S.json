@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.0",
+  "campaign_key": "message-validation-2026-08",
+  "concept_key": "g2b-sidepanel-prebid-check",
+  "status": "PREVOICE_READY_SOURCE_UI_REQUIRED",
+  "publishable": false,
+  "notice": {
+    "bid_no": "R26BK01488342-000",
+    "title": "하수처리장 전기실 대용량 차단기 설치 공사",
+    "agency": "대전광역시시설관리공단",
+    "notice_date": "2026-04-24",
+    "verified_date": "2026-08-15",
+    "official_source": "https://www.g2b.go.kr/pn/pnp/pnpe/UntyAtchFile/downloadFile.do?bidPbancNo=R26BK01488342&bidPbancOrd=000&fileSeq=2&fileType=&prcmBsneSeCd=07",
+    "facts": {
+      "basic_amount_krw": 31279000,
+      "a_value_krw": 447799,
+      "qualification": "전기공사업·대전광역시 소재 요건",
+      "lower_bound_rate_percent": 89.745,
+      "submission_rule": "제출 후 취소·수정 불가"
+    },
+    "use_boundary": "완료 공고이므로 이해도 테스트와 제품 시연에만 사용한다. 행동 테스트 CTA는 시작 직전 활성 공고로 교체한다."
+  },
+  "caption": "실제 공고 예시 · 공고번호 R26BK01488342-000 · 대전광역시시설관리공단 · 2026.04.24 공고 · 2026.08.15 공개 G2B 공고문 기준. A값 447,799원, 전기공사업·대전 지역 요건, 낙찰하한율 89.745%. BidEasy는 조달청·나라장터의 공식 또는 제휴 서비스가 아닙니다.",
+  "variants": [
+    {
+      "id": "A",
+      "hook": "나라장터 공고 옆에서, 자격·A값·하한선을 한 번에."
+    },
+    {
+      "id": "B",
+      "hook": "이 공고, 우리 회사가 진짜 넣어도 될까요?"
+    }
+  ],
+  "shared_copy": {
+    "body": "보고 있는 공고 화면에서 참가조건·계산 기준·주의 조항을 확인하세요. 낙찰가는 예측하지 않습니다.",
+    "non_prediction": "낙찰가는 예측하지 않습니다. 확인 가능한 기준부터 보여드립니다.",
+    "cta": "이 공고 확인하기",
+    "endline": "투찰 전 마지막 확인, BidEasy.",
+    "disclaimer": "조달청·나라장터의 공식 또는 제휴 서비스가 아닌 민간 서비스"
+  },
+  "voice": {
+    "status": "REQUIRED_NOT_UPLOADED",
+    "shared_script": "보고 있는 공고 화면에서 참가자격, A값, 하한선을 확인하세요. 낙찰가는 예측하지 않습니다. 투찰 전 마지막 확인, BidEasy.",
+    "speaker": "대표 실제 음성",
+    "generated_audio": false,
+    "preferred_format": "audio/wav",
+    "preferred_sample_rate_hz": 48000,
+    "preferred_duration_seconds": {
+      "min": 12.5,
+      "max": 14.8
+    },
+    "recording_direction": "평소 설명하듯 차분하게 한 번에 읽고, 배경음악·효과음·TTS를 넣지 않는다. 앞뒤 무음은 각각 0.2~0.4초만 남긴다."
+  },
+  "timeline": [
+    {
+      "scene": "hook",
+      "start_ms": 0,
+      "end_ms": 2000,
+      "review_content": "variant hook",
+      "provider_direction": "quiet opening with an empty safe area; no text or interface"
+    },
+    {
+      "scene": "workflow",
+      "start_ms": 2000,
+      "end_ms": 5000,
+      "review_content": "실제 나라장터 공고 옆에 실제 BidEasy 사이드패널 등장",
+      "provider_direction": "subtle cobalt motion that leaves the center product-safe area clear"
+    },
+    {
+      "scene": "evidence",
+      "start_ms": 5000,
+      "end_ms": 10000,
+      "review_content": "실제 UI의 참가자격·A값·하한선 결과 확대",
+      "provider_direction": "restrained focus movement toward the center product-safe area"
+    },
+    {
+      "scene": "non_prediction",
+      "start_ms": 10000,
+      "end_ms": 13000,
+      "review_content": "shared non-prediction line",
+      "provider_direction": "steady neutral background with low visual distraction"
+    },
+    {
+      "scene": "endcard",
+      "start_ms": 13000,
+      "end_ms": 15000,
+      "review_content": "shared endline, CTA and private-service disclaimer",
+      "provider_direction": "clean cobalt end card background with empty text-safe areas"
+    }
+  ],
+  "higgsfield": {
+    "cli_version": "1.1.23",
+    "job_type": "marketing_studio_video",
+    "prompt": "Create a restrained 15-second vertical motion bed for a Korean B2B procurement software demonstration. Use warm off-white, white, and precise cobalt-blue geometric motion with generous whitespace. Keep the central product-safe area clear for deterministic post-production compositing. Show no people, avatars, browser chrome, product interface, logos, letters, words, numbers, money, notice identifiers, claims, voice, music, or sound.",
+    "params": {
+      "mode": "ugc",
+      "specific_mode": "from_storyboard",
+      "aspect_ratio": "9:16",
+      "resolution": "1080p",
+      "duration": 15,
+      "generate_audio": false,
+      "composite_source_ui": true,
+      "overlay_box": [
+        0.055,
+        0.3,
+        0.89,
+        0.36
+      ],
+      "source_ui_timeline": "campaign_15s_v1"
+    },
+    "provider_input": "higgsfield-storyboard.png",
+    "provider_input_rule": "텍스트·로고·실제 UI·공고번호·금액이 없는 배경 동선 보드만 업로드한다.",
+    "paid_generation_status": "NOT_STARTED"
+  },
+  "source_ui": {
+    "status": "REQUIRED_NEW_CAPTURE",
+    "required_size": "1280x800 or higher",
+    "required_scene": "실제 공개 전기공사 공고와 현행 BidEasy 사이드패널을 함께 표시",
+    "required_results": [
+      "참가자격 또는 면허·지역 요건",
+      "A값 447,799원",
+      "낙찰하한율 89.745%"
+    ],
+    "must_mask": [
+      "나라장터 로그인 이름·회사·사업자·인증서·전자문서함",
+      "BidEasy 사용자 회사명·대표자·소재지·면허등록번호·입찰이력",
+      "브라우저 프로필·북마크·알림·다른 확장 프로그램",
+      "담당자 이름·직통전화·이메일·QR",
+      "낙찰업체·투찰업체명과 사용자별 투찰금액",
+      "로컬 주소·개발자도구·API 키·토큰"
+    ],
+    "must_keep": [
+      "공개 공고번호",
+      "기관",
+      "공고일 또는 기준일",
+      "공개 A값",
+      "공개 낙찰하한율",
+      "공개 참가자격"
+    ],
+    "rejected_existing_assets_reason": "기존 가이드 화면은 비전기 물품 공고·구형 UI·안전성/예상 투찰가 표현 또는 사용자 프로필을 포함한다."
+  },
+  "acceptance": {
+    "canvas": "1080x1920",
+    "duration_ms": 15000,
+    "duration_tolerance_ms": 100,
+    "audio_for_previs": "silent AAC only; PREVIZ and not publishable",
+    "variant_difference": "0~2초 hook만 다르고 2~15초의 시각·카피·CTA·캡션은 동일",
+    "sample_frame_seconds": [
+      1.0,
+      3.5,
+      7.5,
+      11.5,
+      14.0
+    ],
+    "blocking_inputs": [
+      "마스킹·검수된 새 전기공사 source_ui",
+      "대표 실제 음성 voiceover",
+      "사람의 brief 승인"
+    ]
+  }
+}
