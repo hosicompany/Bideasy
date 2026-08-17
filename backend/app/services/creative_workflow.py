@@ -339,9 +339,10 @@ def mark_source_creatives_stale(
         )
     stale_briefs = query.all()
     for brief in stale_briefs:
+        # approved_by/approved_at 은 지우지 않는다 — '한 번 승인됨' 은 역사적 사실이고
+        # growth._known_creative 가 그 컬럼으로 귀속 유지 여부를 판정한다. 재사용 차단은
+        # status="STALE" 만으로 충분하다(승인·큐·게시 전이가 전부 status 를 본다).
         brief.status = "STALE"
-        brief.approved_by = None
-        brief.approved_at = None
         for attempt in brief.attempts:
             attempt.status = "STALE"
             attempt.lease_expires_at = None

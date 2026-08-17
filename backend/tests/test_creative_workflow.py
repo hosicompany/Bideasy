@@ -1147,3 +1147,62 @@ def test_landing_path_rejected_at_creation_when_redirect_would_reject_it(admin_c
             json=_brief_payload(landing_path=landing),
         )
         assert response.status_code == 201, (landing, response.text)
+
+
+def _blog_with_approved_creative(admin_client, slug: str):
+    post = admin_client.post(
+        "/api/v1/admin/blog",
+        json={"title": f"정본 {slug}", "slug": slug, "summary": "요약", "body_md": "# 본문"},
+    )
+    assert post.status_code == 201, post.text
+    post_id = post.json()["id"]
+    brief = admin_client.post(f"/api/v1/admin/creatives/from-blog/{post_id}")
+    assert brief.status_code == 201, brief.text
+    creative_id = brief.json()["id"]
+    approved = admin_client.post(f"/api/v1/admin/creatives/{creative_id}/approve", json={})
+    assert approved.status_code == 200, approved.text
+    return post_id, creative_id
+
+
+def test_blog_delete_stales_linked_creatives_and_keeps_approval_history(admin_client, creative_settings, db_session):
+    """PUT 외의 변이(삭제)도 연결 크리에이티브를 STALE 로 만들어야 한다.
+
+    회귀: 훅이 PUT 에만 있어 글을 지워도 APPROVED 브리프가 남아 /go 가 404 랜딩으로
+    계속 보냈다(source_ref_id 는 FK 없는 문자열). 또 STALE 처리가 approved_at 을 지워
+    '한 번 승인됨' 이력이 사라졌다 — 귀속 유지 규칙(growth._known_creative)이 그 컬럼을
+    보므로 이력은 남겨야 한다.
+    """
+    post_id, creative_id = _blog_with_approved_creative(admin_client, "creative-stale-on-delete")
+    before = db_session.get(models.CreativeBrief, creative_id)
+    assert before.approved_at is not None
+
+    deleted = admin_client.delete(f"/api/v1/admin/blog/{post_id}")
+    assert deleted.status_code == 204, deleted.text
+
+    db_session.expire_all()
+    after = db_session.get(models.CreativeBrief, creative_id)
+    assert after.status == "STALE"
+    assert after.approved_at is not None  # 이력은 지우지 않는다
+
+
+def test_blog_derive_assets_force_stales_linked_creatives(admin_client, creative_settings, db_session, monkeypatch):
+    post_id, creative_id = _blog_with_approved_creative(admin_client, "creative-stale-on-derive")
+    # blocks_json 이 있어야 파생 가능. LLM 은 부르지 않도록 ensure_channel_assets 를 결정적으로 대체.
+    post = db_session.get(models.BlogPost, post_id)
+    post.blocks_json = {"hook": "h", "summary": "s"}
+    db_session.commit()
+    from app.services import content_engine
+
+    def _fake_ensure(db, p):
+        p.hero = "/assets/blog/new-hero.png"  # 해시 대상 필드가 바뀐다
+        p.channel_assets_json = {"instagram": "x"}
+        db.commit()
+        return True
+
+    monkeypatch.setattr(content_engine, "ensure_channel_assets", _fake_ensure)
+
+    derived = admin_client.post(f"/api/v1/admin/blog/{post_id}/derive-assets?force=true")
+    assert derived.status_code == 200, derived.text
+
+    db_session.expire_all()
+    assert db_session.get(models.CreativeBrief, creative_id).status == "STALE"
