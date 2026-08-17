@@ -23,10 +23,13 @@
         referrer: _internal ? '' : _ref
       }));
     } else if (_q.get('creative_id')) {
+      // first-touch 보존: 이미 저장된 귀속이 있으면 creativeId 만 채운다.
+      // content 는 비어 있을 때만 채우고, 있던 값은 절대 덮지 않는다 (2026-08-17 리뷰 —
+      // 종전엔 두 번째 방문의 utm_content(빈 문자열 포함)로 첫 방문 값을 지웠다).
       var _legacyAttr = JSON.parse(_storedAttr || '{}');
       if (!_legacyAttr.creativeId) {
         _legacyAttr.creativeId = _q.get('creative_id') || '';
-        _legacyAttr.content = _q.get('utm_content') || '';
+        if (!_legacyAttr.content) { _legacyAttr.content = _q.get('utm_content') || ''; }
         localStorage.setItem('bd_attr', JSON.stringify(_legacyAttr));
       }
     }

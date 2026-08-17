@@ -154,8 +154,9 @@ def _assign_variant(db: Session, cohort_key: str) -> str:
     return "A" if counts["A"] < counts["B"] else "B"
 
 
-def _contains(text: str, terms: tuple[str, ...]) -> bool:
-    compact = " ".join(text.lower().split())
+def _contains(value: str, terms: tuple[str, ...]) -> bool:
+    # 파라미터명을 text 로 두면 모듈의 sqlalchemy.text 를 가려 인접 SQL 헬퍼가 str 를 부르게 된다
+    compact = " ".join(value.lower().split())
     return any(term in compact for term in terms)
 
 

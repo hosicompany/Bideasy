@@ -378,8 +378,12 @@ function insertInputManifest(manifest, uploadedAsset) {
     throw new Error('생성 설정은 JSON 객체여야 해요.');
   }
   const current = Array.isArray(generationSpec.input_files) ? generationSpec.input_files : [];
+  // reference 는 여러 장 허용하되 같은 파일(role:sha256)은 한 번만 — 재업로드·"다시 연결" 반복으로
+  // 동일 항목이 쌓여 서버 max_length=10 을 넘기면 저장이 잠긴다 (2026-08-17 리뷰).
+  // 다른 역할은 역할당 1개라 같은 역할을 교체한다.
+  const sameFile = (item) => item && item.role === manifest.role && item.sha256 === manifest.sha256;
   generationSpec.input_files = manifest.role === 'reference'
-    ? [...current, manifest]
+    ? [...current.filter((item) => !sameFile(item)), manifest]
     : [...current.filter((item) => item && item.role !== manifest.role), manifest];
   setValue('f-generation-spec', JSON.stringify(generationSpec, null, 2));
   setDirty(true);
