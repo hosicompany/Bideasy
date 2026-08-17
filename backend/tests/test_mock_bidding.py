@@ -1450,7 +1450,9 @@ class TestMockBidHistoryAdminUi:
             Path(__file__).resolve().parents[2]
             / "infra" / "nginx" / "html" / "admin" / "admin.js"
         ).read_text(encoding="utf-8")
-        start = admin_js.index("async function loadMockBidHistory(historyState)")
+        start = admin_js.index(
+            "async function loadMockBidHistory(historyState, rankVerified)"
+        )
         end = admin_js.index("\nfunction mbAdvancedTables", start)
         loader = admin_js[start:end]
 
@@ -1465,6 +1467,19 @@ class TestMockBidHistoryAdminUi:
             "list.innerHTML = `<div class=\"mb-empty\"><b>결과를 불러오지 못했어요.",
             catch_block,
         )
+
+    def test_history_rank_is_fail_closed_until_axis_is_verified(self):
+        """차트만 막고 사람이 먼저 보는 공고별 이력에 등수를 남기면 안 된다."""
+        admin_js = (
+            Path(__file__).resolve().parents[2]
+            / "infra" / "nginx" / "html" / "admin" / "admin.js"
+        ).read_text(encoding="utf-8")
+
+        assert "const rankVerified = axisHealth.healthy === true;" in admin_js
+        assert "if (!rankVerified) return '등수 점검 중';" in admin_js
+        assert "mbHistoryItem(item, rankVerified)" in admin_js
+        assert "loadMockBidHistory(historyState, rankVerified);" in admin_js
+        assert "rankedSummary.textContent = rankVerified" in admin_js
 
 
 class TestScoringBacklogOrder:

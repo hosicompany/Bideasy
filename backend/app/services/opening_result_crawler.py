@@ -324,7 +324,7 @@ def _load_registered_bid_nos(db: Session) -> tuple[set[str], bool]:
 
 
 def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
-    """공고 단위로 참가자 행을 **병합**한다. 삭제하지 않는다.
+    """진행 중에는 병합하고, 낙찰자 확정 후에는 최종 스냅샷과 동기화한다.
 
     **왜 삭제-재삽입을 버렸나**: 그 방식은 부분 응답이 완전 집합을 덮어쓰는
     구조라 "행 수가 줄면 보류" 가드가 필요했는데, 그 가드는 정기 스케줄에서
@@ -335,8 +335,17 @@ def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
     된다 — 한 번 보류한 뒤 스스로 낫는 값은 존재하지 않는다. 실제로 3일로
     뒀을 땐 도달 불가였고, 20시간으로 낮췄더니 가드가 통째로 무력해졌다.
 
-    병합은 그 딜레마를 없앤다. 축소가 **구조적으로 불가능**해지므로 가드도
-    시효도 필요 없다 — 이 코드에서 회귀는 늘 분기를 더한 자리에서 났다.
+    병합은 진행 중 축소를 막지만, 낙찰자 확정 후에도 계속 병합하면
+    이전 응답에만 있던 행이 영구히 남아 **서로 다른 시점의 `opengRank`가
+    한 공고에 섞인다.** 2026-08-17 운영 실측에서 최근 300공고 순위의
+    17.708%가 API 순위보다 뒤로 밀렸고, 불일치는 전부 저장 행이 더 많은
+    한 방향이었다.
+
+    따라서 `sucsfYn=Y` 또는 저장된 낙찰결과로 확정을 알 수 있고, 응답
+    자체의 순위 축이 가격순과 일치하면 그 집합을 권위 있는 최종 스냅샷으로
+    본다. 기존 키 집합과 다르면 병합 대신 공고 단위로 원자적 교체한다.
+    응답 내부의 순위가 이미 어긋나 있으면 전체를 거부해 마지막 정상
+    스냅샷을 보존한다.
 
     키는 `(company, bid_price)` 다. 같은 업체가 한 공고에 두 번 투찰할 수 없다.
     `rank`·`sucsf_yn` 은 적격검사 진행 중 바뀌므로(N→Y) 키가 아니라 **갱신
@@ -348,6 +357,8 @@ def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
     written_rows = 0
     errors = 0
     structural_errors = 0
+    finalized_replacements = 0
+    axis_rejected = 0
     final_counts: dict[str, int] = {}
     now = datetime.now(timezone.utc)
     for bid_no, rows in by_bid.items():
@@ -362,6 +373,62 @@ def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
                 .filter(models.OpeningParticipant.bid_no == bid_no)
                 .all()
             }
+            finalized = any(
+                (r.get("sucsf_yn") or "").upper() == "Y" for r in uniq.values()
+            )
+            if not finalized:
+                finalized = db.query(models.OpeningResult.bid_no).filter(
+                    models.OpeningResult.bid_no == bid_no,
+                    models.OpeningResult.winner_price.isnot(None),
+                    models.OpeningResult.winner_price > 0,
+                ).first() is not None
+
+            # 최종 응답을 권위 스냅샷으로 쓰기 전에, 그 응답 안에서도
+            # opengRank == 유효 투찰가 오름차순 순위인지 검사한다. 공공 API
+            # 실측 기준선(0.054%)을 감안해 1% 미만만 수용한다.
+            ranked = [r for r in uniq.values() if r.get("rank") is not None]
+            price_counts: dict[int, int] = {}
+            for r in ranked:
+                price = int(r["bid_price"])
+                price_counts[price] = price_counts.get(price, 0) + 1
+            rank_by_price: dict[int, int] = {}
+            next_rank = 1
+            for price in sorted(price_counts):
+                rank_by_price[price] = next_rank
+                next_rank += price_counts[price]
+            mismatches = sum(
+                1 for r in ranked
+                if int(r["rank"]) != rank_by_price[int(r["bid_price"])]
+            )
+            axis_ok = bool(ranked) and mismatches / len(ranked) < 0.01
+            if finalized and not axis_ok:
+                axis_rejected += 1
+                final_counts[bid_no] = len(existing)
+                logger.warning(
+                    "opening_crawler: 최종 참가자 스냅샷 순위 축 거부 "
+                    f"{bid_no} (ranked={len(ranked)} mismatch={mismatches})"
+                )
+                continue
+
+            # 벌크 DELETE 는 즉시 실행되므로 뒤이은 INSERT 와 같은 트랜잭션에
+            # 묶인다. 키 집합이 같으면 아래 갱신 경로를 써 불필요한 전체
+            # 재삽입과 dead tuple 생성을 피한다.
+            if finalized and set(existing) != set(uniq):
+                db.query(models.OpeningParticipant).filter(
+                    models.OpeningParticipant.bid_no == bid_no,
+                ).delete(synchronize_session=False)
+                # SQLite 는 DELETE 후 PK 를 바로 재사용할 수 있다. 세션에 예전
+                # ORM 객체를 남겨 두면 새 행이 같은 identity 를 가져 캐시가 섞인다.
+                db.expunge_all()
+                for r in uniq.values():
+                    db.add(models.OpeningParticipant(**r, crawled_at=now))
+                db.commit()
+                saved_bids += 1
+                finalized_replacements += 1
+                written_rows += len(existing) + len(uniq)
+                final_counts[bid_no] = len(uniq)
+                continue
+
             written = 0
             for key, r in uniq.items():
                 row = existing.get(key)
@@ -403,6 +470,8 @@ def _save_participants(db: Session, by_bid: dict[str, list[dict]]) -> dict:
         "participant_rows_changed": written_rows,
         "participant_errors": errors,
         "participant_structural_errors": structural_errors,
+        "participant_finalized_replacements": finalized_replacements,
+        "participant_axis_rejected": axis_rejected,
         "participant_final_counts": final_counts,
     }
 
@@ -547,6 +616,10 @@ def crawl_recent_openings(days_back: int = 2, max_pages: int = 200,
     participant_targets = 0
     p_totals = {"participant_bids": 0, "participant_rows_changed": 0,
                 "participant_errors": 0, "participant_structural_errors": 0}
+    p_totals.update({
+        "participant_finalized_replacements": 0,
+        "participant_axis_rejected": 0,
+    })
 
     # ⚠️ **창 하나를 끝까지 완결시킨 뒤 다음 창으로 간다.** 참가자를 전 창이
     # 끝난 뒤에 한꺼번에 저장하면 세 가지가 동시에 깨진다:
