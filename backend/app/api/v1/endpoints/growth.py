@@ -30,6 +30,7 @@ from app.core.security import (
 )
 from app.db import models
 from app.db.session import get_db
+from app.services.notice_lookup import resolve_bid_no
 
 
 router = APIRouter()
@@ -88,25 +89,6 @@ def _bounded_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     if len(encoded.encode("utf-8")) > 4096:
         raise HTTPException(status_code=400, detail="metadata가 너무 큽니다.")
     return metadata
-
-
-def _canonical_notice_bid_no(db: Session, bid_no: str) -> str | None:
-    """DB 정본 공고번호를 돌려준다.
-
-    나라장터 화면 경로에는 차수(`-000`)가 빠진 base 번호만 들어오는 경우가 있다.
-    정확 일치를 우선하고, 없을 때만 같은 base의 차수 공고를 찾는다. 입력은 위
-    validator가 영문·숫자·하이픈으로 제한하므로 LIKE wildcard 주입도 불가능하다.
-    """
-    exact = db.query(models.Notice.bid_no).filter(models.Notice.bid_no == bid_no).first()
-    if exact is not None:
-        return str(exact[0])
-    prefixed = (
-        db.query(models.Notice.bid_no)
-        .filter(models.Notice.bid_no.like(f"{bid_no}-%"))
-        .order_by(models.Notice.bid_no)
-        .first()
-    )
-    return str(prefixed[0]) if prefixed is not None else None
 
 
 def _receipt_dedupe_key(nonce: str) -> str:
@@ -177,7 +159,7 @@ def record_extension_notice_check(
         raise HTTPException(status_code=403, detail="BidEasy Chrome 익스텐션 요청만 허용됩니다.")
     current_user_id = current_user.id
 
-    bid_no = _canonical_notice_bid_no(db, body.bid_no)
+    bid_no = resolve_bid_no(db, body.bid_no)
     if bid_no is None:
         raise HTTPException(status_code=400, detail="BidEasy가 확인한 실제 공고번호가 아닙니다.")
 

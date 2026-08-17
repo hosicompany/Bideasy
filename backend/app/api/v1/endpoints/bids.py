@@ -1,5 +1,3 @@
-import re
-
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -9,6 +7,11 @@ from app.db.session import get_db
 from app.schemas import bid as schemas
 from app.services.activation import record_first_activation
 from app.services.calculator import CalculatorService
+from app.services.notice_lookup import (
+    is_valid_bid_no as _valid_context_bid_no,
+    normalize_bid_no as _normalize_bid_no,
+    resolve_notice as _lookup_notice,
+)
 from app.db import models
 from app.core.logging import get_logger
 from app.core.config import settings
@@ -23,7 +26,8 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
-_CONTEXT_BID_NO_RE = re.compile(r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
+# 공고번호 정규화·검증·정본 해소는 services/notice_lookup.py 단일 소스를 쓴다.
+# (_normalize_bid_no / _valid_context_bid_no / _lookup_notice 는 그 별칭 — pages.py 도 import)
 
 @router.post("/calculate", response_model=schemas.BidCalculationResponse)
 def calculate_bid(
@@ -266,38 +270,6 @@ def _notice_to_context(notice: models.Notice, source: str) -> schemas.BidContext
         contract_type=getattr(notice, "contract_type", None),
     )
 
-
-def _normalize_bid_no(raw: str) -> str:
-    """공백 제거 + 표시형식(...-000) 통일. DB 는 'bidNtceNo-bidNtceOrd' 로 저장."""
-    return re.sub(r"\s+", "", raw or "")
-
-
-def _valid_context_bid_no(raw: str) -> bool:
-    normalized = _normalize_bid_no(raw)
-    return bool(normalized and len(normalized) <= 100 and _CONTEXT_BID_NO_RE.fullmatch(normalized))
-
-
-def _lookup_notice(db: Session, bid_ntce_no: str) -> Optional[models.Notice]:
-    """DB Notice 캐시 조회 — 정확 일치 → prefix(공고번호) 일치 순."""
-    norm = _normalize_bid_no(bid_ntce_no)
-    # LIKE wildcard가 실제 공고로 해석되면 임의 입력이 첫 캐시 공고의 context와
-    # activation receipt를 받을 수 있다. 나라장터 공고번호 문자만 허용한다.
-    if not _valid_context_bid_no(norm):
-        return None
-    # 1) 정확 일치 (bid_no = 'R25...-000')
-    notice = db.query(models.Notice).filter(models.Notice.bid_no == norm).first()
-    if notice:
-        return notice
-    # 2) 차수까지 들어온 정본 ID가 없으면 다른 차수로 조용히 바꾸지 않는다.
-    # 차수가 아예 없는 수동 입력만 최신 차수로 결정적으로 보완한다.
-    if "-" in norm:
-        return None
-    return (
-        db.query(models.Notice)
-        .filter(models.Notice.bid_no.like(f"{norm}-%"))
-        .order_by(models.Notice.bid_no.desc())
-        .first()
-    )
 
 
 @router.post("/batch-context", response_model=schemas.BatchContextResponse)

@@ -1027,3 +1027,42 @@ def test_admin_growth_funnel_counts_unique_activation_repeat_and_review_eligibil
     assert data["overall"]["active_users"] == 2
     assert data["overall"]["repeat_users_28d"] == 1
     assert data["overall"]["review_eligible_users"] == 2
+
+
+def test_extension_notice_check_uses_same_order_as_receipt_when_multiple_orders_exist(
+    client,
+    db_session,
+):
+    """재공고로 차수가 여럿인 공고에서 receipt 발급 공고와 활성화 검증 공고가 같아야 한다.
+
+    회귀: growth 쪽 정본화가 오름차순(-000), bids 쪽 receipt 가 내림차순(-001)을
+    골라 활성화 POST 가 영구 403 이던 결함. 차수를 두 개 심어야만 드러난다.
+    """
+    user = models.User(
+        email=f"growth-multi-order-{uuid4().hex}@test.com",
+        hashed_password="x",
+        tier="free",
+    )
+    base_bid_no = f"R26BK{uuid4().hex[:10].upper()}"
+    db_session.add(user)
+    db_session.add_all([
+        models.Notice(bid_no=f"{base_bid_no}-000", title="최초 공고"),
+        models.Notice(bid_no=f"{base_bid_no}-001", title="재공고(최신 차수)"),
+    ])
+    db_session.commit()
+    db_session.refresh(user)
+    origin = f"chrome-extension://{EXTENSION_ID}"
+    receipt = _context_receipt(client, user, base_bid_no, origin=origin)
+
+    accepted = client.post(
+        "/api/v1/growth/extension/notice-check",
+        headers=_auth_headers(user, origin=origin),
+        json={"bid_no": base_bid_no, "receipt": receipt},
+    )
+    assert accepted.status_code == 202, accepted.text
+    event = db_session.query(models.GrowthEvent).filter_by(
+        event_name="notice_check_completed",
+        user_id=user.id,
+    ).one()
+    # 정본 규칙: 차수 없는 입력은 최신 차수로 결정적으로 보완한다 (bids.py 와 동일)
+    assert event.bid_no == f"{base_bid_no}-001"
