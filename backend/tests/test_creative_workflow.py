@@ -1123,3 +1123,27 @@ def test_editing_running_brief_marks_attempt_stale(admin_client, client, creativ
         json={"runner_id": "mac-01", "status": "PROCESSING"},
     )
     assert heartbeat.status_code == 409
+
+
+def test_landing_path_rejected_at_creation_when_redirect_would_reject_it(admin_client):
+    """생성 시 검증과 /go 리다이렉트의 allowlist 가 같아야 한다.
+
+    회귀: 생성은 '동일 사이트 절대경로' 만 보고 리다이렉트는 좁은 allowlist 를
+    강제해서, /search·/compare·/account·/dashboard·맨 /blog 로 만든 브리프가
+    승인·게시까지 통과한 뒤 방문자 전원이 400 을 받았다. 실패는 생성 시점에
+    관리자에게 보여야 한다.
+    """
+    for landing in ("/search", "/compare", "/account", "/dashboard", "/blog", "/login"):
+        response = admin_client.post(
+            "/api/v1/admin/creatives",
+            json=_brief_payload(landing_path=landing),
+        )
+        assert response.status_code == 422, (landing, response.text)
+
+    # 허용 경로는 여전히 통과한다 (allowlist 자체가 줄어들면 안 된다)
+    for landing in ("/", "/calculator", "/diagnose", "/blog/some-post", "/bid/R26BK01488342-000"):
+        response = admin_client.post(
+            "/api/v1/admin/creatives",
+            json=_brief_payload(landing_path=landing),
+        )
+        assert response.status_code == 201, (landing, response.text)

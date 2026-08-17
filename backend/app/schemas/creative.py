@@ -58,8 +58,19 @@ def _validate_key(value: str) -> str:
     return value
 
 
-def _validate_landing_path(value: str) -> str:
-    value = value.strip()
+# 크리에이티브 랜딩 allowlist — 생성·수정(이 스키마)과 /go 리다이렉트(creative_redirect)가
+# **같은 함수**를 쓴다. 두 곳이 갈리면 승인·게시까지 통과한 브리프가 방문자에게만 400 이 된다
+# (2026-08-17 리뷰 차단급 ②). 항목을 바꾸려면 여기만 고친다.
+ALLOWED_LANDING_EXACT = frozenset({
+    "/", "/calculator", "/calculator.html", "/diagnose", "/diagnose.html",
+    "/signup", "/signup.html", "/guide", "/guide.html", "/pricing", "/pricing.html",
+})
+ALLOWED_LANDING_PREFIXES = ("/blog/", "/bid/")
+
+
+def validate_landing_path(value: str) -> str:
+    """동일 사이트 절대경로 + allowlist 통과 여부. 실패는 ValueError (호출부가 422/400 으로 변환)."""
+    value = (value or "").strip()
     parsed = urlsplit(value)
     decoded_path = unquote(parsed.path)
     if (
@@ -75,7 +86,14 @@ def _validate_landing_path(value: str) -> str:
         or ".." in decoded_path.split("/")
     ):
         raise ValueError("랜딩은 동일 사이트의 절대경로(/...)만 사용할 수 있어요")
+    base = parsed.path
+    if base not in ALLOWED_LANDING_EXACT and not any(base.startswith(p) for p in ALLOWED_LANDING_PREFIXES):
+        allowed = ", ".join(sorted(ALLOWED_LANDING_EXACT)) + ", " + ", ".join(p + "…" for p in ALLOWED_LANDING_PREFIXES)
+        raise ValueError(f"허용되지 않은 랜딩 경로예요. 허용: {allowed}")
     return value
+
+
+_validate_landing_path = validate_landing_path  # 기존 field_validator 배선 호환
 
 
 class CreativeInputFile(BaseModel):

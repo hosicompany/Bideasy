@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import secrets
-from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -13,37 +13,22 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.db.session import get_db
+from app.schemas.creative import validate_landing_path
 
 
 router = APIRouter()
-_ALLOWED_LANDING_EXACT = {
-    "/", "/calculator", "/calculator.html", "/diagnose", "/diagnose.html",
-    "/signup", "/signup.html", "/guide", "/guide.html", "/pricing", "/pricing.html",
-}
-_ALLOWED_LANDING_PREFIXES = ("/blog/", "/bid/")
 
 
 def safe_landing_path(value: str) -> str:
-    path = (value or "").strip()
-    parsed = urlsplit(path)
-    decoded_path = unquote(parsed.path)
-    if (
-        not path.startswith("/")
-        or path.startswith("//")
-        or parsed.scheme
-        or parsed.netloc
-        or parsed.fragment
-        or "\\" in path
-        or "\\" in decoded_path
-        or any(ord(char) < 32 for char in path)
-        or any(ord(char) < 32 for char in decoded_path)
-        or any(part == ".." for part in decoded_path.split("/"))
-    ):
-        raise HTTPException(status_code=400, detail="허용되지 않은 랜딩 경로입니다.")
-    base = parsed.path
-    if base not in _ALLOWED_LANDING_EXACT and not any(base.startswith(prefix) for prefix in _ALLOWED_LANDING_PREFIXES):
-        raise HTTPException(status_code=400, detail="허용되지 않은 랜딩 경로입니다.")
-    return path
+    """랜딩 검증은 schemas.creative.validate_landing_path 단일 소스 — 여기선 400 으로만 변환한다.
+
+    생성·수정 시 이미 같은 규칙을 통과했으므로 정상 데이터는 여기서 실패하지 않는다.
+    (레거시 행이나 DB 직접 수정으로 어긋난 값만 잡는 마지막 방어선.)
+    """
+    try:
+        return validate_landing_path(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="허용되지 않은 랜딩 경로입니다.") from exc
 
 
 @router.get("/go/{creative_id}")
