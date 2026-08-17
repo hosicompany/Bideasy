@@ -86,8 +86,6 @@ def creative_funnel(
     for creative_id in creative_ids:
         brief = briefs.get(creative_id) if creative_id else None
         counts = {event: len(identities[creative_id][event]) for event in FUNNEL_EVENTS}
-        qualified = counts["qualified_visit"]
-        activated = counts["notice_check_completed"]
         items.append({
             "creative_id": creative_id,
             "campaign_key": brief.campaign_key if brief else None,
@@ -96,7 +94,15 @@ def creative_funnel(
             "status": brief.status if brief else None,
             "unique": counts,
             "raw": raw_counts[creative_id],
-            "activation_rate_pct": round(activated / qualified * 100, 1) if qualified else None,
+            # ⛔ 비율을 만들지 않는다. qualified_visit 은 익명 쿠키(a:), notice_check_completed 는
+            # 로그인 사용자(u:) 로 식별자 네임스페이스가 서로소라 나누면 1인당 전환율이 아니고
+            # 100% 를 넘을 수 있다(2026-08-17 리뷰 차단급 ③). 익명→회원 결합 원장이 생기기
+            # 전까지는 두 카운트를 따로 보여 주고, 게이트 판정은 unique 카운트로만 한다.
+            "activation_rate_pct": None,
+            "activation_rate_note": (
+                "qualified_visit(anonymous cookie)과 notice_check_completed(logged-in user)는 "
+                "식별자가 결합되지 않아 비율을 만들 수 없다 — unique 카운트를 각각 읽을 것"
+            ),
         })
 
     repeat_users = 0

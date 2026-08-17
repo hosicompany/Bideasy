@@ -1023,7 +1023,8 @@ def test_admin_growth_funnel_counts_unique_activation_repeat_and_review_eligibil
     assert item["raw"]["qualified_visit"] == 2
     assert item["unique"]["notice_check_completed"] == 1
     assert item["raw"]["notice_check_completed"] == 3
-    assert item["activation_rate_pct"] == 100.0
+    # 익명 방문 1 / 로그인 활성화 1 은 같은 사람이라는 보장이 없다 — 비율은 None 이어야 한다
+    assert item["activation_rate_pct"] is None
     assert data["overall"]["active_users"] == 2
     assert data["overall"]["repeat_users_28d"] == 1
     assert data["overall"]["review_eligible_users"] == 2
@@ -1066,3 +1067,55 @@ def test_extension_notice_check_uses_same_order_as_receipt_when_multiple_orders_
     ).one()
     # 정본 규칙: 차수 없는 입력은 최신 차수로 결정적으로 보완한다 (bids.py 와 동일)
     assert event.bid_no == f"{base_bid_no}-001"
+
+
+def test_admin_growth_funnel_does_not_divide_disjoint_identity_namespaces(
+    admin_client,
+    db_session,
+):
+    """활성화율은 분자(u:user_id)와 분모(a:anonymous_id)가 서로소라 1인당 전환율이 아니다.
+
+    회귀: 익명 /go 방문 3건에 서로 다른 계정 5개가 활성화하면 166.7% 가 나왔고,
+    사전 등록 게이트(활성 10·28일 반복 4)를 이 숫자로 읽었다. 결합 없이 나눌 수 없다.
+    """
+    creative = _creative(db_session)
+    now = datetime.now(timezone.utc)
+    events = [
+        models.GrowthEvent(
+            event_name="qualified_visit",
+            dedupe_key=f"disjoint-visit-{i}",
+            anonymous_id=f"disjoint-anon-{i:02d}-{'x' * 12}",
+            creative_id=creative.id,
+            occurred_at=now - timedelta(days=3),
+        )
+        for i in range(3)
+    ]
+    users = []
+    for i in range(5):
+        user = models.User(email=f"disjoint-{i}-{uuid4().hex}@test.com", hashed_password="x", tier="free")
+        db_session.add(user)
+        users.append(user)
+    db_session.flush()
+    for i, user in enumerate(users):
+        events.append(
+            models.GrowthEvent(
+                event_name="notice_check_completed",
+                dedupe_key=f"disjoint-notice-{i}",
+                user_id=user.id,
+                creative_id=creative.id,
+                bid_no=f"BID-{i}",
+                occurred_at=now - timedelta(days=2),
+            )
+        )
+    db_session.add_all(events)
+    db_session.commit()
+
+    response = admin_client.get("/api/v1/admin/growth/creative-funnel?days=90")
+    assert response.status_code == 200, response.text
+    item = next(row for row in response.json()["items"] if row["creative_id"] == creative.id)
+    assert item["unique"]["qualified_visit"] == 3
+    assert item["unique"]["notice_check_completed"] == 5
+    # 비율은 만들 수 없다 — 100% 를 넘는 숫자를 게이트 판정에 쓰게 두면 안 된다.
+    assert item["activation_rate_pct"] is None
+    assert item["activation_rate_note"]
+    assert "anonymous" in item["activation_rate_note"] or "익명" in item["activation_rate_note"]
