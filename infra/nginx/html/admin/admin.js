@@ -1377,16 +1377,17 @@ function mbParticipantText(arm) {
 
 // 무효는 개찰 순위를 갖지 않는다. 이걸 '집계 중'으로 두면 판정이 끝난 건인데도
 // 관리자가 오지 않을 숫자를 기다린다.
-function mbRankText(arm, pendingLabel) {
+function mbRankText(arm, pendingLabel, rankVerified = false) {
   if (arm.outcome === 'DROPOUT') return '순위 없음(무효)';
+  if (!rankVerified) return '등수 점검 중';
   return arm.estimated_rank == null
     ? pendingLabel : `가상 ${fmtNumber(arm.estimated_rank)}위`;
 }
 
-function mbHistoryArmRows(arms) {
+function mbHistoryArmRows(arms, rankVerified) {
   return (arms || []).map((arm) => {
     const meta = mbOutcomeMeta(arm.outcome);
-    const rank = mbRankText(arm, '—');
+    const rank = mbRankText(arm, '—', rankVerified);
     return `<tr>
       <td><b>${esc(MB_ARM_FRIENDLY[arm.arm] || arm.arm || '—')}</b><small>${esc(arm.arm || '')}</small></td>
       <td>${fmtNumber(arm.price)}원<small>${mbRateText(arm.bid_rate)}</small></td>
@@ -1397,11 +1398,11 @@ function mbHistoryArmRows(arms) {
   }).join('');
 }
 
-function mbHistoryItem(item) {
+function mbHistoryItem(item, rankVerified) {
   const primary = item.primary_arm || {};
   const meta = mbOutcomeMeta(primary.outcome);
   const completed = item.state === 'COMPLETED';
-  const rankText = mbRankText(primary, '집계 중');
+  const rankText = mbRankText(primary, '집계 중', rankVerified);
   const participantText = (primary.participants_count == null
       && primary.valid_participants_count == null)
     ? '참가자 데이터 대기' : mbParticipantText(primary);
@@ -1440,7 +1441,7 @@ function mbHistoryItem(item) {
       <summary>함께 기록한 5가지 가격 비교</summary>
       <div class="mb-table-scroll"><table class="mb-history-table">
         <thead><tr><th>가격안</th><th>기록한 금액</th><th>판정</th><th>가상 순위</th><th>낙찰가 차이</th></tr></thead>
-        <tbody>${mbHistoryArmRows(item.arms)}</tbody>
+        <tbody>${mbHistoryArmRows(item.arms, rankVerified)}</tbody>
       </table></div>
     </details>
   </article>`;
@@ -1455,7 +1456,7 @@ function mbHistoryEmpty(state) {
   return `<div class="mb-empty"><b>${text}</b><span>공고번호 검색 조건을 바꿔보세요.</span></div>`;
 }
 
-async function loadMockBidHistory(historyState) {
+async function loadMockBidHistory(historyState, rankVerified) {
   const list = document.getElementById('mb-history-list');
   const pager = document.getElementById('mb-history-pager');
   if (!list || !pager) return;
@@ -1482,10 +1483,13 @@ async function loadMockBidHistory(historyState) {
     setSummary('mb-summary-registered', summary.registered);
     setSummary('mb-summary-completed', summary.completed);
     setSummary('mb-summary-waiting', summary.waiting);
-    setSummary('mb-summary-ranked', summary.rank_ready);
+    const rankedSummary = document.getElementById('mb-summary-ranked');
+    if (rankedSummary) {
+      rankedSummary.textContent = rankVerified ? fmtNumber(summary.rank_ready || 0) : '점검 중';
+    }
 
     list.innerHTML = (data.items || []).length
-      ? data.items.map(mbHistoryItem).join('')
+      ? data.items.map((item) => mbHistoryItem(item, rankVerified)).join('')
       : mbHistoryEmpty(requestedState);
     pager.innerHTML = `<span>전체 ${fmtNumber(data.total)}공고 · ${fmtNumber(data.page)} / ${fmtNumber(data.total_pages || 1)}페이지</span>
       <div><button class="btn btn-outline" data-mb-page="${data.page - 1}" ${data.has_previous ? '' : 'disabled'}>이전</button>
@@ -1494,7 +1498,7 @@ async function loadMockBidHistory(historyState) {
       button.addEventListener('click', () => {
         if (button.disabled) return;
         historyState.page = Number(button.dataset.mbPage);
-        loadMockBidHistory(historyState);
+        loadMockBidHistory(historyState, rankVerified);
         document.getElementById('mb-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
@@ -1548,7 +1552,11 @@ pages.mockbidding = async function (content) {
   // 축이 어긋난 상태에서 숫자만 살려두면, 관리자가 차트 경고를 읽고도 바로 위의
   // KPI 를 그대로 보고서에 옮긴다. 해석을 막으려면 숫자도 함께 막아야 한다.
   const axisHealth = (charts || {}).rank_axis_health || {};
-  const axisBroken = axisHealth.healthy === false;
+  // 등수는 검증기가 명시적으로 true 를 줄 때만 노출한다. 차트 API
+  // 실패나 소표본 판정 보류를 '정상'으로 해석하면 정작 감시기가 꺼진
+  // 순간에 잘못된 가상 등수가 공고별 이력에 다시 노출된다.
+  const rankVerified = axisHealth.healthy === true;
+  const axisBroken = !rankVerified;
   // 제외 수를 숨기면 전수를 본 것처럼 읽힌다. 무효율이 높은 arm 일수록 많이
   // 빠지므로, arm 간 비교에는 반드시 무효율과 함께 봐야 한다.
   const excluded = (charts || {}).rank_excluded || {};
@@ -1560,7 +1568,7 @@ pages.mockbidding = async function (content) {
   const dropoutExcludedText = exParts.length
     ? `${exParts.join(' · ')}은 제외했어요(무효율은 위 지표 참조).` : '';
   const top3Rate = (ranked && !axisBroken) ? Math.round(top3 / ranked * 1000) / 10 : null;
-  const top3Label = axisBroken ? '축 점검 중' : '표본 대기';
+  const top3Label = axisHealth.healthy === false ? '축 점검 중' : '축 확인 대기';
   const advanced = mbAdvancedTables(sum);
 
   content.innerHTML = `
@@ -1596,6 +1604,7 @@ pages.mockbidding = async function (content) {
           <button class="btn btn-primary" type="submit">찾기</button>
         </form>
       </div>
+      ${rankVerified ? '' : '<p class="mb-validity-note">등수 축을 확인하는 중이에요. 검증이 통과할 때까지 공고별 가상 등수는 숨깁니다.</p>'}
       <div id="mb-history-list"></div>
       <div id="mb-history-pager" class="mb-pager"></div>
     </section>
@@ -1605,7 +1614,7 @@ pages.mockbidding = async function (content) {
         <p>복잡한 실험 용어 대신 안전성·가상 순위·낙찰가와의 거리만 먼저 보여드립니다.</p></div></div>
       <div class="mb-easy-kpis">
         <div><span>하한선을 지킨 비율</span><strong>${safeRate == null ? '표본 대기' : safeRate.toFixed(1) + '%'}</strong><small>현재 추천 가격 기준</small></div>
-        <div><span>가상 3위 안에 든 비율</span><strong>${top3Rate == null ? top3Label : top3Rate + '%'}</strong><small>등수 확인 ${fmtNumber(ranked)}공고 · 무효 제외</small></div>
+        <div><span>가상 3위 안에 든 비율</span><strong>${top3Rate == null ? top3Label : top3Rate + '%'}</strong><small>${rankVerified ? `등수 확인 ${fmtNumber(ranked)}공고 · 무효 제외` : '등수 축 검증 통과 전'}</small></div>
         <div><span>결과 해석 상태</span><strong>${esc(mbGateLabel(reach.status))}</strong><small>${reach.interpretation_allowed ? '누적 경향을 참고할 수 있어요' : '아직 개별 결과 위주로 보세요'}</small></div>
       </div>
       <div class="mb-simple-charts">
@@ -1647,14 +1656,14 @@ pages.mockbidding = async function (content) {
       button.classList.add('active');
       historyState.state = button.dataset.mbState;
       historyState.page = 1;
-      loadMockBidHistory(historyState);
+      loadMockBidHistory(historyState, rankVerified);
     });
   });
   document.getElementById('mb-history-search').addEventListener('submit', (event) => {
     event.preventDefault();
     historyState.search = document.getElementById('mb-history-query').value.trim();
     historyState.page = 1;
-    loadMockBidHistory(historyState);
+    loadMockBidHistory(historyState, rankVerified);
   });
 
   // 차트가 던져도 원장(가장 중요한 데이터)은 반드시 뜨게 한다 — 장식이 본문을
@@ -1664,7 +1673,7 @@ pages.mockbidding = async function (content) {
   } catch (error) {
     console.error('[mock-bidding] 차트 렌더 실패', error);
   }
-  loadMockBidHistory(historyState);
+  loadMockBidHistory(historyState, rankVerified);
 };
 
 function renderMockBiddingOverviewCharts(charts) {
@@ -1685,23 +1694,20 @@ function renderMockBiddingOverviewCharts(charts) {
   // 등수 축이 개찰 API 와 어긋나면 그래프를 그리는 것 자체가 거짓말이 된다.
   // Phase 2 는 축이 틀린 채 9일을 돌았고 화면은 그동안 멀쩡히 그려졌다.
   const axis = charts.rank_axis_health;
-  if (axis && axis.healthy === false) {
+  if (!axis || axis.healthy !== true) {
     // 사유별로 다른 말을 해야 한다. 전부 "N% 어긋남"으로 쓰면 결측률 이상일 때
     // "0.0% 어긋났습니다" 같은 자기모순 문구가 나온다.
-    const why = {
+    const why = axis && axis.healthy === false ? ({
       axis_mismatch: `개찰 API 순위와 ${axis.mismatch_pct}% 어긋났습니다.`,
       null_rank_anomaly: `무효 투찰 비중이 ${axis.null_rank_pct}% 입니다(정상 범위 5~90%). `
         + 'API 가 순위를 주는 기준이 바뀌었을 수 있어요.',
       no_rank_at_all: '순위 필드가 한 건도 파싱되지 않았습니다. 필드명 변경을 의심하세요.',
-    }[axis.reason] || '축 점검이 필요합니다.';
+    }[axis.reason] || '축 점검이 필요합니다.')
+      : axis
+        ? `최근 ${axis.window_days ?? 7}일 표본 ${fmtNumber(axis.sampled_notices || 0)}공고로는 아직 축을 판정할 수 없어요.`
+        : '축 검증 데이터를 불러오지 못했습니다.';
     mbChartEmpty('mb-ch-rank-simple',
       `등수 축 점검이 필요해요 — ${why} 원인을 확인할 때까지 등수는 해석하지 마세요.`);
-  } else if (axis && axis.healthy === null && axis.rows === 0) {
-    // 감시 불능(표본 0)을 조용히 넘기면 '정상'과 화면이 같아진다. 이 함수의
-    // 존재 이유가 "축이 틀린 채 9일 돌았는데 화면은 멀쩡했다" 이다.
-    mbChartEmpty('mb-ch-rank-simple',
-      `최근 ${axis.window_days ?? 7}일 참가자 데이터가 없어 축 감시를 못 하고 있어요. `
-      + '개찰 참가자 크롤이 도는지 먼저 확인하세요.');
   } else if (!rankGroups.some(Boolean)) {
     mbChartEmpty('mb-ch-rank-simple', noData);
   } else {

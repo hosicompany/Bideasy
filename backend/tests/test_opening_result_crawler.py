@@ -367,6 +367,60 @@ class TestParticipantSave:
         assert r["participant_rows_changed"] == 6        # 새로 들어온 6행만 썼다
         assert r["participant_final_counts"][bid_no] == 9
 
+    def test_final_snapshot_removes_rows_from_older_partial_snapshots(self, db_session):
+        """낙찰자 확정 후엔 이전 스냅샷의 유령 행을 제거한다.
+
+        운영 회귀를 그대로 재현한다. 진행 중 응답에서 B가 사라지고
+        C의 API 순위가 3→2로 바뀌었는데 병합만 하면 B(2위)와 C(2위)가
+        다른 가격으로 함께 남아 가상 순위를 뒤로 밀어버린다.
+        """
+        bid_no = "PFINAL-1-000"
+        first = self._rows(bid_no, 3)
+        crawler._save_participants(db_session, {bid_no: first})
+
+        current = [dict(first[0]), dict(first[2])]
+        current[1]["rank"] = 2
+        crawler._save_participants(db_session, {bid_no: current})
+
+        mixed = (db_session.query(models.OpeningParticipant)
+                 .filter_by(bid_no=bid_no).order_by(models.OpeningParticipant.bid_price)
+                 .all())
+        assert [(p.rank, p.bid_price) for p in mixed] == [
+            (1, 90_000_000), (2, 91_000_000), (2, 92_000_000),
+        ]
+
+        current[0]["sucsf_yn"] = "Y"  # 낙찰자 확정 = 최종 스냅샷
+        result = crawler._save_participants(db_session, {bid_no: current})
+
+        saved = (db_session.query(models.OpeningParticipant)
+                 .filter_by(bid_no=bid_no).order_by(models.OpeningParticipant.bid_price)
+                 .all())
+        assert [(p.rank, p.bid_price) for p in saved] == [
+            (1, 90_000_000), (2, 92_000_000),
+        ]
+        assert result["participant_finalized_replacements"] == 1
+        assert result["participant_axis_rejected"] == 0
+        assert result["participant_final_counts"][bid_no] == 2
+
+    def test_incoherent_final_snapshot_is_rejected_as_a_whole(self, db_session):
+        """API 응답 자체의 순위가 틀리면 정상 스냅샷을 덮어쓰지 않는다."""
+        bid_no = "PFINAL-BAD-1-000"
+        good = self._rows(bid_no, 3)
+        crawler._save_participants(db_session, {bid_no: good})
+
+        bad = [dict(row) for row in good]
+        bad[0]["rank"], bad[1]["rank"] = 2, 1
+        bad[0]["sucsf_yn"] = "Y"
+        result = crawler._save_participants(db_session, {bid_no: bad})
+
+        saved = (db_session.query(models.OpeningParticipant)
+                 .filter_by(bid_no=bid_no).order_by(models.OpeningParticipant.bid_price)
+                 .all())
+        assert [p.rank for p in saved] == [1, 2, 3]
+        assert result["participant_finalized_replacements"] == 0
+        assert result["participant_axis_rejected"] == 1
+        assert result["participant_final_counts"][bid_no] == 3
+
     def test_rank_can_be_assigned_later(self, db_session):
         """무효로 들어온 참가자가 나중에 순위를 받으면 갱신된다(행이 늘지 않는다).
 

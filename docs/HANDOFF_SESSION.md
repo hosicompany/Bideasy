@@ -1,6 +1,6 @@
 # 세션 인수인계 — 다른 IDE·다른 에이전트로 이어받기
 
-> 작성 2026-08-08 · 갱신 2026-08-16. 현재 작업선: `feat/blog-knowledge-autopublish` (Draft PR #117, 최신 master `b130563` 위, 미머지·미배포) / 운영 `b130563`.
+> 작성 2026-08-08 · 갱신 2026-08-17. 현재 작업선: `fix/mock-bidding-rank-snapshot-integrity` (최신 master `91c4462` 위, 미배포) / 확인 당시 운영 `302d2ad`.
 > **대상**: Claude Code 가 아닌 다른 IDE·에이전트(Cursor / VS Code Copilot / Codex / 다른 세션)로
 > 작업을 이어받는 사람.
 >
@@ -8,7 +8,7 @@
 > **규칙·함정·아키텍처의 정본은 여전히 루트 `CLAUDE.md`** 입니다 — 여기 내용을 복사하지 않습니다.
 > 갈리면 `CLAUDE.md` 가 이깁니다.
 
-> **2026-08-16 현재 세션 초점**: 블로그 K-트랙 자동 포스팅 Phase 2. 필수 검사 6종이 모두 존재하고 생략·판정 불일치가 없는 PASS/WARN만 48시간 유예 예약하고 나머지는 사람 호출, 발행 직전 재확인·편집/force 재생성 시 예약 무효화·Postgres 중복 실행 선점·깨진 히어로 제거까지 구현했다. Draft PR #117 최초 head CI 4종은 green이고 독립 리뷰에서 부분 판정도 통과하던 fail-open과 제목·요약 검수 공백을 재현해 로컬 보완했다. 보완분 검증은 backend **985 passed**·Ruff clean·diff check clean. 운영에는 아직 반영하지 않았으며, K1~K8 발행·K9 FAIL draft·예약 0이라 배포 후 다음 수요일 대상은 K10이다. 다음 단계는 리뷰 보완분 커밋 → 사람의 push 승인 → CI 재확인 → 코드 머지·배포 승인이다.
+> **2026-08-17 현재 세션 초점**: 운영 최근 300공고에서 참가자 등수축 불일치 **17.708%(12,831/72,460 ranked, 56공고)**를 확인했다. 진행 중 응답의 누적 merge가 낙찰 확정 뒤에도 옛 참가자를 지우지 않아 생긴 유령 행이 원인이다. 공고별 이력까지 포함한 가상 등수 fail-closed, 진행 중 merge/최종 검증 스냅샷 동기화, 기본 dry-run 복구 CLI와 회귀 테스트를 구현했다. G-A는 **55.22%(1,699/3,077, OBSERVING)**, G-B 유효 적격은 **91/400**이라 성능 우열 해석은 계속 금지다. 검증 = backend **988 passed**·Ruff clean·관리자 JS 구문·CLI help·diff check 통과. 아직 배포·운영 복구는 하지 않았다. 상세와 복구 명령은 `docs/MOCK_BIDDING_DESIGN.md` §9.
 
 ---
 
