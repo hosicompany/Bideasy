@@ -78,7 +78,10 @@ def run_calibration_cycle(
     store.ensure_bootstrap(BID_STRATEGY)
 
     # ── 1. 데이터 적재 (정적 + 누적 DB) ─────────────────────
-    records = ds.load_records(db=db)
+    # ⚠️ `strict_db=True` — DB 조회가 실패하면 예외를 받는다. 삼키면 정적 원장만
+    # 남은 채로 돌아가는데, 그러면 fingerprint 가 달라져서 **DB 장애를 "새
+    # 코호트"로 오인하고 재보정**한다. 표본이 반쯤 사라진 상태의 재적합이다.
+    records = ds.load_records(db=db, strict_db=True)
     if not records:
         return CycleReport(skipped=True, reason="데이터 없음")
 
@@ -118,6 +121,7 @@ def run_calibration_cycle(
         },
         notes=" | ".join(decision.reasons),
         parametrization=optimizer.PARAMETRIZATION,
+        dataset_policy=ds.DATASET_POLICY,
     )
 
     # ── 5. 채택 또는 롤백 ───────────────────────────────────

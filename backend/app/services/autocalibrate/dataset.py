@@ -15,6 +15,14 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.core.logging import get_logger
+from app.services.bid_data_quality import base_is_consistent
+
+logger = get_logger(__name__)
+
+# 이 모듈이 적용하는 표본 정책 — 저장 버전에 함께 박아 세대 간 비교를 막는다.
+DATASET_POLICY = "base_consistent_v1"
+
 # backend/app/services/autocalibrate/dataset.py → backend/data
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _DATA_DIR = _BACKEND_DIR / "data"
@@ -188,7 +196,31 @@ def load_records(
             {r.bid_no for r in records},
             strict=strict_db,
         ))
-    return records
+
+    # ── 기초금액 일관성 필터 ────────────────────────────────────
+    # `basic_price` 에 기초금액이 아니라 **추정가격**이 든 행이 섞여 있다
+    # (CLAUDE.md 함정 22). 그런 행은 사정률이 1.1 배 근처로 뭉치는데,
+    # 자가보정이 그걸 사정률 중심으로 읽으면 `adjustment` 가 +6~+10 까지 튄다
+    # (2026-08-16 재보정이 실제로 이 이유로 거부됐다).
+    #
+    # ⚠️ 오염은 **운영 DB 병합분에만** 있다 — 정적 원장 4,848건은 밴드 밖이
+    # 0건이라 `db=None` 호출의 결과는 이 필터로 바뀌지 않는다.
+    #
+    # ⚠️ 이 필터는 영구 장치다. 파서는 고쳤지만 **기존 행은 자동으로 치유되지
+    # 않는다** — 개찰 upsert 가 `winner_price` 가 이미 있으면 갱신을 건너뛴다.
+    #
+    # ⚠️ 밴드는 **상대 일관성** 검사이지 출처 검증이 아니다. `basic_price` 와
+    # `reserved_price` 가 같은 비율로 함께 틀리면 통과한다.
+    kept = [r for r in records if base_is_consistent(r.basic_price, r.reserved_price)]
+    excluded = len(records) - len(kept)
+    if excluded:
+        # 제외 수를 삼키지 않는다 — 표본이 조용히 줄면 성능 변화를 데이터가
+        # 아니라 모델 탓으로 읽는다(docs/MOCK_BIDDING_DESIGN.md §9 규율).
+        logger.info(
+            "[autocalibrate] 기초금액 일관성 제외 %d건 / %d건 (%.1f%%) — 남은 %d건",
+            excluded, len(records), excluded / len(records) * 100, len(kept),
+        )
+    return kept
 
 
 def data_fingerprint(records: list[BidRecord]) -> str:

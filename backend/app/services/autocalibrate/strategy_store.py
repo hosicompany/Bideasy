@@ -50,6 +50,13 @@ class StrategyVersion:
     #                   margin 만 최적화. adjustment 를 예측값으로 읽어도 된다.
     # ⛔ 두 리비전의 adjustment 를 같은 축에서 비교하지 말 것(§9 2026-08-13).
     parametrization: str = "product_v1"
+    # 이 버전이 **어떤 코호트** 위에서 적합됐는지. 필터 정책이 바뀌면 표본이
+    # 달라지므로, 기록하지 않으면 세대 간 metrics 를 한 선으로 이어 붙이게 된다
+    #   "unfiltered"        : 기초금액 일관성 필터 이전(오염 포함, 2026-08-17 이전)
+    #   "base_consistent_v1": 사정률 0.94~1.06 밖 제외
+    # ⛔ 서로 다른 리비전의 저장 metrics 를 성능 비교에 쓰지 말 것 — 코호트가
+    #    다르면 delta 는 모델이 아니라 표본이 만든 것이다.
+    dataset_policy: str = "unfiltered"
 
     def to_dict(self) -> dict:
         return asdict(self)
