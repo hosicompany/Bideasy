@@ -329,3 +329,32 @@ def test_brain_activity_uses_cli_video_role_to_build_required_medias(
     assert (
         "--medias" not in command
     )  # CLI uploads --video and creates the model's medias array.
+
+
+def test_json_from_output_returns_outermost_object_when_preamble_precedes_json():
+    """로그 프리앰블 뒤 JSON — 바깥 객체를 돌려줘야 job id 가 살아남는다.
+
+    회귀: candidates[-1] 이 가장 안쪽 중첩 객체({"url": ...})를 골라 바깥의 id 가 사라졌고,
+    fallback 정규식도 못 잡으면 유료 job 을 crash 후 재부착할 수 없었다.
+    """
+    from bideasy_creative_runner.higgsfield import _extract_job_id, _json_from_output
+
+    job = "6f1c2a3b-4d5e-4f60-8a1b-2c3d4e5f6a7b"
+    output = (
+        "Authenticating...\nWorkspace: ws-1\n"
+        + '{"id": "' + job + '", "results": [{"url": "https://cdn.example/a.mp4"}], "meta": {"n": 1}}'
+        + "\nDone.\n"
+    )
+    value = _json_from_output(output)
+    assert isinstance(value, dict)
+    assert value.get("id") == job
+    assert _extract_job_id(value, output) == job
+
+
+def test_json_from_output_prefers_first_top_level_object_and_ignores_nested_rescans():
+    from bideasy_creative_runner.higgsfield import _json_from_output
+
+    output = 'noise {"a": {"b": {"c": 1}}} trailing {"z": 2}'
+    value = _json_from_output(output)
+    # 첫 최상위 객체 전체 (안쪽 {"c":1} 도, 뒤의 {"z":2} 도 아님)
+    assert value == {"a": {"b": {"c": 1}}}

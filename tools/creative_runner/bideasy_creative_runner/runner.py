@@ -225,7 +225,15 @@ def _write_report(
     directory: Path,
     *,
     warning: str | None = None,
+    generation_job_id: str | None = None,
 ) -> Path:
+    """Virality 보고서를 쓴다.
+
+    ``result`` 는 **Predictor** 작업이다. 생성 job 은 별개의 외부 작업이라 호출부가
+    ``generation_job_id`` 로 넘겨야 한다 — 종전엔 두 칸에 Predictor id 를 똑같이 써서
+    서버가 attempt 기록과 대조하면 생성 job 이 틀린 값으로 남았다(2026-08-17 리뷰).
+    생성과 분석이 한 작업인 경우(brain_activity)만 같은 id 를 넘긴다.
+    """
     report = directory / "virality-report.json"
     raw = result.raw if result is not None else None
     metrics = _normalise_virality(raw)
@@ -239,7 +247,7 @@ def _write_report(
     ):
         warning = "virality_metrics_incomplete"
     payload = {
-        "higgsfield_job_id": result.job_id if result is not None else None,
+        "higgsfield_job_id": generation_job_id if generation_job_id is not None else (result.job_id if result is not None else None),
         "virality_job_id": result.job_id if result is not None else None,
         **metrics,
         "human_review_required": True,
@@ -486,7 +494,7 @@ class CreativeRunner:
                     predictor_id,
                 ),
             )
-            report = _write_report(result, directory)
+            report = _write_report(result, directory, generation_job_id=generation_job_id)
             metadata = {"virality_job_id": result.job_id, "analysis_warning": None}
         except ApiError:
             raise
@@ -497,7 +505,7 @@ class CreativeRunner:
                 attempt.attempt_id,
                 type(exc).__name__,
             )
-            report = _write_report(None, directory, warning=warning)
+            report = _write_report(None, directory, warning=warning, generation_job_id=generation_job_id)
             metadata = {"virality_job_id": None, "analysis_warning": warning}
         return ProcessedAsset(
             report,
@@ -592,7 +600,8 @@ class CreativeRunner:
                 )
 
                 if attempt.job_type == "brain_activity":
-                    report = _write_report(result, directory)
+                    # 생성·분석이 한 작업이라 두 id 가 같은 것이 정확하다
+                    report = _write_report(result, directory, generation_job_id=result.job_id)
                     credits_after = self.higgsfield.credit_balance()
                     usage = _credit_usage(credits_before, credits_after)
                     _attach_credit_usage(report, usage)

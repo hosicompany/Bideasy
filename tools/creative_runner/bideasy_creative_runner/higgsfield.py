@@ -101,18 +101,23 @@ def _json_from_output(output: str) -> Any:
     try:
         return json.loads(stripped)
     except json.JSONDecodeError:
+        # 로그 프리앰블 뒤에 JSON 이 붙는 경우: **첫 최상위** 객체를 돌려준다.
+        # 종전엔 모든 '{'/'[' 위치에서 디코드해 마지막(=가장 안쪽 중첩) 값을 골랐고,
+        # 그러면 바깥 객체의 job id 가 사라져 유료 job 을 crash 후 재부착할 수 없었다
+        # (2026-08-17 리뷰). 한 객체를 디코드하면 그 끝까지 건너뛰어 중첩 재스캔(O(n²))도 없앤다.
         decoder = json.JSONDecoder()
-        candidates: list[Any] = []
-        for index, char in enumerate(stripped):
-            if char not in "[{":
+        index = 0
+        length = len(stripped)
+        while index < length:
+            if stripped[index] not in "[{":
+                index += 1
                 continue
             try:
-                value, _end = decoder.raw_decode(stripped[index:])
+                value, _end = decoder.raw_decode(stripped, index)
             except json.JSONDecodeError:
+                index += 1
                 continue
-            candidates.append(value)
-        if candidates:
-            return candidates[-1]
+            return value
     raise RunnerError("Higgsfield CLI returned malformed JSON")
 
 

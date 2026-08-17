@@ -209,7 +209,19 @@ def _validate_credit_usage(value: Any) -> dict[str, Any]:
     }
 
 
-def _validate_virality_report(report: dict[str, Any]) -> dict[str, Any]:
+def _validate_virality_report(
+    report: dict[str, Any],
+    *,
+    expected_generation_job_id: str | None = None,
+    expected_predictor_job_id: str | None = None,
+) -> dict[str, Any]:
+    """Virality 보고서를 검증한다.
+
+    생성 job(higgsfield_job_id)과 Predictor job(virality_job_id)은 **서로 다른 외부 작업**이다
+    (마이그 f1c7a4e82d90 이 그래서 별도 컬럼을 두었다). 불변식은 두 값이 같다는 게 아니라
+    **이 attempt 에 기록된 각 job 과 일치한다** 는 것이다 — 다른 attempt 의 보고서가 섞이는
+    것을 막되, 정상 보고서를 버리면 안 된다(2026-08-17 리뷰).
+    """
     unknown_keys = set(report) - _VIRALITY_REPORT_KEYS
     if unknown_keys:
         raise CreativeValidationError("Virality 보고서에 허용되지 않은 필드가 있어요")
@@ -220,8 +232,10 @@ def _validate_virality_report(report: dict[str, Any]) -> dict[str, Any]:
             normalized[field] = _report_identifier(normalized[field], field=field)
     generation_job_id = normalized.get("higgsfield_job_id")
     predictor_job_id = normalized.get("virality_job_id")
-    if generation_job_id and predictor_job_id and generation_job_id != predictor_job_id:
-        raise CreativeValidationError("Virality 보고서의 job ID가 서로 일치하지 않아요")
+    if expected_generation_job_id and generation_job_id and generation_job_id != expected_generation_job_id:
+        raise CreativeValidationError("Virality 보고서의 생성 job ID가 이 attempt 의 기록과 달라요")
+    if expected_predictor_job_id and predictor_job_id and predictor_job_id != expected_predictor_job_id:
+        raise CreativeValidationError("Virality 보고서의 Predictor job ID가 이 attempt 의 기록과 달라요")
 
     if "hook_peak_seconds" in normalized:
         normalized["hook_peak_seconds"] = _report_number(
@@ -244,7 +258,8 @@ def _validate_virality_report(report: dict[str, Any]) -> dict[str, Any]:
             )
     if "report_url" in normalized:
         normalized["report_url"] = _safe_higgsfield_report_url(normalized["report_url"])
-    if "human_review_required" in normalized and normalized["human_review_required"] is not True:
+    # 키를 빼면 통과하던 구멍 — 명시적으로 True 여야 한다(누락도 거부).
+    if normalized.get("human_review_required") is not True:
         raise CreativeValidationError("Virality 보고서는 사람 검수가 필요하다고 표시해야 해요")
     if "credit_usage" in normalized:
         normalized["credit_usage"] = _validate_credit_usage(normalized["credit_usage"])
@@ -1239,7 +1254,11 @@ async def store_output(
                 raise CreativeValidationError("올바른 JSON 보고서가 아니에요") from exc
             if not isinstance(loaded, dict):
                 raise CreativeValidationError("Virality 보고서는 JSON object여야 해요")
-            virality = _validate_virality_report(loaded)
+            virality = _validate_virality_report(
+                loaded,
+                expected_generation_job_id=attempt.higgsfield_job_id,
+                expected_predictor_job_id=attempt.virality_job_id,
+            )
         _validate_dimensions(attempt.brief.format, kind, width, height)
         if kind == "mp4" and is_primary and not has_audio:
             raise CreativeValidationError("대표 영상에는 AAC 음성 트랙이 필요해요")

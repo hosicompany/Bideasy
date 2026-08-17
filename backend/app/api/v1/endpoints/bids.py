@@ -405,9 +405,14 @@ def get_bid_context(
 ):
     """공고 컨텍스트와, 조건 충족 시 해당 응답에 묶인 활성화 receipt를 반환한다.
 
-    데이터 자체는 기존처럼 공개한다. receipt만 로그인 사용자 + 배포 Extension
-    origin + 실제 DB/OpenAPI 공고에 한정하며, 이미 활성화된 공고에는 재발급하지
-    않는다. 활성화 POST는 이 receipt를 별도로 검증·1회 소비한다.
+    **익명 요청**(Authorization 헤더 없음)은 기존처럼 공개 데이터를 준다. 단
+    **헤더가 있는데 무효·만료**면 401 로 거부한다 — 조용히 익명으로 강등하면
+    만료 토큰을 든 익스텐션이 "로그인 상태" 로 오인한 채 receipt 없는 응답을 받아
+    활성화가 영영 기록되지 않는다(test_context_rejects_stale_bearer_instead_of_
+    silently_downgrading). 클라이언트는 401 을 받으면 재로그인 후 재시도한다.
+    receipt 는 로그인 사용자 + 배포 Extension origin + 실제 DB/OpenAPI 공고에
+    한정하며, 이미 활성화된 공고에는 재발급하지 않는다. 활성화 POST 는 이 receipt 를
+    별도로 검증·1회 소비한다.
     """
     if not _valid_context_bid_no(bid_no):
         raise HTTPException(status_code=400, detail="공고번호 형식이 올바르지 않습니다.")

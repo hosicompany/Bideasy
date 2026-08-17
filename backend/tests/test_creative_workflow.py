@@ -1206,3 +1206,65 @@ def test_blog_derive_assets_force_stales_linked_creatives(admin_client, creative
 
     db_session.expire_all()
     assert db_session.get(models.CreativeBrief, creative_id).status == "STALE"
+
+
+def _claim_and_heartbeat_with_jobs(client, attempt_id, *, gen="hf-gen-0001", pred="hf-pred-0002"):
+    client.post(
+        "/api/v1/creative-runner/claim",
+        headers=_runner_headers(),
+        json={"runner_id": "mac-01", "cli_version": "1.1.23"},
+    )
+    beat = client.post(
+        f"/api/v1/creative-runner/{attempt_id}/heartbeat",
+        headers=_runner_headers(),
+        json={"runner_id": "mac-01", "status": "GENERATING", "higgsfield_job_id": gen, "virality_job_id": pred},
+    )
+    assert beat.status_code == 200, beat.text
+
+
+def _upload_report(client, attempt_id, report_bytes):
+    return client.post(
+        f"/api/v1/creative-runner/{attempt_id}/output",
+        headers=_runner_headers(),
+        files={"file": ("report.json", report_bytes, "application/json")},
+        data={"runner_id": "mac-01", "kind": "virality_report", "is_primary": "false"},
+    )
+
+
+def test_virality_report_accepts_distinct_generation_and_predictor_ids_that_match_attempt(
+    admin_client, client, creative_settings,
+):
+    """생성 job 과 Virality Predictor job 은 서로 다른 외부 작업이다 (마이그 f1c7a4e82d90 의 이유).
+
+    회귀: 검증이 '두 ID 가 서로 같아야 한다' 를 강제해서, 스키마 의도대로 서로 다른
+    ID 를 실은 정상 보고서를 422 로 버렸다(runner 는 두 칸에 같은 값을 써서 우연히
+    통과). 진짜 불변식은 '이 attempt 에 기록된 job 과 일치' 다.
+    """
+    _, attempt_id = _create_and_queue(admin_client)
+    _claim_and_heartbeat_with_jobs(client, attempt_id, gen="hf-gen-0001", pred="hf-pred-0002")
+
+    ok = _upload_report(client, attempt_id, _virality_report(higgsfield_job_id="hf-gen-0001", virality_job_id="hf-pred-0002"))
+    assert ok.status_code == 200, ok.text
+    stored = ok.json()["output"]["virality_json"]
+    assert stored["higgsfield_job_id"] == "hf-gen-0001"
+    assert stored["virality_job_id"] == "hf-pred-0002"
+
+
+def test_virality_report_rejects_ids_from_a_different_attempt(admin_client, client, creative_settings):
+    _, attempt_id = _create_and_queue(admin_client)
+    _claim_and_heartbeat_with_jobs(client, attempt_id, gen="hf-gen-0001", pred="hf-pred-0002")
+
+    foreign = _upload_report(client, attempt_id, _virality_report(higgsfield_job_id="hf-gen-9999", virality_job_id="hf-pred-0002"))
+    assert foreign.status_code == 422, foreign.text
+    foreign2 = _upload_report(client, attempt_id, _virality_report(higgsfield_job_id="hf-gen-0001", virality_job_id="hf-pred-9999"))
+    assert foreign2.status_code == 422, foreign2.text
+
+
+def test_virality_report_requires_human_review_flag_present(admin_client, client, creative_settings):
+    """키를 빼면 통과하던 구멍 — 명시적 True 가 있어야 한다."""
+    _, attempt_id = _create_and_queue(admin_client)
+    _claim_and_heartbeat_with_jobs(client, attempt_id)
+    payload = json.loads(_virality_report(higgsfield_job_id="hf-gen-0001", virality_job_id="hf-pred-0002"))
+    payload.pop("human_review_required")
+    missing = _upload_report(client, attempt_id, json.dumps(payload).encode("utf-8"))
+    assert missing.status_code == 422, missing.text

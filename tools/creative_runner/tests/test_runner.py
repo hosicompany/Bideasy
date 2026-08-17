@@ -526,3 +526,23 @@ def test_unknown_virality_schema_is_null_with_review_warning(tmp_path: Path):
     assert payload["attention_overlaps_product"] is None
     assert payload["analysis_warning"] == "virality_metrics_incomplete"
     assert payload["human_review_required"] is True
+
+
+def test_write_report_keeps_generation_and_predictor_job_ids_distinct(tmp_path: Path):
+    """생성 job 과 Predictor job 은 다른 외부 작업 — 보고서 두 칸에 각각의 id 가 들어가야 한다.
+
+    회귀: 두 칸에 Predictor id 를 똑같이 써서, 서버가 attempt 기록과 대조하자 생성 job 칸이
+    틀린 값으로 거부됐다. 서버 검증(attempt 별 대조)과 짝을 이룬다.
+    """
+    predictor = HiggsfieldResult({"hook_peak_seconds": 1.2, "sustain_score": 0.5, "attention_overlaps_product": True},
+                                 "pred-2222-2222", ())
+    report = runner_module._write_report(predictor, tmp_path, generation_job_id="gen-1111-1111")
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    assert payload["higgsfield_job_id"] == "gen-1111-1111"
+    assert payload["virality_job_id"] == "pred-2222-2222"
+
+    # 생성·분석이 한 작업(brain_activity)이면 호출부가 같은 id 를 넘긴다
+    (tmp_path / "same").mkdir()
+    report2 = runner_module._write_report(predictor, tmp_path / "same", generation_job_id="pred-2222-2222")
+    payload2 = json.loads(report2.read_text(encoding="utf-8"))
+    assert payload2["higgsfield_job_id"] == payload2["virality_job_id"] == "pred-2222-2222"
