@@ -1119,3 +1119,44 @@ def test_admin_growth_funnel_does_not_divide_disjoint_identity_namespaces(
     assert item["activation_rate_pct"] is None
     assert item["activation_rate_note"]
     assert "anonymous" in item["activation_rate_note"] or "익명" in item["activation_rate_note"]
+
+
+def test_public_growth_event_keeps_attribution_for_creative_that_went_stale_after_approval(
+    client,
+    db_session,
+):
+    """한 번 승인된 크리에이티브가 뒤에 STALE 이 돼도 그 방문자의 후속 이벤트는 폐기하면 안 된다.
+
+    회귀: 브리프 수정·소스 해시 변경으로 STALE 이 되면 그 이후 POST /growth/events 가
+    전부 400 이 됐고 app.js 는 .catch() 로 삼켰다. qualified_visit 은 이미 원장에 있어
+    분모만 남고 분자(free_value_completed 등)가 사라져 활성화 지표가 조용히 하향됐다.
+    한 번도 승인된 적 없는 브리프(DRAFT·미존재)의 400 은 유지한다.
+    """
+    stale_but_once_approved = _creative(db_session, status="STALE")
+    stale_but_once_approved.approved_at = datetime.now(timezone.utc) - timedelta(days=3)
+    never_approved_stale = _creative(db_session, status="STALE")  # approved_at 없음
+    db_session.commit()
+
+    kept = client.post(
+        "/api/v1/growth/events",
+        json={
+            "event_name": "free_value_completed",
+            "event_id": "growth-stale-keep-000001",
+            "anonymous_id": "anonymous-stale-00000001",
+            "creative_id": stale_but_once_approved.id,
+        },
+    )
+    assert kept.status_code == 202, kept.text
+    event = db_session.query(models.GrowthEvent).filter_by(dedupe_key="web:growth-stale-keep-000001").one()
+    assert event.creative_id == stale_but_once_approved.id  # 귀속은 역사적 사실 — 유지
+
+    rejected = client.post(
+        "/api/v1/growth/events",
+        json={
+            "event_name": "free_value_completed",
+            "event_id": "growth-stale-reject-00001",
+            "anonymous_id": "anonymous-stale-00000002",
+            "creative_id": never_approved_stale.id,
+        },
+    )
+    assert rejected.status_code == 400

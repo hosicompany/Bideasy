@@ -66,13 +66,24 @@ class NoticeCheckRequest(BaseModel):
 
 
 def _known_creative(db: Session, creative_id: str | None) -> str | None:
+    """귀속 가능한 creative_id 인지 판정한다.
+
+    기준은 '지금 상태' 가 아니라 '한 번이라도 승인된 적' 이다. 방문자가 승인된
+    크리에이티브를 통해 들어온 것은 역사적 사실이라, 그 뒤 브리프가 STALE 이 돼도
+    후속 이벤트(free_value_completed 등)를 폐기하면 qualified_visit 만 원장에 남아
+    지표가 조용히 하향된다(2026-08-17 리뷰). 한 번도 승인된 적 없는 브리프(DRAFT·
+    미존재)는 여전히 400 — 임의 UUID 를 붙여 귀속을 위조하는 경로를 막는다.
+    """
     if creative_id is None:
         return None
     exists = (
         db.query(models.CreativeBrief.id)
         .filter(
             models.CreativeBrief.id == creative_id,
-            models.CreativeBrief.status.in_(("APPROVED", "PUBLISHED")),
+            (
+                models.CreativeBrief.status.in_(("APPROVED", "PUBLISHED"))
+                | models.CreativeBrief.approved_at.isnot(None)
+            ),
         )
         .first()
     )
