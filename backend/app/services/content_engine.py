@@ -55,8 +55,8 @@ TOPIC_SEEDS: list[dict] = [
 
 _DEFAULT_LINKS = ["/calculator", "/diagnose", "/search"]
 _DEFAULT_CTA = (
-    "공고가 눈에 들어왔다면 [무료 자격 진단](/diagnose)으로 참여 가능 여부부터 확인하고, "
-    "[투찰가 계산기](/calculator)로 무효·적자 없는 안전 투찰가를 1원 단위까지 계산해보세요. "
+    "공고가 눈에 들어왔다면 [무료 자격 진단](/diagnose)으로 참가조건을 먼저 살펴보고, "
+    "[투찰가 계산기](/calculator)에서 공고에 적힌 A값·하한선 계산 기준을 확인해보세요. "
     "회원가입 없이 무료입니다."
 )
 

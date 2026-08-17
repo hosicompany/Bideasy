@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BidEasy — 공공입찰, 1원 단위까지 정확하게 안전하게</title>
-  <meta name="description" content="나라장터 공고에서 바로 투찰률 계산·낙찰하한선·A값·AI 분석·자격 매칭. 매주 자동 학습하는 자가보정 알고리즘. 신규 가입 Pro 14일 무료.">
+  <title>BidEasy — 나라장터 공고 옆에서 자격·A값·하한선 확인</title>
+  <meta name="description" content="보고 있는 나라장터 공고 화면에서 참가조건·계산 기준·주의 조항을 확인하세요. BidEasy Chrome 사이드패널은 낙찰가를 예측하지 않습니다.">
   <link rel="canonical" href="https://bideasy.kr/">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="BidEasy — 데이터 기반 입찰 안전 비서">
-  <meta property="og:description" content="나라장터에서 바로 투찰가 계산·AI 분석·자격 매칭. 신규 가입 Pro 14일 무료 체험.">
+  <meta property="og:title" content="나라장터 공고 옆에서, 자격·A값·하한선을 한 번에">
+  <meta property="og:description" content="보고 있는 공고 화면에서 참가조건·계산 기준·주의 조항을 확인하세요. 낙찰가는 예측하지 않습니다.">
   <meta property="og:url" content="https://bideasy.kr/">
   <meta property="og:site_name" content="BidEasy">
   <script type="application/ld+json">
@@ -18,7 +18,7 @@
     "name": "BidEasy",
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Web, Chrome Extension",
-    "description": "나라장터 공공입찰 분석·투찰 비서. 투찰가 계산, 낙찰하한율, A값 자동 수집, AI 공고 분석, 자격 매칭.",
+    "description": "나라장터 공고 옆에서 참가조건, A값, 낙찰하한선과 주의 조항을 확인하는 Chrome 사이드패널.",
     "url": "https://bideasy.kr",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "KRW", "description": "Free 플랜 + Pro 14일 무료 체험" }
   }
@@ -31,12 +31,12 @@
       {
         "@type": "Question",
         "name": "낙찰가를 예측해 주나요?",
-        "acceptedAnswer": { "@type": "Answer", "text": "아니요, 예측하지 않아요. 나라장터의 예정가격은 15개 복수예비가격 중 추첨으로 정해지기 때문에 구조적으로 랜덤이에요. '낙찰가 맞혀드립니다'는 검증이 불가능한 약속이라 저희는 하지 않습니다. 대신 무효 입찰과 적자 수주를 막는 안전 검증에 집중해요." }
+        "acceptedAnswer": { "@type": "Answer", "text": "아니요, 예측하지 않아요. 공고 원문과 입력값을 기준으로 자격, A값, 낙찰하한선과 주의 조항처럼 확인 가능한 항목을 보여드립니다." }
       },
       {
         "@type": "Question",
         "name": "무료로는 어디까지 쓸 수 있나요?",
-        "acceptedAnswer": { "@type": "Answer", "text": "투찰가·낙찰하한선 계산기는 회원가입 없이도 무제한 무료예요. 가입하면 공고 검색·관심공고·마감 추적과 AI 공고 분석 일 1회가 추가돼요. Pro는 계산된 숫자가 실제로 안전한지 과거 개찰 데이터로 검증하고, 경쟁 강도 참고치와 첨부문서 심층분석까지 제공해요." }
+        "acceptedAnswer": { "@type": "Answer", "text": "투찰가·낙찰하한선 계산기는 회원가입 없이도 무제한 무료예요. 가입하면 공고 검색·관심공고·마감 추적과 AI 공고 분석 일 1회가 추가돼요. Pro는 계산 결과를 과거 개찰 데이터와 비교하고, 경쟁 강도 참고치와 첨부문서 심층분석을 제공해요." }
       },
       {
         "@type": "Question",
@@ -51,7 +51,7 @@
       {
         "@type": "Question",
         "name": "A값이 뭔가요? 왜 중요한가요?",
-        "acceptedAnswer": { "@type": "Answer", "text": "국민연금·건강보험·노인장기요양·산재·고용보험 합계 금액으로, 공사 입찰에서 투찰률이 적용되지 않는 부분이에요. A값을 빼먹고 계산하면 하한선 미달로 무효가 될 수 있어요. A값은 조달청 OpenAPI에 없고 공고문·첨부문서에만 있는데, BidEasy는 첨부 파싱과 사용자 제보로 자동 수집해 계산에 반영해요." }
+        "acceptedAnswer": { "@type": "Answer", "text": "국민연금·건강보험·노인장기요양·산재·고용보험 등 공고가 정한 합계 금액으로, 공사 입찰에서 투찰률이 적용되지 않는 부분이에요. BidEasy는 확인된 A값이 있으면 계산에 반영하고, 확인되지 않은 공고에서는 추정값을 만들지 않습니다. 최종 계산 전 공고 원문과 기준일을 확인하세요." }
       },
       {
         "@type": "Question",
@@ -177,18 +177,18 @@
       <div>
         <div style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow-sm);">
           <span class="dot" style="background:var(--safe);"></span>
-          <span style="font-size:12.5px;font-weight:600;color:var(--ink-2);white-space:nowrap;">나라장터 입찰, 더 정확하게</span>
+          <span style="font-size:12.5px;font-weight:600;color:var(--ink-2);white-space:nowrap;">나라장터 화면 안에서 바로 확인</span>
         </div>
-        <h1 class="h-hero" style="font-weight:800;letter-spacing:-1.8px;line-height:1.12;margin:22px 0 0;">1원 단위까지,<br>정확하게 <span style="color:var(--accent);">안전하게</span>.</h1>
-        <p style="font-size:17.5px;color:var(--muted);line-height:1.65;margin-top:18px;max-width:430px;">공고를 여는 순간 투찰률·낙찰하한선·A값을 계산합니다. 낙찰가는 찍지 않아요 — 적자 수주를 막는 정밀 계기입니다.</p>
+        <h1 class="h-hero" style="font-weight:800;letter-spacing:-1.8px;line-height:1.12;margin:22px 0 0;">나라장터 공고 옆에서,<br><span style="color:var(--accent);">자격·A값·하한선</span>을 한 번에.</h1>
+        <p style="font-size:17.5px;color:var(--muted);line-height:1.65;margin-top:18px;max-width:500px;">보고 있는 공고 화면에서 참가조건·계산 기준·주의 조항을 확인하세요. 낙찰가는 예측하지 않습니다.</p>
         <div style="display:flex;gap:10px;margin-top:28px;flex-wrap:wrap;">
-          <a class="btn btn-primary btn-lg" href="/signup" data-ev="cta_hero_trial">14일 무료로 시작하기</a>
+          <a class="btn btn-primary btn-lg" href="/guide" data-ev="cta_hero_check">이 공고 확인하기</a>
           <a class="btn btn-ghost btn-lg" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener" data-ev="cta_hero_install">Chrome에 설치</a>
         </div>
-        <p style="margin-top:16px;font-size:13px;color:var(--faint);">신용카드 불필요 · 체험 종료 시 자동으로 무료 플랜 전환 · 30초 가입</p>
+        <p style="margin-top:16px;font-size:13px;color:var(--faint);">투찰 전 마지막 확인, BidEasy.<br><span style="font-size:11px;">조달청·나라장터의 공식 또는 제휴 서비스가 아닌 민간 서비스입니다.</span></p>
         <p style="margin-top:14px;font-size:14px;">
           <a href="/diagnose" data-ev="cta_hero_diagnose" style="color:var(--accent);font-weight:700;text-decoration:none;">
-            가입 없이 → 우리 회사가 넣을 수 있는 공고 30초 진단 →
+            가입 없이 우리 회사 조건과 맞는 공고 확인하기 →
           </a>
         </p>
       </div>
@@ -222,17 +222,17 @@
             </div>
             <div style="display:flex;align-items:center;gap:7px;margin-top:13px;">
               <span class="dot" id="demo-dot" style="background:var(--safe);"></span>
-              <span id="demo-state" style="font-size:13px;font-weight:700;color:var(--safe);">안전선 통과</span>
+              <span id="demo-state" style="font-size:13px;font-weight:700;color:var(--safe);">하한선 이상</span>
               <span class="num" id="demo-diff" style="margin-left:auto;font-size:13px;color:var(--safe);font-weight:600;">+0.45%p</span>
             </div>
             <!-- 무료는 여기까지 = "숫자". 아래부터 Pro = "판단" -->
             <div style="margin-top:15px;padding-top:11px;border-top:1px solid var(--line);">
               <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-                <span class="micro" style="font-size:9.5px;">이 투찰가, 정말 안전할까요?</span>
+                <span class="micro" style="font-size:9.5px;">이 계산, 어떤 기준과 비교할까요?</span>
               </div>
-              <div class="lockrow"><span class="lk"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg></span><span class="t">과거 개찰 데이터 대비 검증</span><span class="tier">Pro</span><span class="v">상위 안전 구간</span></div>
-              <div class="lockrow"><span class="lk"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg></span><span class="t">첨부문서 심층분석 (HWP·PDF)</span><span class="tier">Pro</span><span class="v">독소조항 탐지</span></div>
-              <div class="lockrow"><span class="lk"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg></span><span class="t">안전 투찰 가이드 (공사)</span><span class="tier" style="color:var(--warn);background:var(--warn-soft);">Pro+</span><span class="v">추천 안전선</span></div>
+              <div class="lockrow"><span class="lk"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg></span><span class="t">과거 개찰 데이터와 비교</span><span class="tier">Pro</span><span class="v">과거 분포 비교</span></div>
+              <div class="lockrow"><span class="lk"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg></span><span class="t">첨부문서 심층분석 (HWP·PDF)</span><span class="tier">Pro</span><span class="v">주의 조항 후보</span></div>
+              <div class="lockrow"><span class="lk"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg></span><span class="t">공사 기준 참고</span><span class="tier" style="color:var(--warn);background:var(--warn-soft);">Pro+</span><span class="v">검토 근거</span></div>
               <a class="btn btn-primary btn-block btn-sm" style="margin-top:11px;" href="/signup" data-ev="cta_demo_unlock">Pro 14일 무료로 잠금 해제</a>
               <a href="/calculator" data-ev="cta_demo_calc" style="display:block;text-align:center;margin-top:9px;font-size:12.5px;color:var(--muted);text-decoration:none;">A값까지 넣어 정밀 계산하기 →</a>
             </div>
@@ -248,7 +248,7 @@
       <div style="padding:24px 0;"><div class="num" id="hero-pass" data-count="94.9%" style="font-size:24px;font-weight:600;color:var(--accent);">94.9%</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">백테스트 하한선 통과율</div></div>
       <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" id="hero-count" data-count="4,848" style="font-size:24px;font-weight:600;">4,848</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">학습 개찰 데이터</div></div>
       <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" style="font-size:24px;font-weight:600;">매주</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">자가보정 재학습</div></div>
-      <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" data-count="30s" style="font-size:24px;font-weight:600;">30s</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">공고 분석 시간</div></div>
+      <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" style="font-size:24px;font-weight:600;">공고 옆</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">사이드패널 확인</div></div>
     </div>
   </div></section>
 
@@ -257,8 +257,8 @@
     <div class="feat-grid">
       <div class="feat-text" data-rv>
         <span class="eyebrow">Chrome 익스텐션</span>
-        <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">나라장터 공고를 여는 순간,<br>분석이 옆에 떠 있어요</h2>
-        <p style="font-size:16px;color:var(--muted);line-height:1.7;margin-top:14px;max-width:440px;">엑셀로 옮겨 적을 필요 없어요. 보고 있는 공고 페이지 위에 낙찰하한선·A값·자격 매칭·AI 요약이 바로 나타납니다. 계정 하나로 웹과 자동 연동돼요.</p>
+        <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">나라장터 공고를 열면,<br>확인할 기준이 옆에 있어요</h2>
+        <p style="font-size:16px;color:var(--muted);line-height:1.7;margin-top:14px;max-width:440px;">엑셀로 옮겨 적을 필요 없이 보고 있는 공고 옆에서 낙찰하한선·확인된 A값·자격 조건·AI 요약을 함께 검토할 수 있어요. 계정 하나로 웹과 연동됩니다.</p>
         <div style="display:flex;flex-direction:column;gap:9px;margin-top:20px;" class="ext-points"></div>
         <a class="btn btn-primary btn-lg" style="margin-top:26px;" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener" data-ev="cta_ext_install">Chrome에 무료 설치</a>
       </div>
@@ -292,12 +292,12 @@
                 <div style="display:flex;align-items:center;gap:6px;">
                   <img src="/brand/bideasy-mark.svg" width="15" height="15" alt="">
                   <span style="font-size:11.5px;font-weight:800;">BidEasy</span>
-                  <span class="chip chip-safe" style="margin-left:auto;font-size:9.5px;padding:2px 6px;">자격 PASS</span>
+                  <span class="chip chip-safe" style="margin-left:auto;font-size:9.5px;padding:2px 6px;">자격 조건 확인</span>
                 </div>
                 <div style="margin-top:10px;">
                   <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);"><span style="font-size:10.5px;color:var(--muted);">낙찰하한선</span><span class="num" style="font-size:10.5px;font-weight:600;">438,725,120</span></div>
-                  <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);"><span style="font-size:10.5px;color:var(--muted);">A값 <span style="color:var(--safe);">자동</span></span><span class="num" style="font-size:10.5px;font-weight:600;">12,340,000</span></div>
-                  <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;"><span style="font-size:10.5px;color:var(--muted);">안전 투찰가</span><span class="num" style="font-size:10.5px;font-weight:700;color:var(--safe);">441,001,230</span></div>
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);"><span style="font-size:10.5px;color:var(--muted);">A값 <span style="color:var(--safe);">확인됨</span></span><span class="num" style="font-size:10.5px;font-weight:600;">12,340,000</span></div>
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;"><span style="font-size:10.5px;color:var(--muted);">계산 결과</span><span class="num" style="font-size:10.5px;font-weight:700;color:var(--safe);">441,001,230</span></div>
                 </div>
                 <div style="position:relative;height:6px;border-radius:3px;overflow:hidden;background:linear-gradient(90deg,var(--danger-soft) 0 38%,var(--safe-soft) 38% 100%);margin-top:6px;"></div>
                 <div style="margin-top:10px;padding:8px;border-radius:8px;background:var(--sunken);">
@@ -318,7 +318,7 @@
   <section class="lp-x" style="padding-top:84px;padding-bottom:20px;"><div style="max-width:1080px;margin:0 auto;">
     <div data-rv style="text-align:center;">
       <span class="eyebrow">왜 BidEasy인가</span>
-      <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">손으로 계산하다 적자 수주,<br>이제 그만하세요</h2>
+      <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">공고·엑셀·탭을 오가는 확인,<br>이제 한 화면에서 하세요</h2>
     </div>
     <div class="g2" style="gap:20px;margin-top:40px;">
       <div class="card" data-rv style="padding:26px;border-top:3px solid var(--danger);">
@@ -346,7 +346,7 @@
           <span style="width:42px;height:42px;border-radius:13px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex-shrink:0;"><svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor"><path d="M8.7 1 3.2 8.6c-.2.3 0 .7.4.7h3l-1 5.3c-.1.4.5.7.8.3l5.5-7.6c.2-.3 0-.7-.4-.7h-3l1-5.3c.1-.4-.5-.7-.8-.3z"/></svg></span>
           <div><div style="font-size:15px;font-weight:800;">반복 입찰 소규모 시공사</div><div class="micro" style="font-size:9.5px;margin-top:3px;">전기·통신 공사 · 월 15~30건</div></div>
         </div>
-        <p style="font-size:14px;color:var(--muted);line-height:1.7;margin:16px 0 0;">하한선 바로 위 1원 싸움을 매번 반복하고 계신가요? 엑셀로 계산하다 한 번만 실수해도 그대로 무효거나 적자로 이어집니다.</p>
+        <p style="font-size:14px;color:var(--muted);line-height:1.7;margin:16px 0 0;">공고마다 A값과 하한선을 다시 옮겨 적고 계신가요? 제출 전에 계산 기준과 입력값을 한 번 더 대조할 수 있습니다.</p>
         <div style="margin-top:auto;padding-top:16px;">
           <div class="micro" style="font-size:9px;margin-bottom:9px;color:var(--safe);">BidEasy에서는</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;"><span class="chip chip-safe">1원 단위 계산</span><span class="chip chip-accent">하한 미달 자동 경고</span></div>
@@ -361,7 +361,7 @@
         <p style="font-size:14px;color:var(--muted);line-height:1.7;margin:16px 0 0;">사정률·A값·낙찰하한율… 용어부터 낯설고, 뭘 잘못 넣었는지도 몰라 매번 불안하시죠. 큰 계약일수록 실수가 더 무섭습니다.</p>
         <div style="margin-top:auto;padding-top:16px;">
           <div class="micro" style="font-size:9px;margin-bottom:9px;color:var(--safe);">BidEasy에서는</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;"><span class="chip chip-safe">A값 자동 수집</span><span class="chip chip-accent">AI 3줄 요약·독소조항</span></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;"><span class="chip chip-safe">확인된 A값 반영</span><span class="chip chip-accent">AI 3줄 요약·주의 조항</span></div>
         </div>
       </div>
 
@@ -373,7 +373,7 @@
         <p style="font-size:14px;color:var(--muted);line-height:1.7;margin:16px 0 0;">공고마다 우리 회사가 자격이 되는지 일일이 대조할 시간이 없으신가요? 헛심 입찰만 줄여도 하루가 훨씬 가벼워집니다.</p>
         <div style="margin-top:auto;padding-top:16px;">
           <div class="micro" style="font-size:9px;margin-bottom:9px;color:var(--safe);">BidEasy에서는</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;"><span class="chip chip-safe">자격 자동 매칭</span><span class="chip chip-accent">면허·지역 즉시 판정</span></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;"><span class="chip chip-safe">자격 조건 대조</span><span class="chip chip-accent">면허·지역 확인</span></div>
         </div>
       </div>
 
@@ -384,8 +384,8 @@
   <section class="lp-x" style="padding-top:84px;"><div style="max-width:1080px;margin:0 auto;">
     <div data-rv style="text-align:center;">
       <span class="eyebrow">무료와 Pro의 차이</span>
-      <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">계산은 무료로 드려요.<br>Pro는 <span style="color:var(--accent);">판단</span>을 드립니다</h2>
-      <p style="font-size:16px;color:var(--muted);margin-top:12px;max-width:560px;margin-left:auto;margin-right:auto;">숫자는 누구나 뽑을 수 있어요. 진짜 어려운 건 "이 숫자로 들어가도 되나?"라는 판단이에요.</p>
+      <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">계산은 무료로 드려요.<br>Pro는 <span style="color:var(--accent);">검토 근거</span>를 더합니다</h2>
+      <p style="font-size:16px;color:var(--muted);margin-top:12px;max-width:560px;margin-left:auto;margin-right:auto;">계산 결과와 함께 과거 개찰 데이터·첨부문서를 비교해 볼 수 있어요. 최종 투찰 판단은 공고 원문과 발주기관 기준으로 확인하세요.</p>
     </div>
     <div class="g3" style="gap:16px;margin-top:40px;" id="ladder"></div>
   </div></section>
@@ -394,8 +394,8 @@
   <section class="lp-x" style="padding-top:84px;"><div style="max-width:1080px;margin:0 auto;">
     <div data-rv style="text-align:center;">
       <span class="eyebrow">다른 서비스와 뭐가 다른가</span>
-      <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">예측하는 쪽이 아니라,<br>안 잃게 <span style="color:var(--accent);">지켜주는</span> 쪽</h2>
-      <p style="font-size:16px;color:var(--muted);line-height:1.7;margin:14px auto 0;max-width:560px;">낙찰가를 예측하는 서비스도, 공고만 알려주는 서비스도 있어요. BidEasy는 못 맞히는 걸 맞히는 척하지 않고, 확실히 지킬 수 있는 것에 집중합니다.</p>
+      <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;line-height:1.3;">예측보다,<br><span style="color:var(--accent);">확인 가능한 기준</span>을 먼저</h2>
+      <p style="font-size:16px;color:var(--muted);line-height:1.7;margin:14px auto 0;max-width:560px;">BidEasy는 낙찰가를 예측하지 않습니다. 보고 있는 공고의 참가조건·계산 기준·주의 조항을 같은 화면에서 확인하는 데 집중합니다.</p>
     </div>
 
     <div data-rv class="card bd-scroll" style="margin-top:36px;padding:8px;overflow-x:auto;">
@@ -403,7 +403,7 @@
         <thead>
           <tr>
             <th style="text-align:left;padding:16px 14px;font-family:var(--font-mono);font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--muted);font-weight:500;width:30%;">비교 항목</th>
-            <th style="padding:14px 12px;background:var(--accent-soft);border-radius:12px 12px 0 0;"><div style="font-size:15px;font-weight:800;color:var(--accent);">BidEasy</div><div style="font-size:10.5px;color:var(--accent);opacity:.8;margin-top:2px;">안전 검증형</div></th>
+            <th style="padding:14px 12px;background:var(--accent-soft);border-radius:12px 12px 0 0;"><div style="font-size:15px;font-weight:800;color:var(--accent);">BidEasy</div><div style="font-size:10.5px;color:var(--accent);opacity:.8;margin-top:2px;">기준 확인형</div></th>
             <th style="padding:14px 12px;"><div style="font-size:13.5px;font-weight:700;color:var(--ink-2);">A 유형</div><div style="font-size:10.5px;color:var(--faint);margin-top:2px;">낙찰가 예측형</div></th>
             <th style="padding:14px 12px;"><div style="font-size:13.5px;font-weight:700;color:var(--ink-2);">B 유형</div><div style="font-size:10.5px;color:var(--faint);margin-top:2px;">공고 알림·검색형</div></th>
             <th style="padding:14px 12px;"><div style="font-size:13.5px;font-weight:700;color:var(--ink-2);">C</div><div style="font-size:10.5px;color:var(--faint);margin-top:2px;">엑셀·수기</div></th>
@@ -420,8 +420,8 @@
     <div class="grid-bg" style="padding:clamp(36px,5vw,56px) clamp(20px,4vw,48px);color:var(--ink);">
       <div style="text-align:center;">
         <span class="eyebrow" style="color:var(--accent);">BidEasy만의 차별점</span>
-        <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;color:var(--ink);line-height:1.3;">쓸수록 똑똑해지는<br>자가보정 알고리즘</h2>
-        <p style="font-size:16px;color:var(--muted);line-height:1.7;margin:14px auto 0;max-width:540px;">매주 새로 쌓이는 개찰 결과를 스스로 학습해 사정률 추천값을 재최적화합니다. 회귀 가드가 성능 퇴행을 차단하니, 손대지 않아도 시간이 갈수록 정확해집니다.</p>
+        <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.8px;margin-top:12px;color:var(--ink);line-height:1.3;">새 개찰 결과로 다시 보는<br>데이터 참고값</h2>
+        <p style="font-size:16px;color:var(--muted);line-height:1.7;margin:14px auto 0;max-width:540px;">새 개찰 결과로 참고값 후보를 다시 평가합니다. 회귀 게이트를 통과하지 못한 후보는 적용하지 않으며, 참고값은 낙찰 결과를 보장하지 않습니다.</p>
       </div>
       <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:20px;flex-wrap:wrap;">
         <span class="chip" style="background:var(--safe-soft);color:var(--safe);"><span class="dot" style="background:var(--safe);box-shadow:0 0 8px var(--safe);"></span>매주 자동 갱신</span>
@@ -445,8 +445,8 @@
         <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.6px;margin-top:12px;line-height:1.35;">낙찰가를 찍어주는 도구는<br>이미 많았습니다</h2>
         <div style="font-size:15.5px;color:var(--ink-2);line-height:1.85;margin-top:20px;">
           <p style="margin:0;">입찰 시장에서 가장 흔한 약속이 "낙찰가를 예측해드립니다"예요. 그런데 나라장터의 예정가격은 15개 복수예비가격 중 <b style="color:var(--ink);">추첨</b>으로 정해집니다. 구조적으로 아무도 못 맞혀요. 맞혔다면 그건 실력이 아니라 운이었을 뿐이고요.</p>
-          <p style="margin:16px 0 0;">그래서 저희는 반대로 갔습니다. <b style="color:var(--ink);">못 맞히는 걸 맞히는 척하는 대신, 확실히 지킬 수 있는 걸 지키자.</b> 하한선 아래로 잘못 들어가 무효가 되거나, 계산 실수로 적자를 떠안는 일 — 이건 정확한 데이터와 계산으로 막을 수 있는 영역이니까요.</p>
-          <p style="margin:16px 0 0;">BidEasy가 낙찰가를 찍지 않는 이유입니다. 대신 사장님이 오늘 보는 공고에서 <b style="color:var(--accent);">잃지 않도록</b>, 1원 단위까지 정확하게 지켜드릴게요.</p>
+          <p style="margin:16px 0 0;">그래서 저희는 반대로 갔습니다. <b style="color:var(--ink);">못 맞히는 걸 맞히는 척하는 대신, 확인할 수 있는 기준을 먼저 보여드리자.</b> 참가조건·A값·하한선·주의 조항은 공고 원문과 입력값으로 대조할 수 있는 영역이기 때문입니다.</p>
+          <p style="margin:16px 0 0;">BidEasy가 낙찰가를 찍지 않는 이유입니다. 사장님이 오늘 보고 있는 공고에서 <b style="color:var(--accent);">투찰 전에 다시 확인할 항목</b>을 한 화면에 모읍니다.</p>
         </div>
       </div>
     </div>
@@ -479,7 +479,7 @@
       <div class="grid-bg" style="position:absolute;inset:0;opacity:.4;--grid-line:rgba(255,255,255,0.12);"></div>
       <div style="position:relative;">
         <h2 class="h-sec" style="font-weight:800;letter-spacing:-0.6px;">지금 바로 시작하세요</h2>
-        <p style="font-size:16.5px;opacity:.9;margin:12px 0 26px;">설치 1초, 가입 30초. 오늘 보는 공고부터 BidEasy와 함께.</p>
+        <p style="font-size:16.5px;opacity:.9;margin:12px 0 26px;">오늘 보고 있는 나라장터 공고 옆에서 확인해 보세요.</p>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
           <a class="btn btn-lg" style="background:var(--surface);color:var(--accent);" href="/signup" data-ev="cta_final_trial">14일 무료 체험 시작</a>
           <a class="btn btn-lg" style="background:transparent;color:var(--on-accent);border:1.5px solid rgba(255,255,255,.5);" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener" data-ev="cta_final_install">Chrome에 무료 설치</a>
@@ -494,7 +494,7 @@
     <div style="max-width:1080px;margin:0 auto;display:flex;justify-content:space-between;gap:32px;flex-wrap:wrap;">
       <div style="max-width:280px;">
         <a class="brand" href="/"><img src="/brand/bideasy-mark.svg" width="22" height="22" alt="">BidEasy</a>
-        <p style="margin-top:10px;font-size:13.5px;color:var(--muted);line-height:1.6;">공공 입찰 시장의 중소 시공사를 위한 데이터 기반 입찰 안전 비서.</p>
+        <p style="margin-top:10px;font-size:13.5px;color:var(--muted);line-height:1.6;">공공 입찰 시장의 중소 시공사를 위한 공고 기준 확인 도구.</p>
       </div>
       <div style="display:flex;gap:48px;flex-wrap:wrap;">
         <div><div style="font-size:12.5px;font-weight:700;margin-bottom:12px;">제품</div><a style="display:block;font-size:13.5px;color:var(--muted);padding:4px 0;" href="/guide">사용 가이드</a><a style="display:block;font-size:13.5px;color:var(--muted);padding:4px 0;" href="/blog">블로그</a><a style="display:block;font-size:13.5px;color:var(--muted);padding:4px 0;" href="/pricing">요금제</a></div>
@@ -512,8 +512,8 @@
   <script>
   (function () {
     // ── data (would come from your API / server template) ──
-    var BAD = ['공고마다 엑셀로 사정률·투찰가 직접 계산','하한선 실수로 적자 수주 또는 무효 입찰','공고문 수십 장 읽으며 독소조항 놓침','자격 요건 일일이 대조, 헛심 입찰'];
-    var GOOD = ['슬라이더 한 번에 1원 단위 투찰가 산출','하한선 미달 시 자동 빨간 경고','AI가 3줄 요약 + 독소조항 자동 탐지','면허·지역 자동 매칭으로 참여 여부 즉시'];
+    var BAD = ['공고마다 엑셀로 사정률·투찰가 다시 입력','A값·하한선·입력값을 여러 탭에서 대조','공고문과 첨부의 주의 조건을 따로 메모','면허·지역 참가조건을 공고마다 다시 확인'];
+    var GOOD = ['보고 있는 공고 옆에서 계산 기준 확인','하한선 미달 구간을 화면에서 경고','AI 요약과 주의 조항을 원문과 함께 검토','등록한 면허·지역 기준으로 조건 대조'];
     var CHECK = '<svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5"/></svg>';
     var ALERT = '<svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3l5.5 10h-11z M8 7.2v3 M8 11.6v.01"/></svg>';
     function rowList(items, good) {
@@ -525,7 +525,7 @@
     document.querySelector('.ps-list-2').innerHTML = rowList(GOOD, true);
 
     // 익스텐션 섹션 포인트
-    var EXT = ['공고 상세 페이지 위 오버레이 — 탭 전환 없음','A값 자동 수집 · 낙찰하한선 즉시 계산','내 면허·지역 기준 자격 PASS/FAIL 뱃지'];
+    var EXT = ['공고 상세 페이지 옆 사이드패널 — 탭 전환 없음','확인된 A값 반영 · 낙찰하한선 계산','내 면허·지역 기준 자격 조건 대조'];
     document.querySelector('.ext-points').innerHTML = EXT.map(function (t) {
       return '<div style="display:flex;gap:10px;font-size:14.5px;color:var(--ink-2);font-weight:600;"><span style="color:var(--accent);margin-top:2px;">' + CHECK + '</span>' + t + '</div>';
     }).join('');
@@ -533,10 +533,10 @@
     // ── 경쟁 비교표: 접근 유형(A 예측형 / B 알림형 / C 수기) vs BidEasy ──
     // 마크: 'y'=지원 / 'p'=부분(방식에 따라) / 'n'=미지원. sub=작은 캡션(선택).
     var CMP = [
-      ['접근 방식', ['t','안전 검증(비예측)'], ['t','낙찰가 예측'], ['t','공고 알림·검색'], ['t','직접 계산']],
-      ['낙찰하한선 1원 단위 안전 검증', ['y'], ['p','예측 중심'], ['n'], ['p','수기·실수 위험']],
-      ['A값 자동 수집·계산 반영', ['y'], ['p'], ['n'], ['n','직접 입력']],
-      ['근거 공개 (개찰 데이터·주간 자가보정)', ['y'], ['p','모델 비공개'], ['n'], ['n']],
+      ['접근 방식', ['t','기준 확인(비예측)'], ['t','낙찰가 예측'], ['t','공고 알림·검색'], ['t','직접 계산']],
+      ['낙찰하한선 1원 단위 계산', ['y'], ['p','예측 중심'], ['n'], ['p','수기 입력']],
+      ['확인된 A값 계산 반영', ['y'], ['p'], ['n'], ['n','직접 입력']],
+      ['근거 표시 (개찰 데이터·평가 기준)', ['y'], ['p','모델 비공개'], ['n'], ['n']],
       ['나라장터 화면 위 실시간 오버레이', ['y'], ['n','별도 웹'], ['p'], ['n']],
       ['영구 무료로 시작', ['y','계산기 무제한'], ['p','체험 횟수 제한'], ['p'], ['y','단, 수동']]
     ];
@@ -564,11 +564,11 @@
       ['무료', '숫자를 드려요', '투찰가·낙찰하한선을 1원 단위로. 회원가입 없이도 계산기는 무제한이에요.',
         ['투찰가·하한선 계산 무제한','공고 검색 · 관심공고 · 마감 추적','AI 공고 분석 일 1회'],
         false, '무료로 계산해 보기', '/calculator', 'cta_ladder_free'],
-      ['Pro', '판단을 드려요', '그 숫자로 들어가도 되는지 — 과거 개찰 데이터가 대신 검증해요.',
-        ['내 투찰가, 과거 개찰 데이터로 검증','개찰 결과 추적','첨부문서 심층분석 (HWP·PDF)','AI 분석 일 50회'],
+      ['Pro', '검토 근거를 더해요', '계산 결과를 과거 개찰 데이터와 비교하고 첨부문서를 함께 검토해요.',
+        ['내 계산 결과와 과거 개찰 데이터 비교','개찰 결과 추적','첨부문서 심층분석 (HWP·PDF)','AI 분석 일 50회'],
         true, 'Pro 14일 무료 체험', '/signup', 'cta_ladder_pro'],
-      ['Pro+', '전략을 드려요', '공사 입찰의 안전선까지 챙기는 한 수 위의 준비.',
-        ['안전 투찰 가이드 (공사 입찰)','AI 분석 무제한','Pro의 모든 기능'],
+      ['Pro+', '참고 범위를 넓혀요', '공사 기준 참고와 기관별 분포를 한 화면에서 더 살펴보세요.',
+        ['공사 기준 참고','AI 분석 무제한','Pro의 모든 기능'],
         false, 'Pro+ 자세히 보기', '/pricing', 'cta_ladder_proplus']
     ];
     document.getElementById('ladder').innerHTML = LADDER.map(function (l) {
@@ -585,7 +585,7 @@
     var TIERS = [
       ['Free','0','영구 무료',['투찰가 계산기 무제한','공고 피드 · 즐겨찾기','AI 분석 일 1회'],false,'무료로 시작','/signup','cta_pricing_free'],
       ['Pro','19,900','연 191,000원 · 20% 할인',['AI 분석 일 50회','Deep Analysis (HWP·PDF)','경쟁 강도 참고치 · 투찰가 검증','Pro 14일 무료 체험'],true,'14일 무료 체험','/signup','cta_pricing_pro','24,900'],
-      ['Pro+','39,900','연 383,000원 · 20% 할인',['Pro의 모든 기능','AI 분석 무제한','기관 프로파일링 · 사정률 분포 분석','안전 투찰 가이드'],false,'자세히 보기','/pricing','cta_pricing_proplus','49,900']
+      ['Pro+','39,900','연 383,000원 · 20% 할인',['Pro의 모든 기능','AI 분석 무제한','기관 프로파일링 · 사정률 분포 분석','공사 기준 참고'],false,'자세히 보기','/pricing','cta_pricing_proplus','49,900']
     ];
     document.getElementById('pricing').innerHTML = TIERS.map(function (t) {
       var feats = t[3].map(function (f) { return '<div style="display:flex;gap:8px;font-size:13.5px;color:var(--muted);"><span style="color:var(--safe);margin-top:1px;">' + CHECK + '</span>' + f + '</div>'; }).join('');
@@ -601,11 +601,11 @@
 
     // ── FAQ (본문은 상단 FAQPage JSON-LD와 동일해야 함 — SEO 일치 원칙) ──
     var FAQ = [
-      ['낙찰가를 예측해 주나요?', '아니요, <b style="color:var(--ink);">예측하지 않아요.</b> 나라장터의 예정가격은 15개 복수예비가격 중 추첨으로 정해지기 때문에 구조적으로 랜덤이에요. "낙찰가 맞혀드립니다"는 검증이 불가능한 약속이라 저희는 하지 않습니다. 대신 무효 입찰과 적자 수주를 막는 <b style="color:var(--ink);">안전 검증</b>에 집중해요.'],
-      ['무료로는 어디까지 쓸 수 있나요?', '투찰가·낙찰하한선 계산기는 회원가입 없이도 <b style="color:var(--ink);">무제한 무료</b>예요. 가입하면 공고 검색·관심공고·마감 추적과 AI 공고 분석 일 1회가 추가돼요. Pro는 계산된 숫자가 실제로 안전한지 과거 개찰 데이터로 검증하고, 경쟁 강도 참고치와 첨부문서 심층분석까지 제공해요.'],
+      ['낙찰가를 예측해 주나요?', '아니요, <b style="color:var(--ink);">예측하지 않아요.</b> 공고 원문과 입력값을 기준으로 자격·A값·낙찰하한선·주의 조항처럼 확인 가능한 항목을 보여드립니다.'],
+      ['무료로는 어디까지 쓸 수 있나요?', '투찰가·낙찰하한선 계산기는 회원가입 없이도 <b style="color:var(--ink);">무제한 무료</b>예요. 가입하면 공고 검색·관심공고·마감 추적과 AI 공고 분석 일 1회가 추가돼요. Pro는 계산 결과를 과거 개찰 데이터와 비교하고, 경쟁 강도 참고치와 첨부문서 심층분석을 제공해요.'],
       ['14일 무료 체험에 신용카드가 필요한가요?', '아니요. 가입만 하면 카드 등록 없이 Pro 전 기능이 14일간 자동으로 열려요. 체험이 끝나면 자동으로 무료 플랜으로 전환되고, 결제는 직접 선택하실 때만 진행돼요.'],
       ['크롬 익스텐션 없이 웹만으로도 쓸 수 있나요?', '네. bideasy.kr에서 공고 검색·계산기·AI 분석·대시보드를 모두 쓸 수 있어요. 익스텐션을 설치하면 나라장터 공고 페이지를 여는 순간 그 위에 분석 패널이 바로 떠서 왔다 갔다 할 필요가 없어요. 계정 하나로 둘 다 연동됩니다.'],
-      ['A값이 뭔가요? 왜 중요한가요?', '국민연금·건강보험·노인장기요양·산재·고용보험 합계 금액으로, 공사 입찰에서 투찰률이 적용되지 않는 부분이에요. A값을 빼먹고 계산하면 하한선 미달로 무효가 될 수 있어요. A값은 조달청 OpenAPI에 없고 공고문·첨부문서에만 있는데, BidEasy는 첨부 파싱과 사용자 제보로 자동 수집해 계산에 반영해요.'],
+      ['A값이 뭔가요? 왜 중요한가요?', '국민연금·건강보험·노인장기요양·산재·고용보험 등 공고가 정한 합계 금액으로, 공사 입찰에서 투찰률이 적용되지 않는 부분이에요. BidEasy는 확인된 A값이 있으면 계산에 반영하고, 확인되지 않은 공고에서는 추정값을 만들지 않습니다. 최종 계산 전 공고 원문과 기준일을 확인하세요.'],
       ['구독 해지는 어떻게 하나요?', '마이페이지에서 언제든 클릭 몇 번으로 해지할 수 있어요. 해지해도 이미 결제한 기간이 끝날 때까지는 그대로 쓸 수 있고, 이후 무료 플랜으로 전환돼요. 위약금 같은 건 없습니다.']
     ];
     document.getElementById('faq').innerHTML = FAQ.map(function (q) {
@@ -615,11 +615,11 @@
     // ── 히어로 미니 계산기 (데모: A값 제외 단순 계산 — 정밀 계산은 /calculator) ──
     // 하한율은 금액대별 티어(assets/lower-limits.js — 정본: backend lower_limits.py 미러)
     // 범위는 /calculator 본페이지와 동일해야 한다 — 랜딩만 좁게(86.5~90.5) 잡았더니
-    // 10억 미만 하한율 89.745% 위로 남는 안전 구간이 0.755%p 뿐이라 게이지가 81% 빨강으로
+    // 10억 미만 하한율 89.745% 위로 남는 표시 구간이 0.755%p 뿐이라 게이지가 81% 빨강으로
     // 보였다. 첫 화면이 "대부분 위험"으로 읽히는 건 데모로서 손해다.
     // ⚠️ 아래 마크업의 초기 위치(게이지 배경·하한선 마커 67.8%, 썸 74.3%)도 이 값에서 나온다.
     var DEMO_MIN = 85, DEMO_MAX = 92;
-    // 기본 5억 공사의 하한율이 89.745% 라 초기 투찰률은 그 위(90.20)에서 시작 — 첫인상은 '안전' 상태
+    // 기본 5억 공사의 하한율이 89.745% 라 초기 투찰률은 그 위(90.20)에서 시작
     var demo = { basic: 500000000, tcl: 90.20, used: false };
     var $ = function (id) { return document.getElementById(id); };
     function renderDemo() {
@@ -632,7 +632,7 @@
       var bid = Math.floor(demo.basic * (demo.tcl / 100) / 10) * 10;
       var diff = demo.tcl - DEMO_RATE;
       var level = diff < 0 ? 'danger' : diff < 0.25 ? 'warn' : 'safe';
-      var label = { danger: '하한선 미달 — 무효 위험', warn: '하한선 근접 — 주의', safe: '안전선 통과' }[level];
+      var label = { danger: '하한선 미달 — 무효 위험', warn: '하한선 근접 — 주의', safe: '하한선 이상' }[level];
       $('demo-bid').textContent = bid.toLocaleString('ko-KR');
       $('demo-tcl-label').textContent = '투찰률 — 현재 ' + demo.tcl.toFixed(2) + '%';
       $('demo-diff').textContent = (diff >= 0 ? '+' : '') + diff.toFixed(2) + '%p';

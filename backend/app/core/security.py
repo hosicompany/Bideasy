@@ -1,6 +1,7 @@
+import secrets as _secrets
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-import secrets as _secrets
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -15,6 +16,11 @@ from app.db import models
 SECRET_KEY = settings.JWT_SECRET_KEY
 ALGORITHM = settings.JWT_ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.JWT_EXPIRE_MINUTES
+NOTICE_CHECK_RECEIPT_PURPOSE = "notice_check_activation"
+NOTICE_CHECK_RECEIPT_TTL_SECONDS = 120
+_NOTICE_CHECK_RECEIPT_MAX_TTL_SECONDS = 300
+_RECEIPT_BID_NO_RE = re.compile(r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
+_RECEIPT_NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -44,7 +50,85 @@ def create_token_for_user(user: "models.User") -> str:
     return create_access_token({"sub": str(user.id), "tv": getattr(user, "token_version", 0) or 0})
 
 
-def create_oauth_state(expires_minutes: int = 10) -> str:
+class InvalidNoticeCheckReceipt(ValueError):
+    """Raised when an activation receipt is forged, expired, or context-mismatched."""
+
+
+def create_notice_check_receipt(
+    *,
+    user_id: int,
+    bid_no: str,
+    expires_seconds: int = NOTICE_CHECK_RECEIPT_TTL_SECONDS,
+) -> str:
+    """Sign a minimal, short-lived proof that this user received real bid context.
+
+    JWTs are signed, not encrypted. Keep this payload deliberately limited to the
+    activation binding and an opaque nonce; never add email, page URL, or referrer.
+    One-time consumption is enforced by the growth-event ledger at the POST sink.
+    """
+    if isinstance(user_id, bool) or not isinstance(user_id, int) or user_id <= 0:
+        raise ValueError("user_id must be a positive integer")
+    if not isinstance(bid_no, str) or not _RECEIPT_BID_NO_RE.fullmatch(bid_no):
+        raise ValueError("bid_no must be canonical")
+    if not 1 <= expires_seconds <= _NOTICE_CHECK_RECEIPT_MAX_TTL_SECONDS:
+        raise ValueError("receipt TTL is outside the allowed range")
+
+    issued_at = datetime.now(timezone.utc)
+    payload = {
+        "purpose": NOTICE_CHECK_RECEIPT_PURPOSE,
+        "user_id": user_id,
+        "bid_no": bid_no,
+        "nonce": _secrets.token_urlsafe(18),
+        "iat": issued_at,
+        "exp": issued_at + timedelta(seconds=expires_seconds),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_notice_check_receipt(
+    receipt: str,
+    *,
+    expected_user_id: int,
+    expected_bid_no: str,
+) -> str:
+    """Validate a context receipt and return its opaque one-time nonce.
+
+    All failures collapse to one exception type so callers do not reveal whether a
+    signed receipt belonged to another user, another bid, or merely expired.
+    """
+    try:
+        payload = jwt.decode(receipt, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("user_id")
+        bid_no = payload.get("bid_no")
+        nonce = payload.get("nonce")
+        issued_at = int(payload.get("iat"))
+        expires_at = int(payload.get("exp"))
+    except (JWTError, TypeError, ValueError) as exc:
+        raise InvalidNoticeCheckReceipt("invalid notice-check receipt") from exc
+
+    now = int(datetime.now(timezone.utc).timestamp())
+    valid = (
+        payload.get("purpose") == NOTICE_CHECK_RECEIPT_PURPOSE
+        and isinstance(user_id, int)
+        and not isinstance(user_id, bool)
+        and user_id == expected_user_id
+        and isinstance(bid_no, str)
+        and bid_no == expected_bid_no
+        and isinstance(nonce, str)
+        and _RECEIPT_NONCE_RE.fullmatch(nonce) is not None
+        and issued_at <= now + 30
+        and expires_at > issued_at
+        and expires_at - issued_at <= _NOTICE_CHECK_RECEIPT_MAX_TTL_SECONDS
+    )
+    if not valid:
+        raise InvalidNoticeCheckReceipt("invalid notice-check receipt")
+    return nonce
+
+
+def create_oauth_state(
+    expires_minutes: int = 10,
+    attribution: dict[str, str] | None = None,
+) -> str:
     """OAuth CSRF 방어용 서명 state.
 
     서버가 발급했음을 HMAC 서명으로 보증하고 TTL(기본 10분)로 재사용을 제한한다.
@@ -53,18 +137,44 @@ def create_oauth_state(expires_minutes: int = 10) -> str:
     """
     expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
     payload = {"purpose": "oauth_state", "nonce": _secrets.token_urlsafe(8), "exp": expire}
+    # OAuth state는 서명될 뿐 암호화되지 않는다. access token, 이메일, referrer
+    # URL 같은 민감값은 허용하지 않고 사전 정규화된 캠페인 좌표만 담는다.
+    if attribution:
+        allowed = {
+            "source": 120,
+            "medium": 120,
+            "campaign": 160,
+            "content": 160,
+            "creative_id": 36,
+        }
+        snapshot = {
+            key: value
+            for key, limit in allowed.items()
+            if isinstance((value := attribution.get(key)), str)
+            and value
+            and len(value) <= limit
+        }
+        if snapshot:
+            payload["attribution"] = snapshot
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_oauth_state(state: Optional[str]) -> dict | None:
+    """유효한 OAuth state payload를 반환하고 위조·만료값은 None으로 닫는다."""
+    if not state:
+        return None
+    try:
+        payload = jwt.decode(state, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+    if payload.get("purpose") != "oauth_state":
+        return None
+    return payload
 
 
 def verify_oauth_state(state: Optional[str]) -> bool:
     """create_oauth_state 가 발급한 유효(미만료) state 인지 검증."""
-    if not state:
-        return False
-    try:
-        payload = jwt.decode(state, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError:
-        return False
-    return payload.get("purpose") == "oauth_state"
+    return decode_oauth_state(state) is not None
 
 
 def get_current_user(

@@ -73,7 +73,15 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 from app.api.v1.endpoints.pages import router as pages_router  # noqa: E402
 app.include_router(pages_router, tags=["pages"])
 
+# 승인된 Creative의 내부 랜딩만 허용하는 /go/{creative_id} 추적 리디렉션.
+from app.api.v1.endpoints.creative_redirect import router as creative_redirect_router  # noqa: E402
+app.include_router(creative_redirect_router, tags=["creative-redirect"])
+
+# 생성 파일명은 비밀 토큰이 아니다. 공개 URL도 DB의 사람 승인 상태를 확인한 뒤에만
+# nginx 내부 alias로 전달하며, 검수 전 파일은 admin/runner API에서만 내려받는다.
+from app.api.v1.endpoints.creative_assets import router as creative_assets_router  # noqa: E402
+app.include_router(creative_assets_router, tags=["creative-assets"])
+
 @app.get("/")
 async def root():
     return {"message": f"Welcome to {settings.PROJECT_NAME} API"}
-

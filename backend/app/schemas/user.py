@@ -19,6 +19,8 @@ class UserCreate(UserBase):
     signup_source: Optional[str] = None
     signup_medium: Optional[str] = None
     signup_campaign: Optional[str] = None
+    signup_content: Optional[str] = None
+    signup_creative_id: Optional[str] = None
     signup_referrer: Optional[str] = None
     # 광고성 정보 수신 동의(선택). 미전송 = 미동의 — 거래 관련 안내는 이와 무관하게 발송된다.
     # 동의 증적은 consent_records 에 남고, 발송 판정은 services/consent.py 가 단독 담당.
@@ -50,6 +52,12 @@ class UserResponse(UserBase):
 class SocialLoginRequest(BaseModel):
     provider: str       # 'kakao' | 'naver'
     access_token: str   # social SDK token
+    # 모바일 SDK 신규 가입도 웹 OAuth와 같은 first-touch 귀속을 보존한다.
+    signup_source: Optional[str] = None
+    signup_medium: Optional[str] = None
+    signup_campaign: Optional[str] = None
+    signup_content: Optional[str] = None
+    signup_creative_id: Optional[str] = None
 
 
 class PasswordChange(BaseModel):

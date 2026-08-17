@@ -34,6 +34,46 @@ server {
     # HSTS
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
+    # 운영자 Mac creative runner — 큰 MP4 multipart 업로드는 이 인증 경로에만 허용.
+    location ^~ /api/v1/creative-runner/ {
+        client_max_body_size 160M;
+        limit_req zone=api burst=10 nodelay;
+
+        proxy_pass http://bideasy_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
+    }
+
+    # Only the authenticated creative input upload accepts large multipart bodies.
+    location ~ "^/api/v1/admin/creatives/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/inputs$" {
+        client_max_body_size 160M;
+        limit_req zone=api burst=10 nodelay;
+
+        proxy_pass http://bideasy_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
+    }
+
+    # Admin/runner authenticated download responses use X-Accel-Redirect. This
+    # alias cannot be requested directly from the internet.
+    location ^~ /_creative_assets_internal/ {
+        internal;
+        alias /var/www/creative_assets/;
+        autoindex off;
+        limit_except GET HEAD { deny all; }
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
     # API endpoints — 일반 rate limit
     location /api/ {
         limit_req zone=api burst=20 nodelay;

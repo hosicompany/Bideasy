@@ -262,7 +262,7 @@ def _generate_analysis(
         msg = f"낙찰가와 {abs_gap:.1f}%p 차이가 있었어요. 상당히 {direction} 투찰하셨네요."
 
     if gap > 0:
-        msg += " 투찰률을 조금 낮추면 낙찰 확률이 높아져요."
+        msg += " 투찰률 조정 전 하한선과 원가 기준을 다시 확인해보세요."
     elif gap < -0.5:
         msg += " 투찰률을 높이는 것을 고려해보세요."
 

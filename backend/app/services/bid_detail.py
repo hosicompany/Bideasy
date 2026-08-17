@@ -27,7 +27,10 @@ class BidDetailService:
     ]
 
     @staticmethod
-    def _fetch_by_bidno_search(bid_ntce_no: str) -> Optional[Dict]:
+    def _fetch_by_bidno_search(
+        bid_ntce_no: str,
+        bid_ntce_ord: str = "00",
+    ) -> Optional[Dict]:
         """공고번호 직접검색 (inqryDiv=2) — 공사→용역→물품 순차 시도.
 
         스파이크(prod 라이브) 확정: BidPublicInfoService 3종에
@@ -57,13 +60,17 @@ class BidDetailService:
                     items = [items]
                 if not items:
                     continue
-                # 정확 일치 우선, 없으면 첫 항목
+                # 공고번호와, 명시된 경우 차수까지 정확히 일치해야 한다. 같은 base의
+                # 다른 재공고를 첫 항목으로 돌려주면 context/활성화 정본이 바뀐다.
                 for it in items:
-                    if it.get("bidNtceNo") == base:
+                    order_matches = (
+                        bid_ntce_ord == "00"
+                        or str(it.get("bidNtceOrd", "")) == bid_ntce_ord
+                    )
+                    if it.get("bidNtceNo") == base and order_matches:
                         logger.info(f"[bidno-search] MATCH {cat}: {it.get('bidNtceNm','')[:30]}")
                         return BidDetailService._format_bid_detail(it)
-                logger.info(f"[bidno-search] {cat}: items but no exact bidNtceNo match")
-                return BidDetailService._format_bid_detail(items[0])
+                logger.info(f"[bidno-search] {cat}: items but no exact bid/order match")
             except Exception as e:
                 logger.warning(f"[bidno-search] {cat} error: {e}")
                 continue
@@ -78,20 +85,42 @@ class BidDetailService:
           3) 공사 목록 100건 스캔 (구 fallback) ← 윈도우·카테고리 한계
         """
         # 1순위: 공고번호 직접검색
-        result = BidDetailService._fetch_by_bidno_search(bid_ntce_no)
-        if result:
+        result = BidDetailService._fetch_by_bidno_search(bid_ntce_no, bid_ntce_ord)
+        if result and BidDetailService._matches_requested_notice(
+            result, bid_ntce_no, bid_ntce_ord
+        ):
             return result
 
         # 2순위: 기존 primary (표준데이터셋) — 호환 유지
         logger.info("bidno-search 실패 → primary(표준데이터셋) 시도")
         result = BidDetailService.fetch_bid_detail(bid_ntce_no, bid_ntce_ord)
-        if result:
+        if result and BidDetailService._matches_requested_notice(
+            result, bid_ntce_no, bid_ntce_ord
+        ):
             return result
 
         # 3순위: 구 fallback (공사 목록 100건 스캔)
         logger.warning("Primary 도 None → 구 list fallback 시도")
         clean_bid_no = bid_ntce_no.split("-")[0] if "-" in bid_ntce_no else bid_ntce_no
-        return BidDetailService._fetch_from_list_api(clean_bid_no)
+        result = BidDetailService._fetch_from_list_api(clean_bid_no, bid_ntce_ord)
+        if result and BidDetailService._matches_requested_notice(
+            result, clean_bid_no, bid_ntce_ord
+        ):
+            return result
+        return None
+
+    @staticmethod
+    def _matches_requested_notice(
+        detail: Dict,
+        bid_ntce_no: str,
+        bid_ntce_ord: str = "00",
+    ) -> bool:
+        """Formatted OpenAPI detail이 요청한 공고/차수 정본인지 확인한다."""
+        base = bid_ntce_no.split("-")[0] if "-" in bid_ntce_no else bid_ntce_no
+        returned = str(detail.get("bid_no") or "")
+        if bid_ntce_ord == "00":
+            return returned.startswith(f"{base}-")
+        return returned == f"{base}-{bid_ntce_ord}"
 
     @staticmethod
     def fetch_bid_detail(bid_ntce_no: str, bid_ntce_ord: str = "00") -> Optional[Dict]:
@@ -146,8 +175,9 @@ class BidDetailService:
                     logger.info(f"Found: {item.get('bidNtceNm', 'N/A')[:50]}")
                     return BidDetailService._format_bid_detail(item)
             
-            # Return first item if no exact match
-            if items:
+            # 차수가 생략된 legacy 호출만 첫 항목을 허용한다. 명시된 차수와 다른
+            # 첫 항목으로 조용히 바꾸지는 않는다.
+            if items and bid_ntce_ord == "00":
                 return BidDetailService._format_bid_detail(items[0])
             
             return None
@@ -156,10 +186,13 @@ class BidDetailService:
             logger.error(f"Error: {e}")
             
         logger.warning("Primary API failed. Trying Fallback (List API - Construction)...")
-        return BidDetailService._fetch_from_list_api(bid_ntce_no)
+        return BidDetailService._fetch_from_list_api(bid_ntce_no, bid_ntce_ord)
 
     @staticmethod
-    def _fetch_from_list_api(bid_ntce_no: str) -> Optional[Dict]:
+    def _fetch_from_list_api(
+        bid_ntce_no: str,
+        bid_ntce_ord: str = "00",
+    ) -> Optional[Dict]:
         """Fallback: Fetch from Construction List API (Client-side filtering)"""
         url = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk"
         
@@ -194,7 +227,11 @@ class BidDetailService:
             
             # Client-side Filter
             for item in items:
-                if item.get("bidNtceNo") == bid_ntce_no:
+                order_matches = (
+                    bid_ntce_ord == "00"
+                    or str(item.get("bidNtceOrd", "")) == bid_ntce_ord
+                )
+                if item.get("bidNtceNo") == bid_ntce_no and order_matches:
                     logger.info(f"Found via Fallback List: {item.get('bidNtceNm', 'N/A')[:30]}")
                     return BidDetailService._format_bid_detail(item)
                     

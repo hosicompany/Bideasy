@@ -52,8 +52,12 @@ def _isolate(db_session):
     from app.db import models
 
     def _wipe():
+        # PaymentOrder를 남긴 채 User를 bulk delete하면 SQLite(FK 비활성)에서
+        # 회계 행이 orphan으로 남고 재사용된 user id의 "기존 결제"로 오인된다.
+        # 이 fixture는 프로덕션 삭제 정책 검증이 아니라 배치 표본 격리용이므로
+        # 사용자보다 먼저 결제 테스트 행까지 지운다.
         for model in (models.OutboundMessage, models.Notification, models.ConsentRecord,
-                      models.Favorite, models.UserBid, models.PointTransaction,
+                      models.Favorite, models.UserBid, models.PaymentOrder, models.PointTransaction,
                       models.User):
             db_session.query(model).delete()
         db_session.commit()

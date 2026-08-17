@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>무료 자격 진단 — 우리 회사가 넣을 수 있는 공고 30초 확인 | BidEasy</title>
-  <meta name="description" content="업종·지역만 고르면 지금 우리 회사가 입찰 자격을 만족하는 나라장터 공고를 즉시 확인. 면허·지역 제한을 자동으로 걸러 '넣을 수 있는 공고'만 보여드려요. 회원가입 없이 무료.">
+  <title>무료 조건 진단 — 우리 회사와 맞는 공고 확인 | BidEasy</title>
+  <meta name="description" content="업종·지역을 바탕으로 면허·지역 조건이 맞을 가능성이 있는 나라장터 공고를 확인합니다. 최종 참가 여부는 공고 원문과 발주기관 기준으로 확인하세요.">
   <link rel="canonical" href="https://bideasy.kr/diagnose">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="무료 자격 진단 — 우리 회사가 넣을 수 있는 공고 30초 확인">
-  <meta property="og:description" content="업종·지역만 고르면 입찰 자격을 만족하는 공고만 골라 보여드려요. 무료.">
+  <meta property="og:title" content="무료 조건 진단 — 우리 회사와 맞는 공고 확인">
+  <meta property="og:description" content="업종·지역을 바탕으로 면허·지역 조건이 맞을 가능성이 있는 나라장터 공고 후보를 확인하세요.">
   <meta property="og:url" content="https://bideasy.kr/diagnose">
   <meta property="og:site_name" content="BidEasy">
   <link rel="icon" href="/brand/favicon.svg">
@@ -65,11 +65,11 @@
   <div class="dg-wrap">
     <span class="eyebrow">무료 자격 진단</span>
     <h1 style="font-size:29px;font-weight:800;letter-spacing:-1px;margin:8px 0 6px;line-height:1.2;">
-      우리 회사가 지금 <span style="color:var(--accent);">넣을 수 있는 공고</span>,<br>30초면 확인돼요.
+      우리 회사 조건과 <span style="color:var(--accent);">맞는 공고</span>를<br>확인해 보세요.
     </h1>
     <p style="font-size:15px;color:var(--muted);line-height:1.6;margin:0 0 26px;">
-      업종과 지역만 알려주시면, 면허·지역 제한을 자동으로 걸러 <b>입찰 자격을 만족하는 공고</b>만 골라 보여드려요.
-      회원가입 없이 무료예요.
+      업종과 지역을 바탕으로 면허·지역 조건이 맞을 가능성이 있는 공고 후보를 보여드립니다.
+      최종 참가 여부는 공고 원문과 발주기관 기준으로 확인하세요. 회원가입 없이 무료예요.
     </p>
 
     <!-- ── 진단 폼 ── -->
@@ -164,9 +164,9 @@
 
       <!-- 다음 행동 -->
       <div id="dg-next" class="dg-hidden dg-lockcard" style="margin-top:18px;text-align:center;">
-        <p style="font-size:16px;font-weight:800;margin:0 0 6px;">나라장터를 떠나지 않고 바로 투찰까지</p>
+        <p style="font-size:16px;font-weight:800;margin:0 0 6px;">나라장터를 떠나지 않고 공고 기준 확인</p>
         <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 16px;">
-          크롬 익스텐션을 설치하면 지금 보고 있는 공고 위에서 자격·A값·안전 투찰가를 바로 확인해요.
+          크롬 익스텐션을 설치하면 지금 보고 있는 공고 옆에서 자격 조건·A값·낙찰하한선을 확인할 수 있어요.
         </p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
           <a class="btn btn-primary btn-lg" href="/signup" data-ev="cta_diagnose_trial">14일 무료로 시작하기</a>
@@ -260,6 +260,7 @@
           if (!resp.ok) throw new Error('진단 실패');
           var data = await resp.json();
           renderResult(data);
+          if (window.BD && BD.trackGrowth) BD.trackGrowth('free_value_completed', { tool: 'qualification_diagnosis' });
         } catch (e) {
           err.textContent = '진단 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요.'; err.classList.remove('dg-hidden');
           btn.disabled = false; btn.textContent = '무료로 진단하기';
@@ -323,7 +324,8 @@
               email: email || null, phone: phone || null,
               nurture_channel: okPhone ? 'kakao' : 'email',
               privacy_consent: privacyOk, marketing_consent: marketingOk, consent_version: consentVersion,
-              utm_source: a.source || null, utm_medium: a.medium || null, utm_campaign: a.campaign || null, referrer: a.referrer || null
+              utm_source: a.source || null, utm_medium: a.medium || null, utm_campaign: a.campaign || null,
+              utm_content: a.content || null, creative_id: a.creativeId || null, referrer: a.referrer || null
             })
           });
           if (!resp.ok) {

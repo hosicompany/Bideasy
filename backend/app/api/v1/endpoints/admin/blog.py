@@ -46,6 +46,25 @@ def _get_or_404(post_id: int, db: Session) -> models.BlogPost:
     return post
 
 
+def _stale_linked_creatives(db: Session, post: models.BlogPost, *, compare_hash: bool = True) -> int:
+    """이 글을 원문으로 삼는 크리에이티브를 STALE 처리한다 — 글을 바꾸는 **모든** 경로가 부른다.
+
+    승인된 블로그 정본이 바뀌면 이전 Higgsfield 결과가 새 원문에 연결되면 안 된다.
+    훅이 PUT 에만 있던 동안 재생성(generate-from-topic force)·파생(derive-assets force)·
+    삭제는 APPROVED 브리프를 사라진 콘텐츠에 계속 묶어 두었다(2026-08-17 리뷰 —
+    source_ref_id 는 FK 없는 문자열이라 DB 가 잡아 주지 않는다).
+    compare_hash=False 면 해시와 무관하게 전부 STALE (삭제용).
+    """
+    from app.services import creative_workflow
+
+    return creative_workflow.mark_source_creatives_stale(
+        db,
+        source_type="blog",
+        source_ref_id=str(post.id),
+        current_hash=creative_workflow.blog_source_hash(post) if compare_hash else None,
+    )
+
+
 @router.get("/blog", response_model=list[BlogPostOut])
 def list_blog_posts(db: Session = Depends(get_db), _admin=Depends(require_admin)):
     """관리자용 — 초안 포함 전체, 최신순."""
@@ -178,6 +197,7 @@ def generate_from_topic(topic_code: str, force: bool = False, db: Session = Depe
         raise HTTPException(503, "AI 초안 생성을 지금 사용할 수 없어요 (LLM 키 미설정 또는 생성 실패).")
     if status == "published_locked":
         raise HTTPException(409, "이미 발행된 글이라 재생성할 수 없어요 — 게시취소 후 시도하세요.")
+    _stale_linked_creatives(db, post)
     return post
 
 
@@ -239,6 +259,8 @@ def update_blog_post(post_id: int, payload: BlogPostUpdate, db: Session = Depend
         post.publish_at = None
     db.commit()
     db.refresh(post)
+    _stale_linked_creatives(db, post)
+    db.refresh(post)
     return post
 
 
@@ -277,6 +299,7 @@ def derive_assets_now(post_id: int, force: bool = False, db: Session = Depends(g
     db.refresh(post)
     if not ok and not post.channel_assets_json:
         raise HTTPException(503, "채널 자산 생성을 지금 사용할 수 없어요 (LLM 키 미설정 또는 생성 실패).")
+    _stale_linked_creatives(db, post)
     return post
 
 
@@ -294,6 +317,8 @@ def unpublish_blog_post(post_id: int, db: Session = Depends(get_db), _admin=Depe
 @router.delete("/blog/{post_id}", status_code=204)
 def delete_blog_post(post_id: int, db: Session = Depends(get_db), _admin=Depends(require_admin)):
     post = _get_or_404(post_id, db)
+    # 글이 사라지면 그 글을 원문으로 삼는 크리에이티브도 전부 무효다 (해시 비교 없이).
+    _stale_linked_creatives(db, post, compare_hash=False)
     db.delete(post)
     db.commit()
     return None

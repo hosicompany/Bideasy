@@ -243,3 +243,34 @@ class TestBidDetailMapping:
         assert "24,901,819원" in ctx
         assert "39,400,000원" in ctx
         assert "낙찰하한율: 89.745" in ctx
+
+    def test_direct_search_selects_the_requested_notice_order(self, monkeypatch):
+        from app.services.bid_detail import BidDetailService
+
+        class Response:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                first = {**CONSTRUCTION_ITEM, "bidNtceOrd": "000"}
+                requested = {**CONSTRUCTION_ITEM, "bidNtceOrd": "001"}
+                return {
+                    "response": {
+                        "body": {
+                            "items": [first, requested],
+                        }
+                    }
+                }
+
+        monkeypatch.setattr(
+            "app.services.bid_detail.requests.get",
+            lambda *_args, **_kwargs: Response(),
+        )
+
+        detail = BidDetailService._fetch_by_bidno_search(
+            CONSTRUCTION_ITEM["bidNtceNo"],
+            "001",
+        )
+
+        assert detail is not None
+        assert detail["bid_no"].endswith("-001")

@@ -63,6 +63,7 @@
     <span class="brand">✍️ 블로그 관리</span>
     <span class="m" style="color:var(--muted);font-size:12px">DB 글은 배포 없이 즉시 반영 · 파일 글(상록수)은 git에서 관리</span>
     <span class="sp"></span>
+    <a href="/admin-creatives" class="btn ghost">🎬 크리에이티브</a>
     <a href="/admin" class="btn ghost">← Admin</a>
   </header>
 
@@ -122,6 +123,7 @@
         <button class="btn ghost" id="btnCards" onclick="sendToCardmaker()" style="display:none" title="카드 카피를 카드메이커로 전달">🎴 카드메이커</button>
         <button class="btn ghost" id="btnCopyScripts" onclick="copyScripts()" style="display:none" title="릴스·유튜브·네이버 카피 클립보드 복사">📋 카피 복사</button>
         <button class="btn ghost" id="btnImgPrompts" onclick="copyImagePrompts()" style="display:none" title="힉스필드 이미지 프롬프트 + 배치 절차 복사">🖼 이미지 프롬프트</button>
+        <button class="btn ghost" id="btnHiggsfieldCreative" onclick="openHiggsfieldCreative()" style="display:none" title="이 글을 정본으로 Higgsfield 크리에이티브 브리프 생성">🎬 Higgsfield 크리에이티브 생성</button>
         <button class="btn ghost" id="btnReview" onclick="runReview(this)" style="display:none" title="자동 검수 재실행 (본문 수정 후)">🔍 검수 재실행</button>
       </div>
 
@@ -241,8 +243,17 @@
       el('btnCopyScripts').style.display = (p && p.channel_assets_json) ? '' : 'none';
       el('btnDerive').style.display = (p && p.blocks_json && !p.channel_assets_json) ? '' : 'none';
       el('btnImgPrompts').style.display = (p && p.blocks_json && (p.blocks_json.image_prompts||[]).length) ? '' : 'none';
+      el('btnHiggsfieldCreative').style.display = p ? '' : 'none';
       el('btnReview').style.display = p ? '' : 'none';
       renderReview(p);
+    }
+
+    function openHiggsfieldCreative(){
+      if(!editingId){ toast('글을 먼저 저장해주세요', false); return; }
+      const url = '/admin-creatives?blog_id=' + encodeURIComponent(editingId);
+      const link = document.createElement('a');
+      link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+      document.body.appendChild(link); link.click(); link.remove();
     }
 
     async function copyImagePrompts(){ // Phase 3 — 힉스필드 프롬프트 + 배치 절차 복사

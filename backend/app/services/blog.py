@@ -25,7 +25,7 @@ _CACHE: Optional[list] = None
 BLOG_AUTHOR = {
     "name": "BidEasy",
     "avatar": "/brand/bideasy-mark.svg",
-    "bio": "공공입찰 데이터로 적자 수주를 막는 입찰 안전 비서.",
+    "bio": "공공입찰의 참가조건·계산 기준을 확인하는 입찰 안전 비서.",
 }
 
 # 단독 이미지 단락(<p><img></p>) → <figure> 변환용

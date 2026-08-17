@@ -407,14 +407,14 @@ def _trial_welcome(ctx: dict) -> tuple[str, str, str]:
 
     subject = f"Pro 체험 {days}일이 시작됐어요"
     profile_line = (
-        "면허·지역을 넣으시면 '이 공고에 넣을 수 있는지'를 바로 판정해 드려요. 30초면 됩니다.\n"
+        "면허·지역을 넣으시면 공고의 참가조건과 맞는지 확인할 수 있어요.\n"
         if needs_profile else
         "등록하신 면허·지역 기준으로 자격 판정이 이미 켜져 있어요.\n"
     )
     text = (
         f"사장님, 오늘부터 {days}일 동안 Pro 기능을 카드 등록 없이 쓰실 수 있어요.\n\n"
         f"{profile_line}"
-        "\nBidEasy 는 낙찰가를 예측하지 않습니다. 대신 무효·적자 입찰을 막는 데 집중해요.\n"
+        "\nBidEasy는 낙찰가를 예측하지 않습니다. 공고에 적힌 자격과 계산 기준을 확인하도록 돕습니다.\n"
         f"\n내 조건 설정하기: {web}/account\n"
     )
     html = (
@@ -423,7 +423,7 @@ def _trial_welcome(ctx: dict) -> tuple[str, str, str]:
         f'<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 20px;">{escape(profile_line.strip())}</p>'
         f"{_btn(f'{web}/account', '내 조건 설정하기')}"
         '<p style="font-size:13px;line-height:1.6;color:#8B95A1;margin:18px 0 0;">'
-        "BidEasy 는 낙찰가를 예측하지 않습니다. 대신 무효·적자 입찰을 막는 데 집중해요.</p>"
+        "BidEasy는 낙찰가를 예측하지 않습니다. 공고에 적힌 자격과 계산 기준을 확인하도록 돕습니다.</p>"
     )
     return subject, text, html
 
@@ -510,13 +510,13 @@ def _trial_value_recap(ctx: dict) -> tuple[str, str, str]:
         body_line = "아직 확인해 보신 공고가 없네요. 한 건만 넣어보셔도 판정이 바로 나와요."
     text = (
         f"사장님, {body_line}\n\n"
-        "무효 입찰은 한 번이면 그 건을 통째로 잃습니다. 넣기 전에 30초만 확인해 보세요.\n"
+        "투찰 전, 보고 있는 공고의 자격과 계산 기준을 다시 확인해 보세요.\n"
         f"\n내 대시보드: {web}/dashboard\n"
     )
     html = (
         f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">사장님, {escape(body_line)}</p>'
         '<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 20px;">'
-        "무효 입찰은 한 번이면 그 건을 통째로 잃습니다. 넣기 전에 30초만 확인해 보세요.</p>"
+        "투찰 전, 보고 있는 공고의 자격과 계산 기준을 다시 확인해 보세요.</p>"
         f"{_btn(f'{web}/dashboard', '내 대시보드 열기')}"
     )
     return subject, text, html

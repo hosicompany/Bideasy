@@ -26,6 +26,8 @@ services:
       # 자가보정 전략 저장소 — worker(재학습 write)와 app(계산기 read)이 공유.
       # 공유 named 볼륨이라야 학습 결과가 계산기에 반영되고, 재배포에도 영속.
       - strategy_data:/app/data/strategy
+      # 로컬 runner가 API로 업로드한 검수 전/승인 자산. app만 write.
+      - creative_assets:/app/creative_assets
     depends_on:
       db:
         condition: service_healthy
@@ -174,6 +176,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ${NGINX_CONF_DIR:-./nginx/conf.d-http}:/etc/nginx/conf.d:ro
       - ./nginx/html:/var/www/html:ro
+      - creative_assets:/var/www/creative_assets:ro
       - certbot_webroot:/var/www/certbot:ro
       - certbot_certs:/etc/letsencrypt:ro
     depends_on:
@@ -196,3 +199,4 @@ volumes:
   certbot_certs:
   celerybeat_data:
   strategy_data:
+  creative_assets:

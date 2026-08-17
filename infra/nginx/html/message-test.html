@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>BidEasy 메시지 이해도 테스트</title>
+  <link rel="icon" href="/brand/favicon.svg">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-sans);}
+    .wrap{width:min(920px,calc(100% - 32px));margin:0 auto;padding:32px 0 64px;}
+    .brand{display:flex;align-items:center;gap:9px;font-weight:800;text-decoration:none;color:var(--ink);margin-bottom:28px;}
+    .brand img{width:24px;height:24px}.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-sm);padding:clamp(22px,4vw,36px)}
+    h1{font-size:clamp(25px,4vw,36px);letter-spacing:-1.2px;line-height:1.25;margin:0}.lead{color:var(--muted);line-height:1.7;margin:12px 0 26px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.field{display:flex;flex-direction:column;gap:8px}.field.full{grid-column:1/-1}
+    label,.label{font-size:14px;font-weight:750;color:var(--ink-2)}select,input,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line-2);border-radius:11px;padding:12px 13px;box-sizing:border-box;width:100%}textarea{min-height:94px;resize:vertical;line-height:1.55}
+    .choice{display:flex;gap:9px;flex-wrap:wrap}.choice label{display:flex;align-items:center;gap:7px;padding:10px 13px;border:1px solid var(--line-2);border-radius:10px;font-weight:600}.choice input{width:auto;margin:0}
+    .btnx{appearance:none;border:0;border-radius:11px;padding:13px 19px;background:var(--accent);color:white;font:inherit;font-weight:800;cursor:pointer}.btnx:disabled{opacity:.55;cursor:not-allowed}.error{display:none;color:var(--danger);font-size:13px;font-weight:650;margin-top:12px}.error.show{display:block}
+    .screen{position:relative;overflow:hidden;padding:0}.creative-copy{padding:28px 30px 22px;background:linear-gradient(140deg,#f7f8ff,#fff)}.creative-copy h1{font-size:clamp(25px,4.5vw,42px);max-width:760px}.creative-copy p{font-size:16px;color:var(--muted);line-height:1.65;max-width:720px;margin:13px 0}.mock-cta{display:inline-block;background:var(--accent);color:#fff;border-radius:10px;padding:11px 16px;font-weight:800}.endline{font-size:13px;color:var(--muted);font-weight:700;margin-left:12px}.shot{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-top:1px solid var(--line)}
+    .count{position:absolute;right:16px;top:16px;border-radius:99px;background:rgba(15,23,42,.82);color:#fff;padding:7px 11px;font-size:12px;font-weight:800}.hidden-panel{text-align:center;padding:64px 24px}.hidden-panel .eye{font-size:32px;margin-bottom:10px}.caption{font-size:11px;color:var(--faint);padding:10px 16px;border-top:1px solid var(--line)}
+    .scale{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.scale label{display:flex;justify-content:center;align-items:center;gap:5px;border:1px solid var(--line-2);border-radius:9px;padding:10px 4px}.scale input{width:auto}.fine{font-size:12px;color:var(--muted);line-height:1.6}.done{text-align:center;padding:32px 12px}.done .mark{font-size:40px}.hide{display:none!important}
+    @media(max-width:680px){.grid{grid-template-columns:1fr}.field.full{grid-column:auto}.creative-copy{padding:24px 20px 18px}.endline{display:block;margin:10px 0 0}.wrap{width:min(100% - 20px,920px);padding-top:18px}.card{border-radius:14px}.shot{aspect-ratio:4/3;object-position:center}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <a class="brand" href="/" aria-label="BidEasy 홈"><img src="/brand/bideasy-mark.svg" alt="">BidEasy</a>
+
+    <section id="screening" class="card">
+      <h1>5초 메시지 이해도 테스트</h1>
+      <p class="lead">광고 문구 한 장을 5초간 본 뒤, 기억나는 내용을 답해 주세요. 정답을 유도하는 설명이나 전화 인터뷰는 없으며 연락처도 받지 않습니다.</p>
+      <form id="screen-form" class="grid">
+        <div class="field">
+          <label for="industry">주 업종</label>
+          <select id="industry" required><option value="">선택</option><option value="전기공사업">전기공사업</option><option value="전문건설업">전문건설업</option><option value="종합건설업">종합건설업</option><option value="기타">기타</option></select>
+        </div>
+        <div class="field">
+          <label for="staff">상시 인원</label>
+          <input id="staff" type="number" min="1" max="500" inputmode="numeric" required placeholder="예: 5">
+        </div>
+        <div class="field">
+          <span class="label">입찰 업무를 직접 하나요?</span>
+          <div class="choice"><label><input type="radio" name="direct" value="yes" required>예</label><label><input type="radio" name="direct" value="no">아니요</label></div>
+        </div>
+        <div class="field">
+          <label for="reviews">월평균 직접 검토하는 공고 수</label>
+          <input id="reviews" type="number" min="0" max="10000" inputmode="numeric" required placeholder="예: 20">
+        </div>
+        <div class="field full"><button id="start" class="btnx" type="submit">테스트 시작</button><div id="screen-error" class="error" role="alert"></div></div>
+      </form>
+      <p class="fine">응답은 메시지 이해도 개선에만 사용합니다. 이름·회사명·전화번호·이메일은 수집하지 않습니다.</p>
+    </section>
+
+    <section id="exposure" class="card screen hide" aria-live="polite">
+      <div id="creative-content">
+        <div class="creative-copy">
+          <h1 id="headline"></h1>
+          <p id="description"></p>
+          <span class="mock-cta" id="cta"></span><span class="endline" id="endline"></span>
+        </div>
+        <img id="shot" class="shot" src="/guide-assets/01-main-g2b-with-sidepanel.png" alt="나라장터 공고 화면 옆에 열린 BidEasy 사이드패널">
+        <div id="shot-caption" class="caption"></div>
+        <div id="count" class="count">5초</div>
+      </div>
+      <div id="covered" class="hidden-panel hide"><div class="eye">◉</div><h1>화면을 가렸습니다</h1><p class="lead">뒤로 돌아가 다시 보지 말고, 방금 이해한 내용을 그대로 적어 주세요.</p></div>
+    </section>
+
+    <section id="response" class="card hide">
+      <h1>방금 본 문구를 어떻게 이해했나요?</h1>
+      <p class="lead">표현이 정확한지 보는 테스트입니다. 기억나지 않으면 기억나지 않는다고 적어도 괜찮습니다.</p>
+      <form id="response-form" class="grid">
+        <div class="field full"><label for="q1">1. 무슨 서비스라고 이해했나요?</label><textarea id="q1" required maxlength="1000"></textarea></div>
+        <div class="field full"><label for="q2">2. 언제 사용하는 서비스라고 이해했나요?</label><textarea id="q2" required maxlength="1000"></textarea></div>
+        <div class="field full"><label for="q3">3. 무엇을 확인해 준다고 이해했나요?</label><textarea id="q3" required maxlength="1000"></textarea></div>
+        <div class="field full"><span class="label">문구를 얼마나 신뢰할 수 있었나요?</span><div id="trust" class="scale"></div></div>
+        <div class="field full"><span class="label">내 업무와 얼마나 관련 있었나요?</span><div id="relevance" class="scale"></div></div>
+        <div class="field full"><button id="send" class="btnx" type="submit">응답 제출</button><div id="response-error" class="error" role="alert"></div></div>
+      </form>
+    </section>
+
+    <section id="done" class="card done hide"><div class="mark">✓</div><h1>응답이 저장됐습니다</h1><p class="lead">테스트에 참여해 주셔서 감사합니다. 이 응답만으로 제품 성과를 단정하지 않고, 실제 공고 확인 행동과 함께 판단하겠습니다.</p></section>
+  </main>
+  <script>
+  (function () {
+    'use strict';
+    var API = '/api/v1/message-test';
+    var q = new URLSearchParams(location.search);
+    var accessKey = q.get('key') || sessionStorage.getItem('bd_message_test_key') || '';
+    if (accessKey) {
+      sessionStorage.setItem('bd_message_test_key', accessKey);
+      if (q.has('key')) history.replaceState(null, '', location.pathname);
+    }
+    var token = localStorage.getItem('bd_message_test_participant') || null;
+    var shownAt = 0, exposureMs = 0;
+
+    function show(id) { document.getElementById(id).classList.remove('hide'); }
+    function hide(id) { document.getElementById(id).classList.add('hide'); }
+    function err(id, message) { var el = document.getElementById(id); el.textContent = message; el.classList.toggle('show', !!message); }
+    async function post(path, body) {
+      var response = await fetch(API + path, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      var data = {}; try { data = await response.json(); } catch (e) {}
+      if (!response.ok) throw new Error(data.detail || '요청을 처리하지 못했습니다.');
+      return data;
+    }
+    function scales(id, name) {
+      document.getElementById(id).innerHTML = [1,2,3,4,5].map(function (n) {
+        return '<label><input type="radio" name="' + name + '" value="' + n + '" required>' + n + '</label>';
+      }).join('');
+    }
+    scales('trust','trust'); scales('relevance','relevance');
+
+    document.getElementById('screen-form').addEventListener('submit', async function (event) {
+      event.preventDefault(); err('screen-error','');
+      if (!accessKey) { err('screen-error','승인된 참여 링크로 접속해 주세요.'); return; }
+      var direct = document.querySelector('input[name="direct"]:checked');
+      var button = document.getElementById('start'); button.disabled = true; button.textContent = '확인 중…';
+      try {
+        var data = await post('/assign', {
+          access_key: accessKey, participant_token: token,
+          industry: document.getElementById('industry').value,
+          staff_count: Number(document.getElementById('staff').value),
+          directly_handles_bids: direct && direct.value === 'yes',
+          monthly_notice_reviews: Number(document.getElementById('reviews').value)
+        });
+        if (!data.eligible) { err('screen-error',data.reason || '이번 테스트의 모집 조건과 일치하지 않습니다.'); return; }
+        token = data.participant_token; localStorage.setItem('bd_message_test_participant',token);
+        if (data.already_submitted) { hide('screening'); show('done'); return; }
+        beginExposure(data);
+      } catch (e) { err('screen-error',e.message); }
+      finally { button.disabled = false; button.textContent = '테스트 시작'; }
+    });
+
+    function beginExposure(data) {
+      document.getElementById('headline').textContent = data.copy.headline;
+      document.getElementById('description').textContent = data.copy.description;
+      document.getElementById('cta').textContent = data.copy.cta;
+      document.getElementById('endline').textContent = data.copy.endline;
+      document.getElementById('shot-caption').textContent = data.image_caption;
+      var img = document.getElementById('shot');
+      img.removeAttribute('src');
+      hide('screening'); show('exposure');
+      var exposureStarted = false;
+      function start() {
+        if (exposureStarted) return;
+        exposureStarted = true;
+        shownAt = performance.now(); var count = document.getElementById('count');
+        var timer = setInterval(function () {
+          var left = Math.max(0, Math.ceil((data.display_ms - (performance.now() - shownAt)) / 1000)); count.textContent = left + '초';
+        }, 100);
+        setTimeout(function () {
+          clearInterval(timer); exposureMs = Math.round(performance.now() - shownAt);
+          hide('creative-content'); show('covered'); show('response');
+          document.getElementById('q1').focus({preventScroll:true}); document.getElementById('response').scrollIntoView({behavior:'smooth',block:'start'});
+        }, data.display_ms);
+      }
+      function imageFailed() {
+        if (exposureStarted) return;
+        hide('exposure'); show('screening');
+        err('screen-error','테스트 화면을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      }
+      img.addEventListener('error',imageFailed,{once:true});
+      img.addEventListener('load',function(){requestAnimationFrame(start);},{once:true});
+      img.src = data.image_path;
+      if (img.complete) {
+        if (img.naturalWidth > 0) requestAnimationFrame(start);
+        else imageFailed();
+      }
+    }
+
+    document.getElementById('response-form').addEventListener('submit', async function (event) {
+      event.preventDefault(); err('response-error','');
+      var trust = document.querySelector('input[name="trust"]:checked');
+      var relevance = document.querySelector('input[name="relevance"]:checked');
+      var button = document.getElementById('send'); button.disabled = true; button.textContent = '저장 중…';
+      try {
+        await post('/responses', {
+          access_key: accessKey, participant_token: token, exposure_ms: exposureMs,
+          service_understanding: document.getElementById('q1').value,
+          usage_moment: document.getElementById('q2').value,
+          checked_items: document.getElementById('q3').value,
+          trust_score: Number(trust.value), relevance_score: Number(relevance.value)
+        });
+        hide('exposure'); hide('response'); show('done'); window.scrollTo({top:0,behavior:'smooth'});
+      } catch (e) { err('response-error',e.message); button.disabled = false; button.textContent = '응답 제출'; }
+    });
+  })();
+  </script>
+</body>
+</html>
