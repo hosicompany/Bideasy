@@ -502,3 +502,40 @@ def test_competitor_output_after_deadline_is_ineligible():
             artifact_uri="artifact://sha256/abc",
             terms_scope="approved account export",
         )
+
+
+def test_decision_endpoint_treats_unique_race_as_idempotent_duplicate(pro_client, db_session, monkeypatch):
+    """같은 idempotency_key 가 동시에 두 번 오면 진 쪽은 IntegrityError 를 받는다.
+
+    회귀(#128 리뷰): 엔드포인트가 LookupError/PermissionError/ValueError 만 잡아
+    유니크 경합이 500 으로 새고 세션이 롤백되지 않은 채 남았다. 레포 관례(growth.py)
+    대로 IntegrityError 를 잡아 기존 행을 idempotent duplicate 로 돌려준다.
+    """
+    from sqlalchemy.exc import IntegrityError
+    from app.api.v1.endpoints import recommendation_events as ep
+
+    user = db_session.query(models.User).filter(models.User.email == "test-pro@test.com").first()
+    recommendation = record_recommendation(db_session, _recommendation(), user_id=user.id)
+    db_session.commit()
+    body = {"idempotency_key": "race-key-0001", "event_type": "EXPOSED"}
+
+    # 1) 정상 첫 기록
+    first = pro_client.post(f"/api/v1/recommendations/{recommendation.recommendation_id}/decisions", json=body)
+    assert first.status_code == 201, first.text
+
+    # 2) 경합의 진 쪽 재현: 조회 시점엔 없었는데(.first() None) commit 에서 유니크 충돌
+    real = ep.record_user_decision
+    calls = {"n": 0}
+
+    def _racing(db, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # 조회는 통과한 것처럼 새 행을 flush 하고 commit 단계에서 IntegrityError 를 흉내
+            raise IntegrityError("INSERT user_decision_events", {}, Exception("UNIQUE constraint failed"))
+        return real(db, **kw)
+
+    monkeypatch.setattr(ep, "record_user_decision", _racing)
+    second = pro_client.post(f"/api/v1/recommendations/{recommendation.recommendation_id}/decisions", json=body)
+    assert second.status_code in (200, 201), second.text
+    assert second.json()["duplicate"] is True
+    assert second.json()["id"] == first.json()["id"]

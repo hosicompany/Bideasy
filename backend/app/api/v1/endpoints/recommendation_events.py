@@ -1,6 +1,7 @@
 """Authenticated user-decision events linked to a recommendation id."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
@@ -42,6 +43,20 @@ def create_user_decision(
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError:
+        # 같은 idempotency_key 의 동시 요청: 둘 다 `.first()` 를 통과한 뒤 진 쪽이 유니크
+        # 인덱스에서 죽는다. 500 이 아니라 문서대로 idempotent duplicate 로 돌려준다
+        # (growth.py 의 유니크 경합 처리와 같은 관례). 진짜 다른 사유의 무결성 위반이면
+        # 기존 행이 없으므로 그대로 올린다.
+        db.rollback()
+        existing = (
+            db.query(models.UserDecisionEvent)
+            .filter(models.UserDecisionEvent.idempotency_key == payload.idempotency_key)
+            .first()
+        )
+        if existing is None or existing.user_id != current_user.id:
+            raise
+        row, duplicate = existing, True
 
     return UserDecisionResponse(
         id=row.id,
