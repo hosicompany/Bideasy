@@ -42,7 +42,7 @@
 - **A값 3-tier 자동수집** — 익스텐션 크라우드소스 → 첨부파싱 → (스크랩). `Notice.a_value` 캐시
 - **자격매칭** — `QualificationChecker` 단일소스, 뱃지
 - **관리자 대시보드** — 일일리포트·사용자·결제/환불·정확도·자가보정·시스템·시뮬레이션
-- **자가보정(autocalibrate)** — 누적 개찰결과(DB) 병합한 백테스트·전략 재보정 (Celery 주간)
+- **자가보정(autocalibrate)** — 누적 개찰결과(DB) 병합한 백테스트·전략 재보정 (Celery 주간). ⚠️ **고객 표면에는 "매주 재학습·자동 갱신"이라고 쓰지 않는다**(2026-08-18) — 운영 전략은 05-27 이후 새 데이터로 재학습된 적이 없고(버전 3개·전부 동일 정적 4,848건), 판정 게이트가 NOT_READY 라 그 문구는 약속이지 사실이 아니다. 랜딩·대시보드는 "2021~2025 개찰 데이터 백테스트 기준 · 참고값은 사람 검토를 거쳐 갱신" 으로 표기. 존폐 판단 = `pm/AUTOCALIBRATE_DECISION_2026-08-18.md`
 - **페이플 운영 라이브 (6/17)** — `PAYMENT_PROVIDER=payple` 실매출 가능, 실결제 24,900원 승인 검증. 환불은 페이플 콘솔 수동(`PCD_REFUND_KEY` 미연동), 콘솔 취소↔DB 동기화 없음(웹훅 없음). 윈백 50%는 "체험 만료 후 grace 7일 내 미결제자"에게만
 - **보안 하드닝 (6/19, head `a3c7e1f9b204`)** — JWT `token_version` 무효화, 빌링키 Fernet 암호화, SSRF 가드, 정적 웹 XSS 이스케이프(`BD.esc`), OAuth state, 레이트리밋, 컨테이너 비-root(uid 10001), 페이플 콜백 CST_ID/금액/멱등 검증, AI한도 Redis. 보고서 `docs/SECURITY_AUDIT_2026-06-19.md`.
   - **`BILLING_ENC_KEY` 운영 설정·암호화 라이브 검증 완료**(서버 `.env.production`) — **분실·변경 절대 금지**(변경 시 기존 빌링키 복호화 불가). 미설정이면 평문 폴백. 비-root 전환으로 신규 볼륨 배포 시 `strategy_data`/`celerybeat_data` `chown 10001` 필요.
