@@ -106,6 +106,7 @@ def _crawl_with_axis_retries(
     windows: list[tuple[datetime, datetime]],
     max_pages: int,
     max_attempts: int,
+    health_check=None,
 ) -> list[dict]:
     """순위 축 거부만 발생한 완전 스캔을 제한적으로 다시 읽는다.
 
@@ -116,6 +117,7 @@ def _crawl_with_axis_retries(
     전체 창 재조회가 부분 상태를 만들지 않는다.
     """
     attempts = []
+    health_check = health_check or _health
     for _ in range(max_attempts):
         crawl = crawl_recent_openings(windows=windows, max_pages=max_pages)
         attempts.append(crawl)
@@ -126,7 +128,14 @@ def _crawl_with_axis_retries(
             and not crawl.get("participant_errors")
             and bool(crawl.get("participant_axis_rejected"))
         )
-        if not retryable_axis_rejection:
+        # 거부 건이 남았더라도 이미 전역 축이 건강하면 더 읽지 않는다. API 는
+        # 실행마다 페이지 경계가 달라질 수 있어, 불필요한 다음 전체 스캔이
+        # 방금 복구한 표본 구성을 다시 나쁘게 만들 수 있다(2026-08-18 운영
+        # 재현: 1차 후 0.170%/healthy → 2차 후 3.543%/unhealthy).
+        if (
+            not retryable_axis_rejection
+            or health_check().get("healthy") is True
+        ):
             break
     return attempts
 

@@ -30,6 +30,7 @@ def test_axis_rejection_retries_and_stops_after_recovery(monkeypatch):
         windows=windows,
         max_pages=250,
         max_attempts=3,
+        health_check=lambda: {"healthy": False},
     )
 
     assert attempts == results
@@ -47,7 +48,12 @@ def test_axis_rejection_stops_at_attempt_limit(monkeypatch):
 
     monkeypatch.setattr(repair, "crawl_recent_openings", fake_crawl)
 
-    attempts = repair._crawl_with_axis_retries([], max_pages=250, max_attempts=2)
+    attempts = repair._crawl_with_axis_retries(
+        [],
+        max_pages=250,
+        max_attempts=2,
+        health_check=lambda: {"healthy": False},
+    )
 
     assert attempts == [result, result]
     assert calls == 2
@@ -68,7 +74,34 @@ def test_structural_failure_is_not_retried(monkeypatch):
 
     monkeypatch.setattr(repair, "crawl_recent_openings", fake_crawl)
 
-    attempts = repair._crawl_with_axis_retries([], max_pages=250, max_attempts=3)
+    attempts = repair._crawl_with_axis_retries(
+        [],
+        max_pages=250,
+        max_attempts=3,
+        health_check=lambda: {"healthy": False},
+    )
+
+    assert attempts == [result]
+    assert calls == 1
+
+
+def test_healthy_axis_stops_even_when_individual_snapshots_were_rejected(monkeypatch):
+    result = _crawl_result(rejected=7)
+    calls = 0
+
+    def fake_crawl(**_kwargs):
+        nonlocal calls
+        calls += 1
+        return result
+
+    monkeypatch.setattr(repair, "crawl_recent_openings", fake_crawl)
+
+    attempts = repair._crawl_with_axis_retries(
+        [],
+        max_pages=250,
+        max_attempts=3,
+        health_check=lambda: {"healthy": True},
+    )
 
     assert attempts == [result]
     assert calls == 1
