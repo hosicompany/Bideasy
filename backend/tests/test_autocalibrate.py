@@ -416,3 +416,93 @@ def test_pinned_adjustment_stays_near_ratio_center(records):
             f"{method}/{bracket} 의 고정 adjustment {adj:+.1f} 가 사정률 현실 "
             f"범위(±1.0%p) 를 벗어났다"
         )
+
+
+# ── 기초금액 일관성 필터 (2026-08-17) ────────────────────────────
+# `basic_price` 에 추정가격이 든 행이 섞여 있고(함정 22), 자가보정이 그걸
+# 사정률로 읽으면 adjustment 가 +6~+10 까지 튄다. 2026-08-16 재보정이 실제로
+# 이 이유로 거부됐다.
+
+def test_tainted_basis_rows_are_excluded(db_session):
+    """사정률이 1.1 배로 뭉치는 행(추정가격 스냅샷)은 표본에서 빠진다."""
+    from datetime import datetime
+    from app.db import models
+    from app.services.autocalibrate.dataset import load_records
+
+    db_session.add(models.OpeningResult(
+        bid_no="TAINT-1", organization="오염기관", bid_method="수의시담",
+        open_date=datetime(2026, 6, 2), basic_price=1e8,
+        reserved_price=1.10e8,          # ← 1.10 배 = 함정 22 지문
+        winner_price=0.95e8, winner_rate=95.0,
+    ))
+    db_session.add(models.OpeningResult(
+        bid_no="CLEAN-1", organization="정상기관", bid_method="수의시담",
+        open_date=datetime(2026, 6, 2), basic_price=1e8,
+        reserved_price=0.999e8,         # ← 밴드 안
+        winner_price=0.95e8, winner_rate=95.0,
+    ))
+    db_session.commit()
+
+    merged = load_records(db=db_session)
+    ids = {r.bid_no for r in merged}
+    assert "CLEAN-1" in ids
+    assert "TAINT-1" not in ids, "오염 행이 자가보정 표본에 들어왔다"
+
+
+def test_filter_does_not_touch_static_ledger():
+    """정적 원장은 이 필터로 한 건도 줄지 않는다.
+
+    실측(2026-08-17): 4,848건 중 밴드 밖 **0건**. 오염은 운영 DB 병합분에만
+    있다. 이 단언이 깨지면 정적 원장 자체가 오염됐다는 뜻이라 필터가 아니라
+    원장을 봐야 한다.
+    """
+    from app.services.autocalibrate.dataset import load_records
+    from app.services.bid_data_quality import base_is_consistent
+
+    recs = load_records(db=None)
+    assert recs, "정적 원장이 비었다"
+    assert all(base_is_consistent(r.basic_price, r.reserved_price) for r in recs)
+
+
+def test_strategy_version_records_dataset_policy():
+    """어떤 코호트 위에서 적합했는지 버전이 밝힌다.
+
+    기본값이 `unfiltered` 인 이유: 이 필드 이전에 저장된 버전들은 오염을
+    포함한 표본으로 적합됐다. 새 값으로 읽으면 세대 간 metrics 를 한 선으로
+    이어 붙이게 된다.
+    """
+    from app.services.autocalibrate import dataset as ds
+    from app.services.autocalibrate.strategy_store import StrategyVersion
+
+    assert ds.DATASET_POLICY == "base_consistent_v1"
+    assert StrategyVersion(
+        version_id="x", created_at="t", params={}
+    ).dataset_policy == "unfiltered"
+    legacy = StrategyVersion.from_dict(
+        {"version_id": "old", "created_at": "t", "params": {}}
+    )
+    assert legacy.dataset_policy == "unfiltered"
+
+
+def test_weekly_loop_uses_strict_db(monkeypatch):
+    """주간 루프는 DB 조회 실패를 삼키지 않는다.
+
+    삼키면 정적 원장만 남은 채로 돌아가는데, 그러면 fingerprint 가 달라져
+    **DB 장애를 "새 코호트"로 오인하고 재보정**한다 — 표본이 반쯤 사라진
+    상태의 재적합이다.
+    """
+    from app.services.autocalibrate import loop as loop_mod
+
+    # ⚠️ 소스 문자열 검사(`"strict_db=True" in getsource`)로는 안 된다 —
+    # 주석에 그 문자열이 있으면 인자를 지워도 통과한다(실제로 겪음).
+    # 호출 인자를 직접 잡는다.
+    captured: dict = {}
+
+    def _fake_load(*args, **kwargs):
+        captured.update(kwargs)
+        return []          # 빈 표본 → 사이클은 곧바로 skip 반환
+
+    monkeypatch.setattr(loop_mod.ds, "load_records", _fake_load)
+    loop_mod.run_calibration_cycle(trigger="scheduled", db=object())
+
+    assert captured.get("strict_db") is True, "주간 루프가 DB 장애를 삼킨다"
