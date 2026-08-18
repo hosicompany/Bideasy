@@ -537,7 +537,9 @@ def load_static(include_db: bool = False) -> tuple[list[ds.BidRecord], dict]:
         from app.db.session import SessionLocal
         db = SessionLocal()
     try:
-        recs = ds.load_records(db=db, strict_db=include_db)
+        # 연도별 제외율(§0.2 "2026 제외율은 과거 연도와 다르다")을 재려면 필터 **전** 표본이
+        # 필요하다 — 걸러진 결과에서 재산출하면 excluded 가 영구 0 이다(#122 사후 리뷰).
+        recs, _stats = ds.load_records_with_stats(db=db, strict_db=include_db, apply_base_filter=False)
     finally:
         if db is not None:
             db.close()

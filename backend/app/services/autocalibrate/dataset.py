@@ -23,6 +23,31 @@ logger = get_logger(__name__)
 # 이 모듈이 적용하는 표본 정책 — 저장 버전에 함께 박아 세대 간 비교를 막는다.
 DATASET_POLICY = "base_consistent_v1"
 
+
+@dataclass
+class LoadStats:
+    """load_records 가 무엇을 읽고 무엇을 버렸는지 — 호출자가 반드시 받아 보고한다.
+
+    #122 가 필터를 load_records 안으로 넣으면서 호출자의 `len(loaded)-len(kept)` 가
+    구조적으로 0 이 됐고, 관리자 백테스트·G2 게이트 산출물·§0.2 증거 JSON 이 전부
+    "제외 0" 을 거짓 기록했다(2026-08-18 사후 리뷰). 로그 한 줄로는 남지 않는다 —
+    CLI 는 INFO 를 버리고, 컨테이너 로그는 재배포로 사라진다.
+    """
+    loaded: int = 0                       # 필터 전 (정적 + DB 병합)
+    static_loaded: int = 0
+    db_contributed: int = 0               # DB 가 실제로 보탠 행 (0 이면 DB 가 비었거나 못 읽은 것)
+    excluded_base_inconsistent: int = 0   # 기초금액 일관성 밴드 밖
+    kept: int = 0
+
+    def as_dict(self) -> dict:
+        return {
+            "loaded": self.loaded,
+            "static_loaded": self.static_loaded,
+            "db_contributed": self.db_contributed,
+            "excluded_base_inconsistent": self.excluded_base_inconsistent,
+            "kept": self.kept,
+        }
+
 # backend/app/services/autocalibrate/dataset.py → backend/data
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _DATA_DIR = _BACKEND_DIR / "data"
@@ -146,7 +171,24 @@ def load_records(
     *,
     strict_db: bool = False,
 ) -> list[BidRecord]:
-    """opening_results_{year}.json 들을 로드·정제 (+ db 제공 시 누적 DB 병합).
+    """`load_records_with_stats` 의 호환 wrapper — 걸러진 표본만 돌려준다.
+
+    제외 건수·DB 기여 건수를 보고해야 하는 호출부(관리자 백테스트·게이트 산출물·
+    증거 JSON·주간 루프)는 `load_records_with_stats` 를 쓸 것.
+    """
+    kept, _stats = load_records_with_stats(year_range, data_dir, db, strict_db=strict_db)
+    return kept
+
+
+def load_records_with_stats(
+    year_range: tuple[int, int] = (2021, 2027),
+    data_dir: Path = _DATA_DIR,
+    db=None,
+    *,
+    strict_db: bool = False,
+    apply_base_filter: bool = True,
+) -> tuple[list[BidRecord], LoadStats]:
+    """opening_results_{year}.json 들을 로드·정제 (+ db 제공 시 누적 DB 병합) + 통계.
 
     유효 조건: basic_price > 0 AND winner_price > 0 AND reserved_price > 0.
     db 전달 시 매일 쌓이는 opening_results 테이블도 합쳐 최신 시장 반영.
@@ -189,13 +231,17 @@ def load_records(
                     year=y,
                 )
             )
+    stats = LoadStats(static_loaded=len(records))
     # 누적 DB 병합 (db 제공 시) — 매일 크롤된 최신 개찰결과 포함
     if db is not None:
-        records.extend(_load_db_records(
+        db_rows = _load_db_records(
             db,
             {r.bid_no for r in records},
             strict=strict_db,
-        ))
+        )
+        stats.db_contributed = len(db_rows)
+        records.extend(db_rows)
+    stats.loaded = len(records)
 
     # ── 기초금액 일관성 필터 ────────────────────────────────────
     # `basic_price` 에 기초금액이 아니라 **추정가격**이 든 행이 섞여 있다
@@ -211,8 +257,15 @@ def load_records(
     #
     # ⚠️ 밴드는 **상대 일관성** 검사이지 출처 검증이 아니다. `basic_price` 와
     # `reserved_price` 가 같은 비율로 함께 틀리면 통과한다.
+    if not apply_base_filter:
+        # 연도별 제외 분해처럼 필터 **전** 표본이 필요한 증거 스크립트용. 운영 판정·자가보정은
+        # 절대 이 경로를 쓰지 않는다(기본값 True 고정).
+        stats.kept = len(records)
+        return records, stats
     kept = [r for r in records if base_is_consistent(r.basic_price, r.reserved_price)]
     excluded = len(records) - len(kept)
+    stats.excluded_base_inconsistent = excluded
+    stats.kept = len(kept)
     if excluded:
         # 제외 수를 삼키지 않는다 — 표본이 조용히 줄면 성능 변화를 데이터가
         # 아니라 모델 탓으로 읽는다(docs/MOCK_BIDDING_DESIGN.md §9 규율).
@@ -220,7 +273,7 @@ def load_records(
             "[autocalibrate] 기초금액 일관성 제외 %d건 / %d건 (%.1f%%) — 남은 %d건",
             excluded, len(records), excluded / len(records) * 100, len(kept),
         )
-    return kept
+    return kept, stats
 
 
 def data_fingerprint(records: list[BidRecord]) -> str:

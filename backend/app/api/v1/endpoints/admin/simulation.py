@@ -22,8 +22,14 @@ _BRACKETS = ["small", "medium", "large", "xlarge", "xxlarge"]
 
 def _load_records(db=None):
     """정적 과거 파일 + (db 제공 시) 누적 opening_results 병합."""
-    from app.services.autocalibrate.dataset import load_records
-    return load_records(db=db)
+    records, _stats = _load_records_with_stats(db)
+    return records
+
+
+def _load_records_with_stats(db=None):
+    """제외 건수를 화면에 알려야 하는 호출부용 — 조용히 줄어든 표본은 데이터 손실과 구분이 안 된다."""
+    from app.services.autocalibrate.dataset import load_records_with_stats
+    return load_records_with_stats(db=db)
 
 
 def _active_params():
@@ -46,7 +52,7 @@ def _filter(records, year_from, year_to, bid_method):
 def datasets(db: Session = Depends(get_db), _admin=Depends(require_admin)):
     """백테스트 가능한 데이터셋 현황 (정적 + 누적 DB, 연도별 건수)."""
     try:
-        records = _load_records(db)
+        records, load_stats = _load_records_with_stats(db)
     except Exception as e:
         return {"available": False, "error": str(e), "by_year": {}, "total": 0, "methods": []}
     by_year, methods = {}, set()
@@ -57,6 +63,10 @@ def datasets(db: Session = Depends(get_db), _admin=Depends(require_admin)):
     return {
         "available": len(records) > 0,
         "total": len(records),
+        # 기초금액 일관성 밴드 밖으로 빠진 건수 — 없으면 화면의 "N건" 축소가 크롤러 회귀와 구분되지 않는다
+        "excluded_base_inconsistent": load_stats.excluded_base_inconsistent,
+        "loaded_before_filter": load_stats.loaded,
+        "db_contributed": load_stats.db_contributed,
         "by_year": dict(sorted(by_year.items())),
         "methods": sorted(methods),
     }

@@ -441,7 +441,7 @@ def test_tainted_basis_rows_are_excluded(db_session):
         reserved_price=0.999e8,         # ← 밴드 안
         winner_price=0.95e8, winner_rate=95.0,
     ))
-    db_session.commit()
+    db_session.flush()   # commit 금지 — 세션 sqlite 에 남아 뒤 테스트로 샌다(228·248행과 동일 규율)
 
     merged = load_records(db=db_session)
     ids = {r.bid_no for r in merged}
@@ -456,12 +456,16 @@ def test_filter_does_not_touch_static_ledger():
     있다. 이 단언이 깨지면 정적 원장 자체가 오염됐다는 뜻이라 필터가 아니라
     원장을 봐야 한다.
     """
-    from app.services.autocalibrate.dataset import load_records
-    from app.services.bid_data_quality import base_is_consistent
+    from app.services.autocalibrate.dataset import load_records_with_stats
 
-    recs = load_records(db=None)
+    # ⚠️ "걸러진 결과가 전부 통과한다" 는 항진명제다(밴드를 0.999~1.001 로 조여 89.5% 를
+    # 잃어도 통과) — 필터 **전** 건수 대비 제외 수가 0 인지 봐야 주장이 검증된다.
+    recs, stats = load_records_with_stats(db=None)
     assert recs, "정적 원장이 비었다"
-    assert all(base_is_consistent(r.basic_price, r.reserved_price) for r in recs)
+    assert stats.excluded_base_inconsistent == 0, (
+        f"정적 원장에서 {stats.excluded_base_inconsistent}건이 밴드 밖 — 원장 오염 또는 밴드 변경"
+    )
+    assert stats.kept == stats.loaded == len(recs)
 
 
 def test_strategy_version_records_dataset_policy():
@@ -500,9 +504,56 @@ def test_weekly_loop_uses_strict_db(monkeypatch):
 
     def _fake_load(*args, **kwargs):
         captured.update(kwargs)
-        return []          # 빈 표본 → 사이클은 곧바로 skip 반환
+        return [], loop_mod.ds.LoadStats()   # 빈 표본 → 사이클은 곧바로 skip 반환
 
-    monkeypatch.setattr(loop_mod.ds, "load_records", _fake_load)
+    monkeypatch.setattr(loop_mod.ds, "load_records_with_stats", _fake_load)
     loop_mod.run_calibration_cycle(trigger="scheduled", db=object())
 
     assert captured.get("strict_db") is True, "주간 루프가 DB 장애를 삼킨다"
+
+
+def test_weekly_loop_refuses_to_refit_when_db_contributes_zero_rows(monkeypatch, tmp_path):
+    """DB 쿼리가 **성공했지만 0건**이면 정적 원장만으로 재적합하면 안 된다.
+
+    회귀(#122 사후 리뷰): strict_db=True 는 예외에서만 막아, 빈 테이블·지연 복제본·
+    winner_price NULL 탈락은 예외 없이 정적 4,848건만으로 돌아 "DB 장애를 새 코호트로
+    오인" 경로가 그대로였다. 스텁이 아니라 실제 load_records_with_stats 경로를 탄다.
+    """
+    from app.services.autocalibrate import loop as loop_mod
+    from app.services.autocalibrate import dataset as ds_mod
+
+    # 정적 원장은 있고(작은 가짜 파일), DB 는 '성공하되 0건' 인 세션
+    import json
+    (tmp_path / "opening_results_2025.json").write_text(json.dumps([
+        {"bid_no": f"S{i}-000", "title": "t", "org": "o", "bid_method": "적격심사제",
+         "basic_price": 100000000, "estimated_price": 100000000, "reserved_price": 100100000,
+         "winner_price": 90000000, "winner_rate": 90.0, "lower_limit_rate": 87.745,
+         "open_date": "2025-06-01 10:00:00"} for i in range(30)
+    ]), encoding="utf-8")
+
+    class _EmptyQuery:
+        def filter(self, *a, **k): return self
+        def all(self): return []
+    class _EmptyDb:
+        def query(self, *a, **k): return _EmptyQuery()
+
+    real = ds_mod.load_records_with_stats
+    monkeypatch.setattr(loop_mod.ds, "load_records_with_stats",
+                        lambda **k: real(**{**k, "data_dir": tmp_path}))
+    report = loop_mod.run_calibration_cycle(trigger="scheduled", db=_EmptyDb())
+    assert report.skipped is True, report.summary()
+    assert "DB" in report.reason and "0" in report.reason, report.reason
+    # 정적 표본으로 새 버전을 쓰지 않았다
+    assert report.candidate_version == ""
+
+
+def test_recalibrate_task_has_autoretry():
+    """월 04:00 DB 순간 장애가 주간 재보정을 7일간 조용히 건너뛰게 두면 안 된다.
+
+    회귀(#122 사후 리뷰): strict_db 로 예외가 올라오게 했지만 태스크는 autoretry 가
+    없는 맨 @task 였다 — 삼킴이 한 층 위로 옮겨간 것. mock_bid_tasks 처럼 3회 재시도.
+    """
+    from app.tasks import calibration_tasks as ct
+    task = ct.recalibrate_strategy
+    assert Exception in (task.autoretry_for or ()), "autoretry_for 없음"
+    assert (task.retry_kwargs or {}).get("max_retries", 0) >= 3

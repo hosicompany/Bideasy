@@ -143,7 +143,7 @@ def run(db=None, bid_method: str | None = None) -> dict:
 
     db 를 주면 누적 개찰결과(opening_results)도 병합한다.
     """
-    loaded = ds.load_records(db=db)
+    loaded, load_stats = ds.load_records_with_stats(db=db)
     if not loaded:
         return {"available": False, "reason": "과거 개찰 데이터가 없습니다.", "arms": {}}
 
@@ -155,7 +155,9 @@ def run(db=None, bid_method: str | None = None) -> dict:
     # 금액 기준이 어긋난 행은 집계에서 뺀다 — 다만 **몇 건을 뺐는지 반드시 알린다**.
     # 조용히 잘라내면 화면은 "전수를 봤다"고 읽히는데 실제로는 아니다.
     records = [r for r in loaded if base_is_consistent(r)]
-    excluded = len(loaded) - len(records)
+    # load_records 가 이미 밴드 밖을 걸렀으므로 여기 로컬 차이는 0 이다 — 진짜 제외 수는
+    # 적재 통계에서 온다(#122 사후 리뷰: 이 값이 구조적으로 0 이 되어 배너가 죽었었다).
+    excluded = (len(loaded) - len(records)) + load_stats.excluded_base_inconsistent
     if not records:
         return {
             "available": False,
@@ -205,7 +207,7 @@ def run(db=None, bid_method: str | None = None) -> dict:
     out: dict = {
         "available": True,
         "n_records": len(records),
-        "n_loaded": len(loaded),
+        "n_loaded": len(loaded) + load_stats.excluded_base_inconsistent,  # 필터 전 규모(방법 필터 전 제외분 포함)
         "n_excluded_base_mismatch": excluded,
         "holdout_years": list(HOLDOUT_YEARS),
         "slice_sizes": {k: len(v) for k, v in slices.items()},

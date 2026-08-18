@@ -185,7 +185,7 @@ def load_all(include_db: bool = False, bid_method: str | None = None,
             from app.db.session import SessionLocal
 
             db = SessionLocal()
-        loaded = ds.load_records(db=db, strict_db=include_db)
+        loaded, load_stats = ds.load_records_with_stats(db=db, strict_db=include_db)
     finally:
         if db is not None:
             db.close()
@@ -196,7 +196,9 @@ def load_all(include_db: bool = False, bid_method: str | None = None,
         r for r in loaded
         if base_is_consistent(r.basic_price, r.reserved_price)
     ]
-    excluded = len(loaded) - len(raw)
+    # load_records 가 이미 밴드 밖을 걸렀으므로 로컬 차이는 0 — 진짜 제외 수는 적재 통계에서
+    # 온다(#122 사후 리뷰: 이 값이 0 으로 고정돼 G2 게이트 산출물이 "전수" 라고 거짓 기록했다).
+    excluded = (len(loaded) - len(raw)) + load_stats.excluded_base_inconsistent
     deduped, n_dup = dedup_records(raw)
     return raw, deduped, n_dup, excluded
 
