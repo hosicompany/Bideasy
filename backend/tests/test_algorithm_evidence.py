@@ -16,7 +16,6 @@ from app.schemas.algorithm_evidence import (
 from app.services.algorithm_evidence import (
     canonical_hash,
     create_deployment_evidence,
-    prepare_strategy_promotion,
     record_recommendation,
     record_user_decision,
 )
@@ -304,14 +303,6 @@ def _seed_candidate_and_gate(db_session, *, decision="PASS", approval="APPROVE-1
     return candidate, gate, params
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "StrategyVersion.route/gate_decision 은 62bb01a(자가보정 승격 게이트) 가 추가하는 필드 — "
-        "그 커밋은 R1 과 양립 불가한 목적함수 재설계와 묶여 있어 분리 병합 대상. "
-        "자가보정 존폐 결정(pm/AUTOCALIBRATE_DECISION_2026-08-18.md §5-②) 과 함께 후속."
-    ),
-)
 def test_deployment_requires_matching_pass_and_human_approval(db_session, tmp_path):
     candidate, gate, params = _seed_candidate_and_gate(db_session)
 
@@ -341,6 +332,20 @@ def test_deployment_requires_matching_pass_and_human_approval(db_session, tmp_pa
     )
     assert deployment.status == "PENDING_ACTIVATION"
 
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "StrategyVersion.route/candidate 상태·FileStrategyStore.save_candidate·prepare_strategy_promotion 은 "
+        "62bb01a(자가보정 승격 게이트) 가 추가하는 것 — R1 과 양립 불가한 목적함수 재설계와 묶여 분리 병합 대상. "
+        "자가보정 존폐 결정(pm/AUTOCALIBRATE_DECISION_2026-08-18.md §5-②) 과 함께 후속. "
+        "이 PR 에서는 prepare_strategy_promotion 자체를 뺐다(dead code)."
+    ),
+)
+def test_strategy_promotion_from_file_candidate(db_session, tmp_path):
+    candidate, gate, params = _seed_candidate_and_gate(db_session)
+    from app.services.algorithm_evidence import prepare_strategy_promotion  # noqa: F401 — 62bb01a 후 복원
+
     version = StrategyVersion(
         version_id=candidate.strategy_version,
         created_at="2026-08-13T00:00:00",
@@ -360,7 +365,7 @@ def test_deployment_requires_matching_pass_and_human_approval(db_session, tmp_pa
         approval_id="APPROVE-1",
         code_sha=candidate.code_sha,
     )
-    assert prepared.deployment_id == deployment.deployment_id
+    assert prepared.deployment_id  # 62bb01a 복원 시 해피패스 테스트의 deployment 와 대조로 되돌릴 것
     assert prepared.status == "PENDING_ACTIVATION"
     assert store.load_active().version_id == BOOTSTRAP_VERSION_ID
     assert not hasattr(store, "_commit_authorized")
@@ -539,3 +544,26 @@ def test_decision_endpoint_treats_unique_race_as_idempotent_duplicate(pro_client
     assert second.status_code in (200, 201), second.text
     assert second.json()["duplicate"] is True
     assert second.json()["id"] == first.json()["id"]
+
+
+def test_decision_endpoint_race_on_foreign_recommendation_is_403_not_duplicate(pro_client, db_session, monkeypatch):
+    """경합 경로도 서비스 계약을 따른다: 같은 키를 다른 recommendation 에 쓰면 duplicate 가 아니라 403."""
+    from sqlalchemy.exc import IntegrityError
+    from app.api.v1.endpoints import recommendation_events as ep
+
+    user = db_session.query(models.User).filter(models.User.email == "test-pro@test.com").first()
+    rec_a = record_recommendation(db_session, _recommendation(), user_id=user.id)
+    rec_b = record_recommendation(db_session, _recommendation().model_copy(update={"recommendation_id": "rec-foreign-0002"}), user_id=user.id)
+    db_session.commit()
+    body = {"idempotency_key": "race-key-foreign-01", "event_type": "EXPOSED"}
+    assert pro_client.post(f"/api/v1/recommendations/{rec_a.recommendation_id}/decisions", json=body).status_code == 201
+
+    real = ep.record_user_decision; calls = {"n": 0}
+    def _racing(db, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise IntegrityError("INSERT user_decision_events", {}, Exception("UNIQUE constraint failed"))
+        return real(db, **kw)
+    monkeypatch.setattr(ep, "record_user_decision", _racing)
+    foreign = pro_client.post(f"/api/v1/recommendations/{rec_b.recommendation_id}/decisions", json=body)
+    assert foreign.status_code == 403, foreign.text

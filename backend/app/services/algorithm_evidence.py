@@ -20,10 +20,6 @@ from app.schemas.algorithm_evidence import (
     RecommendationDecisionContract,
     UserDecisionCreate,
 )
-from app.services.autocalibrate.strategy_store import (
-    StrategyVersion,
-    strategy_parameters_hash,
-)
 
 
 _PRIVATE_INPUT_KEYS = {
@@ -400,42 +396,3 @@ def create_deployment_evidence(
     db.add(row)
     db.flush()
     return row
-
-
-def prepare_strategy_promotion(
-    db: Session,
-    *,
-    version: StrategyVersion,
-    candidate_id: str,
-    gate_decision_id: str,
-    approval_id: str,
-    code_sha: str,
-) -> models.AlgorithmDeployment:
-    """Validate persisted evidence and record a pending deployment plan.
-
-    This function never returns an activation capability and the current file
-    store intentionally exposes no post-bootstrap active-pointer mutation. A
-    separately approved, transactional executor must be implemented before a
-    pending plan can be activated.
-    """
-    candidate = db.get(models.StrategyCandidate, candidate_id)
-    if candidate is None:
-        raise LookupError("strategy candidate not found")
-    if version.version_id != candidate.strategy_version:
-        raise ValueError("file candidate version differs from evidence candidate")
-    if version.route != candidate.route:
-        raise ValueError("file candidate route differs from evidence candidate")
-    if version.status != "candidate":
-        raise ValueError("only a saved candidate can be promoted")
-    parameters_hash = strategy_parameters_hash(version.params)
-    if candidate.parameters_hash != parameters_hash:
-        raise ValueError("file candidate parameters differ from evaluated candidate")
-
-    deployment = create_deployment_evidence(
-        db,
-        candidate_id=candidate_id,
-        gate_decision_id=gate_decision_id,
-        approval_id=approval_id,
-        code_sha=code_sha,
-    )
-    return deployment
