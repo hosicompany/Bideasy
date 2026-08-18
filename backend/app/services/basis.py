@@ -25,16 +25,22 @@ from app.services.bid_data_quality import base_is_consistent
 # 판정 결과
 CONFIRMED = "confirmed"      # 기초금액 확인됨 — 정상 계산
 UNCONFIRMED = "unconfirmed"  # 기초금액 미확인 — 안전 판정 보류
-LEGACY = "legacy"            # 시행 전(플래그 OFF) — 기존 동작 유지
+# API/저장 데이터 하위 호환을 위해 이름만 남긴다. 새 판정은 LEGACY 를 반환하지 않는다.
+LEGACY = "legacy"
 
 
 def enforcing() -> bool:
-    """기초금액 시행 여부.
+    """확정 기초금액 전용 정책 — **항상 시행**.
 
-    수집(B-1)을 먼저 배포하고 소비(B-2)는 커버리지가 쌓인 뒤 켠다. 켜기 전에
-    배포해도 동작이 바뀌지 않도록 기본 OFF 다.
+    예전엔 `BASIS_AMOUNT_ENFORCE`(기본 False)로 끌 수 있었고, 그건 롤아웃 스위치였다.
+    문제는 운영 env 한 줄이 빠지는 것만으로 추정가격(presmptPrce)이 기초금액 자리로
+    되살아나 낙찰하한선이 ~9% 낮게 계산된다는 것(CLAUDE.md 함정 22). 계산 안전 규칙은
+    설정 누락으로 꺼질 수 있는 토글이어선 안 된다 — 도메인 불변식으로 승격한다
+    (2026-08-18). 설정 필드는 오래된 env 파일을 깨지 않기 위해서만 남긴다.
     """
-    return bool(getattr(settings, "BASIS_AMOUNT_ENFORCE", False))
+    # 관측·하위호환용으로만 읽는다 — 값은 더 이상 불변식을 바꾸지 않는다.
+    _configured = getattr(settings, "BASIS_AMOUNT_ENFORCE", True)  # noqa: F841
+    return True
 
 
 def _basis_from_opening(opening) -> float | None:
@@ -58,8 +64,6 @@ def _basis_from_opening(opening) -> float | None:
 
 def basis_status(notice, opening=None) -> str:
     """이 공고의 기초금액 상태."""
-    if not enforcing():
-        return LEGACY
     if _basis_from_opening(opening) is not None:
         return CONFIRMED
     if notice is not None and (getattr(notice, "basis_amount", None) or 0) > 0:
@@ -77,10 +81,6 @@ def confirmed_basis(notice, opening=None) -> float | None:
         return from_opening
     if notice is None:
         return None
-    if not enforcing():
-        # 시행 전에는 기존 동작 유지(추정가격을 그대로 쓴다). 정확하진 않지만
-        # 이 값으로 계속 돌아온 화면이라, 켜기 전까지 갑자기 바꾸지 않는다.
-        return float(getattr(notice, "basic_price", 0) or 0) or None
     v = getattr(notice, "basis_amount", None) or 0
     return float(v) if v > 0 else None
 
