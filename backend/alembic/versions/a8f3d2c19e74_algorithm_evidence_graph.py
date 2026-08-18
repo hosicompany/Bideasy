@@ -1,7 +1,7 @@
 """Algorithm evidence and outcome provenance graph.
 
 Revision ID: a8f3d2c19e74
-Revises: c9a4e7b13f28
+Revises: a6d9c3e71b42
 Create Date: 2026-08-13
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 
 
 revision: str = "a8f3d2c19e74"
-down_revision: Union[str, None] = "c9a4e7b13f28"
+down_revision: Union[str, None] = "a6d9c3e71b42"  # 2026-08-18 재배선 — #118 head 뒤로 (원래 c9a4e7b13f28, 함정 20)
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
