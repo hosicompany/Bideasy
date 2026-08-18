@@ -239,7 +239,7 @@ def is_eligible(notice: models.Notice) -> tuple[bool, str]:
         return False, "not_construction"
     # 기초금액이 확인된 공고만 등록한다. 추정가격으로 등록하면 가격이 9% 낮게
     # 잡혀 전량 무효가 되고, 그 표본은 많아도 결론을 오염시킬 뿐이다.
-    # (시행 전에는 basis.confirmed_basis 가 기존 동작대로 basic_price 를 준다)
+    # (확정 기초금액 전용은 불변식 — 미확인 공고는 confirmed_basis 가 None 을 주고 등록 대상이 아니다)
     from app.services import basis as basis_svc
 
     if not basis_svc.confirmed_basis(notice):

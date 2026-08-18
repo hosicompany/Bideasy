@@ -6,8 +6,8 @@
 2. **없으면 안전 판정을 보류한다** — 하한선을 못 구하니 "안전"도 "위험"도
    말할 수 없다.
 
-그리고 시행 스위치(BASIS_AMOUNT_ENFORCE)가 OFF 인 동안에는 기존 동작이
-그대로여야 한다 — 배포와 시행을 분리하기 위함이다.
+시행 스위치는 2026-08-18 부로 불변식으로 승격돼 OFF 경로가 없다 — 아래 TestNoLegacyPath 가
+그것을 고정한다.
 """
 import pytest
 
@@ -27,18 +27,19 @@ def _notice(basic=100_000_000.0, basis_amount=None):
     return n
 
 
-class TestBeforeEnforcement:
-    """시행 전에는 동작이 바뀌지 않는다 — 배포해도 안전하다."""
+class TestNoLegacyPath:
+    """(2026-08-18 뒤집음) 예전 TestBeforeEnforcement 는 스위치 OFF 에서 추정가격 fallback 을
+    '정상' 으로 단언했다 — 그 fallback 이 곧 함정 22 의 사고 경로다. 이제 OFF 경로는 없다."""
 
-    def test_status_is_legacy(self):
-        assert basis.basis_status(_notice()) == basis.LEGACY
+    def test_status_is_never_legacy(self):
+        assert basis.basis_status(_notice()) == basis.UNCONFIRMED
 
-    def test_falls_back_to_basic_price(self):
-        assert basis.confirmed_basis(_notice(basic=100_000_000.0)) == 100_000_000.0
+    def test_no_fallback_to_basic_price(self):
+        assert basis.confirmed_basis(_notice(basic=100_000_000.0)) is None
 
-    def test_display_shows_basic_price(self):
+    def test_display_hides_unconfirmed_amount(self):
         amount, st = basis.display_basis(_notice(basic=123.0))
-        assert amount == 123 and st == basis.LEGACY
+        assert amount == 0 and st == basis.UNCONFIRMED   # 계약: 미확인이면 0 (틀린 숫자를 안 보여준다)
 
 
 class TestAfterEnforcement:
@@ -218,3 +219,29 @@ class TestClosedNoticePage:
         html = client.get("/bid/PAGE-CLOSED-3").text
         assert "개찰 결과" not in html
         assert "기초금액 미확인" in html
+
+
+class TestEnforcementIsInvariant:
+    """확정 기초금액 전용은 운영 토글이 아니라 도메인 불변식이다.
+
+    예전엔 BASIS_AMOUNT_ENFORCE 기본값이 False 라 운영 env 한 줄이 빠지면 추정가격
+    (presmptPrce)이 기초금액 자리로 되살아나 낙찰하한선이 ~9% 낮게 계산됐다(함정 22).
+    계산 안전 규칙은 설정 누락으로 꺼질 수 없어야 한다.
+    """
+
+    def test_enforcing_true_even_when_setting_false(self, monkeypatch):
+        monkeypatch.setattr(basis.settings, "BASIS_AMOUNT_ENFORCE", False, raising=False)
+        assert basis.enforcing() is True
+
+    def test_missing_basis_is_unconfirmed_not_legacy(self, monkeypatch):
+        monkeypatch.setattr(basis.settings, "BASIS_AMOUNT_ENFORCE", False, raising=False)
+        assert basis.basis_status(_notice(basic=100_000_000.0)) == basis.UNCONFIRMED
+
+    def test_never_falls_back_to_estimated_price(self, monkeypatch):
+        monkeypatch.setattr(basis.settings, "BASIS_AMOUNT_ENFORCE", False, raising=False)
+        # basic_price 만 있고 확정 기초금액이 없으면 숫자를 주지 않는다 (9% 낮은 '안전' 판정 방지)
+        assert basis.confirmed_basis(_notice(basic=100_000_000.0)) is None
+
+    def test_config_default_is_true(self):
+        from app.core.config import Settings
+        assert Settings.model_fields["BASIS_AMOUNT_ENFORCE"].default is True

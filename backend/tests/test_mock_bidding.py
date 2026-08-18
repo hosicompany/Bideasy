@@ -12,12 +12,21 @@ from app.db import models
 from app.services import mock_bidding as mb
 
 
+_USE_BASIC_AS_CONFIRMED_BASIS = object()  # 센티널: 기본값이면 basic_price 를 확정 기초금액으로도 쓴다
+
+
 def _notice(bid_no="MB-1", *, basic_price=100_000_000, bid_method="적격심사제",
             contract_type="CONSTRUCTION", notice_kind="등록공고",
             end_offset_h=1, llr=89.745, a_value=0, prdprc=(15, 4),
-            re_notice="N", organization="테스트기관"):
+            re_notice="N", organization="테스트기관",
+            basis_amount=_USE_BASIC_AS_CONFIRMED_BASIS):
+    # 확정 기초금액 전용은 불변식(2026-08-18) — 픽스처가 basis_amount 를 안 주면 등록 대상이
+    # 아니다. 옛 fallback(basic_price 를 기초금액으로 읽던 경로)에 기대던 테스트를 위해
+    # 기본값은 basic_price 를 확정 기초금액으로 함께 심는다. "미확인" 케이스는 basis_amount=None.
+    confirmed = basic_price if basis_amount is _USE_BASIC_AS_CONFIRMED_BASIS else basis_amount
     return models.Notice(
         bid_no=bid_no, title="테스트 공고", basic_price=basic_price,
+        basis_amount=confirmed,
         organization=organization,
         contract_type=contract_type, bid_method=bid_method,
         notice_kind=notice_kind, lower_limit_rate=llr, a_value=a_value,

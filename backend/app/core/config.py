@@ -229,7 +229,10 @@ class Settings(BaseSettings):
     # OFF 면 기존 동작(추정가격을 기초금액처럼 사용). ON 이면 확인된 기초금액만
     # 쓰고, 없는 공고는 "기초금액 미확인"으로 **안전 판정을 보류**한다.
     # 수집이 며칠 쌓여 커버리지가 안정된 뒤 켠다 — 지금 켜면 대부분이 미확인이다.
-    BASIS_AMOUNT_ENFORCE: bool = False
+    # ⚠️ 이 값은 더 이상 동작을 바꾸지 않는다. 확정 기초금액 전용은 services/basis.py 가
+    # 무조건 시행하는 도메인 불변식이다(함정 22). 필드는 서버 .env 의 기존 줄이 pydantic
+    # extra=forbid 로 기동을 깨지 않도록 남긴 것 — 기본값도 True 로 두어 문서·관측이 사실과 맞게.
+    BASIS_AMOUNT_ENFORCE: bool = True
     AWS_REGION: str = "ap-northeast-2"
     # 자격증명은 IAM 역할이 있으면 비워둔다(boto3 기본 체인). Lightsail 은 키 주입 필요.
     AWS_ACCESS_KEY_ID: str = ""
