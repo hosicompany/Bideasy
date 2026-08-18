@@ -136,16 +136,17 @@ class TestBaseConsistencyGuard:
 
     def test_static_dataset_all_passes(self):
         """정본 정적 데이터는 한 건도 걸러지면 안 된다 — 밴드가 좁으면 실측이 사라진다."""
-        recs = ds.load_records(db=None)
+        recs, stats = ds.load_records_with_stats(db=None)
         if not recs:
             pytest.skip("정적 개찰 데이터 없음")
-        assert all(ab.base_is_consistent(r) for r in recs)
+        # 걸러진 결과의 all() 은 항진명제 — 필터 전 대비 제외 0 을 단언한다
+        assert stats.excluded_base_inconsistent == 0
 
     def test_run_excludes_and_reports_count(self, monkeypatch):
         """제외는 하되 **몇 건인지 반드시 알린다** — 조용한 절삭 금지."""
         good = [_rec(f"G{i}", basic=100_000_000, reserved=100_500_000) for i in range(60)]
         bad = [_rec(f"B{i}", basic=100_000_000, reserved=110_000_000) for i in range(40)]
-        monkeypatch.setattr(ab.ds, "load_records", lambda db=None: good + bad)
+        monkeypatch.setattr(ab.ds, "load_records_with_stats", lambda db=None, **k: (good + bad, ab.ds.LoadStats(loaded=100, kept=100)))
 
         res = ab.run()
         assert res["available"] is True
@@ -156,7 +157,7 @@ class TestBaseConsistencyGuard:
 
     def test_run_unavailable_when_all_mismatched(self, monkeypatch):
         bad = [_rec(f"B{i}", basic=100_000_000, reserved=110_000_000) for i in range(10)]
-        monkeypatch.setattr(ab.ds, "load_records", lambda db=None: bad)
+        monkeypatch.setattr(ab.ds, "load_records_with_stats", lambda db=None, **k: (bad, ab.ds.LoadStats(loaded=10, kept=10)))
         res = ab.run()
         assert res["available"] is False
         assert "10" in res["reason"]
@@ -168,7 +169,7 @@ class TestMethodBreakdown:
     def test_by_method_present_for_large_methods(self, monkeypatch):
         a = [_rec(f"A{i}", method="적격심사제") for i in range(ab.MIN_METHOD_N)]
         b = [_rec(f"B{i}", method="소액수의견적") for i in range(ab.MIN_METHOD_N)]
-        monkeypatch.setattr(ab.ds, "load_records", lambda db=None: a + b)
+        monkeypatch.setattr(ab.ds, "load_records_with_stats", lambda db=None, **k: (a + b, ab.ds.LoadStats(loaded=len(a + b), kept=len(a + b))))
 
         res = ab.run()
         assert set(res["method_sizes"]) == {"적격심사제", "소액수의견적"}
@@ -179,7 +180,7 @@ class TestMethodBreakdown:
         """표본이 작은 방법은 비율이 요동쳐 오해를 부르므로 빼되, 집계에는 남는다."""
         big = [_rec(f"A{i}", method="적격심사제") for i in range(ab.MIN_METHOD_N)]
         tiny = [_rec("T1", method="수의시담")]
-        monkeypatch.setattr(ab.ds, "load_records", lambda db=None: big + tiny)
+        monkeypatch.setattr(ab.ds, "load_records_with_stats", lambda db=None, **k: (big + tiny, ab.ds.LoadStats(loaded=len(big + tiny), kept=len(big + tiny))))
 
         res = ab.run()
         assert "수의시담" not in res["method_sizes"]
@@ -187,7 +188,7 @@ class TestMethodBreakdown:
 
     def test_overall_caveat_warns_about_mixing(self, monkeypatch):
         recs = [_rec(f"A{i}") for i in range(40)]
-        monkeypatch.setattr(ab.ds, "load_records", lambda db=None: recs)
+        monkeypatch.setattr(ab.ds, "load_records_with_stats", lambda db=None, **k: (recs, ab.ds.LoadStats(loaded=len(recs), kept=len(recs))))
         res = ab.run()
         assert any("입찰방법" in c for c in res["caveats"])
 
@@ -235,3 +236,50 @@ class TestRun:
         res = ab.run(bid_method="존재하지않는방법")
         assert res["available"] is False
         assert res["arms"] == {}
+
+
+class TestExcludedCountSurvivesLoadRecordsFilter:
+    """회귀(#122 사후 리뷰): 필터가 load_records 안으로 들어가면서 호출자의
+    `excluded = len(loaded) - len(records)` 가 구조적으로 0 이 됐다.
+    스텁이 아니라 **진짜 load_records 경로**로 오염 행이 세어지는지 본다."""
+
+    def _seed(self, db_session, n_clean=3, n_taint=2):
+        from datetime import datetime
+        from app.db import models
+        rows = []
+        for i in range(n_clean):
+            rows.append(models.OpeningResult(
+                bid_no=f"AB-CLEAN-{i}", organization="o", bid_method="적격심사제",
+                open_date=datetime(2026, 6, 2), basic_price=1e8, reserved_price=1.001e8,
+                winner_price=0.9e8, winner_rate=90.0, lower_limit_rate=87.745,
+            ))
+        for i in range(n_taint):
+            rows.append(models.OpeningResult(
+                bid_no=f"AB-TAINT-{i}", organization="o", bid_method="적격심사제",
+                open_date=datetime(2026, 6, 2), basic_price=1e8, reserved_price=1.10e8,
+                winner_price=0.9e8, winner_rate=90.0, lower_limit_rate=87.745,
+            ))
+        db_session.add_all(rows)
+        db_session.flush()   # commit 금지 — 세션 sqlite 에 남아 뒤 테스트로 샌다
+
+    def test_arm_backtest_reports_real_exclusions(self, db_session, monkeypatch, tmp_path):
+        # 정적 원장을 비워 DB 행만 보이게 (테스트 결정성)
+        empty = tmp_path / "nodata"; empty.mkdir()
+        # arm_backtest.run 은 data_dir 인자가 없으므로 ds.load_records_with_stats 의 기본 data_dir 만 바꾼다
+        real = ab.ds.load_records_with_stats
+        monkeypatch.setattr(ab.ds, "load_records_with_stats", lambda *a, **k: real(*a, **{**k, "data_dir": empty}))
+        self._seed(db_session, n_clean=3, n_taint=2)
+        res = ab.run(db=db_session)
+        assert res["n_records"] == 3
+        assert res["n_excluded_base_mismatch"] == 2, res
+        assert any("2" in c and "제외" in c for c in res.get("caveats", [])), res.get("caveats")
+
+    def test_load_records_with_stats_exposes_exclusions(self, db_session, monkeypatch, tmp_path):
+        from app.services.autocalibrate import dataset as ds_mod
+        empty = tmp_path / "nodata"; empty.mkdir()
+        self._seed(db_session, n_clean=3, n_taint=2)
+        kept, stats = ds_mod.load_records_with_stats(data_dir=empty, db=db_session)
+        assert len(kept) == 3
+        assert stats.excluded_base_inconsistent == 2
+        assert stats.loaded == 5
+        assert stats.db_contributed == 5   # DB 기여 건수가 남는다 (0건 판정용)

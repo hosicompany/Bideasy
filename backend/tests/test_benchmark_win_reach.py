@@ -104,13 +104,14 @@ class TestG2RunSafety:
             )
 
     def test_load_excludes_known_price_basis_mismatch(self, monkeypatch):
+        # 스텁이 미필터 행을 돌려주면 load_all 의 로컬 재검사가 잡고, 통계 excluded 와 합산된다
         monkeypatch.setattr(
             bwr.ds,
-            "load_records",
-            lambda db=None, strict_db=False: [
-                _record("VALID", 100_000_000),
-                _record("MISMATCH", 110_000_000),
-            ],
+            "load_records_with_stats",
+            lambda db=None, strict_db=False, **k: (
+                [_record("VALID", 100_000_000), _record("MISMATCH", 110_000_000)],
+                bwr.ds.LoadStats(loaded=2, kept=2),
+            ),
         )
 
         raw, deduped, duplicates, excluded = bwr.load_all()

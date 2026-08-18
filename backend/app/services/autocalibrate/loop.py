@@ -81,9 +81,21 @@ def run_calibration_cycle(
     # ⚠️ `strict_db=True` — DB 조회가 실패하면 예외를 받는다. 삼키면 정적 원장만
     # 남은 채로 돌아가는데, 그러면 fingerprint 가 달라져서 **DB 장애를 "새
     # 코호트"로 오인하고 재보정**한다. 표본이 반쯤 사라진 상태의 재적합이다.
-    records = ds.load_records(db=db, strict_db=True)
+    records, load_stats = ds.load_records_with_stats(db=db, strict_db=True)
     if not records:
         return CycleReport(skipped=True, reason="데이터 없음")
+    # ⚠️ strict_db 는 **예외**만 막는다. 쿼리가 성공하되 0건(빈 테이블·지연 복제본·
+    # winner_price NULL 탈락)이면 예외 없이 정적 원장만으로 돌아가 "DB 장애를 새
+    # 코호트로 오인" 하는 경로가 그대로 남는다(#122 사후 리뷰). DB 를 넘겼는데 기여가
+    # 0 이면 이번 주는 재적합하지 않는다 — 정적 전용 적합이 DB 병합 active 를 덮는 사고 방지.
+    if db is not None and load_stats.db_contributed == 0:
+        return CycleReport(
+            skipped=True,
+            reason=(
+                f"DB 기여 0건 (정적 {load_stats.static_loaded}건만 적재) — "
+                "DB 장애·지연 의심, 정적 전용 재적합 거부"
+            ),
+        )
 
     baseline = store.load_active()
     fingerprint = ds.data_fingerprint(records)

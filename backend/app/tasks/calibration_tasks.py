@@ -14,7 +14,17 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-@celery_app.task(name="autocalibrate.recalibrate_strategy")
+@celery_app.task(
+    name="autocalibrate.recalibrate_strategy",
+    # 월 04:00 창에 DB 가 잠깐 죽으면 다음 시도가 7일 뒤다. strict_db 로 예외를 올리게
+    # 했으니 여기서 받아 재시도해야 "삼킴" 이 한 층 위로 옮겨가지 않는다(#122 사후 리뷰).
+    # mock_bid.weekly_report 와 동일 규격.
+    autoretry_for=(Exception,),
+    retry_backoff=60,
+    retry_backoff_max=900,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 3},
+)
 def recalibrate_strategy() -> str:
     """주기적 자가보정 사이클.
 
