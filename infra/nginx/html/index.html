@@ -247,7 +247,7 @@
     <div class="g4" data-rv style="border-top:1px solid var(--line);border-bottom:1px solid var(--line);">
       <div style="padding:24px 0;"><div class="num" id="hero-pass" data-count="94.9%" style="font-size:24px;font-weight:600;color:var(--accent);">94.9%</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">백테스트 하한선 통과율</div></div>
       <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" id="hero-count" data-count="4,848" style="font-size:24px;font-weight:600;">4,848</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">학습 개찰 데이터</div></div>
-      <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" style="font-size:24px;font-weight:600;">매주</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">자가보정 재학습</div></div>
+      <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" style="font-size:24px;font-weight:600;">2021~25</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">개찰 데이터 백테스트</div></div>
       <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" style="font-size:24px;font-weight:600;">공고 옆</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">사이드패널 확인</div></div>
     </div>
   </div></section>
@@ -424,7 +424,7 @@
         <p style="font-size:16px;color:var(--muted);line-height:1.7;margin:14px auto 0;max-width:540px;">새 개찰 결과로 참고값 후보를 다시 평가합니다. 회귀 게이트를 통과하지 못한 후보는 적용하지 않으며, 참고값은 낙찰 결과를 보장하지 않습니다.</p>
       </div>
       <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:20px;flex-wrap:wrap;">
-        <span class="chip" style="background:var(--safe-soft);color:var(--safe);"><span class="dot" style="background:var(--safe);box-shadow:0 0 8px var(--safe);"></span>매주 자동 갱신</span>
+        <span class="chip" style="background:var(--safe-soft);color:var(--safe);"><span class="dot" style="background:var(--safe);box-shadow:0 0 8px var(--safe);"></span>백테스트 검증 참고값</span>
       </div>
       <div id="acal-bars" data-bars style="display:flex;align-items:flex-end;justify-content:center;gap:clamp(4px,1vw,7px);height:90px;margin-top:24px;"></div>
       <div class="g3" style="gap:16px;margin-top:28px;">
@@ -432,7 +432,7 @@
         <div class="card" style="background:var(--surface);padding:22px;text-align:center;"><div class="num" id="acal-drop" data-count="5.1%" style="font-size:28px;font-weight:600;">5.1%</div><div style="font-size:12.5px;color:var(--muted);margin-top:6px;">백테스트 탈락률</div></div>
         <div class="card" style="background:var(--surface);padding:22px;text-align:center;"><div class="num" id="acal-count" data-count="4,848건" style="font-size:28px;font-weight:600;">4,848건</div><div style="font-size:12.5px;color:var(--muted);margin-top:6px;">학습 데이터 (누적)</div></div>
       </div>
-      <div style="text-align:center;margin-top:18px;"><span class="micro" id="acal-ts" style="font-size:10px;color:var(--faint);">매주 월요일 04:00 자동 재학습 · 2021~2025 개찰 데이터 백테스트 기준</span></div>
+      <div style="text-align:center;margin-top:18px;"><span class="micro" id="acal-ts" style="font-size:10px;color:var(--faint);">2021~2025 개찰 데이터 4,848건 백테스트 기준 · 참고값은 사람 검토를 거쳐 갱신됩니다</span></div>
     </div>
   </div></section>
 
@@ -704,7 +704,7 @@
       if (d.dropRate) { document.getElementById('acal-drop').setAttribute('data-count', d.dropRate.toFixed(1) + '%'); document.getElementById('acal-drop').textContent = d.dropRate.toFixed(1) + '%'; }
       if (d.dataCount) { var _n = d.dataCount.toLocaleString('ko-KR'); var ac = document.getElementById('acal-count'); if (ac) { ac.setAttribute('data-count', _n + '건'); ac.textContent = _n + '건'; } var hc = document.getElementById('hero-count'); if (hc) { hc.setAttribute('data-count', _n); hc.textContent = _n; } }
       if (d.weekly) renderBars(d.weekly);
-      if (d.lastTrainedAt) document.getElementById('acal-ts').textContent = '마지막 학습 ' + d.lastTrainedAt + ' · 다음 자동 갱신 D-' + (d.nextUpdateDays || 2);
+      if (d.lastTrainedAt) document.getElementById('acal-ts').textContent = '백테스트 갱신 ' + d.lastTrainedAt + ' · 2021~2025 개찰 데이터 기준 · 참고값은 사람 검토를 거쳐 갱신됩니다';
     }).catch(function () { /* keep baked-in numbers */ });
   })();
   </script>
