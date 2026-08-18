@@ -11,6 +11,12 @@
 응답을 최종 스냅샷으로 동기화하므로, 이 스크립트가 기존 확정분의
 개찰일을 다시 조회해 복구 경로를 연다.
 
+개찰 API 는 조회 중 데이터가 바뀌면 페이지 경계가 이동해 한 번의 전체
+스캔에도 서로 다른 시점의 순위가 섞일 수 있다. 크롤러는 그런 스냅샷을
+거부하므로, 이 복구 도구는 다른 오류가 없고 순위 축 거부만 남은 경우에만
+전체 창을 한 번 더 읽는다. 재시도 뒤에도 불안정하면 기존 정상 스냅샷을
+보존한 채 실패로 끝난다.
+
 예시
 ----
     python scripts/repair_mock_bid_participant_snapshots.py
@@ -96,6 +102,35 @@ def _backfill(limit: int, max_batches: int) -> dict:
         db.close()
 
 
+def _crawl_with_axis_retries(
+    windows: list[tuple[datetime, datetime]],
+    max_pages: int,
+    max_attempts: int,
+) -> list[dict]:
+    """순위 축 거부만 발생한 완전 스캔을 제한적으로 다시 읽는다.
+
+    연결·파싱·페이지 실패까지 재시도하면 같은 구조적 고장을 긴 전체 스캔으로
+    반복할 뿐이다. 반대로 ``participant_axis_rejected`` 는 API 페이지 경계가
+    조회 중 이동했을 때 크롤러가 의도적으로 스냅샷을 보류한 신호다. 이미
+    정상 반영된 공고는 다음 시도에서도 공고 단위 원자 교체/갱신을 거치므로,
+    전체 창 재조회가 부분 상태를 만들지 않는다.
+    """
+    attempts = []
+    for _ in range(max_attempts):
+        crawl = crawl_recent_openings(windows=windows, max_pages=max_pages)
+        attempts.append(crawl)
+        retryable_axis_rejection = (
+            bool(crawl.get("ok"))
+            and bool(crawl.get("participant_ok"))
+            and not crawl.get("failed_windows")
+            and not crawl.get("participant_errors")
+            and bool(crawl.get("participant_axis_rejected"))
+        )
+        if not retryable_axis_rejection:
+            break
+    return attempts
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="모의투찰 최종 참가자 스냅샷과 가상 순위 복구",
@@ -104,6 +139,12 @@ def main() -> int:
     parser.add_argument("--max-pages", type=int, default=250)
     parser.add_argument("--backfill-limit", type=int, default=5000)
     parser.add_argument("--max-backfill-batches", type=int, default=20)
+    parser.add_argument(
+        "--max-crawl-attempts",
+        type=int,
+        default=2,
+        help="순위 축 거부만 남았을 때 전체 창 재조회까지 포함한 최대 시도 횟수",
+    )
     parser.add_argument(
         "--commit",
         action="store_true",
@@ -115,6 +156,7 @@ def main() -> int:
         args.max_pages,
         args.backfill_limit,
         args.max_backfill_batches,
+        args.max_crawl_attempts,
     ) <= 0:
         parser.error("모든 숫자 옵션은 1 이상이어야 합니다")
 
@@ -124,6 +166,7 @@ def main() -> int:
         "mode": "commit" if args.commit else "dry_run",
         "days_back": args.days_back,
         "opening_dates": len(dates),
+        "max_crawl_attempts": args.max_crawl_attempts,
         "date_from": str(dates[0]) if dates else None,
         "date_to": str(dates[-1]) if dates else None,
         "rank_axis_before": before,
@@ -134,14 +177,17 @@ def main() -> int:
     if not dates:
         return 0 if before.get("healthy") is True else 1
 
-    crawl = crawl_recent_openings(
+    crawl_attempts = _crawl_with_axis_retries(
         windows=windows_for_dates(dates),
         max_pages=args.max_pages,
+        max_attempts=args.max_crawl_attempts,
     )
+    crawl = crawl_attempts[-1]
     backfill = _backfill(args.backfill_limit, args.max_backfill_batches)
     after = _health()
     result = {
         "crawl": crawl,
+        "crawl_attempts": crawl_attempts,
         "rank_backfill": backfill,
         "rank_axis_after": after,
     }
