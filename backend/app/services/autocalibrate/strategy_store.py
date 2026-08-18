@@ -226,6 +226,21 @@ def _normalize_params(params: dict) -> dict:
     return out
 
 
+
+def strategy_parameters_hash(params: dict) -> str:
+    """전략 파라미터의 순서 독립 canonical SHA-256.
+
+    증거 그래프(algorithm_evidence)가 "어떤 파라미터로 낸 추천인지" 를 위조 불가하게
+    묶는 데 쓴다. 62bb01a 에서 이식(순수 유틸 — 자가보정 로직과 무관).
+    """
+    payload = json.dumps(
+        _normalize_params(params),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
 # 모듈 레벨 싱글톤 (calculator 가 공유)
 _default_store: Optional[FileStrategyStore] = None
 

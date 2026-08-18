@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bideasy.kr/schemas/agent-execution-graph-1.0.json",
+  "title": "Bounded agent execution graph",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "graph_id",
+    "entry_node",
+    "external_inputs",
+    "shared_state_schema",
+    "nodes",
+    "edges",
+    "cycles",
+    "fan_in",
+    "approvals"
+  ],
+  "properties": {
+    "version": {"const": "1.0"},
+    "graph_id": {"$ref": "#/$defs/identifier"},
+    "entry_node": {"$ref": "#/$defs/identifier"},
+    "external_inputs": {"$ref": "#/$defs/artifactMap"},
+    "shared_state_schema": {"$ref": "#/$defs/artifactMap"},
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/node"}
+    },
+    "edges": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/edge"}
+    },
+    "cycles": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/cycle"}
+    },
+    "fan_in": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/fanIn"}
+    },
+    "approvals": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/approval"}
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+    },
+    "artifactMap": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/identifier"},
+      "additionalProperties": {"$ref": "#/$defs/identifier"}
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "role",
+        "independence_group",
+        "inputs",
+        "outputs",
+        "as_of_policy",
+        "allowed_tools",
+        "side_effect",
+        "join_policy",
+        "timeout_seconds",
+        "retry_limit",
+        "verifier",
+        "required_approval"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "role": {"$ref": "#/$defs/identifier"},
+        "independence_group": {"$ref": "#/$defs/identifier"},
+        "inputs": {"$ref": "#/$defs/artifactMap"},
+        "outputs": {"$ref": "#/$defs/artifactMap"},
+        "as_of_policy": {"type": "string", "minLength": 1},
+        "allowed_tools": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "side_effect": {
+          "enum": ["none", "write", "external", "promotion"]
+        },
+        "join_policy": {"enum": ["any", "all"]},
+        "timeout_seconds": {"type": "integer", "minimum": 1},
+        "retry_limit": {"type": "integer", "minimum": 0},
+        "verifier": {
+          "oneOf": [
+            {"$ref": "#/$defs/identifier"},
+            {"type": "null"}
+          ]
+        },
+        "required_approval": {
+          "oneOf": [
+            {"$ref": "#/$defs/identifier"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "condition", "artifacts"],
+      "properties": {
+        "from": {"$ref": "#/$defs/identifier"},
+        "to": {"$ref": "#/$defs/identifier"},
+        "condition": {"type": "string", "minLength": 1},
+        "artifacts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/identifier"}
+        }
+      }
+    },
+    "cycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodes",
+        "max_iterations",
+        "progress_signal",
+        "abort_condition",
+        "success_exit",
+        "failure_exit"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/identifier"}
+        },
+        "max_iterations": {"type": "integer", "minimum": 1},
+        "progress_signal": {"type": "string", "minLength": 1},
+        "abort_condition": {"type": "string", "minLength": 1},
+        "success_exit": {"$ref": "#/$defs/identifier"},
+        "failure_exit": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "fanIn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "required_predecessors",
+        "required_artifacts",
+        "require_same_snapshot_hash"
+      ],
+      "properties": {
+        "node": {"$ref": "#/$defs/identifier"},
+        "required_predecessors": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/identifier"}
+        },
+        "required_artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/identifier"}
+        },
+        "require_same_snapshot_hash": {"type": "boolean"}
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scope", "status", "approved_by", "approved_at"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "scope": {"enum": ["write", "external", "promotion"]},
+        "status": {"enum": ["pending", "approved", "rejected", "expired"]},
+        "approved_by": {"type": ["string", "null"]},
+        "approved_at": {"type": ["string", "null"], "format": "date-time"},
+        "route": {"type": ["string", "null"]},
+        "strategy_version": {"type": ["string", "null"]}
+      }
+    }
+  }
+}
