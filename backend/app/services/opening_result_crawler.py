@@ -21,6 +21,8 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import requests
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import (
     InterfaceError,
     InternalError,
@@ -535,8 +537,23 @@ def _upsert_opening_result(db: Session, kwargs: dict, seen: set[str]) -> bool:
             if v is not None:
                 setattr(existing, k, v)
         return False
-    db.add(models.OpeningResult(**kwargs))
-    return True
+    # SELECT 뒤 INSERT 전에 다른 크롤러가 같은 공고를 넣을 수 있다. 정기 19:00
+    # 크롤과 수동 복구가 겹치면 이 경합이 PK 위반으로 날짜 창 전체를 롤백시켰다.
+    # DB 가 유일성 판정을 한 번에 수행하게 해 경쟁자가 먼저 넣은 경우만 조용히
+    # 건너뛴다. DO UPDATE 를 쓰지 않는 이유는 확정된 실 낙찰가를 덮지 않기 위해서다.
+    dialect_name = db.get_bind().dialect.name
+    if dialect_name == "postgresql":
+        statement = postgresql_insert(models.OpeningResult).values(**kwargs)
+    elif dialect_name == "sqlite":
+        statement = sqlite_insert(models.OpeningResult).values(**kwargs)
+    else:
+        raise RuntimeError(
+            f"opening result atomic insert is unsupported for {dialect_name}"
+        )
+    result = db.execute(statement.on_conflict_do_nothing(
+        index_elements=[models.OpeningResult.bid_no]
+    ))
+    return result.rowcount > 0
 
 
 def windows_for_dates(dates) -> list[tuple[datetime, datetime]]:
