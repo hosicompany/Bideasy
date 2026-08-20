@@ -900,6 +900,12 @@ v20260816_190003_52cbee [rejected] (ratio_pinned_v2)
    전용 미리보기이며 `--commit` 때만 크롤링·등수 backfill을 수행한다. 수집 실패,
    backfill 미완료, 최종 rank-health 불합격 중 하나라도 남으면 종료코드가 0이
    아니다. 개별 스냅샷 거부는 기존 데이터를 보존한 안전 경고로 집계한다.
+5. 정기 19:00 크롤과 수동 복구가 겹쳐도 `OpeningResult` 신규 저장은 PostgreSQL
+   `INSERT ... ON CONFLICT (bid_no) DO NOTHING`으로 처리한다. 종전의
+   `SELECT → INSERT`는 둘 다 행이 없다고 본 뒤 동시에 INSERT하면 PK 위반으로 날짜
+   창 전체를 롤백했다(2026-08-20 운영 복구에서 재현). 충돌 시 먼저 저장된 결과를
+   보존하며, 확정 낙찰가를 덮는 `DO UPDATE`는 사용하지 않는다. SQLite 테스트도 같은
+   충돌 무시 계약을 실행하고 운영 PostgreSQL SQL 생성을 별도로 고정한다.
 
 ```bash
 cd backend

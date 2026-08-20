@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import time
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.db import models
 from app.services import opening_result_crawler as crawler
@@ -226,6 +227,102 @@ def test_crawl_fails_instead_of_committing_when_page_cap_is_full(monkeypatch):
     assert db.committed is False
     assert db.rolled_back is True
     assert db.closed is True
+
+
+class TestOpeningResultUpsert:
+    @staticmethod
+    def _kwargs(winner_price=90_000_000):
+        return {
+            "bid_no": "UPSERT-RACE-001",
+            "organization": "동시성 테스트 기관",
+            "open_date": datetime(2026, 8, 20, 19, 0),
+            "winner_company": "먼저 저장한 업체",
+            "winner_price": winner_price,
+        }
+
+    def test_conflict_is_ignored_without_overwriting_final_result(self, db_session):
+        """경쟁자가 먼저 삽입한 결과는 보존하고 PK 충돌은 창 실패로 만들지 않는다."""
+        first = crawler._upsert_opening_result(
+            db_session, self._kwargs(), seen=set()
+        )
+        db_session.flush()
+
+        # 두 크롤러가 모두 SELECT 시점에는 행을 못 본 실제 경합을 재현한다.
+        # 저장은 진짜 SQLite 세션에 위임해 ON CONFLICT 계약까지 실행한다.
+        class _StaleQuery:
+            @staticmethod
+            def filter(*_args):
+                return _StaleQuery()
+
+            @staticmethod
+            def first():
+                return None
+
+        class _StaleReadSession:
+            @staticmethod
+            def query(*_args):
+                return _StaleQuery()
+
+            get_bind = db_session.get_bind
+            execute = db_session.execute
+
+        competing = self._kwargs(winner_price=91_000_000)
+        competing["winner_company"] = "나중에 도착한 업체"
+        second = crawler._upsert_opening_result(
+            _StaleReadSession(), competing, seen=set()
+        )
+        db_session.commit()
+
+        saved = db_session.get(models.OpeningResult, "UPSERT-RACE-001")
+        assert first is True
+        assert second is False
+        assert saved.winner_price == 90_000_000
+        assert saved.winner_company == "먼저 저장한 업체"
+
+    def test_postgresql_insert_uses_atomic_primary_key_conflict_guard(self):
+        """운영 PostgreSQL 경로가 SELECT-INSERT가 아닌 원자적 충돌 처리를 쓴다."""
+        class _Dialect:
+            name = "postgresql"
+
+        class _Bind:
+            dialect = _Dialect()
+
+        class _Result:
+            rowcount = 0
+
+        class _Query:
+            @staticmethod
+            def filter(*_args):
+                return _Query()
+
+            @staticmethod
+            def first():
+                return None
+
+        class _PostgresDB:
+            statement = None
+
+            @staticmethod
+            def query(*_args):
+                return _Query()
+
+            @staticmethod
+            def get_bind():
+                return _Bind()
+
+            @classmethod
+            def execute(cls, statement):
+                cls.statement = statement
+                return _Result()
+
+        db = _PostgresDB()
+        inserted = crawler._upsert_opening_result(
+            db, self._kwargs(), seen=set()
+        )
+        sql = str(db.statement.compile(dialect=postgresql.dialect()))
+
+        assert inserted is False
+        assert "ON CONFLICT (bid_no) DO NOTHING" in sql
 
 
 # ── Phase 2 — 참가자 수집 (모의투찰 등록 공고 한정, 설계 §P4) ──
