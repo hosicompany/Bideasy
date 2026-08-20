@@ -1485,7 +1485,7 @@ GAP_BUCKETS = ("≤-5", "-5~-2", "-2~-0.5", "-0.5~0", "0~0.5", "0.5~1", "1~2", "
 def rank_axis_health(db: Session, sample_notices: int = 300,
                      min_rows: int = 200, min_notices: int = 30,
                      window_days: int = 7) -> dict:
-    """저장된 `opengRank` 와 우리 재계산 등수가 같은 축인지 상시 감시한다.
+    """확정 스냅샷의 `opengRank` 와 우리 재계산 등수가 같은 축인지 감시한다.
 
     **왜 상시로 재는가**: Phase 2 는 "무효 투찰도 순위에 포함된다"는 전제로
     등수를 계산했는데 그 전제가 틀렸다는 사실은 배포 9일 뒤 운영 데이터를 손으로
@@ -1494,8 +1494,11 @@ def rank_axis_health(db: Session, sample_notices: int = 300,
     갈라져도 똑같이 모른다. 비용은 이미 가진 데이터를 세는 것뿐이다.
 
     불일치율이 크면 등수 지표(§0.2 3차) 해석을 멈춰야 한다는 신호다.
-    최근 크롤된 `sample_notices` 개 공고만 본다 — 전수는 어드민 화면 로드마다
-    수십만 행을 정렬하게 된다.
+    낙찰결과가 확정된 공고만 최근 `sample_notices` 개 본다. 진행 중 공고는
+    부분 응답을 안전하게 누적 병합하므로 참가자가 빠지거나 순위가 바뀌는 동안
+    서로 다른 시점의 순위가 섞일 수 있다. 그것은 최종 스냅샷 무결성과 다른
+    상태이며, 함께 세면 정상 확정분까지 `등수 점검 중`으로 숨기는 오탐이 된다.
+    전수는 어드민 화면 로드마다 수십만 행을 정렬하게 되므로 표본으로 제한한다.
     """
     # 시간창을 먼저 좁힌다. `GROUP BY bid_no ORDER BY max(crawled_at)` 만으로는
     # PostgreSQL 에 loose index scan 이 없어 전 행을 읽는다 — `LIMIT` 은 집계
@@ -1503,11 +1506,17 @@ def rank_axis_health(db: Session, sample_notices: int = 300,
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=window_days)
     recent = (
         db.query(models.OpeningParticipant.bid_no.label("bid_no"))
+        .join(
+            models.OpeningResult,
+            models.OpeningResult.bid_no == models.OpeningParticipant.bid_no,
+        )
         # crawled_at 은 저장 시 항상 채우지만, NULL 이 섞이면 PostgreSQL 의
         # `DESC` 기본값(NULLS FIRST)이 그 공고들로 표본을 독점한다. SQLite 는
         # 반대라 테스트가 이 차이를 못 잡는다 — 아예 제외한다.
         .filter(models.OpeningParticipant.crawled_at.isnot(None),
-                models.OpeningParticipant.crawled_at >= cutoff)
+                models.OpeningParticipant.crawled_at >= cutoff,
+                models.OpeningResult.winner_price.isnot(None),
+                models.OpeningResult.winner_price > 0)
         .group_by(models.OpeningParticipant.bid_no)
         .order_by(func.max(models.OpeningParticipant.crawled_at).desc())
         .limit(sample_notices)
