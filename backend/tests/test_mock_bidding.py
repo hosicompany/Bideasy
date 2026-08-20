@@ -1114,10 +1114,14 @@ class TestRankAxisHealth:
     """
 
     @staticmethod
-    def _only(db_session, rows):
-        """이 검사는 참가자 테이블 전체를 보므로 앞 테스트가 남긴 행을 치운다."""
+    def _only(db_session, rows, *, finalized_bid_nos=None):
+        """참가자와 확정 결과를 함께 준비한다."""
         db_session.query(models.OpeningParticipant).delete()
+        bid_nos = {row.bid_no for row in rows}
+        if finalized_bid_nos is None:
+            finalized_bid_nos = bid_nos
         db_session.add_all(rows)
+        db_session.add_all(_opening(bid_no) for bid_no in finalized_bid_nos)
         db_session.commit()
 
     def test_consistent_data_is_healthy(self, db_session):
@@ -1177,6 +1181,30 @@ class TestRankAxisHealth:
         assert h["mismatch"] == 3
         assert h["mismatch_pct"] == 100.0
         assert h["healthy"] is False
+
+    def test_in_progress_drift_does_not_hide_healthy_final_snapshots(self, db_session):
+        """진행 중 병합축은 최종 스냅샷 건강도와 섞지 않는다.
+
+        운영에서 불일치 전부가 아직 `OpeningResult`가 없는 9공고에서 나와,
+        확정 300공고의 0% 축을 2.333% 고장으로 가렸던 회귀다.
+        """
+        final_bid = "MB-AXIS-FINAL"
+        progress_bid = "MB-AXIS-PROGRESS"
+        self._only(db_session, [
+            _participant(final_bid, 1, 90_000_000),
+            _participant(final_bid, 2, 92_000_000),
+            _participant(final_bid, None, 85_000_000),
+            _participant(progress_bid, 3, 90_000_000),
+            _participant(progress_bid, 1, 92_000_000),
+            _participant(progress_bid, None, 85_000_000),
+        ], finalized_bid_nos={final_bid})
+
+        h = mb.rank_axis_health(db_session, min_rows=1, min_notices=1)
+
+        assert h["sampled_notices"] == 1
+        assert h["rows"] == 3
+        assert h["mismatch"] == 0
+        assert h["healthy"] is True
 
     def test_small_sample_defers_judgement(self, db_session):
         """표본이 작으면 '고장'이라고 외치지 않는다.

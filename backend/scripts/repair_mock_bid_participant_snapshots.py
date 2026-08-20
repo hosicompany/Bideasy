@@ -102,6 +102,27 @@ def _backfill(limit: int, max_batches: int) -> dict:
         db.close()
 
 
+def _recovery_succeeded(crawl: dict, backfill: dict, after: dict) -> bool:
+    """안전한 개별 거부는 경고로 남기고 전역 복구 결과로 성공을 판정한다.
+
+    최종 스냅샷의 순위 축이 어긋나면 크롤러는 기존 데이터를 건드리지 않고
+    공고 전체를 거부한다. 이런 fail-closed 거부가 일부 있어도 확정 공고 전역
+    건강도가 정상이라면 더 읽을 이유가 없고, 같은 이유로 CLI를 실패시켜서도
+    안 된다. 조회·파싱·DB·백필 오류는 계속 실패로 판정한다.
+    """
+    crawl_ok = (
+        bool(crawl.get("ok"))
+        and bool(crawl.get("participant_ok"))
+        and not crawl.get("participant_errors")
+        and not crawl.get("failed_windows")
+    )
+    return bool(
+        crawl_ok
+        and backfill.get("complete")
+        and after.get("healthy") is True
+    )
+
+
 def _crawl_with_axis_retries(
     windows: list[tuple[datetime, datetime]],
     max_pages: int,
@@ -202,17 +223,7 @@ def main() -> int:
     }
     print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
 
-    crawl_ok = (
-        bool(crawl.get("ok"))
-        and bool(crawl.get("participant_ok"))
-        and not crawl.get("participant_errors")
-        and not crawl.get("participant_axis_rejected")
-    )
-    windows_ok = not crawl.get("failed_windows")
-    backfill_ok = backfill["complete"]
-    return 0 if (
-        crawl_ok and windows_ok and backfill_ok and after.get("healthy") is True
-    ) else 1
+    return 0 if _recovery_succeeded(crawl, backfill, after) else 1
 
 
 if __name__ == "__main__":
