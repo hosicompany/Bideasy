@@ -32,6 +32,7 @@ _SURFACES = [
     "backend/app/api/v1/endpoints/support.py",
     "backend/app/services/content_engine.py",
     "backend/app/services/scraper.py",
+    "infra/nginx/html/rationale.html",
 ]
 
 # "산재·고용" 이 부정문(포함되지 않는다/제외/들어가지 않는다)으로 쓰였으면 통과
