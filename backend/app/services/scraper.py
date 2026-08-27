@@ -12,7 +12,8 @@ logger = get_logger(__name__)
 # ──────────────────────────────────────────────────────────────────────
 # ⚠️ A값 수집 경로 우선순위 (DOM 의존도 축소 리팩터, 판정 C)
 #
-# A값(사후정산 비목 = 국민연금·건강보험·노인장기요양·산재·고용보험 등)은
+# A값(사후정산 비목 10종 = 국민연금·건강보험·노인장기요양보험료·퇴직공제부금비·
+#      산업안전보건관리비 등. 정본은 basis_amount_crawler.A_VALUE_KEYS)은
 # 조달청 OpenAPI 입찰공고/낙찰정보 서비스에 **구조화 필드로 존재하지 않음**.
 # (getDataSetOpnStdBidPblancInfo, getBidPblancListInfoCnstwk 모두 미제공)
 #

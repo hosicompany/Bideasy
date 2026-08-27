@@ -24,7 +24,7 @@
       {
         "@type": "Question",
         "name": "A값은 어디서 확인하나요?",
-        "acceptedAnswer": { "@type": "Answer", "text": "A값(국민연금·건강보험·산재·고용·노인장기요양보험 합계)은 조달청 OpenAPI에는 없고 공고문이나 첨부문서에만 있어요. BidEasy는 첨부 파싱과 사용자 제보로 A값을 자동 수집해 보여드려요. 공사 입찰에만 영향이 있어요." }
+        "acceptedAnswer": { "@type": "Answer", "text": "A값은 사후정산 비목 10종(국민연금·건강보험·노인장기요양보험료, 퇴직공제부금비, 산업안전보건관리비, 안전관리비, 품질관리비, 환경보전비, 안전점검비, 하도급대금지급보증서 발급수수료)의 합계예요. 산재·고용보험은 들어가지 않아요. 조달청 기초금액 조회 응답에 구성요소가 함께 오기 때문에 BidEasy는 이 값을 자동으로 채워요. 공사 입찰에만 영향이 있어요." }
       },
       {
         "@type": "Question",
@@ -94,7 +94,7 @@
         <div id="aval-wrap" style="margin-top:18px;">
           <label class="field-label">A값 (사후정산 비목 합계, 원)</label>
           <input class="input" id="aval" type="text" inputmode="numeric" value="12,400,000">
-          <div class="hint" style="font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5;">국민연금·건강보험·노인장기요양·산재·고용보험 합계. 모르면 0. 투찰률이 적용되지 않습니다.</div>
+          <div class="hint" style="font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5;">국민연금·건강보험·노인장기요양보험료, 퇴직공제부금비, 산업안전보건관리비 등 사후정산 비목 10종 합계. 모르면 0. 투찰률이 적용되지 않습니다.</div>
         </div>
       </div>
 
