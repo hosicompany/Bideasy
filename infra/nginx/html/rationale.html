@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>투찰 근거서 — BidEasy</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="투찰 전 확인한 항목과 그 근거를 기록한 내부 결재용 문서입니다.">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <script src="/assets/app.js"></script>
+  <script src="/assets/lower-limits.js"></script>
+  <style>
+    /* ───────────────────────────────────────────────────────────
+       투찰 근거서 — A4 1장 인쇄 문서
+       토큰은 이 문서 스코프에만 둔다. 전역 theme.css 는 화면 UI 팔레트라
+       인쇄 대비(흑백 판독)를 위해 문서 전용 값을 별도로 고정한다.
+       ⚠️ A4 1장 여유가 4.5mm(약 17px)뿐이다. 간격·폰트를 키우면 2장이 된다.
+          콘텐츠를 더하려면 반드시 다른 블록에서 같은 양을 뺀다.
+       ─────────────────────────────────────────────────────────── */
+    .rt {
+      --desk: #EEF0F3; --panel: #FFFFFF; --soft: #F7F8FA;
+      --ink: #191F28; --mid: #4E5968; --sub: #8B95A1;
+      --line: #E5E8EB; --line2: #C6CCD3;
+      --brand: #3182F6; --brandsoft: #EAF2FE; --warn: #FF3B30;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .rt {
+        --desk: #0E1013; --panel: #191C21; --soft: #20242B;
+        --ink: #EAEDF1; --mid: #AEB6C0; --sub: #8B95A1;
+        --line: #2C3138; --line2: #3E454E;
+        --brand: #5A9DFF; --brandsoft: #17253C; --warn: #FF6B60;
+      }
+    }
+    [data-theme="dark"] .rt {
+      --desk: #0E1013; --panel: #191C21; --soft: #20242B;
+      --ink: #EAEDF1; --mid: #AEB6C0; --sub: #8B95A1;
+      --line: #2C3138; --line2: #3E454E;
+      --brand: #5A9DFF; --brandsoft: #17253C; --warn: #FF6B60;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--desk);
+      color: var(--ink);
+      font-family: Pretendard, "Pretendard Variable", -apple-system, BlinkMacSystemFont,
+                   "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕", "Noto Sans KR",
+                   system-ui, sans-serif;
+      font-variant-numeric: tabular-nums;
+      -webkit-font-smoothing: antialiased;
+    }
+    .rt { background: var(--desk); min-height: 100vh; padding: 0 0 30px; }
+
+    /* 툴바 — 화면 전용 */
+    .rt-bar {
+      width: 210mm; margin: 0 auto; height: 34px;
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; color: var(--sub);
+    }
+    .rt-bar .sp { margin-left: auto; }
+    .rt-btn {
+      font: inherit; font-size: 11.5px; font-weight: 700;
+      padding: 6px 12px; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--line); background: var(--panel); color: var(--mid);
+    }
+    .rt-btn:hover { border-color: var(--line2); color: var(--ink); }
+    .rt-btn.pri { background: var(--brand); border-color: var(--brand); color: #fff; }
+    .rt-btn.pri:hover { filter: brightness(.94); color: #fff; }
+    .rt-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+    /* 시트 */
+    .sheet {
+      width: 210mm; min-height: 297mm; margin: 0 auto;
+      background: var(--panel); color: var(--ink);
+      padding: 13mm 14mm 11mm;
+      box-shadow: 0 8px 28px rgba(0,0,0,.08);
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .sheet > * { break-inside: avoid; }
+
+    /* 1. 문서 머리 */
+    .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+          padding-bottom: 7px; border-bottom: 2px solid var(--ink); }
+    .hd-l { min-width: 0; }
+    .hd-title { display: flex; align-items: center; gap: 7px; }
+    .hd-title h1 { margin: 0; font-size: 27px; font-weight: 800; letter-spacing: -.03em; white-space: nowrap; }
+    .hd-badge { font-size: 10px; font-weight: 600; border: 1px solid var(--line2); border-radius: 3px;
+                padding: 2px 5px; color: var(--mid); white-space: nowrap; }
+    .hd-desc { margin: 3px 0 0; font-size: 11.5px; color: var(--mid); }
+    .hd-r { display: flex; align-items: flex-start; gap: 10px; }
+    .hd-meta { display: grid; grid-template-columns: auto auto; gap: 2px 8px; font-size: 10px; align-content: start; }
+    .hd-meta dt { color: var(--sub); margin: 0; }
+    .hd-meta dd { margin: 0; font-weight: 600; white-space: nowrap; }
+    .sign { display: flex; gap: 6px; }
+    .sign div { width: 72px; border: 1px solid var(--line2); border-radius: 3px; padding: 3px 4px 0; text-align: center; }
+    .sign div.appr { border-width: 1.4px; border-color: var(--ink); }
+    .sign b { display: block; font-size: 8.5px; font-weight: 600; color: var(--sub); }
+    .sign i { display: block; height: 26px; }
+
+    /* 2. 공고 식별 */
+    .nt { background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; }
+    .nt-r1 { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .nt-name { font-size: 13.5px; font-weight: 700; letter-spacing: -.01em; }
+    .nt-no { font-size: 10.5px; color: var(--mid); white-space: nowrap; }
+    .nt-r2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+             margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 10.5px; }
+    .nt-r2 span { color: var(--sub); margin-right: 5px; }
+    .nt-r2 b { font-weight: 600; }
+
+    /* 3. 결론 */
+    .vd { border: 1.8px solid var(--ink); border-radius: 5px; overflow: hidden; display: flex; }
+    .vd-acc { width: 5px; background: var(--brand); flex: none; }
+    .vd-main { flex: 1; padding: 7px 12px; min-width: 0; }
+    .vd-lb { font-size: 10px; font-weight: 700; color: var(--mid); letter-spacing: .06em; }
+    .vd-amt { font-size: 37px; font-weight: 800; letter-spacing: -.035em; line-height: 1.12; white-space: nowrap; }
+    .vd-amt em { font-style: normal; font-size: 17px; font-weight: 700; margin-left: 2px; }
+    .vd-amt small { font-size: 10px; font-weight: 400; color: var(--sub); margin-left: 6px; letter-spacing: 0; }
+    .vd-side { display: flex; }
+    .vd-cell { border-left: 1px solid var(--line); padding: 9px 12px; display: flex; flex-direction: column; justify-content: center; }
+    .vd-cell:first-child { min-width: 118px; }
+    .vd-cell:last-child { min-width: 132px; }
+    .vd-cell b { font-size: 9.5px; font-weight: 400; color: var(--sub); }
+    .vd-cell strong { font-size: 19px; font-weight: 800; letter-spacing: -.02em; }
+    .vd-cell i { font-style: normal; font-size: 9px; color: var(--sub); }
+
+    /* 섹션 공통 */
+    .sec-h { display: flex; align-items: center; gap: 6px; }
+    .sec-n { width: 15px; height: 15px; border: 1.2px solid var(--ink); border-radius: 2px;
+             font-size: 9.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none; }
+    .sec-h h2 { margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: -.01em; }
+    .sec-h em { font-style: normal; margin-left: auto; font-size: 9.5px; color: var(--sub); }
+    .scroll { overflow-x: auto; }
+
+    /* 4. 참가자격 */
+    .ql { min-width: 600px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+    .ql-row { display: grid; grid-template-columns: 88px 1fr 1fr 92px; }
+    .ql-head { background: var(--soft); border-bottom: 1px solid var(--line2); }
+    .ql-head > div { font-size: 9.5px; font-weight: 700; color: var(--mid); padding: 3.5px 8px; }
+    .ql-body .ql-row { border-top: 1px solid var(--line); position: relative; }
+    .ql-body .ql-row:first-child { border-top: 0; }
+    .ql-body > .ql-row > div { font-size: 10.5px; padding: 3.5px 8px; border-left: 1px solid var(--line); }
+    .ql-body > .ql-row > div:first-child { border-left: 0; font-weight: 700; }
+    .ql-cell-ours.miss { color: var(--warn); }
+    .ql-hatch { position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+      background: repeating-linear-gradient(45deg, var(--warn) 0 1.6px, transparent 1.6px 5px);
+      -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .vb { display: inline-flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 700;
+          border: 1.2px solid var(--ink); border-radius: 3px; padding: 1px 5px; white-space: nowrap; }
+    .vb.miss { border-style: dashed; border-color: var(--warn); color: var(--warn); }
+
+    /* 5. 산출 원장 */
+    .lg { min-width: 620px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+    .lg-row { display: grid; grid-template-columns: 26px 128px 1fr 150px; align-items: center; }
+    .lg-head { background: var(--soft); border-bottom: 1px solid var(--line2); }
+    .lg-head > div { font-size: 9.5px; font-weight: 700; color: var(--mid); padding: 3.5px 8px; }
+    .lg-body .lg-row { border-top: 1px solid var(--line); }
+    .lg-body .lg-row:first-child { border-top: 0; }
+    .lg-op { font-size: 13px; font-weight: 700; color: var(--mid); text-align: center;
+             border-right: 1px solid var(--line); align-self: stretch; display: flex;
+             align-items: center; justify-content: center; }
+    .lg-it { font-size: 11px; font-weight: 700; padding: 3.5px 8px; }
+    .lg-bs { font-size: 10px; color: var(--mid); line-height: 1.35; padding: 3.5px 8px; }
+    .lg-am { font-size: 12.5px; font-weight: 600; text-align: right; padding: 3.5px 8px; white-space: nowrap; }
+    .lg-row.sub { background: var(--soft); }
+    .lg-row.floor { border-top: 1.4px solid var(--ink) !important; }
+    .lg-row.floor .lg-it { font-size: 11.5px; font-weight: 800; padding: 4.5px 8px; }
+    .lg-row.floor .lg-am { font-size: 13.5px; font-weight: 800; padding: 4.5px 8px; }
+    .lg-row.final { border-top: 1.4px solid var(--ink) !important; background: var(--brandsoft); }
+    .lg-row.final .lg-it { font-size: 12px; font-weight: 800; padding: 4.5px 8px; }
+    .lg-row.final .lg-am { font-size: 15px; font-weight: 800; padding: 4.5px 8px; }
+    .no-cost { color: var(--warn); font-weight: 600; }
+
+    /* 6. 위치 확인 */
+    .ax { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; }
+    .ax > svg { width: 100%; height: auto; display: block; }
+    .lgd { display: grid; grid-template-columns: 1.25fr 1fr; gap: 4px 16px;
+           font-size: 9.5px; line-height: 1.45; color: var(--mid);
+           margin-top: 5px; padding-top: 6px; border-top: 1px solid var(--line); }
+    .lgd > div { display: flex; gap: 5px; }
+    .lgd svg { flex: none; margin-top: 1px; }
+    .lgd b { font-weight: 700; color: var(--ink); }
+
+    /* 7. 하지 않은 것 */
+    .nx { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px;
+          display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; }
+    .nx-i { display: flex; gap: 5px; font-size: 10.5px; line-height: 1.4; color: var(--mid); }
+    .nx-i b { color: var(--ink); font-weight: 700; }
+    .nx-i svg { flex: none; margin-top: 2px; }
+    .nx-i.w, .nx-i.w b { color: var(--warn); }
+    .strip { display: flex; align-items: center; gap: 8px; border: 1.2px solid var(--warn);
+             border-radius: 4px; padding: 5px 10px 5px 0; position: relative; overflow: hidden; font-size: 10.5px; }
+    .strip-h { width: 7px; align-self: stretch; flex: none;
+      background: repeating-linear-gradient(45deg, var(--warn) 0 2px, transparent 2px 6px);
+      -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .strip b { color: var(--warn); font-weight: 700; }
+
+    /* 8. 꼬리말 */
+    .ft { margin-top: auto; padding-top: 5px; border-top: 1px solid var(--line);
+          display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+    .ft p { margin: 0; font-size: 9px; color: var(--sub); line-height: 1.5; }
+    .ft-b { text-align: right; white-space: nowrap; }
+    .ft-b b { display: block; font-size: 11px; font-weight: 800; color: var(--ink); }
+    .ft-b i { font-style: normal; font-size: 9px; color: var(--sub); }
+
+    /* 반응형 */
+    @media (max-width: 880px) {
+      .rt-bar { width: 100%; padding: 0 16px; }
+      .sheet { width: 100%; min-height: 0; padding: 22px 16px 26px; }
+      .hd, .vd { flex-wrap: wrap; }
+      .vd-side { width: 100%; }
+      .vd-cell { flex: 1; border-top: 1px solid var(--line); }
+      .vd-cell:first-child { border-left: 0; }
+      .nx { grid-template-columns: 1fr; }
+    }
+
+    /* 인쇄 — A4 1장 */
+    @page { size: A4; margin: 0; }
+    @media print {
+      /* 다크로 보고 있어도 인쇄는 항상 라이트. [data-theme] 와 같은 특이도로 덮는다. */
+      .rt, [data-theme="dark"] .rt, :root:not([data-theme="light"]) .rt {
+        --desk: #FFFFFF; --panel: #FFFFFF; --soft: #FFFFFF;
+        --ink: #191F28; --mid: #4E5968; --sub: #8B95A1;
+        --line: #E5E8EB; --line2: #C6CCD3;
+        --brand: #3182F6; --brandsoft: #FFFFFF; --warn: #FF3B30;
+      }
+      html, body { background: #fff; }
+      .rt { padding: 0; min-height: 0; }
+      .rt-bar { display: none; }
+      /* app.js 가 자동 마운트하는 지원 위젯은 결재 문서에 섞이면 안 된다 */
+      #bd-support, #bd-support-btn, [id^="bd-support"] { display: none !important; }
+      .sheet {
+        width: 210mm; min-height: 0; margin: 0;
+        padding: 10mm 13mm 8mm;
+        box-shadow: none; border: 0; border-radius: 0; gap: 5px;
+      }
+      .scroll { overflow: visible; }
+      [data-fill] { background: transparent !important; }
+      .sheet > *, .ql-row, .lg-row, .nx-i { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<div class="rt">
+
+  <div class="rt-bar">
+    <span>화면에서 확인한 뒤 인쇄하거나 PDF로 저장하세요 · A4 1장</span>
+    <span class="sp"></span>
+    <button type="button" class="rt-btn" id="rtTheme">테마 · 자동</button>
+    <button type="button" class="rt-btn pri" id="rtPrint">인쇄 · PDF 저장</button>
+  </div>
+
+  <div class="sheet" id="sheet"><!-- JS 렌더 --></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var BD = window.BD, esc = BD.esc, won = BD.won;
+
+  /* ── 데이터 ────────────────────────────────────────────────
+     URL 파라미터로 주입하고, 없으면 명세 예시값으로 렌더한다.
+     ⚠️ 여기 정의된 입력값과 아래 파생값 외의 숫자는 화면에 렌더하지 않는다.
+        (낙찰 가능성·기대 순위·경쟁사 투찰가 같은 파생값을 만들지 않는다) */
+  var q = new URLSearchParams(location.search);
+  function qn(k, d) { var v = parseFloat(q.get(k)); return isFinite(v) ? v : d; }
+  function qs(k, d) { var v = q.get(k); return (v === null || v === '') ? d : v; }
+
+  var D = {
+    meta: {
+      createdAt: qs('createdAt', '2026-08-26 15:40'),
+      author: qs('author', '김민재 · 공무팀'),
+      calcRecordId: qs('recordId', 'BE-260826-1488342-07'),
+      dataCollectedAt: qs('dataAt', '2026-08-26 06:00'),
+      rateRevisedAt: '2026-01-30'
+    },
+    notice: {
+      title: qs('title', '○○초등학교 다목적강당 신축 전기공사'),
+      noticeNo: qs('bidNo', 'R26BK01488342-000'),
+      agency: qs('agency', '경기도교육청'),
+      openingAt: qs('openingAt', '2026-08-28 11:00'),
+      awardMethod: qs('award', '적격심사 (지방자치단체 기준)')
+    },
+    basis: {
+      baseAmount: qn('base', 1157600000),
+      aValue: qn('aValue', 38420000),
+      lowerRate: 0,          // 아래에서 정본(lower-limits.js)으로 채운다
+      lowerRateBasis: '',
+      predeterminedBand: qn('band', 0.03)
+    },
+    decision: { bidRate: qn('bidRate', 0.895) },
+    qualifications: null,    // 아래에서 기본값/ API 로 채운다
+    reference: null
+  };
+
+  /* 낙찰하한율은 하드코딩하지 않는다 — 정본 미러(assets/lower-limits.js)에서 가져온다.
+     정본: backend/app/services/lower_limits.py (_CONSTRUCTION_2026) */
+  D.basis.lowerRate = window.BD_LOWER.construction(D.basis.baseAmount) / 100;
+  D.basis.lowerRateBasis = (function (b) {
+    if (b >= 5000000000) return '지방계약 적격심사 · 추정가격 50억 이상';
+    if (b >= 1000000000) return '지방계약 적격심사 · 추정가격 10억 이상 50억 미만';
+    return '지방계약 적격심사 · 추정가격 10억 미만';
+  })(D.basis.baseAmount);
+
+  D.qualifications = [
+    { item: '업종·면허', required: '전기공사업', ours: '전기공사업 등록', verdict: '충족' },
+    { item: '지역 제한', required: '경기도 소재 업체', ours: '경기도 수원시', verdict: '충족' },
+    { item: '시공실적', required: '최근 5년 합계 11.6억원 이상 · 공고문 기재', ours: '5년 합계 18.4억원', verdict: '충족' },
+    { item: '경영상태', required: '신용평가 B− 이상', ours: null, verdict: '확인 필요' }
+  ];
+  D.reference = { openings12m: 142, avgParticipants: 87, scopeLabel: '경기·전기공사·10~50억' };
+
+  /* ── 파생값 — 명세된 계산 순서 그대로 ────────────────────── */
+  function derive(d) {
+    var base = d.basis.baseAmount, a = d.basis.aValue, rate = d.basis.lowerRate;
+    var exAmount = base - a;
+    var multiplied = Math.floor(exAmount * rate);
+    var floorAmount = multiplied + a;
+    var floorRate = floorAmount / base;
+    var bidAmount = Math.floor(base * d.decision.bidRate / 10) * 10;
+    return {
+      exAmount: exAmount, multiplied: multiplied, floorAmount: floorAmount, floorRate: floorRate,
+      bidAmount: bidAmount,
+      gapAmount: bidAmount - floorAmount,
+      gapRate: d.decision.bidRate - floorRate,
+      predLow: base * (1 - d.basis.predeterminedBand),
+      predHigh: base * (1 + d.basis.predeterminedBand)
+    };
+  }
+  var C = derive(D);
+
+  /* ── 포맷 ───────────────────────────────────────────────── */
+  function pct(v, n) { return (v * 100).toFixed(n) + '%'; }
+  function pp(v, n) { return (v >= 0 ? '+' : '') + (v * 100).toFixed(n) + '%p'; }
+  function eok(v) { return (v / 100000000).toFixed(1) + '억'; }
+  var rateLabel = (D.basis.lowerRate * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + '%';
+  var bandLabel = '±' + (D.basis.predeterminedBand * 100).toFixed(0) + '%';
+
+  /* 받침 유무로 조사 선택 — 항목명이 데이터에서 오므로 고정할 수 없다 */
+  function josa(w, withB, withoutB) {
+    var c = String(w).charCodeAt(w.length - 1);
+    if (c < 0xAC00 || c > 0xD7A3) return withB;
+    return (c - 0xAC00) % 28 ? withB : withoutB;
+  }
+
+  /* ── 아이콘 (인라인 SVG · 아이콘 폰트·이모지 금지) ────────── */
+  var ICO = {
+    ok: '<svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><rect width="8" height="8" fill="currentColor"/></svg>',
+    miss: '<svg width="9" height="8" viewBox="0 0 9 8" aria-hidden="true"><path d="M4.5 .8 8.3 7.2H.7Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>',
+    not: '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.6 9.4 9.4 2.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>'
+  };
+
+  /* ── 위치 확인 SVG — 좌표 직접 계산(차트 라이브러리 미사용) ── */
+  function axisSvg() {
+    var base = D.basis.baseAmount, R = 10000000;
+    var dMin = Math.round((C.floorAmount - 0.02 * base) / R) * R;
+    var dMax = Math.round((base * (1 + D.basis.predeterminedBand) + 0.006 * base) / R) * R;
+    var X0 = 58, X1 = 690, W = X1 - X0;
+    function x(v) { return +(X0 + (v - dMin) / (dMax - dMin) * W).toFixed(1); }
+
+    var xFloor = x(C.floorAmount), xBid = x(C.bidAmount), xBase = x(base);
+    var xPL = x(C.predLow), xPH = x(C.predHigh);
+
+    var STEP = 40000000, ticks = '';
+    for (var t = Math.ceil(dMin / STEP) * STEP; t <= dMax; t += STEP) {
+      var tx = x(t);
+      ticks += '<line x1="' + tx + '" y1="96" x2="' + tx + '" y2="101" stroke="var(--line2)" stroke-width="1"/>'
+             + '<text x="' + tx + '" y="112" font-size="8.5" fill="var(--sub)" text-anchor="middle">' + eok(t) + '</text>';
+    }
+
+    return ''
+    + '<svg viewBox="0 0 720 152" role="img" aria-label="예정가격 변동 범위 안에서 낙찰하한선과 우리 투찰 금액의 위치를 표시한 수평 축">'
+    + '<defs>'
+    +   '<pattern id="rtHatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+    +     '<line x1="0" y1="0" x2="0" y2="7" stroke="var(--warn)" stroke-width="1.8"/></pattern>'
+    +   '<pattern id="rtDots" width="5" height="5" patternUnits="userSpaceOnUse">'
+    +     '<circle cx="1.2" cy="1.2" r="0.9" fill="var(--line2)"/></pattern>'
+    + '</defs>'
+
+    // 예정가격 변동 범위 밴드
+    + '<rect x="' + xPL + '" y="14" width="' + (+(xPH - xPL).toFixed(1)) + '" height="24" rx="2" fill="url(#rtDots)" stroke="var(--line2)" stroke-width="1.2" stroke-dasharray="4 3"/>'
+    + '<text x="' + xBase + '" y="30" font-size="10" font-weight="700" fill="var(--mid)" text-anchor="middle">예정가격 변동 범위 ' + bandLabel + '</text>'
+    + '<line x1="' + xPL + '" y1="38" x2="' + xPL + '" y2="96" stroke="var(--line2)" stroke-width="1" stroke-dasharray="3 3"/>'
+    + '<line x1="' + xPH + '" y1="38" x2="' + xPH + '" y2="96" stroke="var(--line2)" stroke-width="1" stroke-dasharray="3 3"/>'
+    + '<line x1="' + xBase + '" y1="38" x2="' + xBase + '" y2="96" stroke="var(--line2)" stroke-width="1.4"/>'
+    + '<text x="' + xPL + '" y="52" font-size="9" fill="var(--sub)" text-anchor="middle">' + won(Math.round(C.predLow)) + '</text>'
+    + '<text x="' + xPH + '" y="52" font-size="9" fill="var(--sub)" text-anchor="end">' + won(Math.round(C.predHigh)) + '</text>'
+
+    // 투찰가 라벨 블록
+    + '<text x="153" y="20" font-size="9.5" font-weight="700" fill="var(--brand)">우리 투찰 금액</text>'
+    + '<text x="153" y="41" font-size="17" font-weight="800" fill="var(--ink)">' + won(C.bidAmount) + '원</text>'
+    + '<text x="153" y="55" font-size="9" fill="var(--sub)">하한선 ' + pp(C.gapRate, 2) + ' (' + (C.gapAmount >= 0 ? '+' : '') + won(C.gapAmount) + '원)</text>'
+
+    // 마커 수직선 + 두 선 사이 폭 브래킷
+    + '<text x="' + (+((X0 + xFloor) / 2).toFixed(1)) + '" y="70" font-size="9.5" font-weight="700" fill="var(--warn)" text-anchor="middle">무효 구간</text>'
+    + '<line x1="' + xBid + '" y1="60" x2="' + xBid + '" y2="96" stroke="var(--brand)" stroke-width="2.2"/>'
+    + '<line x1="' + xFloor + '" y1="66" x2="' + xFloor + '" y2="106" stroke="var(--ink)" stroke-width="2.2"/>'
+    + '<line x1="' + xFloor + '" y1="73" x2="' + xBid + '" y2="73" stroke="var(--sub)" stroke-width="1"/>'
+
+    // 무효 / 유효 구간
+    + '<rect x="' + X0 + '" y="82" width="' + (+(xFloor - X0).toFixed(1)) + '" height="14" fill="url(#rtHatch)"/>'
+    + '<rect x="' + xFloor + '" y="82" width="' + (+(X1 - xFloor).toFixed(1)) + '" height="14" fill="var(--soft)" data-fill="1"/>'
+    + '<text x="' + (+((xFloor + X1) / 2).toFixed(1)) + '" y="92.5" font-size="9" fill="var(--sub)" text-anchor="middle">하한선 이상 · 유효 투찰 구간</text>'
+
+    // 축선 · 눈금 · 투찰가 마커
+    + '<line x1="' + X0 + '" y1="96" x2="' + X1 + '" y2="96" stroke="var(--ink)" stroke-width="1.4"/>'
+    + '<circle cx="' + xBid + '" cy="96" r="4.6" fill="var(--brand)" stroke="var(--panel)" stroke-width="1.6"/>'
+    + ticks
+
+    // 마커 라벨 (눈금 라벨 y=112 와 14px 간격)
+    + '<text x="' + xFloor + '" y="126" font-size="9.5" font-weight="700" fill="var(--ink)" text-anchor="middle">낙찰하한선</text>'
+    + '<text x="' + xFloor + '" y="140" font-size="10.5" font-weight="600" fill="var(--mid)" text-anchor="middle">' + won(C.floorAmount) + '</text>'
+    + '<text x="' + xBase + '" y="126" font-size="9.5" font-weight="700" fill="var(--ink)" text-anchor="middle">기초금액</text>'
+    + '<text x="' + xBase + '" y="140" font-size="10.5" font-weight="600" fill="var(--mid)" text-anchor="middle">' + won(base) + '</text>'
+    + '</svg>';
+  }
+
+  /* ── 렌더 ───────────────────────────────────────────────── */
+  var missing = D.qualifications.filter(function (x) { return x.verdict === '확인 필요'; });
+
+  function qualRows() {
+    return D.qualifications.map(function (r) {
+      var miss = r.verdict === '확인 필요';
+      return '<div class="ql-row' + (miss ? ' miss' : '') + '">'
+        + (miss ? '<span class="ql-hatch" aria-hidden="true"></span>' : '')
+        + '<div>' + esc(r.item) + '</div>'
+        + '<div>' + esc(r.required) + '</div>'
+        + '<div class="ql-cell-ours' + (miss ? ' miss' : '') + '">' + esc(r.ours === null ? '프로필 미기재' : r.ours) + '</div>'
+        + '<div><span class="vb' + (miss ? ' miss' : '') + '">' + (miss ? ICO.miss : ICO.ok) + esc(r.verdict) + '</span></div>'
+        + '</div>';
+    }).join('');
+  }
+
+  function ledgerRows() {
+    var rows = [
+      ['', '기초금액', '공고문 기재 · 조달청 기초금액 공개분', won(D.basis.baseAmount), ''],
+      ['−', 'A값', '국민연금·건강보험·노인장기요양·퇴직공제부금·산업안전보건관리비 등 사후정산 비목 10종 합계', won(D.basis.aValue), ''],
+      ['=', 'A값 제외 금액', won(D.basis.baseAmount) + ' − ' + won(D.basis.aValue), won(C.exAmount), 'sub'],
+      ['×', '낙찰하한율 ' + rateLabel, esc(D.basis.lowerRateBasis) + ' (' + D.meta.rateRevisedAt + ' 개정 반영)', won(C.multiplied), ''],
+      ['+', 'A값 재가산', '법정 A값 전액을 다시 더함', won(D.basis.aValue), ''],
+      ['=', '낙찰하한선',
+        won(C.multiplied) + ' + ' + won(D.basis.aValue) + ' · 기초금액의 ' + pct(C.floorRate, 4)
+        + ' · <span class="no-cost">법정 최저 기준이며 원가선이 아님</span>',
+        won(C.floorAmount), 'floor'],
+      ['+', '담당자 상향폭',
+        '목표 투찰률 ' + pct(D.decision.bidRate, 2) + ' − 하한선 투찰률 ' + pct(C.floorRate, 4) + ' = ' + pp(C.gapRate, 4),
+        won(C.gapAmount), ''],
+      ['=', '투찰 금액',
+        won(D.basis.baseAmount) + ' × ' + pct(D.decision.bidRate, 2) + ' = ' + won(C.bidAmount) + ' · 10원 단위 절사',
+        won(C.bidAmount), 'final']
+    ];
+    return rows.map(function (r) {
+      return '<div class="lg-row ' + r[4] + '">'
+        + '<div class="lg-op" aria-hidden="true">' + r[0] + '</div>'
+        + '<div class="lg-it">' + r[1] + '</div>'
+        + '<div class="lg-bs">' + r[2] + '</div>'
+        + '<div class="lg-am">' + r[3] + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  function notDone() {
+    var items = [
+      ['<b>낙찰가를 예측하지 않았습니다.</b> 예정가격은 추첨으로 정해지며 사전에 알 수 없습니다.', ''],
+      ['<b>낙찰 가능성이나 순위를 계산하지 않았습니다.</b> 이 문서에 확률로 읽을 수 있는 수치는 없습니다.', ''],
+      ['<b>적정 이윤·원가 검토는 포함하지 않았습니다.</b> 하한선은 법정 최저 기준일 뿐 원가선이 아닙니다. 이 금액이면 남는다는 뜻이 아닙니다.', '']
+    ];
+    // 확인 필요 항목이 있을 때만 동적으로 추가한다.
+    missing.forEach(function (m) {
+      items.push(['<b>' + esc(m.item) + josa(m.item, '은', '는') + ' 판정하지 못했습니다.</b> 대조할 회사 정보가 없어 확인하지 못했습니다.', 'w']);
+    });
+    return items.map(function (it) {
+      return '<div class="nx-i ' + it[1] + '">' + ICO.not + '<span>' + it[0] + '</span></div>';
+    }).join('');
+  }
+
+  function strip() {
+    if (!missing.length) return '';   // 0건이면 스트립 자체를 렌더하지 않는다
+    var names = missing.map(function (m) { return esc(m.item); }).join(' · ');
+    return '<div class="strip"><span class="strip-h" aria-hidden="true"></span>'
+      + '<span><b>투찰 전 확인 필요 ' + missing.length + '건</b> · ' + names
+      + ' — 회사 프로필에 미기재. 확인되지 않은 항목이므로 담당자가 직접 대조한 뒤 투찰하십시오.</span></div>';
+  }
+
+  function refLine() {
+    if (!D.reference) return '';   // 참고 정보가 없으면 항목 자체를 렌더하지 않는다
+    return '<div><svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">'
+      + '<circle cx="5.5" cy="5.5" r="3.4" fill="var(--brand)"/></svg>'
+      + '<span><b>참고 · 참여 규모</b> — 같은 공종·지역(' + esc(D.reference.scopeLabel) + ') 최근 12개월 개찰 '
+      + won(D.reference.openings12m) + '건 기준 평균 참여 ' + won(D.reference.avgParticipants) + '곳.</span></div>';
+  }
+
+  document.getElementById('sheet').innerHTML = ''
+  + '<header class="hd">'
+  +   '<div class="hd-l">'
+  +     '<div class="hd-title"><h1>투찰 근거서</h1><span class="hd-badge">내부 결재용</span></div>'
+  +     '<p class="hd-desc">투찰 전 확인한 항목과 그 근거를 기록한 문서입니다</p>'
+  +   '</div>'
+  +   '<div class="hd-r">'
+  +     '<dl class="hd-meta">'
+  +       '<dt>작성 일시</dt><dd>' + esc(D.meta.createdAt) + '</dd>'
+  +       '<dt>담당자</dt><dd>' + esc(D.meta.author) + '</dd>'
+  +       '<dt>계산 기록 ID</dt><dd>' + esc(D.meta.calcRecordId) + '</dd>'
+  +     '</dl>'
+  +     '<div class="sign">'
+  +       '<div><b>담당자 확인</b><i></i></div>'
+  +       '<div class="appr"><b>대표 승인</b><i></i></div>'
+  +     '</div>'
+  +   '</div>'
+  + '</header>'
+
+  + '<section class="nt" data-fill="1">'
+  +   '<div class="nt-r1"><div class="nt-name">' + esc(D.notice.title) + '</div>'
+  +     '<div class="nt-no">공고번호 <b>' + esc(D.notice.noticeNo) + '</b></div></div>'
+  +   '<div class="nt-r2">'
+  +     '<div><span>발주처</span><b>' + esc(D.notice.agency) + '</b></div>'
+  +     '<div><span>개찰</span><b>' + esc(D.notice.openingAt) + '</b></div>'
+  +     '<div><span>낙찰방법</span><b>' + esc(D.notice.awardMethod) + '</b></div>'
+  +   '</div>'
+  + '</section>'
+
+  + '<section class="vd">'
+  +   '<div class="vd-acc" aria-hidden="true"></div>'
+  +   '<div class="vd-main">'
+  +     '<div class="vd-lb">결론 · 투찰 금액</div>'
+  +     '<div class="vd-amt">' + won(C.bidAmount) + '<em>원</em><small>10원 단위 절사</small></div>'
+  +   '</div>'
+  +   '<div class="vd-side">'
+  +     '<div class="vd-cell"><b>투찰률</b><strong>' + pct(D.decision.bidRate, 2) + '</strong><i>기초금액 대비</i></div>'
+  +     '<div class="vd-cell"><b>낙찰하한선 대비 위치</b><strong>' + pp(C.gapRate, 2) + '</strong>'
+  +       '<i>하한선보다 ' + won(C.gapAmount) + '원 위</i></div>'
+  +   '</div>'
+  + '</section>'
+
+  + '<section>'
+  +   '<div class="sec-h"><span class="sec-n">1</span><h2>참가자격 대조</h2>'
+  +     '<em>공고문 기재 요건 ↔ 우리 회사 등록 정보</em></div>'
+  +   '<div class="scroll"><div class="ql">'
+  +     '<div class="ql-row ql-head" data-fill="1"><div>요건</div><div>공고 기준</div><div>우리 회사</div><div>판정</div></div>'
+  +     '<div class="ql-body">' + qualRows() + '</div>'
+  +   '</div></div>'
+  + '</section>'
+
+  + '<section>'
+  +   '<div class="sec-h"><span class="sec-n">2</span><h2>투찰 금액 산출</h2>'
+  +     '<em>위에서 아래로 순서대로 검산할 수 있습니다 · 단위 원</em></div>'
+  +   '<div class="scroll"><div class="lg">'
+  +     '<div class="lg-row lg-head" data-fill="1"><div>식</div><div>항목</div><div>근거 · 계산식</div><div style="text-align:right">금액</div></div>'
+  +     '<div class="lg-body">' + ledgerRows() + '</div>'
+  +   '</div></div>'
+  + '</section>'
+
+  + '<section>'
+  +   '<div class="sec-h"><span class="sec-n">3</span><h2>낙찰하한선 대비 위치</h2>'
+  +     '<em>위치만 표시합니다 · 낙찰 가능성이나 순위를 나타내지 않습니다</em></div>'
+  +   '<div class="ax">' + axisSvg()
+  +     '<div class="lgd">'
++       '<div><svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true"><rect width="11" height="11" fill="url(#rtHatch)"/></svg>'
++         '<span><b>무효 구간</b> — 낙찰하한선 미만 투찰은 무효 처리됩니다.</span></div>'
++       '<div><svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true"><rect x="4.4" width="2.2" height="11" fill="var(--ink)"/></svg>'
++         '<span><b>낙찰하한선</b> — 법정 최저 기준선입니다.</span></div>'
++       '<div><svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true"><rect x="1" y="1" width="9" height="9" rx="1" fill="none" stroke="var(--line2)" stroke-width="1.2" stroke-dasharray="3 2"/></svg>'
++         '<span><b>예정가격 변동 범위</b> — 기초금액 −3%~+3%(지방계약, 국가계약은 ±2%). '
++         '복수예비가격 15개 중 4개를 추첨해 평균하므로 사전에 확정할 수 없습니다.</span></div>'
++       refLine()
+  +     '</div>'
+  +   '</div>'
+  + '</section>'
+
+  + '<section>'
+  +   '<div class="sec-h"><span class="sec-n">4</span><h2>이 문서가 하지 않은 것</h2>'
+  +     '<em>이 문서의 범위를 밝힙니다</em></div>'
+  +   '<div class="nx">' + notDone() + '</div>'
+  + '</section>'
+  + strip()
+
+  + '<footer class="ft">'
+  +   '<p>공고 데이터 ' + esc(D.meta.dataCollectedAt) + ' 수집 · 낙찰하한율 ' + esc(D.meta.rateRevisedAt) + ' 개정 반영<br>'
+  +     '이 문서는 투찰 판단의 근거를 기록한 것이며, 낙찰 결과를 보장하지 않습니다. 최종 투찰 책임은 투찰자에게 있습니다.</p>'
+  +   '<div class="ft-b"><b>BidEasy</b><i>bideasy.kr</i></div>'
+  + '</footer>';
+
+  /* ── 툴바 ───────────────────────────────────────────────── */
+  document.getElementById('rtPrint').addEventListener('click', function () { window.print(); });
+
+  var MODES = ['auto', 'light', 'dark'], LABEL = { auto: '자동', light: '라이트', dark: '다크' };
+  var mode = 'auto';
+  function applyTheme() {
+    var root = document.documentElement;
+    if (mode === 'auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', mode);
+    document.getElementById('rtTheme').textContent = '테마 · ' + LABEL[mode];
+  }
+  document.getElementById('rtTheme').addEventListener('click', function () {
+    mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
+    applyTheme();
+  });
+  applyTheme();
+})();
+</script>
+</body>
+</html>
