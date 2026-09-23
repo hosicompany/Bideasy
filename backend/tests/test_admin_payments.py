@@ -69,6 +69,22 @@ def test_get_payment_detail(admin_client, db_session):
     assert data["order_kind"] == "subscription"
 
 
+def test_order_kind_matches_user_history(admin_client, db_session):
+    """관리자 유형 표시는 사용자 결제내역과 같은 기준 — 페이플·빌링 구독이 '포인트'로 뜨면 안 된다."""
+    user = db_session.query(models.User).filter_by(email="test-admin@test.com").first()
+    for oid in ("PYP_KIND_1", "PYPR_KIND_1", "BILL_KIND_1", "BILLR_KIND_1", "BIDEASY_KIND_1"):
+        _make_payment(db_session, user.id, oid, 19900)
+
+    items = admin_client.get("/api/v1/admin/payments?search=_KIND_1&size=50").json()["items"]
+    kinds = {p["order_id"]: p["order_kind"] for p in items}
+    assert kinds == {
+        "PYP_KIND_1": "subscription", "PYPR_KIND_1": "subscription",
+        "BILL_KIND_1": "subscription", "BILLR_KIND_1": "subscription",
+        "BIDEASY_KIND_1": "points",
+    }
+    assert admin_client.get("/api/v1/admin/payments/PYP_KIND_1").json()["order_kind"] == "subscription"
+
+
 def test_get_payment_detail_404(admin_client):
     resp = admin_client.get("/api/v1/admin/payments/NONEXISTENT")
     assert resp.status_code == 404
