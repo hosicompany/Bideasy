@@ -40,6 +40,14 @@ router = APIRouter()
 
 TOSS_CONFIRM_URL = "https://api.tosspayments.com/v1/payments/confirm"
 
+# 구독 주문 prefix — 토스 단건(SUB_)·토스 빌링(BILL_/BILLR_)·페이플(PYP_/PYPR_). 그 외(BIDEASY_) = 포인트.
+_SUBSCRIPTION_PREFIXES = ("SUB_", "BILL_", "BILLR_", "PYP_", "PYPR_")
+
+
+def order_kind(order_id: str) -> str:
+    """주문 유형 판정 단일 소스 (사용자·관리자 결제 내역 공용)."""
+    return "subscription" if order_id.startswith(_SUBSCRIPTION_PREFIXES) else "points"
+
 
 @router.post("/create-order", response_model=payment_schemas.CreateOrderResponse)
 def create_order(
@@ -509,9 +517,7 @@ def get_payment_history(
         "items": [
             {
                 "order_id": o.order_id,
-                "order_kind": "subscription"
-                if o.order_id.startswith(("SUB_", "BILL_", "BILLR_", "PYP_", "PYPR_"))
-                else "points",
+                "order_kind": order_kind(o.order_id),
                 "amount": o.amount,
                 "status": o.status,
                 "method": o.method,

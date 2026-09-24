@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.core.security import require_admin
 from app.db import models
+from app.api.v1.endpoints.payments import order_kind
 from app.db.session import get_db
 from app.services.payments_refund import refund_order
 
@@ -76,7 +77,7 @@ def list_payments(
         items.append({
             "id": p.id,
             "order_id": p.order_id,
-            "order_kind": "subscription" if p.order_id.startswith("SUB_") else "points",
+            "order_kind": order_kind(p.order_id),
             "user_id": p.user_id,  # SET NULL 정책으로 None 가능
             "amount": p.amount,
             "status": p.status,
@@ -124,7 +125,7 @@ def get_payment_detail(
     return {
         "id": order.id,
         "order_id": order.order_id,
-        "order_kind": "subscription" if order.order_id.startswith("SUB_") else "points",
+        "order_kind": order_kind(order.order_id),
         "user": user_summary,
         "user_id": order.user_id,
         "amount": order.amount,
