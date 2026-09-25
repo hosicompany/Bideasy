@@ -12,6 +12,7 @@ Endpoints:
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 from typing import Optional
 
@@ -275,3 +276,26 @@ def outbound_test_send(
         "notice_count": len(ctx.get("notices") or []),
         "outbound_enabled": settings.OUTBOUND_EMAIL_ENABLED,
     }
+
+
+@router.post("/outbound/feedback-request")
+def outbound_feedback_request(
+    user_id: int = Query(..., description="대상 회원 ID"),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """회원 1명에게 답장형 피드백 요청(feedback_request)을 보낸다.
+
+    광고 게이트를 그대로 탄다 — 광고 수신 확인이 없으면 skipped/no_consent 로 남고
+    실제로는 나가지 않는다. 수신자당 한 번만(재클릭은 duplicate).
+    """
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없어요")
+    who = hashlib.sha1((user.email or "").strip().lower().encode("utf-8")).hexdigest()[:16]
+    row = nurture.send_marketing(
+        db, user, subject_type="user", template="feedback_request",
+        ctx={"company_name": user.company_name or ""},
+        dedupe_key=f"feedback_request:email:{who}",
+    )
+    return {"status": row.status, "reason": row.reason, "to": row.email}

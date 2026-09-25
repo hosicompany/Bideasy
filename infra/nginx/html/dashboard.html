@@ -31,6 +31,7 @@
       </div>
       <a class="btn btn-primary btn-sm" href="/search" id="more"><span style="display:flex;gap:6px;align-items:center;">공고 더 보기</span></a>
     </div>
+    <div id="dash-survey" style="margin-top:20px;"></div>
     <div class="g4" id="kpis" style="gap:14px;margin-top:24px;"></div>
     <div class="cols-dash" style="margin-top:20px;">
       <div class="card" style="padding:22px;">
@@ -56,6 +57,8 @@
 
     function getToken() { return BD.getToken(); }
     if (!getToken()) { location.href = '/login?redirect=' + encodeURIComponent('/dashboard'); return; }
+    BD.microSurvey(document.getElementById('dash-survey'), 'monthly_bids', '한 달에 직접 투찰하시는 건수는 어느 정도예요?',
+      ['아직 없음(준비 중)', '1~4건', '5~9건', '10~29건', '30건 이상']);
     async function api(path) {
       var resp = await fetch(API_BASE + path, { headers: { Authorization: 'Bearer ' + getToken() } });
       if (resp.status === 401) { try { localStorage.removeItem('access_token'); localStorage.removeItem('jwt'); } catch (e) {} location.href = '/login'; throw new Error('401'); }

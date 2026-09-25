@@ -586,3 +586,39 @@ def _trial_expiry(ctx: dict) -> tuple[str, str, str]:
         f"{_btn(f'{web}/account', '현재 이용 상태 보기')}"
     )
     return subject, text, html
+
+
+@register("feedback_request", "marketing", sample={"company_name": "○○전기"})
+def _feedback_request(ctx: dict) -> tuple[str, str, str]:
+    """가입자에게 답장으로 받는 서면 인터뷰 — 설문 링크·보상 없이 질문 2개.
+
+    보상이 없어도 서비스 이용을 권하는 성격이 섞일 수 있어 광고 카테고리로 둔다
+    (확인된 동의자에게만 나간다). 답장은 SES_REPLY_TO 로 모인다.
+    """
+    company = (ctx.get("company_name") or "").strip()
+    greeting = f"{company} 대표님" if company else "사장님"
+
+    subject = "BidEasy 쓰시면서 어떠셨는지 한 줄만 여쭤봐도 될까요?"
+    questions = [
+        "BidEasy를 어디서 알게 되셨고, 그때 어떤 걸 해결하고 싶으셨어요?",
+        "써 보시고 아쉬웠거나 기대와 달랐던 점 하나만 알려주세요.",
+    ]
+    text = (
+        f"{greeting}, 안녕하세요. BidEasy 대표입니다.\n\n"
+        "BidEasy를 더 쓸모 있게 만들고 싶어서 직접 여쭤봐요.\n"
+        "설문 링크는 없어요. 이 메일에 답장으로 편하게 적어 주시면 제가 직접 읽어요.\n\n"
+        + "\n".join(f"{i}. {q}" for i, q in enumerate(questions, 1))
+        + "\n\n한 줄이어도 정말 큰 도움이 돼요. 답장 주시면 제가 직접 답해 드릴게요.\n"
+    )
+    items = "".join(f'<li style="margin:0 0 10px;">{q}</li>' for q in questions)
+    html = (
+        f'<p style="font-size:16px;line-height:1.7;margin:0 0 14px;">{escape(greeting)}, 안녕하세요. '
+        "BidEasy 대표입니다.</p>"
+        '<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0 0 14px;">'
+        "BidEasy를 더 쓸모 있게 만들고 싶어서 직접 여쭤봐요.<br>"
+        "설문 링크는 없어요. <b>이 메일에 답장으로</b> 편하게 적어 주시면 제가 직접 읽어요.</p>"
+        f'<ol style="font-size:15px;line-height:1.7;padding-left:20px;margin:0 0 18px;">{items}</ol>'
+        '<p style="font-size:15px;line-height:1.7;color:#4E5968;margin:0;">'
+        "한 줄이어도 정말 큰 도움이 돼요. 답장 주시면 제가 직접 답해 드릴게요.</p>"
+    )
+    return subject, text, html
