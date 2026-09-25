@@ -34,7 +34,15 @@ from app.services.notice_lookup import resolve_bid_no
 
 
 router = APIRouter()
-PUBLIC_EVENTS = frozenset({"free_value_completed", "chrome_install_clicked"})
+PUBLIC_EVENTS = frozenset({"free_value_completed", "chrome_install_clicked", "micro_survey_answered"})
+# 1문항 설문 — 문항 ID와 허용 답. 공개 폼이라 선택지 밖의 답은 거부한다(분포 조작 방지).
+# 화면의 BD.microSurvey 호출부(diagnose·dashboard·checkout)와 문자열이 같아야 한다 —
+# tests/test_micro_survey.py 가 드리프트를 감시한다. '기타'일 때만 직접 입력을 받는다.
+MICRO_SURVEY_QUESTIONS: dict[str, tuple[str, ...]] = {
+    "visit_purpose": ("넣을 수 있는 공고 찾기", "투찰가·하한선 계산", "공고 주의 조항 확인", "그냥 둘러보기", "기타"),
+    "monthly_bids": ("아직 없음(준비 중)", "1~4건", "5~9건", "10~29건", "30건 이상"),
+    "payment_hesitation": ("가격이 부담돼요", "기능을 더 써 보고 싶어요", "우리 업종에 맞는지 모르겠어요", "결제·카드 문제", "기타"),
+}
 _BID_NO_RE = re.compile(r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
 
 
@@ -102,6 +110,21 @@ def _bounded_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     return metadata
 
 
+def _survey_answer(metadata: dict[str, Any]) -> dict[str, str]:
+    """공개 폼 입력 — 문항·답은 허용 목록, 직접 입력은 기타에서만 300자까지."""
+    q, a, detail = metadata.get("q"), metadata.get("a"), metadata.get("detail") or ""
+    if not isinstance(q, str) or q not in MICRO_SURVEY_QUESTIONS:
+        raise HTTPException(status_code=400, detail="알 수 없는 설문 문항입니다.")
+    if a not in MICRO_SURVEY_QUESTIONS[q]:
+        raise HTTPException(status_code=400, detail="설문 답이 올바르지 않습니다.")
+    if not isinstance(detail, str) or len(detail) > 300 or (detail.strip() and a != "기타"):
+        raise HTTPException(status_code=400, detail="직접 입력은 '기타'에서 300자 이내로만 받습니다.")
+    answer = {"q": q, "a": a}
+    if detail.strip():
+        answer["detail"] = detail.strip()
+    return answer
+
+
 def _receipt_dedupe_key(nonce: str) -> str:
     """Hash the opaque nonce so the one-time ledger never stores receipt material."""
     return f"notice-receipt:{hashlib.sha256(nonce.encode('ascii')).hexdigest()}"
@@ -135,9 +158,16 @@ def record_web_event(
     if body.event_name not in PUBLIC_EVENTS:
         raise HTTPException(status_code=400, detail="허용되지 않은 웹 이벤트입니다.")
     creative_id = _known_creative(db, body.creative_id)
+    metadata = _bounded_metadata(body.metadata)
+    dedupe_key = f"web:{body.event_id}"
+    if body.event_name == "micro_survey_answered":
+        metadata = _survey_answer(metadata)
+        # 문항당 한 사람 한 번 — 로그인 사용자는 계정, 아니면 브라우저 기준.
+        who = f"u{current_user.id}" if current_user else body.anonymous_id
+        dedupe_key = f"survey:{metadata['q']}:{who}"
     row = models.GrowthEvent(
         event_name=body.event_name,
-        dedupe_key=f"web:{body.event_id}",
+        dedupe_key=dedupe_key,
         anonymous_id=body.anonymous_id,
         user_id=current_user.id if current_user else None,
         creative_id=creative_id,
@@ -145,7 +175,7 @@ def record_web_event(
         utm_medium=body.utm_medium,
         utm_campaign=body.utm_campaign,
         utm_content=body.utm_content,
-        event_metadata_json=_bounded_metadata(body.metadata),
+        event_metadata_json=metadata,
         occurred_at=datetime.now(timezone.utc),
     )
     db.add(row)

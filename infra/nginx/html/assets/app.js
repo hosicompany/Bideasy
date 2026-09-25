@@ -118,6 +118,41 @@
     }).catch(function () { /* 계측 실패는 본 기능을 막지 않는다. */ });
   }
 
+  // 1문항 설문 — 문항 ID는 backend growth.py MICRO_SURVEY_QUESTIONS 와 같아야 한다.
+  // '기타'를 고르면 직접 입력칸이 열린다. 서버가 받아 준 브라우저엔 다시 묻지 않고,
+  // '나중에'는 이 탭 세션 동안만 숨긴다(전송하지 않아 억지 답이 데이터에 섞이지 않는다).
+  function microSurvey(el, q, question, options) {
+    if (!el || el.hasAttribute('data-ms')) return;  // 같은 자리에 두 번 붙이지 않는다
+    var key = 'bd_ms_' + q;
+    try { if (localStorage.getItem(key) || sessionStorage.getItem(key)) return; } catch (e) {}
+    el.setAttribute('data-ms', q);
+    var btns = '';
+    for (var i = 0; i < options.length; i++) btns += '<button type="button" class="btn btn-ghost btn-sm" data-a="' + esc(options[i]) + '">' + esc(options[i]) + '</button>';
+    el.innerHTML = '<div class="card" style="padding:18px;">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:10px;"><span style="font-size:14.5px;font-weight:700;">' + esc(question) + '</span>' +
+      '<button type="button" data-later style="border:0;background:none;color:var(--muted);font-size:12.5px;cursor:pointer;white-space:nowrap;">나중에</button></div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + btns + '</div>' +
+      '<div data-etc style="display:none;margin-top:10px;gap:6px;"><input class="input" maxlength="300" placeholder="편하게 적어 주세요" style="flex:1;min-width:0;"><button type="button" class="btn btn-primary btn-sm">보내기</button></div>' +
+      '</div>';
+    function done(a, detail) {
+      // 202(중복 포함)일 때만 '답함'으로 기록 — 실패하면 다음 방문에 다시 묻는다.
+      trackGrowth('micro_survey_answered', { q: q, a: a, detail: detail || '' }).then(function (r) {
+        if (r && r.ok) { try { localStorage.setItem(key, '1'); } catch (e) {} }
+      });
+      el.innerHTML = '<div class="card" style="padding:18px;font-size:14px;color:var(--muted);">알려주셔서 고마워요! 더 나은 BidEasy를 만드는 데 쓸게요.</div>';
+    }
+    var etc = el.querySelector('[data-etc]'), input = etc.querySelector('input');
+    el.addEventListener('click', function (ev) {
+      var b = ev.target.closest('button');
+      if (!b) return;
+      if (b.hasAttribute('data-later')) { try { sessionStorage.setItem(key, 'later'); } catch (e) {} el.innerHTML = ''; return; }
+      if (b.hasAttribute('data-a')) {
+        var a = b.getAttribute('data-a');
+        if (a === '기타') { etc.style.display = 'flex'; input.focus(); } else done(a);
+      } else if (input.value.trim()) done('기타', input.value.trim());
+    });
+  }
+
   function mountNav(active) {
     var authed = !!getToken();
     // 왼쪽 nav = 공개 기능(항상 동일) — 로그인 여부와 무관해 레이아웃이 흔들리지 않음.
@@ -271,7 +306,19 @@
     });
   }
 
-  window.BD = { icon: icon, won: won, fmt: fmt, esc: esc, mountNav: mountNav, toast: toast, getFavs: getFavs, toggleFav: toggleFav, getTheme: getTheme, setTheme: setTheme, getToken: getToken, getAttribution: getAttribution, trackGrowth: trackGrowth, mountSupportChat: mountSupportChat, API_BASE: 'https://api.bideasy.kr/api/v1' };
+  // Microsoft Clarity 세션 리플레이 — 방문자가 어디서 멈추는지 본다. ID 가 비어 있으면 꺼짐.
+  // ⚠️ 켜기 전에 개인정보처리방침(hosicompany.github.io/bideasy-policy)에 행태정보 수집 도구 고지가 먼저다.
+  // 관리자 페이지는 app.js 를 불러오지 않아 기록되지 않는다. 마스킹은 Clarity 콘솔에서 Strict 로 둔다.
+  var CLARITY_ID = '';
+  if (CLARITY_ID && location.hostname === 'bideasy.kr') {
+    (function (c, l, a, r, i, t, y) {
+      c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments); };
+      t = l.createElement(r); t.async = 1; t.src = 'https://www.clarity.ms/tag/' + i;
+      y = l.getElementsByTagName(r)[0]; y.parentNode.insertBefore(t, y);
+    })(window, document, 'clarity', 'script', CLARITY_ID);
+  }
+
+  window.BD = { icon: icon, won: won, fmt: fmt, esc: esc, mountNav: mountNav, toast: toast, getFavs: getFavs, toggleFav: toggleFav, getTheme: getTheme, setTheme: setTheme, getToken: getToken, getAttribution: getAttribution, trackGrowth: trackGrowth, microSurvey: microSurvey, mountSupportChat: mountSupportChat, API_BASE: 'https://api.bideasy.kr/api/v1' };
   function bindGrowthLinks() {
     document.querySelectorAll('a[href*="chromewebstore.google.com"]').forEach(function (link) {
       if (link.dataset.bdGrowthBound) return;

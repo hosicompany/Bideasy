@@ -159,6 +159,9 @@
         </div>
       </div>
 
+      <!-- 1문항 설문 — 결과를 본 직후 방문 목적 -->
+      <div id="dg-survey" style="margin-top:16px;"></div>
+
       <!-- 캡처 후 전체 목록 -->
       <div id="dg-full" class="dg-hidden" style="margin-top:16px;"></div>
 
@@ -294,6 +297,8 @@
           document.getElementById('dg-locked-rows').innerHTML = '';
         }
         lock.classList.remove('dg-hidden');
+        if (window.BD && BD.microSurvey) BD.microSurvey(document.getElementById('dg-survey'), 'visit_purpose',
+          '오늘 무엇을 확인하러 오셨어요?', ['넣을 수 있는 공고 찾기', '투찰가·하한선 계산', '공고 주의 조항 확인', '그냥 둘러보기', '기타']);
       }
 
       // ── 리드 캡처 ──

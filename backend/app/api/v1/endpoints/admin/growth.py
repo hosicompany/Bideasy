@@ -132,3 +132,48 @@ def creative_funnel(
             "review_eligible_users": review_eligible_users,
         },
     }
+
+
+@router.get("/growth/micro-survey")
+def micro_survey(
+    days: int = Query(default=90, ge=1, le=365),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """1문항 설문 응답 — 문항별 답 분포와 최근 직접 입력 원문."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        db.query(models.GrowthEvent)
+        .filter(
+            models.GrowthEvent.event_name == "micro_survey_answered",
+            models.GrowthEvent.occurred_at >= since,
+        )
+        .order_by(models.GrowthEvent.occurred_at.desc())
+        .all()
+    )
+    questions: dict[str, dict] = defaultdict(lambda: {"total": 0, "answers": defaultdict(int), "details": []})
+    for row in rows:
+        meta = row.event_metadata_json or {}
+        q = questions[meta.get("q", "unknown")]
+        q["total"] += 1
+        q["answers"][meta.get("a", "")] += 1
+        if meta.get("detail") and len(q["details"]) < 30:
+            q["details"].append({
+                "a": meta.get("a"),
+                "detail": meta["detail"],
+                "user_id": row.user_id,
+                "utm_source": row.utm_source,
+                "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
+            })
+    return {
+        "days": days,
+        "total": len(rows),
+        "questions": {
+            key: {
+                "total": q["total"],
+                "answers": sorted(q["answers"].items(), key=lambda kv: -kv[1]),
+                "details": q["details"],
+            }
+            for key, q in questions.items()
+        },
+    }

@@ -150,6 +150,7 @@ const PAGE_TITLES = {
   system: '시스템',
   simulation: '백테스트 (과거 데이터)',
   mockbidding: '모의투찰 결과',
+  activation: '활성화 · 설문',
 };
 
 function getCurrentRoute() {
@@ -556,6 +557,7 @@ async function showUserDetail(userId) {
       <button class="btn btn-outline" id="act-extend" style="padding:6px 12px;font-size:12px;">Trial 연장</button>
       <button class="btn btn-outline" id="act-expire" style="padding:6px 12px;font-size:12px;">Trial 만료</button>
       <button class="btn btn-outline" id="act-points" style="padding:6px 12px;font-size:12px;">포인트 지급</button>
+      <button class="btn btn-outline" id="act-feedback" style="padding:6px 12px;font-size:12px;">피드백 요청 메일</button>
       <button class="btn btn-danger" id="act-delete" style="padding:6px 12px;font-size:12px;">삭제</button>
     </div>
     ${user.recent_payments.length ? `
@@ -580,6 +582,7 @@ async function showUserDetail(userId) {
     $('act-extend')?.addEventListener('click', () => showExtendTrialModal(user));
     $('act-expire')?.addEventListener('click', () => showExpireTrialModal(user));
     $('act-points')?.addEventListener('click', () => showGrantPointsModal(user));
+    $('act-feedback')?.addEventListener('click', () => showFeedbackRequestModal(user));
     $('act-delete')?.addEventListener('click', () => showDeleteUserModal(user));
   }, 50);
 }
@@ -656,6 +659,31 @@ function showGrantPointsModal(user) {
       renderRoute();
     } catch (e) { toast(e.message, 'error'); return false; }
   }, '지급');
+}
+
+function showFeedbackRequestModal(user) {
+  openModal('피드백 요청 메일', `
+    <div class="status-row"><span class="status-label">대상</span><span class="status-value">${esc(user.email || user.id)}</span></div>
+    <div style="margin-top:10px;font-size:13px;color:var(--color-text-sub);line-height:1.6;">
+      답장으로 질문 2개(알게 된 경로·아쉬운 점)를 받는 메일이에요. 답장은 support@bideasy.kr 로 와요.<br>
+      광고 메일로 분류되어 <b>광고 수신을 확인한 회원에게만</b> 실제로 나가고, 한 사람에게 한 번만 보내져요.
+      미리보기: <a href="#" id="fb-preview">열기</a>
+    </div>
+  `, async () => {
+    try {
+      const r = await api(`/admin/outbound/feedback-request?user_id=${user.id}`, { method: 'POST' });
+      const msg = { sent: '발송 완료', dry_run: '발송 꺼짐(dry_run) — 실제로 나가지 않았어요' }[r.status]
+        || (r.reason === 'no_consent' ? '광고 수신 미확인 — 발송하지 않았어요'
+          : r.reason === 'duplicate' ? '이미 보낸 회원이에요' : `${r.status} (${r.reason || ''})`);
+      toast(msg, r.status === 'sent' ? 'success' : 'error');
+    } catch (e) { toast(e.message, 'error'); return false; }
+  }, '보내기');
+  setTimeout(() => document.getElementById('fb-preview')?.addEventListener('click', async (ev) => {
+    ev.preventDefault();
+    const p = await api('/admin/outbound/preview?template=feedback_request');
+    const w = window.open('', '_blank');
+    if (w) { w.document.title = p.subject; w.document.body.innerHTML = `<h3>${esc(p.subject)}</h3>` + p.html; }
+  }), 50);
 }
 
 function showDeleteUserModal(user) {
@@ -921,7 +949,8 @@ pages.autocalibrate = async function(content) {
 pages.activation = async function(content) {
   content.innerHTML = '<div class="card">불러오는 중...</div>';
   let d;
-  try { d = await api('/admin/stats/activation?days=30'); }
+  let sv = null;
+  try { [d, sv] = await Promise.all([api('/admin/stats/activation?days=30'), api('/admin/growth/micro-survey?days=90').catch(() => null)]); }
   catch (err) { content.innerHTML = `<div class="card"><h3>오류</h3><p>${err.message}</p></div>`; return; }
   // daily 는 이벤트 발생일이 아니라 **가입일 코호트** 기준이다 — 8/1 가입자가 8/20 에
   // 활성화하면 8/1 행이 소급해서 오른다. 서버 키가 cohort_* 인 이유이고, 헤더도 그렇게 읽히게 쓴다.
@@ -952,8 +981,32 @@ pages.activation = async function(content) {
         <thead><tr><th style="text-align:left;">가입일</th><th style="text-align:left;">가입</th><th style="text-align:left;">그중 프로필 완성</th><th style="text-align:left;">그중 첫 안전 판정</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="4" style="color:var(--color-text-muted);">아직 계측된 가입자가 없어요 — 계측 배포 이후의 신규 가입부터 집계됩니다.</td></tr>'}</tbody>
       </table>
-    </div>`;
+    </div>
+    ${renderMicroSurvey(sv)}`;
 };
+
+// 1문항 설문 응답 — 문항 ID 는 backend growth.py MICRO_SURVEY_QUESTIONS 와 같다.
+const SURVEY_LABELS = {
+  visit_purpose: '방문 목적 (무료 진단 결과 화면)',
+  monthly_bids: '월 직접 투찰 건수 (대시보드)',
+  payment_hesitation: '결제를 망설인 이유 (결제 화면)',
+};
+function renderMicroSurvey(sv) {
+  if (!sv) return '<div class="card"><h3>1문항 설문</h3><p style="color:var(--color-text-muted);">응답을 불러오지 못했어요.</p></div>';
+  const blocks = Object.keys(SURVEY_LABELS).map((key) => {
+    const q = sv.questions[key];
+    if (!q) return `<div style="margin-top:14px;"><b>${SURVEY_LABELS[key]}</b><div style="font-size:13px;color:var(--color-text-muted);margin-top:4px;">아직 응답이 없어요</div></div>`;
+    const answers = q.answers.map(([a, n]) =>
+      `<tr><td>${esc(a)}</td><td style="text-align:right;">${n}</td><td style="text-align:right;color:var(--color-text-muted);">${Math.round(n * 100 / q.total)}%</td></tr>`).join('');
+    const details = q.details.map((d) =>
+      `<li style="margin:4px 0;">${esc(d.detail)} <span style="color:var(--color-text-muted);font-size:11px;">${d.user_id ? '회원 ' + d.user_id : '비회원'} · ${fmtDateShort(d.occurred_at)}</span></li>`).join('');
+    return `<div style="margin-top:14px;"><b>${SURVEY_LABELS[key]}</b> <span style="color:var(--color-text-muted);font-size:12px;">${q.total}명</span>
+      <table style="width:100%;font-size:13px;margin-top:6px;"><tbody>${answers}</tbody></table>
+      ${details ? `<div style="font-size:12px;color:var(--color-text-sub);margin-top:6px;">직접 입력</div><ul style="font-size:13px;padding-left:18px;margin:4px 0 0;">${details}</ul>` : ''}</div>`;
+  }).join('');
+  return `<div class="card"><h3>1문항 설문 — 최근 90일</h3>
+    <p style="font-size:12px;color:var(--color-text-muted);margin:-4px 0 0;">한 사람이 같은 문항에 한 번만 답해요 (회원은 계정, 비회원은 브라우저 기준).</p>${blocks}</div>`;
+}
 
 // ─── 시스템 (Phase D) ─────────────────────────────────────
 pages.system = async function(content) {

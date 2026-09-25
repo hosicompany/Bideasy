@@ -49,6 +49,7 @@
         <div id="pg-note" class="panel" style="padding:16px;margin-top:10px;font-size:13px;color:var(--muted);line-height:1.6;">결제 수단을 확인하는 중…</div>
         <button id="pay" class="btn btn-primary btn-block btn-lg" style="margin-top:18px;">카드 등록하고 결제</button>
         <div id="pay-err" style="display:none;background:var(--danger-soft);color:var(--danger);font-size:13px;font-weight:600;padding:11px 14px;border-radius:10px;margin-top:12px;"></div>
+        <div id="pay-survey" style="margin-top:12px;"></div>
         <p style="font-size:11.5px;color:var(--faint);margin-top:12px;text-align:center;line-height:1.5;">토스페이먼츠 · 페이플 안전결제 — 카드 정보는 PG사 보안창에서만 입력되며 저장되지 않아요.</p>
       </div>
     </div>
@@ -185,6 +186,12 @@
 
     var btn = document.getElementById('pay'), busy = false, orig = btn.textContent;
     function resetBtn() { busy = false; btn.disabled = false; btn.textContent = orig; btn.style.opacity = ''; }
+    // 사용자가 결제창을 직접 닫은 경우(토스 USER_CANCEL)에만 묻는다 — 결제 전·시스템 오류엔 묻지 않는다.
+    // 페이플 오버레이는 닫힘 신호를 주지 않아 여기서 잡히지 않는다.
+    function askHesitation() {
+      BD.microSurvey(document.getElementById('pay-survey'), 'payment_hesitation', '결제를 망설이게 하는 점이 있다면 알려주세요',
+        ['가격이 부담돼요', '기능을 더 써 보고 싶어요', '우리 업종에 맞는지 모르겠어요', '결제·카드 문제', '기타']);
+    }
     btn.addEventListener('click', async function () {
       if (busy) return; busy = true; hideErr();
       btn.disabled = true; btn.textContent = '결제창 여는 중…'; btn.style.opacity = '.85';
@@ -192,7 +199,8 @@
         if (provider === 'payple') await viaPayple(); else await viaToss();
         // 두 흐름 모두 결제창(리다이렉트/오버레이)으로 진입 → 성공 시 이후 코드 미실행
       } catch (e) {
-        if (e && e.code !== 'USER_CANCEL') showErr(e.message || '결제 처리 중 오류가 발생했어요');
+        if (e && e.code === 'USER_CANCEL') askHesitation();
+        else showErr((e && e.message) || '결제 처리 중 오류가 발생했어요');
         resetBtn();
       }
     });

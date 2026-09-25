@@ -26,6 +26,9 @@
     <span class="eyebrow">My Page</span>
     <h1 style="font-size:30px;font-weight:800;letter-spacing:-0.8px;margin:8px 0 0;">마이페이지</h1>
 
+    <!-- 결제 결과 (?payment=success|fail — 결제 콜백이 여기로 돌려보낸다) -->
+    <div id="pay-result" style="display:none;margin-top:22px;"></div>
+
     <!-- 구독 상태 -->
     <div class="card" id="sub-card" style="padding:24px;margin-top:22px;">
       <div style="font-size:14px;color:var(--muted);">구독 정보를 불러오는 중…</div>
@@ -63,6 +66,20 @@
     function getToken() { return BD.getToken(); }
     function clearToken() { try { localStorage.removeItem('access_token'); localStorage.removeItem('jwt'); } catch (e) {} }
     if (!getToken()) { location.href = '/login?redirect=' + encodeURIComponent('/account'); return; }
+
+    // 결제 콜백 결과 — 이전엔 파라미터를 무시해 사용자가 실패를 몰랐다.
+    // '청구되지 않았다'고 단정하지 않는다: 청구 통신 타임아웃은 PG 쪽에선 승인됐을 수 있다.
+    // message 는 URL 값이라 결제사 응답으로 인용하고 길이를 자른다(textContent — 스크립트 실행 없음).
+    (function () {
+      var q = new URLSearchParams(location.search), result = q.get('payment');
+      if (result === 'success') BD.toast('결제가 완료됐어요');
+      if (result !== 'fail') return;
+      var box = document.getElementById('pay-result'), reason = (q.get('message') || '').slice(0, 80);
+      box.style.display = 'block';
+      box.innerHTML = '<div style="background:var(--danger-soft);color:var(--danger);font-size:14px;font-weight:600;padding:14px 16px;border-radius:12px;line-height:1.6;"></div>';
+      box.firstChild.textContent = '결제가 완료되지 않았어요.' + (reason ? ' (결제사 응답: ' + reason + ')' : '') +
+        ' 카드 청구 여부가 궁금하시면 support@bideasy.kr 로 알려주세요 — 확인해 드릴게요.';
+    })();
 
     async function api(path, init) {
       init = init || {};
