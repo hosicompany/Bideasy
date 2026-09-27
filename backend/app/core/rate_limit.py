@@ -1,7 +1,7 @@
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from fastapi import Request
 
+from app.core.client_meta import client_ip
 from app.core.config import settings
 
 
@@ -21,7 +21,8 @@ def _key_func(request: Request) -> str:
                 return f"user:{user_id}"
         except Exception:
             pass
-    return get_remote_address(request)
+    # IP 판정은 client_meta 한 곳 — XFF 첫 요소(위조 가능)가 아니라 nginx 가 붙인 마지막 홉.
+    return client_ip(request)
 
 
 def get_user_tier(request: Request) -> str:
