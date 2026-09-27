@@ -309,7 +309,7 @@
   // Microsoft Clarity 세션 리플레이 — 방문자가 어디서 멈추는지 본다. ID 가 비어 있으면 꺼짐.
   // ⚠️ 켜기 전에 개인정보처리방침(hosicompany.github.io/bideasy-policy)에 행태정보 수집 도구 고지가 먼저다.
   // 관리자 페이지는 app.js 를 불러오지 않아 기록되지 않는다. 마스킹은 Clarity 콘솔에서 Strict 로 둔다.
-  var CLARITY_ID = '';
+  var CLARITY_ID = 'yowavvqcgv';
   if (CLARITY_ID && location.hostname === 'bideasy.kr') {
     (function (c, l, a, r, i, t, y) {
       c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments); };
