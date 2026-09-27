@@ -40,8 +40,11 @@ app = FastAPI(
     redoc_url=None,
 )
 
+# nginx 는 같은 도커 네트워크(사설 대역)에서 붙는다. "*" 로 두면 uvicorn 이 XFF 의
+# 첫 요소(클라이언트가 위조 가능)를 request.client 로 삼는다 — 신뢰는 사설·루프백만.
+TRUSTED_PROXIES = ["127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
 if settings.APP_ENV == "production":
-    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=TRUSTED_PROXIES)
 
 # Rate Limiting
 app.state.limiter = limiter
