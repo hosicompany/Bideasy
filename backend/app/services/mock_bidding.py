@@ -22,7 +22,7 @@ from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, case, exists, func, or_, select
+from sqlalchemy import String, and_, case, cast, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.core.logging import get_logger
@@ -925,11 +925,11 @@ class HistoryFilterError(ValueError):
 
 
 class RankFilterLocked(HistoryFilterError):
-    """등수 축 검증 전에는 순위로 거를 수 없다.
+    """등수 축 검증 전에는 순위로 거르거나 정렬할 수 없다.
 
-    화면은 검증 전 등수를 숨기는데(fail-closed), 순위 필터가 열려 있으면
-    "1위만 보기" 결과 목록 자체가 등수를 드러낸다. 화면에서만 막으면 URL 로
-    우회되므로 서버가 거부한다.
+    화면은 검증 전 등수를 숨기는데(fail-closed), 순위 필터·정렬이 열려 있으면
+    "1위만 보기"나 "순위순" 목록 자체가 등수를 드러낸다. 화면에서만 막으면
+    URL 로 우회되므로 서버가 거부한다.
     """
 
 
@@ -937,6 +937,54 @@ class RankFilterLocked(HistoryFilterError):
 #: 사람이 기대하는 날짜와 어긋나 넣지 않는다 — 오차 추이도 마감일 기준이다.
 HISTORY_DATE_FIELDS = ("deadline", "opened")
 HISTORY_OUTCOMES = ("WIN", "LOST", "DROPOUT")
+#: 정렬. `rank_asc` 는 순위를 드러내므로 순위 필터와 같은 잠금을 받는다.
+HISTORY_SORTS = ("deadline_desc", "deadline_asc", "rank_asc", "gap_abs_asc")
+#: CSV 한 번에 내보내는 공고 상한 — 넘으면 `truncated` 로 알린다.
+HISTORY_CSV_MAX_NOTICES = 5000
+
+#: 금액대(기초금액 스냅샷) — autocalibrate `dataset.get_bracket`·
+#: `calculator._get_price_bracket` 과 같은 경계·어휘. 갈라지면 자가보정
+#: 세그먼트와 비교할 수 없다. (이름, 상한) — 마지막은 상한 없음.
+PRICE_BRACKETS = (("small", 1e8), ("medium", 5e8), ("large", 1e9),
+                  ("xlarge", 5e9), ("xxlarge", None))
+
+#: 오답노트 태그 어휘 — 채점이 붙이는 값 전부. 필터 입력을 이 목록으로만
+#: 받는다(테스트가 코드의 `tags.append(...)` 리터럴과 대조해 드리프트를 막는다).
+FAILURE_TAGS = ("A값_결측", "하한율_테이블폴백", "기초금액_정정", "재공고건",
+                "예가_비표준", "기초금액_기준불일치", "기초금액_변경됨",
+                "사정률_극단", "예정가격_결측")
+
+
+def _price_bracket_case(basic_price_col):
+    """기초금액 → 금액대 이름 SQL CASE (`PRICE_BRACKETS` 단일 소스)."""
+    whens = [(basic_price_col < upper, name)
+             for name, upper in PRICE_BRACKETS if upper is not None]
+    return case(*whens, else_=PRICE_BRACKETS[-1][0])
+
+
+def _price_bracket_condition(basic_price_col, bracket: str):
+    """금액대 하나에 해당하는 기초금액 구간 [이전 상한, 상한)."""
+    lower = None
+    for name, upper in PRICE_BRACKETS:
+        if name == bracket:
+            conds = []
+            if lower is not None:
+                conds.append(basic_price_col >= lower)
+            if upper is not None:
+                conds.append(basic_price_col < upper)
+            return and_(*conds)
+        lower = upper
+    raise HistoryFilterError(f"unknown bracket: {bracket}")
+
+
+def _bracket_name(basic_price) -> str | None:
+    """`_price_bracket_case` 의 파이썬 판본(CSV 용)."""
+    if basic_price is None:
+        return None
+    for name, upper in PRICE_BRACKETS:
+        if upper is None or basic_price < upper:
+            return name
+    return None
 
 
 def _day_range(date_from: date_cls | None, date_to: date_cls | None):
@@ -948,23 +996,36 @@ def _day_range(date_from: date_cls | None, date_to: date_cls | None):
     return start, end
 
 
-def history_page(db: Session, *, page: int = 1, page_size: int = 10,
-                 state: str = "all", search: str | None = None,
-                 arm: str = "active", date_field: str = "deadline",
-                 date_from: date_cls | None = None, date_to: date_cls | None = None,
-                 outcome: str | None = None, rank_min: int | None = None,
-                 rank_max: int | None = None,
-                 rank_pct_max: float | None = None) -> dict:
-    """공고 단위 모의투찰 이력.
+def _json_tags_contain(tags_col, tag: str):
+    """JSON 태그 목록에 `tag` 가 있는가 — DB 별 JSON 연산자 없이.
 
-    원장은 arm 행 5개지만 사람이 확인하는 단위는 공고 1건이다. `active` arm 을
-    페이지 앵커로 삼고, 같은 공고의 5개 전략과 각 최신 scoring_rev 를 묶는다.
-    최근 N행 제한 대신 페이지네이션을 제공해 지난 개찰 결과까지 모두 찾을 수 있다.
+    SQLAlchemy 기본 직렬화는 `ensure_ascii=True` 라 한글 태그가 유니코드
+    이스케이프(`\\uXXXX`)로 저장된다. 다른 경로로 쓴 행은 원문일 수 있어 두
+    형태를 모두 본다. `autoescape` 라 태그의 `_` 와 이스케이프의 백슬래시가
+    와일드카드로 읽히지 않는다(PostgreSQL LIKE 의 기본 이스케이프가 백슬래시다).
+    따옴표까지 포함해 비교하므로 다른 태그의 부분 문자열에 걸리지 않는다.
+    """
+    text = cast(tags_col, String)
+    return or_(text.contains(json.dumps(tag), autoescape=True),
+               text.contains(json.dumps(tag, ensure_ascii=False), autoescape=True))
 
-    판정·순위 필터는 `arm`(기본 active) 의 **최신 rev** 결과에 건다. 앵커는
-    그대로 active 라 카드 구성은 바뀌지 않고, 걸러지는 공고만 달라진다.
-    순위 필터는 등수 축 검증(`rank_axis_health`)이 명시적으로 통과했을 때만
-    허용한다(`RankFilterLocked`).
+
+def _history_anchor_query(db: Session, *, state: str = "all",
+                          search: str | None = None, arm: str = "active",
+                          date_field: str = "deadline",
+                          date_from: date_cls | None = None,
+                          date_to: date_cls | None = None,
+                          outcome: str | None = None, rank_min: int | None = None,
+                          rank_max: int | None = None,
+                          rank_pct_max: float | None = None,
+                          bid_method: str | None = None, bracket: str | None = None,
+                          tag: str | None = None, gap_bucket: str | None = None,
+                          valid_base_only: bool = False,
+                          sort: str = "deadline_desc"):
+    """이력 필터 → (정렬 전 앵커 쿼리, 정렬된 앵커 쿼리, 적용 필터 에코).
+
+    목록(`history_page`)과 CSV(`history_export_rows`)가 **같은 조건**으로
+    공고를 고르도록 한 곳에 둔다 — 갈라지면 화면 건수와 CSV 건수가 다르다.
     """
     if state not in {"all", "completed", "waiting"}:
         raise HistoryFilterError("state must be all, completed, or waiting")
@@ -974,13 +1035,20 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
         raise HistoryFilterError("date_field must be deadline or opened")
     if outcome is not None and outcome not in HISTORY_OUTCOMES:
         raise HistoryFilterError("outcome must be WIN, LOST, or DROPOUT")
+    if sort not in HISTORY_SORTS:
+        raise HistoryFilterError(f"unknown sort: {sort}")
+    if tag is not None and tag not in FAILURE_TAGS:
+        raise HistoryFilterError(f"unknown tag: {tag}")
+    if gap_bucket is not None and gap_bucket not in GAP_BUCKETS:
+        raise HistoryFilterError(f"unknown gap_bucket: {gap_bucket}")
     if date_from and date_to and date_from > date_to:
         raise HistoryFilterError("date_from must not be after date_to")
     if rank_min is not None and rank_max is not None and rank_min > rank_max:
         raise HistoryFilterError("rank_min must not exceed rank_max")
     rank_filtered = (rank_min is not None or rank_max is not None
                      or rank_pct_max is not None)
-    if rank_filtered and rank_axis_health(db).get("healthy") is not True:
+    if ((rank_filtered or sort == "rank_asc")
+            and rank_axis_health(db).get("healthy") is not True):
         raise RankFilterLocked("rank_axis_unverified")
 
     anchor = db.query(models.MockBid).filter(models.MockBid.arm == "active")
@@ -992,6 +1060,12 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
         anchor = anchor.filter(
             models.MockBid.bid_no.contains(search.strip(), autoescape=True)
         )
+    # 입찰방법·금액대는 등록 시점 스냅샷 — 결과 대기 공고에도 걸 수 있다
+    if bid_method:
+        anchor = anchor.filter(models.MockBid.snapshot_bid_method == bid_method)
+    if bracket:
+        anchor = anchor.filter(
+            _price_bracket_condition(models.MockBid.snapshot_basic_price, bracket))
 
     start, end = _day_range(date_from, date_to)
     if start or end:
@@ -1009,47 +1083,97 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
                 opened = opened.where(models.OpeningResult.open_date < end)
             anchor = anchor.filter(models.MockBid.bid_no.in_(opened))
 
-    if outcome is not None or rank_filtered:
-        # JOIN 이 아니라 IN 세미조인 — 앵커 공고가 두 번 세지지 않는다.
+    result_filtered = (outcome is not None or rank_filtered or tag is not None
+                       or gap_bucket is not None or valid_base_only)
+    shown = None
+    if result_filtered or sort in ("rank_asc", "gap_abs_asc"):
+        # 기준 arm 의 "카드에 보이는 결과 행"(최신 rev 중 최대 id) — 공고당 1행.
         # 같은 max rev 중복 행이 이미 DB 에 있을 수 있으므로(유니크 제약 없음),
-        # 카드 조립과 **같은 행**(최신 rev 중 최대 id)만 본다. 아무 중복 행이나
-        # 조건에 맞으면 통과시키면 "1위" 필터에 "가상 5위" 카드가 섞인다.
+        # 아무 중복 행이나 조건에 맞으면 통과시키면 "1위" 필터에 "가상 5위"
+        # 카드가 섞인다. (bid_no, arm) 는 유니크라 정렬 조인도 행을 늘리지 않는다.
         fb = aliased(models.MockBid)
         res = models.MockBidResult
         dup = aliased(models.MockBidResult)
         latest_f = _latest_rev_sq(db)
-        shown = (
+        picked = (
             select(func.max(dup.id).label("rid"))
             .join(latest_f, and_(dup.mock_bid_id == latest_f.c.mock_bid_id,
                                  dup.scoring_rev == latest_f.c.max_rev))
             .group_by(dup.mock_bid_id)
             .subquery()
         )
-        matching = (
-            select(fb.bid_no)
+        shown = (
+            select(fb.bid_no.label("bid_no"),
+                   fb.snapshot_basic_price.label("basic_price"),
+                   res.outcome.label("outcome"),
+                   res.estimated_rank.label("estimated_rank"),
+                   res.valid_participants_count.label("valid_count"),
+                   res.gap_to_winner_pct.label("gap"),
+                   res.failure_tags.label("failure_tags"),
+                   res.actual_reserved_price.label("reserved"))
             .join(res, res.mock_bid_id == fb.id)
-            .join(shown, res.id == shown.c.rid)
+            .join(picked, res.id == picked.c.rid)
             .where(fb.arm == arm)
+            .subquery()
         )
+
+    if result_filtered:
+        conds = []
         if outcome is not None:
-            matching = matching.where(res.outcome == outcome)
+            conds.append(shown.c.outcome == outcome)
         if rank_filtered:
             # 무효는 순위가 없다. 구 로직이 남긴 무효의 등수가 백필 전에 살아
             # 있어도 "1위" 필터에 섞이지 않게 판정으로 한 번 더 막는다.
-            matching = matching.where(res.outcome.in_(("WIN", "LOST")),
-                                      res.estimated_rank.isnot(None))
+            conds += [shown.c.outcome.in_(("WIN", "LOST")),
+                      shown.c.estimated_rank.isnot(None)]
         if rank_min is not None:
-            matching = matching.where(res.estimated_rank >= rank_min)
+            conds.append(shown.c.estimated_rank >= rank_min)
         if rank_max is not None:
-            matching = matching.where(res.estimated_rank <= rank_max)
+            conds.append(shown.c.estimated_rank <= rank_max)
         if rank_pct_max is not None:
             # 분모는 유효 투찰 수 — 화면의 "유효 투찰 N곳 사이 순위"와 같은 축
-            matching = matching.where(
-                res.valid_participants_count > 0,
-                res.estimated_rank * 100.0
-                / func.nullif(res.valid_participants_count, 0) <= rank_pct_max,
-            )
-        anchor = anchor.filter(models.MockBid.bid_no.in_(matching))
+            conds += [
+                shown.c.valid_count > 0,
+                shown.c.estimated_rank * 100.0
+                / func.nullif(shown.c.valid_count, 0) <= rank_pct_max,
+            ]
+        if tag is not None:
+            conds.append(_json_tags_contain(shown.c.failure_tags, tag))
+        if gap_bucket is not None:
+            # 차트(`gap_distribution`)와 같은 구간 경계 (이전 경계, 경계]. 단 차트는
+            # 유효 표본(기초금액 일관성)만 세므로, 건수까지 맞추려면
+            # `valid_base_only` 를 함께 건다 — 목록은 개별 공고 확인용이라 기본은 전수.
+            lo, hi = _gap_bucket_bounds(gap_bucket)
+            conds += [shown.c.gap.isnot(None), shown.c.outcome.in_(_JUDGED)]
+            if lo is not None:
+                conds.append(shown.c.gap > lo)
+            if hi is not None:
+                conds.append(shown.c.gap <= hi)
+        if valid_base_only:
+            # 게이트·성적표와 같은 유효 표본 기준 — 목록과 상단 KPI 가 갈라지지 않게
+            conds.append(_valid_base_condition(shown.c.reserved, shown.c.basic_price))
+        anchor = anchor.filter(
+            models.MockBid.bid_no.in_(select(shown.c.bid_no).where(*conds)))
+
+    unsorted = anchor
+    if sort == "deadline_asc":
+        ordered = anchor.order_by(models.MockBid.deadline_at.asc(), models.MockBid.id.asc())
+    elif sort in ("rank_asc", "gap_abs_asc"):
+        if sort == "rank_asc":
+            # 무효의 잔존 등수로 정렬하지 않는다 — 순위 없는 공고는 뒤로
+            key = case((shown.c.outcome.in_(("WIN", "LOST")), shown.c.estimated_rank),
+                       else_=None)
+        else:
+            key = func.abs(shown.c.gap)
+        ordered = (
+            anchor.outerjoin(shown, shown.c.bid_no == models.MockBid.bid_no)
+            # NULL 의 정렬 위치는 DB 마다 반대다(PostgreSQL ASC = 뒤, SQLite = 앞)
+            # — CASE 로 명시해 값 없는 공고를 항상 뒤로 보낸다
+            .order_by(case((key.is_(None), 1), else_=0), key.asc(),
+                      models.MockBid.deadline_at.desc(), models.MockBid.id.desc())
+        )
+    else:
+        ordered = anchor.order_by(models.MockBid.deadline_at.desc(), models.MockBid.id.desc())
 
     applied_filters = {
         "state": state,
@@ -1062,52 +1186,21 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
         "rank_min": rank_min,
         "rank_max": rank_max,
         "rank_pct_max": rank_pct_max,
+        "bid_method": bid_method or None,
+        "bracket": bracket or None,
+        "tag": tag,
+        "gap_bucket": gap_bucket,
+        "valid_base_only": bool(valid_base_only),
+        "sort": sort,
     }
+    return unsorted, ordered, applied_filters
 
-    total = anchor.count()
-    anchors = (
-        anchor.order_by(models.MockBid.deadline_at.desc(), models.MockBid.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+
+def _history_items(db: Session, anchors: list) -> list[dict]:
+    """앵커(active) 행 목록 → 공고 카드 묶음(5개 arm + 각 최신 결과)."""
     bid_nos = [row.bid_no for row in anchors]
-
-    all_anchor = db.query(models.MockBid).filter(models.MockBid.arm == "active")
-    completed_total = all_anchor.filter(models.MockBid.status == "SCORED").count()
-    registered_total = all_anchor.count()
-    latest_all = _latest_rev_sq(db)
-    rank_ready = (
-        db.query(func.count(func.distinct(models.MockBid.bid_no)))
-        .join(models.MockBidResult,
-              models.MockBidResult.mock_bid_id == models.MockBid.id)
-        .join(latest_all, and_(
-            models.MockBidResult.mock_bid_id == latest_all.c.mock_bid_id,
-            models.MockBidResult.scoring_rev == latest_all.c.max_rev,
-        ))
-        .filter(models.MockBid.arm == "active",
-                models.MockBidResult.estimated_rank.isnot(None))
-        .scalar() or 0
-    )
-
     if not bid_nos:
-        total_pages = (total + page_size - 1) // page_size
-        return {
-            "page": page,
-            "page_size": page_size,
-            "total": total,
-            "total_pages": total_pages,
-            "has_previous": page > 1,
-            "has_next": page < total_pages,
-            "summary": {
-                "registered": registered_total,
-                "completed": completed_total,
-                "waiting": max(0, registered_total - completed_total),
-                "rank_ready": rank_ready,
-            },
-            "filters": applied_filters,
-            "items": [],
-        }
+        return []
 
     bids = (
         db.query(models.MockBid)
@@ -1145,7 +1238,6 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
         bids_by_no.setdefault(bid.bid_no, []).append(bid)
 
     items = []
-    rank_ready_on_page = 0
     for anchor_row in anchors:
         notice = notices.get(anchor_row.bid_no)
         opening = openings.get(anchor_row.bid_no)
@@ -1180,8 +1272,6 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
             })
 
         primary = next((row for row in arm_items if row["arm"] == "active"), None)
-        if primary and primary["estimated_rank"] is not None:
-            rank_ready_on_page += 1
         completed = bool(primary and primary["outcome"] in _JUDGED)
         items.append({
             "bid_no": anchor_row.bid_no,
@@ -1196,10 +1286,60 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
                 anchor_row.deadline_at.isoformat() if anchor_row.deadline_at else None
             ),
             "opened_at": opening.open_date.isoformat() if opening and opening.open_date else None,
+            "bid_method": anchor_row.snapshot_bid_method,
+            "basic_price": anchor_row.snapshot_basic_price,
             "state": "COMPLETED" if completed else "WAITING",
             "primary_arm": primary,
             "arms": arm_items,
         })
+    return items
+
+
+def history_page(db: Session, *, page: int = 1, page_size: int = 10,
+                 **filters) -> dict:
+    """공고 단위 모의투찰 이력.
+
+    원장은 arm 행 5개지만 사람이 확인하는 단위는 공고 1건이다. `active` arm 을
+    페이지 앵커로 삼고, 같은 공고의 5개 전략과 각 최신 scoring_rev 를 묶는다.
+    최근 N행 제한 대신 페이지네이션을 제공해 지난 개찰 결과까지 모두 찾을 수 있다.
+
+    판정·순위·주의 요소·낙찰가 차이·유효 표본 필터는 `arm`(기본 active) 의
+    **최신 rev** 결과에 건다. 앵커는 그대로 active 라 카드 구성은 바뀌지 않고,
+    걸러지는 공고만 달라진다. 순위 필터·순위 정렬은 등수 축 검증
+    (`rank_axis_health`)이 명시적으로 통과했을 때만 허용한다(`RankFilterLocked`).
+    필터 인자는 `_history_anchor_query` 를 따른다.
+    """
+    unsorted, ordered, applied_filters = _history_anchor_query(db, **filters)
+    total = unsorted.count()
+    anchors = ordered.offset((page - 1) * page_size).limit(page_size).all()
+    items = _history_items(db, anchors)
+
+    all_anchor = db.query(models.MockBid).filter(models.MockBid.arm == "active")
+    completed_total = all_anchor.filter(models.MockBid.status == "SCORED").count()
+    registered_total = all_anchor.count()
+    latest_all = _latest_rev_sq(db)
+    rank_ready = (
+        db.query(func.count(func.distinct(models.MockBid.bid_no)))
+        .join(models.MockBidResult,
+              models.MockBidResult.mock_bid_id == models.MockBid.id)
+        .join(latest_all, and_(
+            models.MockBidResult.mock_bid_id == latest_all.c.mock_bid_id,
+            models.MockBidResult.scoring_rev == latest_all.c.max_rev,
+        ))
+        .filter(models.MockBid.arm == "active",
+                models.MockBidResult.estimated_rank.isnot(None))
+        .scalar() or 0
+    )
+    summary = {
+        "registered": registered_total,
+        "completed": completed_total,
+        "waiting": max(0, registered_total - completed_total),
+        "rank_ready": rank_ready,
+    }
+    if items:
+        summary["rank_ready_on_page"] = sum(
+            1 for item in items
+            if item["primary_arm"] and item["primary_arm"]["estimated_rank"] is not None)
 
     total_pages = (total + page_size - 1) // page_size
     return {
@@ -1209,15 +1349,90 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
         "total_pages": total_pages,
         "has_previous": page > 1,
         "has_next": page < total_pages,
-        "summary": {
-            "registered": registered_total,
-            "completed": completed_total,
-            "waiting": max(0, registered_total - completed_total),
-            "rank_ready": rank_ready,
-            "rank_ready_on_page": rank_ready_on_page,
-        },
+        "summary": summary,
         "filters": applied_filters,
         "items": items,
+    }
+
+
+def history_facets(db: Session) -> dict:
+    """필터 선택지 — 입찰방법은 실제 등록분에서, 나머지는 고정 어휘에서."""
+    rows = (
+        db.query(models.MockBid.snapshot_bid_method, func.count())
+        .filter(models.MockBid.arm == "active",
+                models.MockBid.snapshot_bid_method.isnot(None),
+                models.MockBid.snapshot_bid_method != "")
+        .group_by(models.MockBid.snapshot_bid_method)
+        .order_by(func.count().desc(), models.MockBid.snapshot_bid_method)
+        .all()
+    )
+    return {
+        "bid_methods": [{"value": method, "notices": int(n)} for method, n in rows],
+        "brackets": [name for name, _ in PRICE_BRACKETS],
+        "failure_tags": list(FAILURE_TAGS),
+        "gap_buckets": list(GAP_BUCKETS),
+        "sorts": list(HISTORY_SORTS),
+    }
+
+
+#: CSV 머리글 — (키, 한글 이름). 순서가 곧 열 순서다.
+HISTORY_CSV_COLUMNS = (
+    ("bid_no", "공고번호"), ("title", "공고명"), ("organization", "발주처"),
+    ("bid_method", "입찰방법"), ("bracket", "금액대"), ("basic_price", "기초금액"),
+    ("deadline_at", "마감일시"), ("opened_at", "개찰일시"),
+    ("arm", "가격안"), ("price", "기록 금액"), ("bid_rate", "투찰률(%)"),
+    ("outcome", "판정"), ("estimated_rank", "가상 순위"),
+    ("valid_participants_count", "유효 투찰 수"), ("participants_count", "총 참가 수"),
+    ("actual_winner_price", "실제 낙찰가"), ("gap_to_winner_amount", "낙찰가 차이(원)"),
+    ("gap_to_winner_pct", "낙찰가 차이(%)"), ("failure_tags", "주의 요소"),
+)
+
+
+def history_export_rows(db: Session, *, rank_verified: bool,
+                        max_notices: int = HISTORY_CSV_MAX_NOTICES,
+                        **filters) -> dict:
+    """CSV 용 평탄화 — 공고 × 가격안 1행. 화면 목록과 같은 조건·정렬.
+
+    `rank_verified` 가 아니면 가상 순위 칸을 비운다. 화면이 등수를 숨기는
+    동안 CSV 로 내려받으면 같은 등수가 그대로 새기 때문이다(fail-closed).
+    """
+    unsorted, ordered, applied_filters = _history_anchor_query(db, **filters)
+    total = unsorted.count()
+    anchors = ordered.limit(max_notices).all()
+    rows = []
+    for item in _history_items(db, anchors):
+        for arm in item["arms"]:
+            rank = arm["estimated_rank"] if rank_verified else None
+            if arm["outcome"] == "DROPOUT":
+                rank = None  # 무효는 순위가 없다(화면의 '순위 없음(무효)')
+            rows.append({
+                "bid_no": item["bid_no"],
+                "title": item["title"],
+                "organization": item["organization"],
+                "bid_method": item["bid_method"],
+                "bracket": _bracket_name(item["basic_price"]),
+                "basic_price": item["basic_price"],
+                "deadline_at": item["deadline_at"],
+                "opened_at": item["opened_at"],
+                "arm": arm["arm"],
+                "price": arm["price"],
+                "bid_rate": arm["bid_rate"],
+                "outcome": arm["outcome"],
+                "estimated_rank": rank,
+                "valid_participants_count": arm["valid_participants_count"],
+                "participants_count": arm["participants_count"],
+                "actual_winner_price": arm["actual_winner_price"],
+                "gap_to_winner_amount": arm["gap_to_winner_amount"],
+                "gap_to_winner_pct": arm["gap_to_winner_pct"],
+                "failure_tags": "|".join(arm["failure_tags"] or []),
+            })
+    return {
+        "total_notices": total,
+        "exported_notices": len(anchors),
+        "truncated": total > len(anchors),
+        "rank_included": rank_verified,
+        "filters": applied_filters,
+        "rows": rows,
     }
 
 
@@ -1244,21 +1459,24 @@ def latest_rev_subquery(db: Session):
     return _latest_rev_sq(db)
 
 
-def _valid_base_filter():
-    """SQL 집계용 기초금액 일관성 조건 — `bid_data_quality`와 같은 밴드."""
+def _valid_base_condition(reserved, basic):
+    """기초금액 일관성 조건을 임의의 (예정가격, 기초금액) 컬럼 쌍에 건다."""
     # SQL의 AND 평가 순서는 보장되지 않는다. 분모 > 0 조건만 믿으면 손상된 구
     # 행 하나가 PostgreSQL division-by-zero로 집계 전체를 깨뜨릴 수 있다.
-    ratio = (
-        models.MockBidResult.actual_reserved_price
-        / func.nullif(models.MockBid.snapshot_basic_price, 0)
-    )
+    ratio = reserved / func.nullif(basic, 0)
     return and_(
-        models.MockBidResult.actual_reserved_price.isnot(None),
-        models.MockBidResult.actual_reserved_price > 0,
-        models.MockBid.snapshot_basic_price > 0,
+        reserved.isnot(None),
+        reserved > 0,
+        basic > 0,
         ratio >= BASE_RATIO_MIN,
         ratio <= BASE_RATIO_MAX,
     )
+
+
+def _valid_base_filter():
+    """SQL 집계용 기초금액 일관성 조건 — `bid_data_quality`와 같은 밴드."""
+    return _valid_base_condition(models.MockBidResult.actual_reserved_price,
+                                 models.MockBid.snapshot_basic_price)
 
 
 def summarize(db: Session, bid_method: str | None = None) -> dict:
@@ -1605,6 +1823,17 @@ RANK_HISTOGRAM_CAP = 10
 # 낙찰가 대비 격차(%) 버킷 경계 — 음수 = 낙찰가 이하(WIN/무효권), 양수 = 초과(LOST).
 # "0~0.5%" 구간이 '아깝게 놓친' 건이다.
 GAP_BUCKETS = ("≤-5", "-5~-2", "-2~-0.5", "-0.5~0", "0~0.5", "0.5~1", "1~2", "2~5", ">5")
+#: 버킷 경계(이하 포함). 차트(`gap_distribution`)와 이력 필터가 함께 쓴다.
+GAP_EDGES = (-5, -2, -0.5, 0, 0.5, 1, 2, 5)
+assert len(GAP_EDGES) + 1 == len(GAP_BUCKETS)
+
+
+def _gap_bucket_bounds(bucket: str) -> tuple[float | None, float | None]:
+    """버킷 → (하한 초과, 상한 이하). 양끝은 None(무한)."""
+    i = GAP_BUCKETS.index(bucket)
+    lo = GAP_EDGES[i - 1] if i > 0 else None
+    hi = GAP_EDGES[i] if i < len(GAP_EDGES) else None
+    return lo, hi
 
 
 def rank_axis_health(db: Session, sample_notices: int = 300,
@@ -1790,15 +2019,8 @@ def gap_distribution(db: Session) -> dict:
     """
     g = models.MockBidResult.gap_to_winner_pct
     bucket = case(
-        (g <= -5, GAP_BUCKETS[0]),
-        (g <= -2, GAP_BUCKETS[1]),
-        (g <= -0.5, GAP_BUCKETS[2]),
-        (g <= 0, GAP_BUCKETS[3]),
-        (g <= 0.5, GAP_BUCKETS[4]),
-        (g <= 1, GAP_BUCKETS[5]),
-        (g <= 2, GAP_BUCKETS[6]),
-        (g <= 5, GAP_BUCKETS[7]),
-        else_=GAP_BUCKETS[8],
+        *[(g <= edge, GAP_BUCKETS[i]) for i, edge in enumerate(GAP_EDGES)],
+        else_=GAP_BUCKETS[-1],
     )
     sq = _latest_rev_sq(db)
     rows = (
@@ -1922,14 +2144,7 @@ def ratio_error_segment_report(db: Session, arm: str = "active") -> dict:
     기관은 등록 스냅샷 컬럼이 없어서 개찰/공고 원장의 현재 값을 쓴다. 기관명은
     사전에도 알 수 있는 값이지만 이 한계는 응답에 명시한다.
     """
-    bp = models.MockBid.snapshot_basic_price
-    bracket = case(
-        (bp < 1e8, "small"),
-        (bp < 5e8, "medium"),
-        (bp < 1e9, "large"),
-        (bp < 5e9, "xlarge"),
-        else_="xxlarge",
-    )
+    bracket = _price_bracket_case(models.MockBid.snapshot_basic_price)
     organization = func.coalesce(
         models.OpeningResult.organization,
         models.Notice.organization,
@@ -2103,14 +2318,7 @@ def segment_stats(db: Session, arm: str = "active") -> list[dict]:
     (calculator._get_price_bracket) — 어휘가 갈라지면 자가보정 세그먼트와
     비교할 수 없다.
     """
-    bp = models.MockBid.snapshot_basic_price
-    bracket = case(
-        (bp < 1e8, "small"),
-        (bp < 5e8, "medium"),
-        (bp < 1e9, "large"),
-        (bp < 5e9, "xlarge"),
-        else_="xxlarge",
-    )
+    bracket = _price_bracket_case(models.MockBid.snapshot_basic_price)
     sq = _latest_rev_sq(db)
     rows = (
         db.query(models.MockBid.snapshot_bid_method, bracket.label("bracket"),

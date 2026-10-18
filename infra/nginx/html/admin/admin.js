@@ -1382,7 +1382,7 @@ function mbRateText(value) {
   return Number.isFinite(n) ? n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + '%' : '—';
 }
 
-// ── 이력 필터 (1단계: 기간·판정·순위·기준 가격안) ──
+// ── 이력 필터 (1단계: 기간·판정·순위·기준 가격안 / 2단계: 입찰방법·금액대·주의 요소·낙찰가 차이·정렬·CSV) ──
 // 순위는 절대 순위 구간이 기본이고 상위 %는 보조다 — 관리자가 개찰조서와
 // 바로 대조할 수 있는 숫자가 절대 순위이기 때문이다.
 const MB_RANK_BUCKETS = {
@@ -1393,6 +1393,25 @@ const MB_RANK_BUCKETS = {
 };
 const MB_OUTCOME_FILTERS = ['WIN', 'LOST', 'DROPOUT'];
 const MB_HISTORY_STATES = ['completed', 'waiting', 'all'];
+// 금액대 어휘는 서버 PRICE_BRACKETS(자가보정 세그먼트와 동일)를 따른다
+const MB_BRACKET_LABELS = {
+  small: '1억 미만', medium: '1억~5억', large: '5억~10억', xlarge: '10억~50억', xxlarge: '50억 이상',
+};
+// 낙찰가 대비 차이 구간 — 차트(gap_buckets)와 같은 키. 경계 값은 아래 구간에 포함된다.
+const MB_GAP_LABELS = {
+  '≤-5': '−5% 이하', '-5~-2': '−5~−2%', '-2~-0.5': '−2~−0.5%', '-0.5~0': '−0.5~0%',
+  '0~0.5': '0~+0.5% (아깝게 놓침)', '0.5~1': '+0.5~1%', '1~2': '+1~2%', '2~5': '+2~5%', '>5': '+5% 초과',
+};
+// 서버 FAILURE_TAGS 와 같은 어휘 — facets 응답이 오면 그쪽을 쓴다
+const MB_FAILURE_TAGS = ['A값_결측', '하한율_테이블폴백', '기초금액_정정', '재공고건', '예가_비표준',
+  '기초금액_기준불일치', '기초금액_변경됨', '사정률_극단', '예정가격_결측'];
+const MB_SORTS = {
+  deadline_desc: '마감 최신순', deadline_asc: '마감 오래된순',
+  rank_asc: '가상 순위순', gap_abs_asc: '낙찰가와 가까운순',
+};
+// 결과(판정)가 있어야 의미 있는 정렬 — 결과 대기 탭에서는 쓰지 않는다
+const MB_RESULT_SORTS = ['rank_asc', 'gap_abs_asc'];
+const MB_CSV_MAX_NOTICES = 5000;
 
 function mbLocalDate(d) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -1400,6 +1419,10 @@ function mbLocalDate(d) {
 }
 
 function mbIsDate(v) { return /^\d{4}-\d{2}-\d{2}$/.test(v || ''); }
+
+// 허용 키 검사는 자기 속성만 — `obj[v]` 로 보면 `constructor`·`__proto__` 같은
+// 프로토타입 키가 통과해 링크 하나로 목록이 422 오류 상태가 된다.
+function mbHas(obj, key) { return key != null && Object.prototype.hasOwnProperty.call(obj, key); }
 
 function mbHistoryStateFromUrl(rankVerified) {
   const q = new URLSearchParams(location.hash.split('?')[1] || '');
@@ -1413,11 +1436,22 @@ function mbHistoryStateFromUrl(rankVerified) {
     from: mbIsDate(q.get('from')) ? q.get('from') : '',
     to: mbIsDate(q.get('to')) ? q.get('to') : '',
     outcome: MB_OUTCOME_FILTERS.includes(q.get('outcome')) ? q.get('outcome') : '',
-    rank: MB_RANK_BUCKETS[q.get('rank')] ? q.get('rank') : '',
+    rank: mbHas(MB_RANK_BUCKETS, q.get('rank')) ? q.get('rank') : '',
     rankPct: Number.isFinite(pct) && pct > 0 && pct <= 100 ? String(pct) : '',
+    // 입찰방법은 facets 가 오기 전에도 URL 값을 유지한다(서버가 일치 검사만 한다)
+    bidMethod: (q.get('method') || '').slice(0, 100),
+    bracket: mbHas(MB_BRACKET_LABELS, q.get('bracket')) ? q.get('bracket') : '',
+    tag: MB_FAILURE_TAGS.includes(q.get('tag')) ? q.get('tag') : '',
+    gap: mbHas(MB_GAP_LABELS, q.get('gap')) ? q.get('gap') : '',
+    validOnly: q.get('valid') === '1',
+    sort: mbHas(MB_SORTS, q.get('sort')) ? q.get('sort') : 'deadline_desc',
   };
-  // 검증 전에는 URL 로 들어온 순위 조건도 버린다 — 서버도 409 로 거부한다
-  if (!rankVerified) { st.rank = ''; st.rankPct = ''; }
+  // 검증 전에는 URL 로 들어온 순위 조건·순위 정렬도 버린다 — 서버도 409 로 거부한다
+  if (!rankVerified) {
+    st.rank = '';
+    st.rankPct = '';
+    if (st.sort === 'rank_asc') st.sort = 'deadline_desc';
+  }
   return st;
 }
 
@@ -1433,15 +1467,66 @@ function mbSyncHistoryUrl(st) {
   if (st.outcome) q.set('outcome', st.outcome);
   if (st.rank) q.set('rank', st.rank);
   if (st.rankPct) q.set('pct', st.rankPct);
+  if (st.bidMethod) q.set('method', st.bidMethod);
+  if (st.bracket) q.set('bracket', st.bracket);
+  if (st.tag) q.set('tag', st.tag);
+  if (st.gap) q.set('gap', st.gap);
+  if (st.validOnly) q.set('valid', '1');
+  if (st.sort !== 'deadline_desc') q.set('sort', st.sort);
   const qs = q.toString();
   // location.hash 를 바꾸면 hashchange 로 페이지 전체(요약·차트)를 다시 그린다.
   // 필터는 목록만 다시 부르면 되므로 replaceState 로 주소만 맞춘다.
   history.replaceState(null, '', '#/mockbidding' + (qs ? '?' + qs : ''));
 }
 
-// 기준 가격안은 판정·순위 조건이 있을 때만 결과를 바꾼다 — 혼자서는 필터가 아니다
+// 실제로 요청에 실리는 조건. 결과 대기 탭에는 판정이 없으므로 결과 기반 조건
+// (가격안·판정·순위·주의 요소·낙찰가 차이·유효 표본·결과 정렬)을 뺀다 — 남겨 두면
+// 언제나 0건이 되어 "대기 공고가 없다"로 오독된다. 순위는 검증 통과 시에만.
+function mbEffectiveHistoryFilters(st, rankVerified) {
+  const eff = { ...st };
+  if (st.state === 'waiting') {
+    Object.assign(eff, { arm: 'active', outcome: '', rank: '', rankPct: '', tag: '', gap: '', validOnly: false });
+    if (MB_RESULT_SORTS.includes(eff.sort)) eff.sort = 'deadline_desc';
+  }
+  if (!rankVerified) {
+    eff.rank = '';
+    eff.rankPct = '';
+    if (eff.sort === 'rank_asc') eff.sort = 'deadline_desc';
+  }
+  return eff;
+}
+
+// 목록과 CSV 가 같은 조건을 쓰도록 요청 파라미터는 여기서만 만든다
+function mbHistoryQuery(st, rankVerified) {
+  const eff = mbEffectiveHistoryFilters(st, rankVerified);
+  const params = new URLSearchParams({ state: eff.state });
+  if (eff.search) params.set('search', eff.search);
+  if (eff.from || eff.to) params.set('date_field', eff.dateField);
+  if (eff.from) params.set('date_from', eff.from);
+  if (eff.to) params.set('date_to', eff.to);
+  if (eff.bidMethod) params.set('bid_method', eff.bidMethod);
+  if (eff.bracket) params.set('bracket', eff.bracket);
+  if (eff.state !== 'waiting') {
+    params.set('arm', eff.arm);
+    if (eff.outcome) params.set('outcome', eff.outcome);
+    if (eff.rank) {
+      const bucket = MB_RANK_BUCKETS[eff.rank];
+      params.set('rank_min', String(bucket.min));
+      if (bucket.max != null) params.set('rank_max', String(bucket.max));
+    }
+    if (eff.rankPct) params.set('rank_pct_max', eff.rankPct);
+    if (eff.tag) params.set('tag', eff.tag);
+    if (eff.gap) params.set('gap_bucket', eff.gap);
+    if (eff.validOnly) params.set('valid_base_only', 'true');
+  }
+  if (eff.sort !== 'deadline_desc') params.set('sort', eff.sort);
+  return params;
+}
+
+// 기준 가격안은 결과 조건이 있을 때만 결과를 바꾼다 — 혼자서는 필터가 아니다. 정렬도 필터가 아니다.
 function mbHistoryHasFilter(st) {
-  return Boolean(st.search || st.from || st.to || st.outcome || st.rank || st.rankPct);
+  return Boolean(st.search || st.from || st.to || st.outcome || st.rank || st.rankPct
+    || st.bidMethod || st.bracket || st.tag || st.gap || st.validOnly);
 }
 
 function mbHistoryFilterSummary(st) {
@@ -1449,21 +1534,37 @@ function mbHistoryFilterSummary(st) {
   if (st.from || st.to) {
     parts.push(`${st.dateField === 'opened' ? '개찰일' : '마감일'} ${st.from || '처음'} ~ ${st.to || '오늘'}`);
   }
+  if (st.bidMethod) parts.push(st.bidMethod);
+  if (st.bracket) parts.push(`기초금액 ${MB_BRACKET_LABELS[st.bracket]}`);
   const armLabel = MB_ARM_FRIENDLY[st.arm] || st.arm;
   if (st.outcome) parts.push(`${armLabel} 판정: ${mbOutcomeMeta(st.outcome).label}`);
   if (st.rank) parts.push(`${armLabel} 가상 ${MB_RANK_BUCKETS[st.rank].label}`);
   if (st.rankPct) parts.push(`${armLabel} 유효 투찰 상위 ${st.rankPct}% 이내`);
+  if (st.gap) parts.push(`${armLabel} 낙찰가 차이 ${MB_GAP_LABELS[st.gap]}`);
+  if (st.tag) parts.push(`주의 요소 ${st.tag}`);
+  if (st.validOnly) parts.push('기초금액 검증 통과분만');
   if (st.search) parts.push(`공고번호 "${st.search}"`);
   return parts.join(' · ');
 }
 
-function mbHistoryFilterPanel(st, rankVerified) {
+function mbSelectOptions(entries, selected, emptyLabel) {
+  return [`<option value="">${esc(emptyLabel)}</option>`].concat(entries.map(([value, label]) =>
+    `<option value="${esc(value)}" ${selected === value ? 'selected' : ''}>${esc(label)}</option>`)).join('');
+}
+
+function mbHistoryFilterPanel(st, rankVerified, facets) {
   const armOptions = MB_ARM_ORDER.map((arm) =>
     `<option value="${arm}" ${st.arm === arm ? 'selected' : ''}>${esc(MB_ARM_FRIENDLY[arm] || arm)}</option>`).join('');
-  const outcomeOptions = ['<option value="">전체 판정</option>'].concat(MB_OUTCOME_FILTERS.map((o) =>
-    `<option value="${o}" ${st.outcome === o ? 'selected' : ''}>${esc(mbOutcomeMeta(o).label)}</option>`)).join('');
+  const outcomeOptions = mbSelectOptions(MB_OUTCOME_FILTERS.map((o) => [o, mbOutcomeMeta(o).label]),
+    st.outcome, '전체 판정');
   const rankChips = [['', '전체']].concat(Object.entries(MB_RANK_BUCKETS).map(([k, v]) => [k, v.label]))
     .map(([k, label]) => `<button type="button" data-mb-rank="${k}" class="${st.rank === k ? 'active' : ''}" ${rankVerified ? '' : 'disabled'}>${esc(label)}</button>`).join('');
+  const methods = ((facets || {}).bid_methods || []).map((m) => [m.value, `${m.value} (${fmtNumber(m.notices)})`]);
+  // URL 로 들어온 입찰방법이 목록에 없어도 선택 상태를 잃지 않게 한다
+  if (st.bidMethod && !methods.some(([v]) => v === st.bidMethod)) methods.unshift([st.bidMethod, st.bidMethod]);
+  const tags = ((facets || {}).failure_tags || MB_FAILURE_TAGS).map((t) => [t, t]);
+  const sortOptions = Object.entries(MB_SORTS).map(([k, label]) =>
+    `<option value="${k}" ${st.sort === k ? 'selected' : ''} ${k === 'rank_asc' && !rankVerified ? 'disabled' : ''} ${MB_RESULT_SORTS.includes(k) ? 'data-mb-result-sort' : ''}>${esc(label)}${k === 'rank_asc' && !rankVerified ? ' (검증 후)' : ''}</option>`).join('');
   return `<div class="mb-filter-panel" id="mb-history-filters">
     <div class="mb-filter-row">
       <label class="mb-filter-field"><span>기간 기준</span>
@@ -1478,17 +1579,36 @@ function mbHistoryFilterPanel(st, rankVerified) {
       </div>
     </div>
     <div class="mb-filter-row">
+      <label class="mb-filter-field"><span>입찰방법</span><select id="mb-f-method">${mbSelectOptions(methods, st.bidMethod, '전체 입찰방법')}</select></label>
+      <label class="mb-filter-field"><span>금액대(기초금액)</span><select id="mb-f-bracket">${mbSelectOptions(Object.entries(MB_BRACKET_LABELS), st.bracket, '전체 금액대')}</select></label>
+      <label class="mb-filter-field"><span>정렬</span><select id="mb-f-sort">${sortOptions}</select></label>
+    </div>
+    <div class="mb-filter-row">
       <label class="mb-filter-field"><span>기준 가격안</span><select id="mb-f-arm" data-mb-result-filter>${armOptions}</select></label>
       <label class="mb-filter-field"><span>판정</span><select id="mb-f-outcome" data-mb-result-filter>${outcomeOptions}</select></label>
       <div class="mb-filter-field"><span>가상 순위</span><div class="mb-tabs mb-rank-chips">${rankChips}</div></div>
       <label class="mb-filter-field mb-filter-pct"><span>유효 투찰 상위 % 이내</span>
         <input type="number" id="mb-f-pct" min="0.1" max="100" step="0.1" placeholder="예: 10" value="${esc(st.rankPct)}" ${rankVerified ? '' : 'disabled'}></label>
-      <button type="button" class="btn btn-outline" id="mb-f-reset">조건 초기화</button>
     </div>
-    ${rankVerified ? '' : '<p class="mb-filter-note">등수 축 검증 전이라 순위 필터는 잠겨 있어요. 기간·판정 필터는 쓸 수 있어요.</p>'}
-    <p class="mb-filter-note" id="mb-f-waiting-note" hidden>결과 대기 공고에는 판정·순위가 없어서 판정·순위 조건은 적용하지 않아요.</p>
+    <div class="mb-filter-row">
+      <label class="mb-filter-field"><span>낙찰가 대비 차이</span><select id="mb-f-gap" data-mb-result-filter>${mbSelectOptions(Object.entries(MB_GAP_LABELS), st.gap, '전체 구간')}</select></label>
+      <label class="mb-filter-field"><span>주의 요소</span><select id="mb-f-tag" data-mb-result-filter>${mbSelectOptions(tags, st.tag, '전체 주의 요소')}</select></label>
+      <label class="mb-filter-check"><input type="checkbox" id="mb-f-valid" data-mb-result-filter ${st.validOnly ? 'checked' : ''}><span>기초금액 검증 통과분만<small>상단 성적표·차트와 같은 유효 표본 기준 — 낙찰가 차이 차트와 건수를 맞출 때 함께 켜세요</small></span></label>
+      <div class="mb-filter-actions">
+        <button type="button" class="btn btn-outline" id="mb-f-reset">조건 초기화</button>
+        <button type="button" class="btn btn-outline" id="mb-f-csv">조건대로 CSV 받기</button>
+      </div>
+    </div>
+    ${rankVerified ? '' : '<p class="mb-filter-note">등수 축 검증 전이라 순위 필터·순위 정렬은 잠겨 있고, CSV 의 가상 순위 칸도 비워서 내려받아요.</p>'}
+    <p class="mb-filter-note" id="mb-f-waiting-note" hidden>결과 대기 공고에는 판정이 없어서 가격안·판정·순위·낙찰가 차이·주의 요소·검증 조건은 적용하지 않아요.</p>
+    <p class="mb-filter-note" id="mb-f-csv-note" hidden></p>
   </div>`;
 }
+
+const MB_FILTER_DEFAULTS = {
+  search: '', arm: 'active', dateField: 'deadline', from: '', to: '', outcome: '', rank: '', rankPct: '',
+  bidMethod: '', bracket: '', tag: '', gap: '', validOnly: false, sort: 'deadline_desc',
+};
 
 function mbBindHistoryFilters(historyState, rankVerified) {
   const reload = () => {
@@ -1496,6 +1616,9 @@ function mbBindHistoryFilters(historyState, rankVerified) {
     loadMockBidHistory(historyState, rankVerified);
   };
   const byId = (id) => document.getElementById(id);
+  // 결과 조건이 하나라도 있을 때만 가격안 변경이 목록을 바꾼다
+  const hasResultCondition = () => Boolean(historyState.outcome || historyState.rank || historyState.rankPct
+    || historyState.tag || historyState.gap || historyState.validOnly || MB_RESULT_SORTS.includes(historyState.sort));
   byId('mb-f-datefield').addEventListener('change', (e) => { historyState.dateField = e.target.value; if (historyState.from || historyState.to) reload(); else mbSyncHistoryUrl(historyState); });
   byId('mb-f-from').addEventListener('change', (e) => { historyState.from = mbIsDate(e.target.value) ? e.target.value : ''; reload(); });
   byId('mb-f-to').addEventListener('change', (e) => { historyState.to = mbIsDate(e.target.value) ? e.target.value : ''; reload(); });
@@ -1513,8 +1636,20 @@ function mbBindHistoryFilters(historyState, rankVerified) {
       reload();
     });
   });
-  byId('mb-f-arm').addEventListener('change', (e) => { historyState.arm = e.target.value; if (historyState.outcome || historyState.rank || historyState.rankPct) reload(); else mbSyncHistoryUrl(historyState); });
-  byId('mb-f-outcome').addEventListener('change', (e) => { historyState.outcome = e.target.value; reload(); });
+  byId('mb-f-arm').addEventListener('change', (e) => { historyState.arm = e.target.value; if (hasResultCondition()) reload(); else mbSyncHistoryUrl(historyState); });
+  const onSelect = (id, key) => byId(id).addEventListener('change', (e) => { historyState[key] = e.target.value; reload(); });
+  onSelect('mb-f-outcome', 'outcome');
+  onSelect('mb-f-method', 'bidMethod');
+  onSelect('mb-f-bracket', 'bracket');
+  onSelect('mb-f-gap', 'gap');
+  onSelect('mb-f-tag', 'tag');
+  byId('mb-f-sort').addEventListener('change', (e) => {
+    const sort = mbHas(MB_SORTS, e.target.value) ? e.target.value : 'deadline_desc';
+    historyState.sort = sort === 'rank_asc' && !rankVerified ? 'deadline_desc' : sort;
+    e.target.value = historyState.sort;
+    reload();
+  });
+  byId('mb-f-valid').addEventListener('change', (e) => { historyState.validOnly = e.target.checked; reload(); });
   document.querySelectorAll('[data-mb-rank]').forEach((button) => {
     button.addEventListener('click', () => {
       if (!rankVerified || button.disabled) return;
@@ -1531,32 +1666,77 @@ function mbBindHistoryFilters(historyState, rankVerified) {
     reload();
   });
   byId('mb-f-reset').addEventListener('click', () => {
-    Object.assign(historyState, {
-      search: '', arm: 'active', dateField: 'deadline', from: '', to: '',
-      outcome: '', rank: '', rankPct: '',
-    });
+    Object.assign(historyState, MB_FILTER_DEFAULTS);
     byId('mb-history-query').value = '';
     byId('mb-f-datefield').value = 'deadline';
-    byId('mb-f-from').value = '';
-    byId('mb-f-to').value = '';
+    ['mb-f-from', 'mb-f-to', 'mb-f-outcome', 'mb-f-pct', 'mb-f-method', 'mb-f-bracket', 'mb-f-gap', 'mb-f-tag']
+      .forEach((id) => { byId(id).value = ''; });
     byId('mb-f-arm').value = 'active';
-    byId('mb-f-outcome').value = '';
-    byId('mb-f-pct').value = '';
+    byId('mb-f-sort').value = 'deadline_desc';
+    byId('mb-f-valid').checked = false;
     document.querySelectorAll('[data-mb-rank]').forEach((b) => b.classList.toggle('active', b.dataset.mbRank === ''));
     reload();
   });
+  byId('mb-f-csv').addEventListener('click', () => mbDownloadHistoryCsv(historyState, rankVerified));
 }
 
-// 결과 대기 탭에는 판정·순위가 없다 — 조건을 남겨 두면 언제나 0건이 되어
-// "대기 공고가 없다"로 오독된다. 탭에 맞춰 잠그고 요청에서도 뺀다.
+// 결과 대기 탭에는 판정·순위가 없다 — 탭에 맞춰 결과 조건 입력을 잠근다(요청에서는
+// mbEffectiveHistoryFilters 가 뺀다).
 function mbToggleResultFilters(historyState, rankVerified) {
   const waiting = historyState.state === 'waiting';
   document.querySelectorAll('[data-mb-result-filter]').forEach((el) => { el.disabled = waiting; });
   document.querySelectorAll('[data-mb-rank]').forEach((el) => { el.disabled = waiting || !rankVerified; });
+  document.querySelectorAll('[data-mb-result-sort]').forEach((el) => {
+    el.disabled = waiting || (el.value === 'rank_asc' && !rankVerified);
+  });
   const pct = document.getElementById('mb-f-pct');
   if (pct) pct.disabled = waiting || !rankVerified;
   const note = document.getElementById('mb-f-waiting-note');
   if (note) note.hidden = !waiting;
+}
+
+// CSV 는 api() 가 JSON 만 다루므로 같은 인증 헤더로 직접 받는다. 조건은 목록과
+// 같은 mbHistoryQuery — 화면 건수와 파일 건수가 갈라지지 않게.
+async function mbDownloadHistoryCsv(historyState, rankVerified) {
+  const note = document.getElementById('mb-f-csv-note');
+  const button = document.getElementById('mb-f-csv');
+  const show = (text) => { if (note) { note.textContent = text; note.hidden = !text; } };
+  const token = getToken();
+  if (!token) { show('로그인이 필요해요.'); return; }
+  const query = mbHistoryQuery(historyState, rankVerified).toString();
+  // 목록이 같은 조건으로 받아 둔 건수일 때만 믿는다. 모르면 상한만 알린다.
+  const known = historyState.lastTotalQuery === query;
+  const total = known ? Number(historyState.lastTotal || 0) : null;
+  if (button) button.disabled = true;
+  show(total != null && total > MB_CSV_MAX_NOTICES
+    ? `조건에 맞는 공고가 ${fmtNumber(total)}건이라 앞의 ${fmtNumber(MB_CSV_MAX_NOTICES)}공고(현재 정렬 기준)만 내려받아요.`
+    : total == null
+      ? `CSV 를 만드는 중이에요... (한 번에 최대 ${fmtNumber(MB_CSV_MAX_NOTICES)}공고)`
+      : 'CSV 를 만드는 중이에요...');
+  try {
+    const resp = await fetch(API_BASE + '/admin/mock-bidding/history.csv?' + query, {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    if (!resp.ok) {
+      let msg = `HTTP ${resp.status}`;
+      try { const j = JSON.parse(await resp.text()); if (j.detail) msg = j.detail; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mock-bidding-history-${mbLocalDate(new Date())}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (total == null || total <= MB_CSV_MAX_NOTICES) show(rankVerified ? '' : '등수 축 검증 전이라 가상 순위 칸은 비워서 내려받았어요.');
+  } catch (e) {
+    show(`CSV 를 받지 못했어요: ${e.message}`);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function mbOutcomeMeta(outcome) {
@@ -1705,33 +1885,12 @@ async function loadMockBidHistory(historyState, rankVerified) {
   list.innerHTML = '<div class="mb-empty">결과를 불러오는 중...</div>';
   pager.innerHTML = '';
 
-  const params = new URLSearchParams({
-    state: requestedState,
-    page: String(historyState.page),
-    page_size: '10',
-  });
-  if (historyState.search) params.set('search', historyState.search);
-  if (historyState.from || historyState.to) params.set('date_field', historyState.dateField);
-  if (historyState.from) params.set('date_from', historyState.from);
-  if (historyState.to) params.set('date_to', historyState.to);
-  // 판정·순위는 결과가 있는 탭에서만 보낸다(대기 탭이면 항상 0건)
-  const resultFilters = requestedState !== 'waiting';
-  if (resultFilters) {
-    params.set('arm', historyState.arm);
-    if (historyState.outcome) params.set('outcome', historyState.outcome);
-    // 순위 조건은 검증이 통과한 경우에만 보낸다 — 서버도 409 로 한 번 더 막는다
-    if (rankVerified && historyState.rank) {
-      const bucket = MB_RANK_BUCKETS[historyState.rank];
-      params.set('rank_min', String(bucket.min));
-      if (bucket.max != null) params.set('rank_max', String(bucket.max));
-    }
-    if (rankVerified && historyState.rankPct) params.set('rank_pct_max', historyState.rankPct);
-  }
-  const filterArm = resultFilters ? historyState.arm : 'active';
-  const hasFilter = mbHistoryHasFilter({
-    ...historyState,
-    ...(resultFilters ? {} : { arm: 'active', outcome: '', rank: '', rankPct: '' }),
-  });
+  const params = mbHistoryQuery(historyState, rankVerified);
+  params.set('page', String(historyState.page));
+  params.set('page_size', '10');
+  const eff = mbEffectiveHistoryFilters(historyState, rankVerified);
+  const filterArm = requestedState !== 'waiting' ? eff.arm : 'active';
+  const hasFilter = mbHistoryHasFilter(eff);
   mbSyncHistoryUrl(historyState);
   mbToggleResultFilters(historyState, rankVerified);
 
@@ -1754,11 +1913,13 @@ async function loadMockBidHistory(historyState, rankVerified) {
     list.innerHTML = (data.items || []).length
       ? data.items.map((item) => mbHistoryItem(item, rankVerified, filterArm)).join('')
       : mbHistoryEmpty(requestedState, hasFilter);
-    const filterText = hasFilter ? mbHistoryFilterSummary({
-      ...historyState,
-      ...(resultFilters ? {} : { outcome: '', rank: '', rankPct: '' }),
-    }) : '';
-    pager.innerHTML = `<span>${hasFilter ? '조건에 맞는' : '전체'} ${fmtNumber(data.total)}공고 · ${fmtNumber(data.page)} / ${fmtNumber(data.total_pages || 1)}페이지${filterText ? `<small class="mb-filter-summary">${esc(filterText)}</small>` : ''}</span>
+    // 이 건수가 어느 조건의 것인지 함께 남긴다 — 조건을 바꾼 직후 CSV 를 누르면
+    // 이전 조건의 건수로 잘림 여부를 안내하게 된다
+    historyState.lastTotal = Number(data.total || 0);
+    historyState.lastTotalQuery = mbHistoryQuery(historyState, rankVerified).toString();
+    const filterText = hasFilter ? mbHistoryFilterSummary(eff) : '';
+    const sortText = eff.sort !== 'deadline_desc' ? ` · ${MB_SORTS[eff.sort]}` : '';
+    pager.innerHTML = `<span>${hasFilter ? '조건에 맞는' : '전체'} ${fmtNumber(data.total)}공고 · ${fmtNumber(data.page)} / ${fmtNumber(data.total_pages || 1)}페이지${esc(sortText)}${filterText ? `<small class="mb-filter-summary">${esc(filterText)}</small>` : ''}</span>
       <div><button class="btn btn-outline" data-mb-page="${data.page - 1}" ${data.has_previous ? '' : 'disabled'}>이전</button>
       <button class="btn btn-outline" data-mb-page="${data.page + 1}" ${data.has_next ? '' : 'disabled'}>다음</button></div>`;
     pager.querySelectorAll('[data-mb-page]').forEach((button) => {
@@ -1795,10 +1956,13 @@ pages.mockbidding = async function (content) {
   content.innerHTML = '<div class="card">모의투찰 결과를 불러오는 중...</div>';
   let sum;
   let charts;
+  let facets;
   try {
-    [sum, charts] = await Promise.all([
+    [sum, charts, facets] = await Promise.all([
       api('/admin/mock-bidding/summary'),
       api('/admin/mock-bidding/charts').catch(() => null),
+      // 선택지가 없어도 목록은 떠야 한다 — 실패하면 고정 어휘로 대체
+      api('/admin/mock-bidding/history/facets').catch(() => null),
     ]);
   } catch (e) {
     content.innerHTML = `<div class="card">오류: ${esc(e.message)}</div>`;
@@ -1872,7 +2036,7 @@ pages.mockbidding = async function (content) {
           <button class="btn btn-primary" type="submit">찾기</button>
         </form>
       </div>
-      ${mbHistoryFilterPanel(historyState, rankVerified)}
+      ${mbHistoryFilterPanel(historyState, rankVerified, facets)}
       ${rankVerified ? '' : '<p class="mb-validity-note">등수 축을 확인하는 중이에요. 검증이 통과할 때까지 공고별 가상 등수는 숨깁니다.</p>'}
       <div id="mb-history-list"></div>
       <div id="mb-history-pager" class="mb-pager"></div>

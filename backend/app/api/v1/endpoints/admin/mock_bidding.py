@@ -131,16 +131,13 @@ def registrations(
     }
 
 
-@router.get("/mock-bidding/history")
-def history(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=50),
+def _history_filters(
     state: Literal["all", "completed", "waiting"] = Query(
         "completed", description="개찰 완료·결과 대기 필터"
     ),
     search: str | None = Query(None, max_length=100, description="공고번호 일부 검색"),
     arm: Literal["standard", "active", "frontier_c5", "frontier_c10", "aggressive"] = Query(
-        "active", description="판정·순위 필터를 적용할 가격안"
+        "active", description="판정·순위·주의 요소·낙찰가 차이 필터를 적용할 가격안"
     ),
     date_field: Literal["deadline", "opened"] = Query(
         "deadline", description="기간 기준일 — 마감일(기본) 또는 개찰일"
@@ -155,39 +152,128 @@ def history(
     rank_pct_max: float | None = Query(
         None, gt=0, le=100, description="유효 투찰 대비 상위 % 이내"
     ),
+    bid_method: str | None = Query(None, max_length=100, description="입찰방법(스냅샷) 일치"),
+    bracket: Literal["small", "medium", "large", "xlarge", "xxlarge"] | None = Query(
+        None, description="기초금액 금액대"
+    ),
+    tag: str | None = Query(None, max_length=50, description="오답노트 주의 요소"),
+    gap_bucket: str | None = Query(
+        None, max_length=20, description="낙찰가 대비 차이 구간(차트 GAP_BUCKETS 와 동일)"
+    ),
+    valid_base_only: bool = Query(False, description="기초금액 일관성 통과 표본만"),
+    sort: Literal["deadline_desc", "deadline_asc", "rank_asc", "gap_abs_asc"] = Query(
+        "deadline_desc", description="정렬 — rank_asc 는 등수 축 검증 후에만"
+    ),
+) -> dict:
+    """목록과 CSV 가 같은 필터 계약을 쓰도록 한 곳에서 받는다."""
+    return {
+        "state": state, "search": search, "arm": arm, "date_field": date_field,
+        "date_from": date_from, "date_to": date_to, "outcome": outcome,
+        "rank_min": rank_min, "rank_max": rank_max, "rank_pct_max": rank_pct_max,
+        "bid_method": bid_method or None, "bracket": bracket, "tag": tag or None,
+        "gap_bucket": gap_bucket or None, "valid_base_only": valid_base_only,
+        "sort": sort,
+    }
+
+
+def _filter_errors(fn):
+    """서비스 필터 오류 → HTTP. 순위 잠금은 409, 나머지 잘못된 조합은 422."""
+    from app.services import mock_bidding as mb
+
+    try:
+        return fn()
+    except mb.RankFilterLocked:
+        raise HTTPException(
+            status_code=409,
+            detail="등수 축 검증이 끝나기 전에는 순위로 거르거나 정렬할 수 없어요.",
+        )
+    except mb.HistoryFilterError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/mock-bidding/history")
+def history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
+    filters: dict = Depends(_history_filters),
     db: Session = Depends(get_db),
     _admin=Depends(require_admin),
 ):
     """공고 단위 전체 이력 — 5개 arm 과 최신 채점 결과를 한 묶음으로 반환.
 
-    순위 필터는 등수 축 검증이 통과했을 때만 받는다(409). 화면이 등수를
-    숨기는 동안 순위로 거른 목록이 등수를 대신 드러내지 않게 하기 위함이다.
+    순위 필터·순위 정렬은 등수 축 검증이 통과했을 때만 받는다(409). 화면이
+    등수를 숨기는 동안 순위로 거른 목록이 등수를 대신 드러내지 않게 하기 위함이다.
     """
     from app.services import mock_bidding as mb
 
-    try:
-        return mb.history_page(
-            db,
-            page=page,
-            page_size=page_size,
-            state=state,
-            search=search,
-            arm=arm,
-            date_field=date_field,
-            date_from=date_from,
-            date_to=date_to,
-            outcome=outcome,
-            rank_min=rank_min,
-            rank_max=rank_max,
-            rank_pct_max=rank_pct_max,
-        )
-    except mb.RankFilterLocked:
-        raise HTTPException(
-            status_code=409,
-            detail="등수 축 검증이 끝나기 전에는 순위로 거를 수 없어요.",
-        )
-    except mb.HistoryFilterError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    return _filter_errors(lambda: mb.history_page(
+        db, page=page, page_size=page_size, **filters))
+
+
+@router.get("/mock-bidding/history/facets")
+def history_facets(
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """이력 필터 선택지(입찰방법·금액대·주의 요소·낙찰가 차이 구간·정렬)."""
+    from app.services import mock_bidding as mb
+
+    return mb.history_facets(db)
+
+
+#: 스프레드시트가 수식으로 해석하는 첫 글자 — 공고명 등 외부 문자열 칸에만 막는다
+_CSV_FORMULA_PREFIX = ("=", "+", "-", "@", "\t", "\r")
+_CSV_TEXT_COLUMNS = {"title", "organization", "bid_method", "failure_tags", "bid_no"}
+
+
+def _csv_cell(key: str, value):
+    if value is None:
+        return ""
+    if key in _CSV_TEXT_COLUMNS and isinstance(value, str) \
+            and value.startswith(_CSV_FORMULA_PREFIX):
+        return "'" + value
+    return value
+
+
+@router.get("/mock-bidding/history.csv")
+def history_csv(
+    filters: dict = Depends(_history_filters),
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """화면 목록과 같은 조건의 CSV — 공고 × 가격안 1행, 최대 5,000공고.
+
+    가상 순위 칸은 등수 축 검증이 통과했을 때만 채운다(화면과 같은 fail-closed).
+    """
+    import csv
+    import io
+
+    from fastapi.responses import Response
+
+    from app.services import mock_bidding as mb
+
+    healthy = mb.rank_axis_health(db).get("healthy") is True
+    data = _filter_errors(lambda: mb.history_export_rows(
+        db, rank_verified=healthy, **filters))
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([label for _, label in mb.HISTORY_CSV_COLUMNS])
+    for row in data["rows"]:
+        writer.writerow([_csv_cell(key, row.get(key)) for key, _ in mb.HISTORY_CSV_COLUMNS])
+    stamp = mb.now_kst().strftime("%Y%m%d-%H%M")
+    return Response(
+        # BOM — 엑셀이 UTF-8 한글을 깨뜨리지 않게
+        content="\ufeff" + buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="mock-bidding-history-{stamp}.csv"',
+            "X-Total-Notices": str(data["total_notices"]),
+            "X-Exported-Notices": str(data["exported_notices"]),
+            "X-Truncated": "1" if data["truncated"] else "0",
+            "X-Rank-Included": "1" if data["rank_included"] else "0",
+        },
+    )
 
 
 @router.get("/mock-bidding/results")
