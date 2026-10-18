@@ -390,11 +390,14 @@ a { color: inherit; text-decoration: none; }
 .mb-pager { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; border-top: 1px solid #EEF1F4; color: #8B95A1; font-size: 12px; }
 .mb-pager > div { display: flex; gap: 7px; }
 
-.mb-easy-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0 14px; }
+.mb-easy-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 20px 0 14px; }
 .mb-easy-kpis > div { padding: 16px; border: 1px solid #E5E8EB; border-radius: 13px; }
 .mb-easy-kpis strong { display: block; font-size: 22px; }
-.mb-simple-charts, .mb-advanced-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.mb-simple-charts > div, .mb-advanced-grid > div { padding: 18px; border-radius: 14px; background: #FAFBFC; }
+/* 1fr 의 최솟값은 내용 폭(min-content)이라, 차트 캔버스·표가 넓으면 칸이 카드 밖으로
+   밀려난다(600~980px 폭에서 낙찰가 차이 차트가 잘리던 문제). minmax(0, 1fr) + min-width: 0
+   으로 칸이 카드 안에서 줄어들게 하고, 넓은 표는 .mb-table-scroll 이 가로 스크롤을 맡는다. */
+.mb-simple-charts, .mb-advanced-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.mb-simple-charts > div, .mb-advanced-grid > div { min-width: 0; padding: 18px; border-radius: 14px; background: #FAFBFC; }
 .mb-simple-charts h4, .mb-advanced-body h4 { margin-bottom: 5px; font-size: 14px; }
 .mb-simple-charts p, .mb-chart-note { margin-bottom: 8px; color: #8B95A1; font-size: 12px; line-height: 1.5; }
 
@@ -500,7 +503,7 @@ a { color: inherit; text-decoration: none; }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .kpi-value { font-size: 18px; }
   .mb-hero { padding: 22px; }
-  .mb-summary-grid, .mb-easy-kpis, .mb-simple-charts, .mb-advanced-grid { grid-template-columns: 1fr; }
+  .mb-summary-grid, .mb-easy-kpis, .mb-simple-charts, .mb-advanced-grid { grid-template-columns: minmax(0, 1fr); }
   .mb-history-controls, .mb-history-head { flex-direction: column; }
   .mb-tabs { width: 100%; overflow-x: auto; }
   .mb-tabs button { flex: 1; padding-inline: 9px; white-space: nowrap; }
