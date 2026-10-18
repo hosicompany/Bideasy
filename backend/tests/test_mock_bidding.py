@@ -1479,12 +1479,8 @@ class TestMockBidHistoryApi:
         assert page_one["items"][0]["bid_no"] != page_three["items"][0]["bid_no"]
 
 
-class TestMockBidHistoryFilters:
-    """이력 필터 1단계 — 기간·판정·순위·기준 가격안 (2026-10-18).
-
-    필터는 공고(active 앵커) 단위로 걸리고, 판정·순위는 고른 arm 의 **최신 rev**
-    만 본다. 순위 필터는 등수 축 검증 전에는 서버가 거부한다(fail-closed).
-    """
+class _HistoryFilterHelpers:
+    """이력 필터 테스트 공통 헬퍼 — 테스트 메서드는 두지 않는다(중복 실행 방지)."""
 
     URL = "/api/v1/admin/mock-bidding/history"
 
@@ -1514,6 +1510,13 @@ class TestMockBidHistoryFilters:
     @pytest.fixture
     def axis_ok(self, monkeypatch):
         monkeypatch.setattr(mb, "rank_axis_health", lambda db: {"healthy": True})
+
+class TestMockBidHistoryFilters(_HistoryFilterHelpers):
+    """이력 필터 1단계 — 기간·판정·순위·기준 가격안 (2026-10-18).
+
+    필터는 공고(active 앵커) 단위로 걸리고, 판정·순위는 고른 arm 의 **최신 rev**
+    만 본다. 순위 필터는 등수 축 검증 전에는 서버가 거부한다(fail-closed).
+    """
 
     def test_deadline_date_range_is_inclusive_kst_days(self, db_session, admin_client):
         prefix = "MB-FLT-DL-"
@@ -1711,6 +1714,220 @@ class TestMockBidHistoryFilters:
         assert resp.status_code == 422
 
 
+class TestMockBidHistoryFiltersPhase2(_HistoryFilterHelpers):
+    """이력 필터 2단계 — 입찰방법·금액대·주의 요소·낙찰가 차이·유효 표본·정렬·CSV."""
+
+    def _anchor(self, db_session, bid_no):
+        return db_session.query(models.MockBid).filter_by(bid_no=bid_no, arm="active").one()
+
+    def _order(self, resp):
+        assert resp.status_code == 200, resp.text
+        return [item["bid_no"] for item in resp.json()["items"]]
+
+    def test_bid_method_and_bracket_use_registration_snapshot(
+        self, db_session, admin_client,
+    ):
+        prefix = "MB-P2-SEG-"
+        for suffix, method, basic in (("A", "적격심사제", 499_999_999),
+                                      ("B", "적격심사제", 500_000_000),
+                                      ("C", "최저가", 500_000_000)):
+            self._register(db_session, prefix + suffix)
+            row = self._anchor(db_session, prefix + suffix)
+            row.snapshot_bid_method = method
+            row.snapshot_basic_price = basic
+        db_session.commit()
+
+        assert self._bid_nos(self._get(admin_client, prefix, bid_method="적격심사제")) \
+            == [prefix + "A", prefix + "B"]
+        # 경계는 [이전 상한, 상한) — segment_stats 의 CASE 와 같다
+        assert self._bid_nos(self._get(admin_client, prefix, bracket="medium")) == [prefix + "A"]
+        assert self._bid_nos(self._get(admin_client, prefix, bracket="large",
+                                       bid_method="최저가")) == [prefix + "C"]
+        item = self._get(admin_client, prefix, bracket="medium").json()["items"][0]
+        assert item["bid_method"] == "적격심사제"
+        assert mb._bracket_name(item["basic_price"]) == "medium"
+
+    def test_bracket_python_and_sql_agree_at_boundaries(self, db_session):
+        from sqlalchemy import literal, select
+
+        for value in (0, 99_999_999, 1e8, 4.99e8, 5e8, 9.99e8, 1e9, 5e9 - 1, 5e9, 9e10):
+            sql = db_session.execute(
+                select(mb._price_bracket_case(literal(value)))).scalar()
+            assert sql == mb._bracket_name(value), value
+
+    def test_tag_filter_matches_whole_tag_only(self, db_session, admin_client):
+        prefix = "MB-P2-TAG-"
+        for suffix, tags in (("A", ["사정률_극단"]),
+                             ("B", ["기초금액_기준불일치"]),
+                             ("C", ["A값_결측", "기초금액_정정"])):
+            self._register(db_session, prefix + suffix)
+            self._set(db_session, prefix + suffix, failure_tags=tags)
+
+        assert self._bid_nos(self._get(admin_client, prefix, tag="사정률_극단")) == [prefix + "A"]
+        assert self._bid_nos(self._get(admin_client, prefix, tag="기초금액_정정")) == [prefix + "C"]
+        assert self._bid_nos(self._get(admin_client, prefix, tag="A값_결측")) == [prefix + "C"]
+
+    def test_failure_tag_vocabulary_matches_scoring_code(self):
+        """채점 코드가 새 태그를 붙이면 필터 어휘도 함께 늘어야 한다(드리프트 가드)."""
+        import re
+
+        src = Path(mb.__file__).read_text(encoding="utf-8")
+        literals = set(re.findall(r'tags\.append\("([^"]+)"\)', src))
+        assert literals and literals == set(mb.FAILURE_TAGS)
+
+    def test_gap_bucket_matches_chart_boundaries(self, db_session, admin_client):
+        prefix = "MB-P2-GAP-"
+        for suffix, gap in (("EDGE", 0.5), ("OVER", 0.51), ("NEG", -0.2), ("BIG", 7.0)):
+            self._register(db_session, prefix + suffix)
+            self._set(db_session, prefix + suffix, outcome="LOST", gap_to_winner_pct=gap)
+
+        # 차트 버킷 규칙: 경계 값은 아래 버킷에 포함된다(g <= edge)
+        assert self._bid_nos(self._get(admin_client, prefix, gap_bucket="0~0.5")) \
+            == [prefix + "EDGE"]
+        assert self._bid_nos(self._get(admin_client, prefix, gap_bucket="0.5~1")) \
+            == [prefix + "OVER"]
+        assert self._bid_nos(self._get(admin_client, prefix, gap_bucket="-0.5~0")) \
+            == [prefix + "NEG"]
+        assert self._bid_nos(self._get(admin_client, prefix, gap_bucket=">5")) \
+            == [prefix + "BIG"]
+        for gap in (-9, -5, -0.5, 0, 0.5, 2, 5, 5.01):
+            ref = next((b for b, e in zip(mb.GAP_BUCKETS, mb.GAP_EDGES) if gap <= e),
+                       mb.GAP_BUCKETS[-1])
+            lo, hi = mb._gap_bucket_bounds(ref)
+            assert (lo is None or gap > lo) and (hi is None or gap <= hi), gap
+
+    def test_valid_base_only_drops_base_mismatch(self, db_session, admin_client):
+        prefix = "MB-P2-VB-"
+        self._register(db_session, prefix + "OK")
+        self._register(db_session, prefix + "BAD")
+        self._set(db_session, prefix + "BAD", actual_reserved_price=150_000_000)
+
+        assert self._bid_nos(self._get(admin_client, prefix, valid_base_only=True)) \
+            == [prefix + "OK"]
+        assert len(self._bid_nos(self._get(admin_client, prefix))) == 2
+
+    def test_rank_sort_is_locked_until_axis_verified(
+        self, db_session, admin_client, monkeypatch,
+    ):
+        prefix = "MB-P2-RSL-"
+        self._register(db_session, prefix + "A")
+        monkeypatch.setattr(mb, "rank_axis_health", lambda db: {"healthy": None})
+
+        assert self._get(admin_client, prefix, sort="rank_asc").status_code == 409
+        # 낙찰가 차이 정렬은 가격만 쓰므로 등수를 드러내지 않는다 — 잠그지 않는다
+        assert self._get(admin_client, prefix, sort="gap_abs_asc").status_code == 200
+
+    def test_rank_sort_puts_unranked_and_dropout_last(
+        self, db_session, admin_client, axis_ok,
+    ):
+        prefix = "MB-P2-RS-"
+        for suffix, outcome, rank in (("R3", "LOST", 3), ("R1", "WIN", 1),
+                                      ("DROP", "DROPOUT", 1), ("NONE", "LOST", None)):
+            self._register(db_session, prefix + suffix)
+            self._set(db_session, prefix + suffix, outcome=outcome, estimated_rank=rank)
+
+        order = self._order(self._get(admin_client, prefix, sort="rank_asc"))
+
+        assert order[:2] == [prefix + "R1", prefix + "R3"]
+        assert set(order[2:]) == {prefix + "DROP", prefix + "NONE"}
+        assert self._get(admin_client, prefix, sort="rank_asc").json()["total"] == 4
+
+    def test_gap_sort_is_closest_to_winner_first(self, db_session, admin_client):
+        prefix = "MB-P2-GS-"
+        for suffix, gap in (("FAR", -2.0), ("NEAR", 0.1), ("MID", 1.0), ("NONE", None)):
+            self._register(db_session, prefix + suffix)
+            self._set(db_session, prefix + suffix, gap_to_winner_pct=gap)
+
+        assert self._order(self._get(admin_client, prefix, sort="gap_abs_asc")) == [
+            prefix + "NEAR", prefix + "MID", prefix + "FAR", prefix + "NONE"]
+
+    def test_deadline_asc_sort(self, db_session, admin_client):
+        prefix = "MB-P2-DA-"
+        self._register(db_session, prefix + "NEW")
+        self._register(db_session, prefix + "OLD")
+        self._anchor(db_session, prefix + "OLD").deadline_at = mb.now_kst() - timedelta(days=5)
+        db_session.commit()
+
+        assert self._order(self._get(admin_client, prefix, sort="deadline_asc")) == [
+            prefix + "OLD", prefix + "NEW"]
+        assert self._order(self._get(admin_client, prefix)) == [prefix + "NEW", prefix + "OLD"]
+
+    def test_facets_list_registered_bid_methods(self, db_session, admin_client):
+        prefix = "MB-P2-FAC-"
+        self._register(db_session, prefix + "A")
+        self._anchor(db_session, prefix + "A").snapshot_bid_method = "MB-P2-희귀방식"
+        db_session.commit()
+
+        data = admin_client.get("/api/v1/admin/mock-bidding/history/facets").json()
+
+        assert {"value": "MB-P2-희귀방식", "notices": 1} in data["bid_methods"]
+        assert data["brackets"] == ["small", "medium", "large", "xlarge", "xxlarge"]
+        assert data["failure_tags"] == list(mb.FAILURE_TAGS)
+        assert data["gap_buckets"] == list(mb.GAP_BUCKETS)
+
+    def _csv(self, admin_client, prefix, **params):
+        import csv
+        import io
+
+        resp = admin_client.get("/api/v1/admin/mock-bidding/history.csv", params={
+            "state": "all", "search": prefix, **params})
+        assert resp.status_code == 200, resp.text
+        assert resp.text.startswith("\ufeff")
+        return resp, list(csv.DictReader(io.StringIO(resp.text.lstrip("\ufeff"))))
+
+    def test_csv_matches_list_and_hides_rank_until_verified(
+        self, db_session, admin_client, monkeypatch,
+    ):
+        prefix = "MB-P2-CSV-"
+        self._register(db_session, prefix + "A")
+        self._register(db_session, prefix + "B")
+        self._set(db_session, prefix + "A", outcome="LOST", estimated_rank=4)
+        self._set(db_session, prefix + "B", outcome="DROPOUT", estimated_rank=2)
+
+        monkeypatch.setattr(mb, "rank_axis_health", lambda db: {"healthy": False})
+        resp, rows = self._csv(admin_client, prefix)
+        assert resp.headers["X-Rank-Included"] == "0"
+        assert len(rows) == 10  # 2공고 × 5가격안
+        assert {r["공고번호"] for r in rows} == {prefix + "A", prefix + "B"}
+        assert all(r["가상 순위"] == "" for r in rows)
+
+        monkeypatch.setattr(mb, "rank_axis_health", lambda db: {"healthy": True})
+        resp, rows = self._csv(admin_client, prefix)
+        active = {r["공고번호"]: r for r in rows if r["가격안"] == "active"}
+        assert resp.headers["X-Rank-Included"] == "1"
+        assert active[prefix + "A"]["가상 순위"] == "4"
+        assert active[prefix + "B"]["가상 순위"] == ""  # 무효는 순위가 없다
+
+        # 목록과 같은 조건 → 같은 공고
+        _, rows = self._csv(admin_client, prefix, outcome="DROPOUT")
+        assert {r["공고번호"] for r in rows} == {prefix + "B"}
+
+    def test_csv_neutralizes_spreadsheet_formulas(self, db_session, admin_client):
+        prefix = "MB-P2-CSVX-"
+        self._register(db_session, prefix + "A")
+        notice = db_session.query(models.Notice).filter_by(bid_no=prefix + "A").one()
+        notice.title = '=HYPERLINK("http://evil","x")'
+        db_session.commit()
+
+        _, rows = self._csv(admin_client, prefix)
+
+        assert all(r["공고명"].startswith("'=") for r in rows)
+
+    def test_csv_rank_filter_is_locked(self, db_session, admin_client, monkeypatch):
+        monkeypatch.setattr(mb, "rank_axis_health", lambda db: {"healthy": None})
+        resp = admin_client.get("/api/v1/admin/mock-bidding/history.csv",
+                                params={"rank_max": 3})
+        assert resp.status_code == 409
+
+    @pytest.mark.parametrize("params", [
+        {"tag": "없는태그"}, {"gap_bucket": "0~9"}, {"bracket": "huge"},
+        {"sort": "score"},
+    ])
+    def test_invalid_phase2_values_are_rejected(self, admin_client, params):
+        resp = admin_client.get(self.URL, params={"state": "all", **params})
+        assert resp.status_code == 422
+
+
 class TestMockBidHistoryAdminUi:
     """빠른 필터 전환에서 늦은 이전 응답이 현재 화면을 덮지 않아야 한다."""
 
@@ -1757,9 +1974,26 @@ class TestMockBidHistoryAdminUi:
             / "infra" / "nginx" / "html" / "admin" / "admin.js"
         ).read_text(encoding="utf-8")
 
-        assert "if (!rankVerified) { st.rank = ''; st.rankPct = ''; }" in admin_js
-        assert "if (rankVerified && historyState.rank) {" in admin_js
-        assert "if (rankVerified && historyState.rankPct) params.set('rank_pct_max'" in admin_js
+        # URL 로 들어온 순위 조건·순위 정렬은 상태 단계에서 버린다
+        url_start = admin_js.index("function mbHistoryStateFromUrl(rankVerified)")
+        url_fn = admin_js[url_start:admin_js.index("\nfunction ", url_start + 1)]
+        assert "if (!rankVerified) {\n    st.rank = '';\n    st.rankPct = '';" in url_fn
+        assert "if (st.sort === 'rank_asc') st.sort = 'deadline_desc';" in url_fn
+        # 요청 단계도 같은 규칙 — 목록과 CSV 가 같은 함수(mbHistoryQuery)를 쓴다
+        eff_start = admin_js.index("function mbEffectiveHistoryFilters(st, rankVerified)")
+        eff_fn = admin_js[eff_start:admin_js.index("\nfunction ", eff_start + 1)]
+        assert "if (!rankVerified) {\n    eff.rank = '';\n    eff.rankPct = '';" in eff_fn
+        assert "if (eff.sort === 'rank_asc') eff.sort = 'deadline_desc';" in eff_fn
+        q_start = admin_js.index("function mbHistoryQuery(st, rankVerified)")
+        q_fn = admin_js[q_start:admin_js.index("\nfunction ", q_start + 1)]
+        assert "const eff = mbEffectiveHistoryFilters(st, rankVerified);" in q_fn
+        assert "historyState.rank" not in q_fn  # 원본 상태를 직접 읽어 우회하지 않는다
+        for fn_name in ("async function loadMockBidHistory(historyState, rankVerified)",
+                        "async function mbDownloadHistoryCsv(historyState, rankVerified)"):
+            fn_start = admin_js.index(fn_name)
+            fn_body = admin_js[fn_start:admin_js.index("\n}\n", fn_start)]
+            # 목록과 CSV 모두 같은 파라미터 빌더를 거친다(조건이 갈라지지 않게)
+            assert "mbHistoryQuery(historyState, rankVerified)" in fn_body, fn_name
         # 필터 변경이 hashchange 로 페이지 전체(요약·차트)를 다시 그리지 않게
         assert "history.replaceState(null, '', '#/mockbidding'" in admin_js
         assert "location.hash = '#/mockbidding" not in admin_js
