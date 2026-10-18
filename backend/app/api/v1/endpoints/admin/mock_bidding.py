@@ -5,9 +5,10 @@
 ⚠️ 1차 지표는 **무효율(dropout)** 이다. 낙찰률이 아니다(§0.2).
    대외 표기에 낙찰률을 쓰는 것은 전역 규칙 §4-2 위반.
 """
+from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
@@ -138,19 +139,55 @@ def history(
         "completed", description="개찰 완료·결과 대기 필터"
     ),
     search: str | None = Query(None, max_length=100, description="공고번호 일부 검색"),
+    arm: Literal["standard", "active", "frontier_c5", "frontier_c10", "aggressive"] = Query(
+        "active", description="판정·순위 필터를 적용할 가격안"
+    ),
+    date_field: Literal["deadline", "opened"] = Query(
+        "deadline", description="기간 기준일 — 마감일(기본) 또는 개찰일"
+    ),
+    date_from: date | None = Query(None, description="기간 시작일(포함, KST)"),
+    date_to: date | None = Query(None, description="기간 종료일(포함, KST)"),
+    outcome: Literal["WIN", "LOST", "DROPOUT"] | None = Query(
+        None, description="판정 필터"
+    ),
+    rank_min: int | None = Query(None, ge=1, description="가상 순위 하한(포함)"),
+    rank_max: int | None = Query(None, ge=1, description="가상 순위 상한(포함)"),
+    rank_pct_max: float | None = Query(
+        None, gt=0, le=100, description="유효 투찰 대비 상위 % 이내"
+    ),
     db: Session = Depends(get_db),
     _admin=Depends(require_admin),
 ):
-    """공고 단위 전체 이력 — 5개 arm 과 최신 채점 결과를 한 묶음으로 반환."""
+    """공고 단위 전체 이력 — 5개 arm 과 최신 채점 결과를 한 묶음으로 반환.
+
+    순위 필터는 등수 축 검증이 통과했을 때만 받는다(409). 화면이 등수를
+    숨기는 동안 순위로 거른 목록이 등수를 대신 드러내지 않게 하기 위함이다.
+    """
     from app.services import mock_bidding as mb
 
-    return mb.history_page(
-        db,
-        page=page,
-        page_size=page_size,
-        state=state,
-        search=search,
-    )
+    try:
+        return mb.history_page(
+            db,
+            page=page,
+            page_size=page_size,
+            state=state,
+            search=search,
+            arm=arm,
+            date_field=date_field,
+            date_from=date_from,
+            date_to=date_to,
+            outcome=outcome,
+            rank_min=rank_min,
+            rank_max=rank_max,
+            rank_pct_max=rank_pct_max,
+        )
+    except mb.RankFilterLocked:
+        raise HTTPException(
+            status_code=409,
+            detail="등수 축 검증이 끝나기 전에는 순위로 거를 수 없어요.",
+        )
+    except mb.HistoryFilterError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.get("/mock-bidding/results")

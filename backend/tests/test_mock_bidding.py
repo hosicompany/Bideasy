@@ -1479,6 +1479,238 @@ class TestMockBidHistoryApi:
         assert page_one["items"][0]["bid_no"] != page_three["items"][0]["bid_no"]
 
 
+class TestMockBidHistoryFilters:
+    """이력 필터 1단계 — 기간·판정·순위·기준 가격안 (2026-10-18).
+
+    필터는 공고(active 앵커) 단위로 걸리고, 판정·순위는 고른 arm 의 **최신 rev**
+    만 본다. 순위 필터는 등수 축 검증 전에는 서버가 거부한다(fail-closed).
+    """
+
+    URL = "/api/v1/admin/mock-bidding/history"
+
+    def _register(self, db_session, bid_no):
+        TestMockBidHistoryApi()._register(db_session, bid_no, completed=True)
+
+    def _latest(self, db_session, bid_no, arm="active"):
+        bid = db_session.query(models.MockBid).filter_by(bid_no=bid_no, arm=arm).one()
+        return (db_session.query(models.MockBidResult)
+                .filter_by(mock_bid_id=bid.id)
+                .order_by(models.MockBidResult.scoring_rev.desc()).first())
+
+    def _set(self, db_session, bid_no, arm="active", **fields):
+        row = self._latest(db_session, bid_no, arm)
+        for key, value in fields.items():
+            setattr(row, key, value)
+        db_session.commit()
+
+    def _get(self, admin_client, prefix, **params):
+        return admin_client.get(self.URL, params={
+            "state": "all", "search": prefix, "page_size": 50, **params})
+
+    def _bid_nos(self, resp):
+        assert resp.status_code == 200, resp.text
+        return sorted(item["bid_no"] for item in resp.json()["items"])
+
+    @pytest.fixture
+    def axis_ok(self, monkeypatch):
+        monkeypatch.setattr(mb, "rank_axis_health", lambda db: {"healthy": True})
+
+    def test_deadline_date_range_is_inclusive_kst_days(self, db_session, admin_client):
+        prefix = "MB-FLT-DL-"
+        self._register(db_session, prefix + "NEW")
+        self._register(db_session, prefix + "OLD")
+        old = db_session.query(models.MockBid).filter_by(
+            bid_no=prefix + "OLD", arm="active").one()
+        old.deadline_at = mb.now_kst() - timedelta(days=10)
+        db_session.commit()
+        today = mb.now_kst().date()
+
+        recent = self._get(admin_client, prefix,
+                           date_from=(today - timedelta(days=3)).isoformat(),
+                           date_to=today.isoformat())
+        older = self._get(admin_client, prefix,
+                          date_to=(today - timedelta(days=10)).isoformat())
+
+        assert self._bid_nos(recent) == [prefix + "NEW"]
+        assert recent.json()["total"] == 1
+        # 종료일은 그날 하루 전체를 포함한다(자정 경계에서 잘리지 않음)
+        assert self._bid_nos(older) == [prefix + "OLD"]
+        assert recent.json()["filters"]["date_field"] == "deadline"
+
+    def test_opened_date_uses_opening_result(self, db_session, admin_client):
+        prefix = "MB-FLT-OP-"
+        self._register(db_session, prefix + "A")
+        self._register(db_session, prefix + "B")
+        opening = db_session.query(models.OpeningResult).filter_by(
+            bid_no=prefix + "B").one()
+        opening.open_date = mb.now_kst() - timedelta(days=20)
+        db_session.commit()
+        today = mb.now_kst().date()
+
+        resp = self._get(admin_client, prefix, date_field="opened",
+                         date_from=(today - timedelta(days=1)).isoformat())
+
+        assert self._bid_nos(resp) == [prefix + "A"]
+
+    def test_outcome_filter_uses_latest_rev_only(self, db_session, admin_client):
+        prefix = "MB-FLT-OC-"
+        self._register(db_session, prefix + "A")
+        self._register(db_session, prefix + "B")
+        self._set(db_session, prefix + "A", outcome="WIN")
+        self._set(db_session, prefix + "B", outcome="WIN")
+        # B 는 재채점으로 무효가 됐다 — 구 rev 의 WIN 으로 걸리면 안 된다
+        prev = self._latest(db_session, prefix + "B")
+        db_session.add(models.MockBidResult(
+            mock_bid_id=prev.mock_bid_id, scoring_rev=prev.scoring_rev + 1,
+            outcome="DROPOUT", scored_at=prev.scored_at))
+        db_session.commit()
+
+        assert self._bid_nos(self._get(admin_client, prefix, outcome="WIN")) == [prefix + "A"]
+        assert self._bid_nos(self._get(admin_client, prefix, outcome="DROPOUT")) == [prefix + "B"]
+
+    def test_duplicate_latest_rev_does_not_double_count(self, db_session, admin_client):
+        prefix = "MB-FLT-DUP-"
+        self._register(db_session, prefix + "A")
+        prev = self._latest(db_session, prefix + "A")
+        self._set(db_session, prefix + "A", outcome="WIN")
+        db_session.add(models.MockBidResult(
+            mock_bid_id=prev.mock_bid_id, scoring_rev=prev.scoring_rev,
+            outcome="WIN", scored_at=prev.scored_at))
+        db_session.commit()
+
+        resp = self._get(admin_client, prefix, outcome="WIN")
+
+        assert resp.json()["total"] == 1
+        assert len(resp.json()["items"]) == 1
+
+    def test_filter_reads_the_same_duplicate_row_the_card_shows(
+        self, db_session, admin_client, axis_ok,
+    ):
+        """같은 최신 rev 중복이 서로 다르면, 필터와 카드가 서로를 반박하면 안 된다."""
+        prefix = "MB-FLT-DUP2-"
+        self._register(db_session, prefix + "A")
+        self._set(db_session, prefix + "A", outcome="WIN", estimated_rank=1)
+        prev = self._latest(db_session, prefix + "A")
+        # 나중에 쌓인(id 가 큰) 같은 rev 행 — 카드는 이 행을 보여준다
+        db_session.add(models.MockBidResult(
+            mock_bid_id=prev.mock_bid_id, scoring_rev=prev.scoring_rev,
+            outcome="LOST", estimated_rank=5, valid_participants_count=20,
+            scored_at=prev.scored_at))
+        db_session.commit()
+
+        assert self._bid_nos(self._get(admin_client, prefix, outcome="WIN")) == []
+        assert self._bid_nos(self._get(admin_client, prefix, rank_max=1)) == []
+        lost = self._get(admin_client, prefix, outcome="LOST", rank_min=5, rank_max=5)
+        assert self._bid_nos(lost) == [prefix + "A"]
+        assert lost.json()["items"][0]["primary_arm"]["outcome"] == "LOST"
+
+    def test_max_date_means_no_upper_bound(self, db_session, admin_client):
+        prefix = "MB-FLT-MAXD-"
+        self._register(db_session, prefix + "A")
+
+        resp = self._get(admin_client, prefix, date_to="9999-12-31")
+
+        assert self._bid_nos(resp) == [prefix + "A"]
+
+    def test_rank_filter_is_rejected_until_axis_verified(
+        self, db_session, admin_client, monkeypatch,
+    ):
+        """화면은 등수를 숨기는데 순위 필터가 열려 있으면 목록이 등수를 드러낸다."""
+        prefix = "MB-FLT-LOCK-"
+        self._register(db_session, prefix + "A")
+        for health in ({"healthy": None}, {"healthy": False}, {}):
+            monkeypatch.setattr(mb, "rank_axis_health", lambda db, h=health: h)
+            for params in ({"rank_min": 1}, {"rank_max": 3}, {"rank_pct_max": 10}):
+                resp = self._get(admin_client, prefix, **params)
+                assert resp.status_code == 409, (health, params)
+
+        # 순위 필터가 없으면 축 상태와 무관하게 조회된다
+        assert self._get(admin_client, prefix).status_code == 200
+
+    def test_absolute_rank_range(self, db_session, admin_client, axis_ok):
+        prefix = "MB-FLT-RK-"
+        for suffix, rank in (("R1", 1), ("R3", 3), ("R12", 12)):
+            self._register(db_session, prefix + suffix)
+            self._set(db_session, prefix + suffix, outcome="LOST", estimated_rank=rank,
+                      valid_participants_count=20)
+
+        assert self._bid_nos(self._get(admin_client, prefix, rank_min=1, rank_max=1)) \
+            == [prefix + "R1"]
+        assert self._bid_nos(self._get(admin_client, prefix, rank_min=2, rank_max=3)) \
+            == [prefix + "R3"]
+        assert self._bid_nos(self._get(admin_client, prefix, rank_min=11)) \
+            == [prefix + "R12"]
+
+    def test_rank_filter_never_matches_dropout(self, db_session, admin_client, axis_ok):
+        """구 로직이 무효에 남긴 '1위'가 백필 전에 있어도 순위 필터에 섞이지 않는다."""
+        prefix = "MB-FLT-DROP-"
+        self._register(db_session, prefix + "A")
+        self._set(db_session, prefix + "A", outcome="DROPOUT", estimated_rank=1)
+
+        assert self._bid_nos(self._get(admin_client, prefix, rank_max=1)) == []
+
+    def test_rank_pct_uses_valid_participants(self, db_session, admin_client, axis_ok):
+        prefix = "MB-FLT-PCT-"
+        self._register(db_session, prefix + "TOP")
+        self._register(db_session, prefix + "MID")
+        self._set(db_session, prefix + "TOP", outcome="LOST", estimated_rank=5,
+                  participants_count=200, valid_participants_count=100)
+        # 전 참가자로 나누면 10% 지만 유효 투찰로는 20% — 걸리면 안 된다
+        self._set(db_session, prefix + "MID", outcome="LOST", estimated_rank=20,
+                  participants_count=200, valid_participants_count=100)
+
+        assert self._bid_nos(self._get(admin_client, prefix, rank_pct_max=10)) \
+            == [prefix + "TOP"]
+
+    def test_filter_arm_selects_whose_result_is_filtered(
+        self, db_session, admin_client, axis_ok,
+    ):
+        prefix = "MB-FLT-ARM-"
+        self._register(db_session, prefix + "A")
+        self._register(db_session, prefix + "B")
+        for bid_no, active_rank, std_rank in (("A", 1, 9), ("B", 9, 1)):
+            self._set(db_session, prefix + bid_no, outcome="LOST",
+                      estimated_rank=active_rank)
+            self._set(db_session, prefix + bid_no, arm="standard", outcome="LOST",
+                      estimated_rank=std_rank)
+
+        by_active = self._get(admin_client, prefix, rank_max=1)
+        by_standard = self._get(admin_client, prefix, rank_max=1, arm="standard")
+
+        assert self._bid_nos(by_active) == [prefix + "A"]
+        assert self._bid_nos(by_standard) == [prefix + "B"]
+        # 카드 앵커는 그대로 active — 5개 가격안 묶음이 유지된다
+        item = by_standard.json()["items"][0]
+        assert item["primary_arm"]["arm"] == "active"
+        assert len(item["arms"]) == 5
+
+    def test_waiting_with_outcome_is_empty(self, db_session, admin_client):
+        prefix = "MB-FLT-WAIT-"
+        TestMockBidHistoryApi()._register(db_session, prefix + "A", completed=False)
+
+        resp = admin_client.get(self.URL, params={
+            "state": "waiting", "search": prefix, "outcome": "WIN"})
+
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 0
+
+    @pytest.mark.parametrize("params", [
+        {"date_from": "2026-10-10", "date_to": "2026-10-01"},
+        {"rank_min": 5, "rank_max": 2},
+    ])
+    def test_reversed_ranges_are_rejected(self, admin_client, axis_ok, params):
+        resp = admin_client.get(self.URL, params={"state": "all", **params})
+        assert resp.status_code == 422
+
+    @pytest.mark.parametrize("params", [
+        {"arm": "unknown"}, {"outcome": "NO_RESULT"}, {"date_field": "scored"},
+        {"rank_min": 0}, {"rank_pct_max": 0}, {"rank_pct_max": 101},
+    ])
+    def test_invalid_values_are_rejected(self, admin_client, params):
+        resp = admin_client.get(self.URL, params={"state": "all", **params})
+        assert resp.status_code == 422
+
+
 class TestMockBidHistoryAdminUi:
     """빠른 필터 전환에서 늦은 이전 응답이 현재 화면을 덮지 않아야 한다."""
 
@@ -1514,9 +1746,23 @@ class TestMockBidHistoryAdminUi:
 
         assert "const rankVerified = axisHealth.healthy === true;" in admin_js
         assert "if (!rankVerified) return '등수 점검 중';" in admin_js
-        assert "mbHistoryItem(item, rankVerified)" in admin_js
+        assert "mbHistoryItem(item, rankVerified, filterArm)" in admin_js
         assert "loadMockBidHistory(historyState, rankVerified);" in admin_js
         assert "rankedSummary.textContent = rankVerified" in admin_js
+
+    def test_rank_filter_is_fail_closed_in_ui(self):
+        """순위 조건은 검증 통과 시에만 요청에 실린다 — URL 로 들어와도 버린다."""
+        admin_js = (
+            Path(__file__).resolve().parents[2]
+            / "infra" / "nginx" / "html" / "admin" / "admin.js"
+        ).read_text(encoding="utf-8")
+
+        assert "if (!rankVerified) { st.rank = ''; st.rankPct = ''; }" in admin_js
+        assert "if (rankVerified && historyState.rank) {" in admin_js
+        assert "if (rankVerified && historyState.rankPct) params.set('rank_pct_max'" in admin_js
+        # 필터 변경이 hashchange 로 페이지 전체(요약·차트)를 다시 그리지 않게
+        assert "history.replaceState(null, '', '#/mockbidding'" in admin_js
+        assert "location.hash = '#/mockbidding" not in admin_js
 
 
 class TestScoringBacklogOrder:

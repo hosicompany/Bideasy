@@ -1382,6 +1382,183 @@ function mbRateText(value) {
   return Number.isFinite(n) ? n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') + '%' : '—';
 }
 
+// ── 이력 필터 (1단계: 기간·판정·순위·기준 가격안) ──
+// 순위는 절대 순위 구간이 기본이고 상위 %는 보조다 — 관리자가 개찰조서와
+// 바로 대조할 수 있는 숫자가 절대 순위이기 때문이다.
+const MB_RANK_BUCKETS = {
+  '1': { label: '1위', min: 1, max: 1 },
+  '2-3': { label: '2~3위', min: 2, max: 3 },
+  '4-10': { label: '4~10위', min: 4, max: 10 },
+  '11+': { label: '11위 이하', min: 11, max: null },
+};
+const MB_OUTCOME_FILTERS = ['WIN', 'LOST', 'DROPOUT'];
+const MB_HISTORY_STATES = ['completed', 'waiting', 'all'];
+
+function mbLocalDate(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function mbIsDate(v) { return /^\d{4}-\d{2}-\d{2}$/.test(v || ''); }
+
+function mbHistoryStateFromUrl(rankVerified) {
+  const q = new URLSearchParams(location.hash.split('?')[1] || '');
+  const pct = Number(q.get('pct'));
+  const st = {
+    state: MB_HISTORY_STATES.includes(q.get('state')) ? q.get('state') : 'completed',
+    page: Math.max(1, parseInt(q.get('page'), 10) || 1),
+    search: (q.get('q') || '').slice(0, 100),
+    arm: MB_ARM_ORDER.includes(q.get('arm')) ? q.get('arm') : 'active',
+    dateField: q.get('df') === 'opened' ? 'opened' : 'deadline',
+    from: mbIsDate(q.get('from')) ? q.get('from') : '',
+    to: mbIsDate(q.get('to')) ? q.get('to') : '',
+    outcome: MB_OUTCOME_FILTERS.includes(q.get('outcome')) ? q.get('outcome') : '',
+    rank: MB_RANK_BUCKETS[q.get('rank')] ? q.get('rank') : '',
+    rankPct: Number.isFinite(pct) && pct > 0 && pct <= 100 ? String(pct) : '',
+  };
+  // 검증 전에는 URL 로 들어온 순위 조건도 버린다 — 서버도 409 로 거부한다
+  if (!rankVerified) { st.rank = ''; st.rankPct = ''; }
+  return st;
+}
+
+function mbSyncHistoryUrl(st) {
+  const q = new URLSearchParams();
+  if (st.state !== 'completed') q.set('state', st.state);
+  if (st.page > 1) q.set('page', String(st.page));
+  if (st.search) q.set('q', st.search);
+  if (st.arm !== 'active') q.set('arm', st.arm);
+  if (st.dateField !== 'deadline') q.set('df', st.dateField);
+  if (st.from) q.set('from', st.from);
+  if (st.to) q.set('to', st.to);
+  if (st.outcome) q.set('outcome', st.outcome);
+  if (st.rank) q.set('rank', st.rank);
+  if (st.rankPct) q.set('pct', st.rankPct);
+  const qs = q.toString();
+  // location.hash 를 바꾸면 hashchange 로 페이지 전체(요약·차트)를 다시 그린다.
+  // 필터는 목록만 다시 부르면 되므로 replaceState 로 주소만 맞춘다.
+  history.replaceState(null, '', '#/mockbidding' + (qs ? '?' + qs : ''));
+}
+
+// 기준 가격안은 판정·순위 조건이 있을 때만 결과를 바꾼다 — 혼자서는 필터가 아니다
+function mbHistoryHasFilter(st) {
+  return Boolean(st.search || st.from || st.to || st.outcome || st.rank || st.rankPct);
+}
+
+function mbHistoryFilterSummary(st) {
+  const parts = [];
+  if (st.from || st.to) {
+    parts.push(`${st.dateField === 'opened' ? '개찰일' : '마감일'} ${st.from || '처음'} ~ ${st.to || '오늘'}`);
+  }
+  const armLabel = MB_ARM_FRIENDLY[st.arm] || st.arm;
+  if (st.outcome) parts.push(`${armLabel} 판정: ${mbOutcomeMeta(st.outcome).label}`);
+  if (st.rank) parts.push(`${armLabel} 가상 ${MB_RANK_BUCKETS[st.rank].label}`);
+  if (st.rankPct) parts.push(`${armLabel} 유효 투찰 상위 ${st.rankPct}% 이내`);
+  if (st.search) parts.push(`공고번호 "${st.search}"`);
+  return parts.join(' · ');
+}
+
+function mbHistoryFilterPanel(st, rankVerified) {
+  const armOptions = MB_ARM_ORDER.map((arm) =>
+    `<option value="${arm}" ${st.arm === arm ? 'selected' : ''}>${esc(MB_ARM_FRIENDLY[arm] || arm)}</option>`).join('');
+  const outcomeOptions = ['<option value="">전체 판정</option>'].concat(MB_OUTCOME_FILTERS.map((o) =>
+    `<option value="${o}" ${st.outcome === o ? 'selected' : ''}>${esc(mbOutcomeMeta(o).label)}</option>`)).join('');
+  const rankChips = [['', '전체']].concat(Object.entries(MB_RANK_BUCKETS).map(([k, v]) => [k, v.label]))
+    .map(([k, label]) => `<button type="button" data-mb-rank="${k}" class="${st.rank === k ? 'active' : ''}" ${rankVerified ? '' : 'disabled'}>${esc(label)}</button>`).join('');
+  return `<div class="mb-filter-panel" id="mb-history-filters">
+    <div class="mb-filter-row">
+      <label class="mb-filter-field"><span>기간 기준</span>
+        <select id="mb-f-datefield"><option value="deadline" ${st.dateField === 'deadline' ? 'selected' : ''}>마감일</option><option value="opened" ${st.dateField === 'opened' ? 'selected' : ''}>개찰일</option></select></label>
+      <label class="mb-filter-field"><span>시작</span><input type="date" id="mb-f-from" value="${esc(st.from)}"></label>
+      <label class="mb-filter-field"><span>종료</span><input type="date" id="mb-f-to" value="${esc(st.to)}"></label>
+      <div class="mb-filter-quick">
+        <button type="button" data-mb-range="7">최근 7일</button>
+        <button type="button" data-mb-range="30">최근 30일</button>
+        <button type="button" data-mb-range="month">이번 달</button>
+        <button type="button" data-mb-range="">기간 전체</button>
+      </div>
+    </div>
+    <div class="mb-filter-row">
+      <label class="mb-filter-field"><span>기준 가격안</span><select id="mb-f-arm" data-mb-result-filter>${armOptions}</select></label>
+      <label class="mb-filter-field"><span>판정</span><select id="mb-f-outcome" data-mb-result-filter>${outcomeOptions}</select></label>
+      <div class="mb-filter-field"><span>가상 순위</span><div class="mb-tabs mb-rank-chips">${rankChips}</div></div>
+      <label class="mb-filter-field mb-filter-pct"><span>유효 투찰 상위 % 이내</span>
+        <input type="number" id="mb-f-pct" min="0.1" max="100" step="0.1" placeholder="예: 10" value="${esc(st.rankPct)}" ${rankVerified ? '' : 'disabled'}></label>
+      <button type="button" class="btn btn-outline" id="mb-f-reset">조건 초기화</button>
+    </div>
+    ${rankVerified ? '' : '<p class="mb-filter-note">등수 축 검증 전이라 순위 필터는 잠겨 있어요. 기간·판정 필터는 쓸 수 있어요.</p>'}
+    <p class="mb-filter-note" id="mb-f-waiting-note" hidden>결과 대기 공고에는 판정·순위가 없어서 판정·순위 조건은 적용하지 않아요.</p>
+  </div>`;
+}
+
+function mbBindHistoryFilters(historyState, rankVerified) {
+  const reload = () => {
+    historyState.page = 1;
+    loadMockBidHistory(historyState, rankVerified);
+  };
+  const byId = (id) => document.getElementById(id);
+  byId('mb-f-datefield').addEventListener('change', (e) => { historyState.dateField = e.target.value; if (historyState.from || historyState.to) reload(); else mbSyncHistoryUrl(historyState); });
+  byId('mb-f-from').addEventListener('change', (e) => { historyState.from = mbIsDate(e.target.value) ? e.target.value : ''; reload(); });
+  byId('mb-f-to').addEventListener('change', (e) => { historyState.to = mbIsDate(e.target.value) ? e.target.value : ''; reload(); });
+  document.querySelectorAll('[data-mb-range]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const today = new Date();
+      const key = button.dataset.mbRange;
+      let from = '';
+      if (key === 'month') from = mbLocalDate(new Date(today.getFullYear(), today.getMonth(), 1));
+      else if (key) from = mbLocalDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - Number(key) + 1));
+      historyState.from = from;
+      historyState.to = key ? mbLocalDate(today) : '';
+      byId('mb-f-from').value = historyState.from;
+      byId('mb-f-to').value = historyState.to;
+      reload();
+    });
+  });
+  byId('mb-f-arm').addEventListener('change', (e) => { historyState.arm = e.target.value; if (historyState.outcome || historyState.rank || historyState.rankPct) reload(); else mbSyncHistoryUrl(historyState); });
+  byId('mb-f-outcome').addEventListener('change', (e) => { historyState.outcome = e.target.value; reload(); });
+  document.querySelectorAll('[data-mb-rank]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!rankVerified || button.disabled) return;
+      historyState.rank = button.dataset.mbRank;
+      document.querySelectorAll('[data-mb-rank]').forEach((b) => b.classList.toggle('active', b === button));
+      reload();
+    });
+  });
+  byId('mb-f-pct').addEventListener('change', (e) => {
+    if (!rankVerified) return;
+    const n = Number(e.target.value);
+    historyState.rankPct = e.target.value && Number.isFinite(n) && n > 0 && n <= 100 ? String(n) : '';
+    e.target.value = historyState.rankPct;
+    reload();
+  });
+  byId('mb-f-reset').addEventListener('click', () => {
+    Object.assign(historyState, {
+      search: '', arm: 'active', dateField: 'deadline', from: '', to: '',
+      outcome: '', rank: '', rankPct: '',
+    });
+    byId('mb-history-query').value = '';
+    byId('mb-f-datefield').value = 'deadline';
+    byId('mb-f-from').value = '';
+    byId('mb-f-to').value = '';
+    byId('mb-f-arm').value = 'active';
+    byId('mb-f-outcome').value = '';
+    byId('mb-f-pct').value = '';
+    document.querySelectorAll('[data-mb-rank]').forEach((b) => b.classList.toggle('active', b.dataset.mbRank === ''));
+    reload();
+  });
+}
+
+// 결과 대기 탭에는 판정·순위가 없다 — 조건을 남겨 두면 언제나 0건이 되어
+// "대기 공고가 없다"로 오독된다. 탭에 맞춰 잠그고 요청에서도 뺀다.
+function mbToggleResultFilters(historyState, rankVerified) {
+  const waiting = historyState.state === 'waiting';
+  document.querySelectorAll('[data-mb-result-filter]').forEach((el) => { el.disabled = waiting; });
+  document.querySelectorAll('[data-mb-rank]').forEach((el) => { el.disabled = waiting || !rankVerified; });
+  const pct = document.getElementById('mb-f-pct');
+  if (pct) pct.disabled = waiting || !rankVerified;
+  const note = document.getElementById('mb-f-waiting-note');
+  if (note) note.hidden = !waiting;
+}
+
 function mbOutcomeMeta(outcome) {
   return ({
     WIN: { label: '낙찰 가능 범위', tone: 'good' },
@@ -1451,8 +1628,14 @@ function mbHistoryArmRows(arms, rankVerified) {
   }).join('');
 }
 
-function mbHistoryItem(item, rankVerified) {
+function mbHistoryItem(item, rankVerified, filterArm = 'active') {
   const primary = item.primary_arm || {};
+  // 다른 가격안으로 걸렀다면, 이 카드가 왜 걸렸는지 첫 화면에서 보여준다
+  const filtered = filterArm !== 'active'
+    ? (item.arms || []).find((arm) => arm.arm === filterArm) : null;
+  const filteredLine = filtered
+    ? `<p class="mb-filter-hit">필터 기준 · ${esc(MB_ARM_FRIENDLY[filterArm] || filterArm)}: ${esc(mbOutcomeMeta(filtered.outcome).label)} · ${mbRankText(filtered, '—', rankVerified)}</p>`
+    : '';
   const meta = mbOutcomeMeta(primary.outcome);
   const completed = item.state === 'COMPLETED';
   const rankText = mbRankText(primary, '집계 중', rankVerified);
@@ -1490,6 +1673,7 @@ function mbHistoryItem(item, rankVerified) {
       </div>
     </div>
     <p class="mb-history-insight">${esc(mbResultInsight(primary))}</p>
+    ${filteredLine}
     <details class="mb-strategy-details">
       <summary>함께 기록한 5가지 가격 비교</summary>
       <div class="mb-table-scroll"><table class="mb-history-table">
@@ -1500,13 +1684,16 @@ function mbHistoryItem(item, rankVerified) {
   </article>`;
 }
 
-function mbHistoryEmpty(state) {
-  const text = state === 'completed'
-    ? '아직 개찰 결과가 확인된 공고가 없어요.'
-    : state === 'waiting'
-      ? '현재 결과를 기다리는 공고가 없어요.'
-      : '조건에 맞는 모의투찰 기록이 없어요.';
-  return `<div class="mb-empty"><b>${text}</b><span>공고번호 검색 조건을 바꿔보세요.</span></div>`;
+function mbHistoryEmpty(state, hasFilter = false) {
+  const text = hasFilter
+    ? '조건에 맞는 공고가 없어요.'
+    : state === 'completed'
+      ? '아직 개찰 결과가 확인된 공고가 없어요.'
+      : state === 'waiting'
+        ? '현재 결과를 기다리는 공고가 없어요.'
+        : '조건에 맞는 모의투찰 기록이 없어요.';
+  const hint = hasFilter ? '기간·판정·순위 조건을 넓히거나 초기화해 보세요.' : '공고번호 검색 조건을 바꿔보세요.';
+  return `<div class="mb-empty"><b>${text}</b><span>${hint}</span></div>`;
 }
 
 async function loadMockBidHistory(historyState, rankVerified) {
@@ -1524,6 +1711,29 @@ async function loadMockBidHistory(historyState, rankVerified) {
     page_size: '10',
   });
   if (historyState.search) params.set('search', historyState.search);
+  if (historyState.from || historyState.to) params.set('date_field', historyState.dateField);
+  if (historyState.from) params.set('date_from', historyState.from);
+  if (historyState.to) params.set('date_to', historyState.to);
+  // 판정·순위는 결과가 있는 탭에서만 보낸다(대기 탭이면 항상 0건)
+  const resultFilters = requestedState !== 'waiting';
+  if (resultFilters) {
+    params.set('arm', historyState.arm);
+    if (historyState.outcome) params.set('outcome', historyState.outcome);
+    // 순위 조건은 검증이 통과한 경우에만 보낸다 — 서버도 409 로 한 번 더 막는다
+    if (rankVerified && historyState.rank) {
+      const bucket = MB_RANK_BUCKETS[historyState.rank];
+      params.set('rank_min', String(bucket.min));
+      if (bucket.max != null) params.set('rank_max', String(bucket.max));
+    }
+    if (rankVerified && historyState.rankPct) params.set('rank_pct_max', historyState.rankPct);
+  }
+  const filterArm = resultFilters ? historyState.arm : 'active';
+  const hasFilter = mbHistoryHasFilter({
+    ...historyState,
+    ...(resultFilters ? {} : { arm: 'active', outcome: '', rank: '', rankPct: '' }),
+  });
+  mbSyncHistoryUrl(historyState);
+  mbToggleResultFilters(historyState, rankVerified);
 
   try {
     const data = await api('/admin/mock-bidding/history?' + params.toString());
@@ -1542,9 +1752,13 @@ async function loadMockBidHistory(historyState, rankVerified) {
     }
 
     list.innerHTML = (data.items || []).length
-      ? data.items.map((item) => mbHistoryItem(item, rankVerified)).join('')
-      : mbHistoryEmpty(requestedState);
-    pager.innerHTML = `<span>전체 ${fmtNumber(data.total)}공고 · ${fmtNumber(data.page)} / ${fmtNumber(data.total_pages || 1)}페이지</span>
+      ? data.items.map((item) => mbHistoryItem(item, rankVerified, filterArm)).join('')
+      : mbHistoryEmpty(requestedState, hasFilter);
+    const filterText = hasFilter ? mbHistoryFilterSummary({
+      ...historyState,
+      ...(resultFilters ? {} : { outcome: '', rank: '', rankPct: '' }),
+    }) : '';
+    pager.innerHTML = `<span>${hasFilter ? '조건에 맞는' : '전체'} ${fmtNumber(data.total)}공고 · ${fmtNumber(data.page)} / ${fmtNumber(data.total_pages || 1)}페이지${filterText ? `<small class="mb-filter-summary">${esc(filterText)}</small>` : ''}</span>
       <div><button class="btn btn-outline" data-mb-page="${data.page - 1}" ${data.has_previous ? '' : 'disabled'}>이전</button>
       <button class="btn btn-outline" data-mb-page="${data.page + 1}" ${data.has_next ? '' : 'disabled'}>다음</button></div>`;
     pager.querySelectorAll('[data-mb-page]').forEach((button) => {
@@ -1623,6 +1837,7 @@ pages.mockbidding = async function (content) {
   const top3Rate = (ranked && !axisBroken) ? Math.round(top3 / ranked * 1000) / 10 : null;
   const top3Label = axisHealth.healthy === false ? '축 점검 중' : '축 확인 대기';
   const advanced = mbAdvancedTables(sum);
+  const historyState = mbHistoryStateFromUrl(rankVerified);
 
   content.innerHTML = `
     <section class="mb-hero">
@@ -1648,15 +1863,16 @@ pages.mockbidding = async function (content) {
       </div>
       <div class="mb-history-controls">
         <div class="mb-tabs" role="tablist">
-          <button class="active" data-mb-state="completed">개찰 완료</button>
-          <button data-mb-state="waiting">결과 대기</button>
-          <button data-mb-state="all">전체</button>
+          <button class="${historyState.state === 'completed' ? 'active' : ''}" data-mb-state="completed">개찰 완료</button>
+          <button class="${historyState.state === 'waiting' ? 'active' : ''}" data-mb-state="waiting">결과 대기</button>
+          <button class="${historyState.state === 'all' ? 'active' : ''}" data-mb-state="all">전체</button>
         </div>
         <form id="mb-history-search" class="mb-search">
-          <input id="mb-history-query" maxlength="100" placeholder="공고번호로 찾기" aria-label="공고번호 검색">
+          <input id="mb-history-query" maxlength="100" placeholder="공고번호로 찾기" aria-label="공고번호 검색" value="${esc(historyState.search)}">
           <button class="btn btn-primary" type="submit">찾기</button>
         </form>
       </div>
+      ${mbHistoryFilterPanel(historyState, rankVerified)}
       ${rankVerified ? '' : '<p class="mb-validity-note">등수 축을 확인하는 중이에요. 검증이 통과할 때까지 공고별 가상 등수는 숨깁니다.</p>'}
       <div id="mb-history-list"></div>
       <div id="mb-history-pager" class="mb-pager"></div>
@@ -1702,7 +1918,6 @@ pages.mockbidding = async function (content) {
     </details>
     ${glossaryCard(['무효', '무효율', '적중', '밀림', '사전 등록', '예정가격', '사정률', '낙찰하한선', 'A값'])}`;
 
-  const historyState = { state: 'completed', page: 1, search: '' };
   document.querySelectorAll('[data-mb-state]').forEach((button) => {
     button.addEventListener('click', () => {
       document.querySelectorAll('[data-mb-state]').forEach((item) => item.classList.remove('active'));
@@ -1718,6 +1933,7 @@ pages.mockbidding = async function (content) {
     historyState.page = 1;
     loadMockBidHistory(historyState, rankVerified);
   });
+  mbBindHistoryFilters(historyState, rankVerified);
 
   // 차트가 던져도 원장(가장 중요한 데이터)은 반드시 뜨게 한다 — 장식이 본문을
   // 가리면 안 된다. Chart.js 로드 실패 한 번이 화면 전체를 비우던 구조였다.

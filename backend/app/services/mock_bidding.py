@@ -23,7 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, case, exists, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.core.logging import get_logger
 from app.db import models
@@ -920,16 +920,68 @@ def backfill_participant_ranks(db: Session, limit: int = 5000) -> dict:
     return result
 
 
+class HistoryFilterError(ValueError):
+    """이력 필터 조합이 잘못됐다(기간 역전·순위 역전·모르는 arm 등)."""
+
+
+class RankFilterLocked(HistoryFilterError):
+    """등수 축 검증 전에는 순위로 거를 수 없다.
+
+    화면은 검증 전 등수를 숨기는데(fail-closed), 순위 필터가 열려 있으면
+    "1위만 보기" 결과 목록 자체가 등수를 드러낸다. 화면에서만 막으면 URL 로
+    우회되므로 서버가 거부한다.
+    """
+
+
+#: 이력 필터의 기간 기준일. 채점일(`scored_at`)은 재채점·등수 백필 때문에
+#: 사람이 기대하는 날짜와 어긋나 넣지 않는다 — 오차 추이도 마감일 기준이다.
+HISTORY_DATE_FIELDS = ("deadline", "opened")
+HISTORY_OUTCOMES = ("WIN", "LOST", "DROPOUT")
+
+
+def _day_range(date_from: date_cls | None, date_to: date_cls | None):
+    """포함 구간 [from, to] 를 naive KST 반열린 구간 [start, end) 로."""
+    start = datetime.combine(date_from, datetime.min.time()) if date_from else None
+    end = None
+    if date_to and date_to < date_cls.max:  # 9999-12-31 은 상한 없음과 같다
+        end = datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)
+    return start, end
+
+
 def history_page(db: Session, *, page: int = 1, page_size: int = 10,
-                 state: str = "all", search: str | None = None) -> dict:
+                 state: str = "all", search: str | None = None,
+                 arm: str = "active", date_field: str = "deadline",
+                 date_from: date_cls | None = None, date_to: date_cls | None = None,
+                 outcome: str | None = None, rank_min: int | None = None,
+                 rank_max: int | None = None,
+                 rank_pct_max: float | None = None) -> dict:
     """공고 단위 모의투찰 이력.
 
     원장은 arm 행 5개지만 사람이 확인하는 단위는 공고 1건이다. `active` arm 을
     페이지 앵커로 삼고, 같은 공고의 5개 전략과 각 최신 scoring_rev 를 묶는다.
     최근 N행 제한 대신 페이지네이션을 제공해 지난 개찰 결과까지 모두 찾을 수 있다.
+
+    판정·순위 필터는 `arm`(기본 active) 의 **최신 rev** 결과에 건다. 앵커는
+    그대로 active 라 카드 구성은 바뀌지 않고, 걸러지는 공고만 달라진다.
+    순위 필터는 등수 축 검증(`rank_axis_health`)이 명시적으로 통과했을 때만
+    허용한다(`RankFilterLocked`).
     """
     if state not in {"all", "completed", "waiting"}:
-        raise ValueError("state must be all, completed, or waiting")
+        raise HistoryFilterError("state must be all, completed, or waiting")
+    if arm not in ARMS:
+        raise HistoryFilterError(f"unknown arm: {arm}")
+    if date_field not in HISTORY_DATE_FIELDS:
+        raise HistoryFilterError("date_field must be deadline or opened")
+    if outcome is not None and outcome not in HISTORY_OUTCOMES:
+        raise HistoryFilterError("outcome must be WIN, LOST, or DROPOUT")
+    if date_from and date_to and date_from > date_to:
+        raise HistoryFilterError("date_from must not be after date_to")
+    if rank_min is not None and rank_max is not None and rank_min > rank_max:
+        raise HistoryFilterError("rank_min must not exceed rank_max")
+    rank_filtered = (rank_min is not None or rank_max is not None
+                     or rank_pct_max is not None)
+    if rank_filtered and rank_axis_health(db).get("healthy") is not True:
+        raise RankFilterLocked("rank_axis_unverified")
 
     anchor = db.query(models.MockBid).filter(models.MockBid.arm == "active")
     if state == "completed":
@@ -940,6 +992,77 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
         anchor = anchor.filter(
             models.MockBid.bid_no.contains(search.strip(), autoescape=True)
         )
+
+    start, end = _day_range(date_from, date_to)
+    if start or end:
+        if date_field == "deadline":
+            if start:
+                anchor = anchor.filter(models.MockBid.deadline_at >= start)
+            if end:
+                anchor = anchor.filter(models.MockBid.deadline_at < end)
+        else:
+            opened = select(models.OpeningResult.bid_no).where(
+                models.OpeningResult.open_date.isnot(None))
+            if start:
+                opened = opened.where(models.OpeningResult.open_date >= start)
+            if end:
+                opened = opened.where(models.OpeningResult.open_date < end)
+            anchor = anchor.filter(models.MockBid.bid_no.in_(opened))
+
+    if outcome is not None or rank_filtered:
+        # JOIN 이 아니라 IN 세미조인 — 앵커 공고가 두 번 세지지 않는다.
+        # 같은 max rev 중복 행이 이미 DB 에 있을 수 있으므로(유니크 제약 없음),
+        # 카드 조립과 **같은 행**(최신 rev 중 최대 id)만 본다. 아무 중복 행이나
+        # 조건에 맞으면 통과시키면 "1위" 필터에 "가상 5위" 카드가 섞인다.
+        fb = aliased(models.MockBid)
+        res = models.MockBidResult
+        dup = aliased(models.MockBidResult)
+        latest_f = _latest_rev_sq(db)
+        shown = (
+            select(func.max(dup.id).label("rid"))
+            .join(latest_f, and_(dup.mock_bid_id == latest_f.c.mock_bid_id,
+                                 dup.scoring_rev == latest_f.c.max_rev))
+            .group_by(dup.mock_bid_id)
+            .subquery()
+        )
+        matching = (
+            select(fb.bid_no)
+            .join(res, res.mock_bid_id == fb.id)
+            .join(shown, res.id == shown.c.rid)
+            .where(fb.arm == arm)
+        )
+        if outcome is not None:
+            matching = matching.where(res.outcome == outcome)
+        if rank_filtered:
+            # 무효는 순위가 없다. 구 로직이 남긴 무효의 등수가 백필 전에 살아
+            # 있어도 "1위" 필터에 섞이지 않게 판정으로 한 번 더 막는다.
+            matching = matching.where(res.outcome.in_(("WIN", "LOST")),
+                                      res.estimated_rank.isnot(None))
+        if rank_min is not None:
+            matching = matching.where(res.estimated_rank >= rank_min)
+        if rank_max is not None:
+            matching = matching.where(res.estimated_rank <= rank_max)
+        if rank_pct_max is not None:
+            # 분모는 유효 투찰 수 — 화면의 "유효 투찰 N곳 사이 순위"와 같은 축
+            matching = matching.where(
+                res.valid_participants_count > 0,
+                res.estimated_rank * 100.0
+                / func.nullif(res.valid_participants_count, 0) <= rank_pct_max,
+            )
+        anchor = anchor.filter(models.MockBid.bid_no.in_(matching))
+
+    applied_filters = {
+        "state": state,
+        "search": search.strip() if search and search.strip() else None,
+        "arm": arm,
+        "date_field": date_field,
+        "date_from": date_from.isoformat() if date_from else None,
+        "date_to": date_to.isoformat() if date_to else None,
+        "outcome": outcome,
+        "rank_min": rank_min,
+        "rank_max": rank_max,
+        "rank_pct_max": rank_pct_max,
+    }
 
     total = anchor.count()
     anchors = (
@@ -982,6 +1105,7 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
                 "waiting": max(0, registered_total - completed_total),
                 "rank_ready": rank_ready,
             },
+            "filters": applied_filters,
             "items": [],
         }
 
@@ -1092,6 +1216,7 @@ def history_page(db: Session, *, page: int = 1, page_size: int = 10,
             "rank_ready": rank_ready,
             "rank_ready_on_page": rank_ready_on_page,
         },
+        "filters": applied_filters,
         "items": items,
     }
 
