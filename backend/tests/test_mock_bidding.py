@@ -1967,6 +1967,21 @@ class TestMockBidHistoryAdminUi:
         assert "loadMockBidHistory(historyState, rankVerified);" in admin_js
         assert "rankedSummary.textContent = rankVerified" in admin_js
 
+    def test_win_label_does_not_claim_award(self):
+        """WIN 은 가격만 본 판정이다 — 적격심사 점수를 모르므로 '낙찰'을 암시하지 않는다."""
+        admin_js = (
+            Path(__file__).resolve().parents[2]
+            / "infra" / "nginx" / "html" / "admin" / "admin.js"
+        ).read_text(encoding="utf-8")
+
+        assert "낙찰 가능 범위" not in admin_js
+        assert "WIN: { label: '심사 순번 안(가격 기준)'" in admin_js
+        start = admin_js.index("function mbQualificationCaveat(item, primary)")
+        caveat = admin_js[start:admin_js.index("\n}\n", start)]
+        # 경고는 적격심사제 + WIN 에만 — 밀림·무효는 가격만으로 확정된다
+        assert "primary.outcome !== 'WIN'" in caveat
+        assert ".includes('적격')" in caveat
+
     def test_rank_filter_is_fail_closed_in_ui(self):
         """순위 조건은 검증 통과 시에만 요청에 실린다 — URL 로 들어와도 버린다."""
         admin_js = (
