@@ -1288,8 +1288,8 @@ const GLOSSARY = {
   'A값': '국민연금·건강보험·노인장기요양보험료, 퇴직공제부금비, 산업안전보건관리비 등 사후정산 비목 10종 합계(산재·고용보험 제외). 투찰가 공식에서 사정률을 적용하지 않고 그대로 더합니다. 2026-08부터 기초금액 API 구성요소 합계(tier0)로 자동 수집하며, 결측인 공고는 0으로 계산합니다.',
   '무효': 'DROPOUT — 투찰가가 낙찰하한선 미만이라 입찰 자체가 없던 일이 되는 것. 가장 나쁜 결과입니다.',
   '무효율': '판정된 건 중 무효의 비율. 브랜드 KPI가 유효율이라 이것이 1차 지표입니다 — 낮을수록 좋습니다.',
-  '적중': 'WIN — 투찰가가 [낙찰하한선, 실제 낙찰가] 구간에 들어간 것. 하한선을 통과하면서 낙찰자보다 낮았다는 뜻입니다. ⚠️ 1순위 낙찰 보장은 아닙니다.',
-  '적중률': '판정된 건 중 적중의 비율. 내부 참고용이며 대외에 «낙찰률»로 표기하는 것은 금지입니다(전역 규칙 §4-2).',
+  '적중': 'WIN(화면 표기: 심사 순번 안) — 투찰가가 [낙찰하한선, 실제 낙찰가] 구간에 들어간 것. 가격만 본 판정이라 "실제 낙찰자보다 먼저 심사받았다"까지만 뜻합니다. ⚠️ 적격심사제는 시공경험·경영상태 등 적격심사 점수를 반영하지 않아 실제 낙찰 여부는 알 수 없습니다.',
+  '적중률': '판정된 건 중 적중의 비율(가격 기준). 적격심사 점수를 반영하지 않은 내부 참고용이며 대외에 «낙찰률»로 표기하는 것은 금지입니다(전역 규칙 §4-2).',
   '밀림': 'LOST — 하한선은 통과했으나 낙찰가보다 높아 더 싼 업체에 밀린 것.',
   'arm': '동시에 시험하는 전략 하나. A/B 테스트의 각 안에 해당하며, 모의투찰은 같은 공고에 5개 arm을 동시 등록합니다.',
   '사전 등록': '결과를 보기 전에 가격·지표·판정 기준을 확정해 잠그는 것. 사후에 유리하게 고치는 것(체리피킹)을 구조적으로 막습니다.',
@@ -1741,7 +1741,8 @@ async function mbDownloadHistoryCsv(historyState, rankVerified) {
 
 function mbOutcomeMeta(outcome) {
   return ({
-    WIN: { label: '낙찰 가능 범위', tone: 'good' },
+    // 가격만 본 판정이다 — 적격심사 점수를 모르므로 '낙찰'을 암시하지 않는다
+    WIN: { label: '심사 순번 안(가격 기준)', tone: 'good' },
     LOST: { label: '유효 · 낙찰가보다 높음', tone: 'neutral' },
     DROPOUT: { label: '하한선 미달', tone: 'danger' },
     VOID: { label: '판정 제외', tone: 'neutral' },
@@ -1808,6 +1809,14 @@ function mbHistoryArmRows(arms, rankVerified) {
   }).join('');
 }
 
+// 적격심사제는 하한선 이상 최저가부터 차례로 심사해 기준 점수를 넘는 첫 업체가 낙찰된다.
+// 실제 낙찰가 이하 = '실제 낙찰자보다 먼저 심사받았다'까지만 사실이고, 우리 점수는 모른다.
+// 밀림·무효는 점수와 무관하게 가격만으로 확정되므로 경고하지 않는다.
+function mbQualificationCaveat(item, primary) {
+  if (!primary || primary.outcome !== 'WIN' || !String(item.bid_method || '').includes('적격')) return '';
+  return '<p class="mb-caveat">가격만 본 판정이에요. 적격심사 점수(시공경험·경영상태 등)는 반영하지 않아서, 실제로 낙찰됐을지는 알 수 없어요.</p>';
+}
+
 function mbHistoryItem(item, rankVerified, filterArm = 'active') {
   const primary = item.primary_arm || {};
   // 다른 가격안으로 걸렀다면, 이 카드가 왜 걸렸는지 첫 화면에서 보여준다
@@ -1853,6 +1862,7 @@ function mbHistoryItem(item, rankVerified, filterArm = 'active') {
       </div>
     </div>
     <p class="mb-history-insight">${esc(mbResultInsight(primary))}</p>
+    ${mbQualificationCaveat(item, primary)}
     ${filteredLine}
     <details class="mb-strategy-details">
       <summary>함께 기록한 5가지 가격 비교</summary>
@@ -2068,7 +2078,7 @@ pages.mockbidding = async function (content) {
         <p class="mb-validity-note">유효 표본 ${fmtNumber(validity.valid_judged_notices)}공고 · 기초금액 기준 불일치 제외 ${fmtNumber(validity.excluded_base_mismatch)}공고 · 판정 불가 제외 ${fmtNumber(validity.excluded_base_unknown)}공고</p>
         <div class="mb-advanced-grid">
           <div><h4>5가지 가격안 누적 비교</h4><div class="mb-table-scroll"><table class="mb-history-table">
-            <thead><tr><th>가격안</th><th>채점</th><th>무효율</th><th>적중률</th><th>사정률 오차</th></tr></thead>
+            <thead><tr><th>가격안</th><th>채점</th><th>무효율</th><th>적중률(가격 기준)</th><th>사정률 오차</th></tr></thead>
             <tbody>${advanced.armRows || '<tr><td colspan="5">데이터 없음</td></tr>'}</tbody>
           </table></div></div>
           <div><h4>자주 나타난 주의 요소</h4><div class="mb-table-scroll"><table class="mb-history-table">

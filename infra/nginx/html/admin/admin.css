@@ -329,6 +329,7 @@ a { color: inherit; text-decoration: none; }
 .mb-filter-quick button:hover { border-color: #3182F6; color: #1B64DA; }
 .mb-rank-chips button:disabled { color: #B0B8C1; cursor: not-allowed; }
 .mb-filter-note { margin: 0; color: #8B95A1; font-size: 12px; }
+.mb-caveat { margin: 8px 0 0; padding: 9px 12px; border-radius: 10px; background: #FFF8E6; color: #8A5A00; font-size: 12px; line-height: 1.5; }
 .mb-filter-hit { margin: 8px 0 0; color: #1B64DA; font-size: 12px; font-weight: 700; }
 .mb-filter-summary { display: block; margin-top: 3px; color: #8B95A1; font-size: 12px; }
 .mb-filter-check { display: flex; align-items: flex-start; gap: 8px; padding-bottom: 6px; color: #4E5968; font-size: 13px; font-weight: 700; cursor: pointer; }
