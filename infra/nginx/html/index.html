@@ -250,11 +250,6 @@
       <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" style="font-size:24px;font-weight:600;">2021~25</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">개찰 데이터 백테스트</div></div>
       <div style="padding:24px 0;padding-left:28px;border-left:1px solid var(--line);"><div class="num" style="font-size:24px;font-weight:600;">공고 옆</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">사이드패널 확인</div></div>
     </div>
-    <div id="mock-live" data-rv style="display:none;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;margin-top:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);font-size:13.5px;">
-      <span style="font-weight:700;color:var(--accent);">모의투찰 지난 7일</span>
-      <span>등록 <b class="num" id="mock-reg">—</b>건 · 채점 <b class="num" id="mock-scored">—</b>건 · 하한선 미달(무효) <b class="num" id="mock-dropout" style="color:var(--safe);">—</b>건 · 유효율 <b class="num" id="mock-valid" style="color:var(--safe);">—</b></span>
-      <span style="color:var(--muted);font-size:12px;margin-left:auto;">매주 월 갱신 · 반사실 재구성이며 낙찰가 예측이 아닙니다 · 적격심사 판정 표본 <span class="num" id="mock-gb">—</span></span>
-    </div>
   </div></section>
 
   <!-- EXTENSION SCENE : 나라장터 위에 바로 뜨는 오버레이 -->
@@ -711,19 +706,6 @@
       if (d.weekly) renderBars(d.weekly);
       if (d.lastTrainedAt) document.getElementById('acal-ts').textContent = '백테스트 갱신 ' + d.lastTrainedAt + ' · 2021~2025 개찰 데이터 기준 · 참고값은 사람 검토를 거쳐 갱신됩니다';
     }).catch(function () { /* keep baked-in numbers */ });
-
-    // ── 모의투찰 공개 요약 (실패·표본 0이면 줄 자체를 숨긴 채 둔다) ──
-    fetch('/api/v1/mock-bidding/public-summary').then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (d) {
-      var c = d.cumulative || {}, w = d.last_7d || {}, gb = (d.gates || {}).g_b || {};
-      if (!c.valid_judged_notices) return;
-      var set = function (id, v) { document.getElementById(id).textContent = v; };
-      set('mock-reg', (w.registered_notices || 0).toLocaleString('ko-KR'));
-      set('mock-scored', (w.scored_notices || 0).toLocaleString('ko-KR'));
-      set('mock-dropout', (c.dropout || 0).toLocaleString('ko-KR'));
-      set('mock-valid', c.valid_rate_pct == null ? '—' : c.valid_rate_pct.toFixed(1) + '%');
-      set('mock-gb', (gb.sample_notices || 0) + '/' + (gb.minimum_notices || 400));
-      document.getElementById('mock-live').style.display = 'flex';
-    }).catch(function () { /* 줄 숨김 유지 */ });
   })();
   </script>
 </body>
