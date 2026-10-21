@@ -11,7 +11,6 @@ from app.api.v1.endpoints import (
     growth,
     leads,
     message_validation,
-    mock_bidding_public,
     notifications,
     optin,
     payments,
@@ -44,7 +43,6 @@ api_router.include_router(
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(autocalibrate.router, prefix="/autocalibrate", tags=["autocalibrate"])
-api_router.include_router(mock_bidding_public.router, prefix="/mock-bidding", tags=["mock-bidding"])
 api_router.include_router(support.router, prefix="/support", tags=["support"])
 api_router.include_router(leads.router, prefix="/leads", tags=["leads"])
 api_router.include_router(growth.router, prefix="/growth", tags=["growth"])

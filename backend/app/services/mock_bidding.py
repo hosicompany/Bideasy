@@ -1786,61 +1786,6 @@ def collect_weekly_report(db: Session, now: datetime | None = None) -> dict:
     }
 
 
-# ── 공개 요약 (랜딩·/track-record) ────────────────────────────
-# 대외 표기는 유효율(무효)·오차·표본 진행률뿐이다. win_rate·등수는 여기 싣지
-# 않는다 — 전역 규칙 §4-2·설계 §0.6. 키 목록이 곧 공개 범위이므로 늘릴 때는
-# 설계 문서를 먼저 고친다.
-PUBLIC_SUMMARY_FORBIDDEN_KEYS = ("win", "win_rate", "win_ci95", "rank", "estimated_rank")
-
-
-def public_summary(db: Session, now: datetime | None = None) -> dict:
-    """로그인 없이 보여줄 모의투찰 운영 지표 — 지난 7일 + 누적 + 게이트 진행률."""
-    now = now or now_kst()
-    since = now - timedelta(days=7)
-    active_arm = models.MockBid.arm == "active"
-    registered_7d = (
-        db.query(func.count(func.distinct(models.MockBid.bid_no)))
-        .filter(active_arm, models.MockBid.registered_at >= since)
-        .scalar() or 0
-    )
-    scored_7d = (
-        db.query(func.count(func.distinct(models.MockBid.bid_no)))
-        .join(models.MockBidResult,
-              models.MockBidResult.mock_bid_id == models.MockBid.id)
-        .filter(active_arm, models.MockBidResult.scored_at >= since,
-                models.MockBidResult.outcome.in_(_JUDGED))
-        .scalar() or 0
-    )
-    arm = summarize(db).get("active") or {}
-    gates = evaluate_gates(db)
-    judged = int(arm.get("judged") or 0)
-    dropout = int(arm.get("dropout") or 0)
-    err = arm.get("mean_ratio_error")
-    return {
-        "generated_at": now.isoformat(),
-        "last_7d": {"registered_notices": registered_7d, "scored_notices": scored_7d},
-        "cumulative": {
-            "registered_notices": gates["g_a"]["registered"],
-            "scored_notices": gates["g_a"]["scored"],
-            "valid_judged_notices": judged,
-            "dropout": dropout,
-            "valid_rate_pct": round((judged - dropout) / judged * 100, 2) if judged else None,
-            "ratio_error_mean_pct": round(err * 100, 3) if err is not None else None,
-        },
-        "gates": {
-            "g_a": {"status": gates["g_a"]["status"],
-                    "reach_pct": gates["g_a"]["reach_pct"],
-                    "threshold_pct": G_A_THRESHOLD_PCT},
-            "g_b": {"status": gates["g_b"]["status"],
-                    "sample_notices": gates["g_b"]["sample_notices"],
-                    "minimum_notices": gates["g_b"]["minimum_notices"]},
-        },
-        "updated_weekly": "월 21:00 KST",
-        "disclaimer": "반사실(counterfactual) 재구성입니다. 실제로 투찰했어도 같은 결과라는 "
-                      "보장이 아니며 사정률 추첨은 무작위입니다. BidEasy는 낙찰가를 예측하지 않습니다.",
-    }
-
-
 def failure_tag_stats(db: Session) -> dict:
     """오답노트 — **유효 표본**의 태그별 등장·무효 건수."""
     sq = _latest_rev_sq(db)
