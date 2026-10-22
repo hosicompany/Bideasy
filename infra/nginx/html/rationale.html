@@ -294,12 +294,13 @@
 
   /* 낙찰하한율은 하드코딩하지 않는다 — 정본 미러(assets/lower-limits.js)에서 가져온다.
      정본: backend/app/services/lower_limits.py (_CONSTRUCTION_2026) */
-  D.basis.lowerRate = window.BD_LOWER.construction(D.basis.baseAmount) / 100;
-  D.basis.lowerRateBasis = (function (b) {
-    if (b >= 5000000000) return '지방계약 적격심사 · 추정가격 50억 이상';
-    if (b >= 1000000000) return '지방계약 적격심사 · 추정가격 10억 이상 50억 미만';
-    return '지방계약 적격심사 · 추정가격 10억 미만';
-  })(D.basis.baseAmount);
+  D.basis.lowerRate = window.BD_LOWER.fromBasis(D.basis.baseAmount).rate / 100;  // 기초금액 입력 — 경계 불확실 시 높은 쪽
+  // 구간 이름은 실제로 고른 요율에서 낸다 — 기초금액으로 경계를 재면 추정가격 구간과 어긋난다.
+  D.basis.lowerRateBasis = (function (lb) {
+    var T = window.BD_LOWER;  // 구간 경계 요율도 미러에서 — 숫자를 여기 다시 적지 않는다
+    var label = lb.rate === T.construction(5e9) ? '추정가격 50억 이상' : lb.rate === T.construction(1e9) ? '추정가격 10억 이상 50억 미만' : '추정가격 10억 미만';
+    return '지방계약 적격심사 · ' + label + (lb.ambiguous ? ' (기초금액 기준 보수 적용 — 공고 추정가격 확인)' : '');
+  })(window.BD_LOWER.fromBasis(D.basis.baseAmount));
 
   D.qualifications = [
     { item: '업종·면허', required: '전기공사업', ours: '전기공사업 등록', verdict: '충족' },

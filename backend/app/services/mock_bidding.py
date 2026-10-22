@@ -34,7 +34,7 @@ from app.services.bid_data_quality import (
 )
 from app.services.bid_metrics import wilson_ci
 from app.services.calculator import CalculatorService
-from app.services.lower_limits import get_lower_limit_rate
+from app.services.lower_limits import resolve_lower_limit_rate as _resolve_rate
 
 logger = get_logger(__name__)
 
@@ -162,16 +162,14 @@ def resolve_lower_limit_rate(notice: models.Notice) -> tuple[float, str]:
     """
     from app.services import basis as basis_svc
 
-    llr = getattr(notice, "lower_limit_rate", None)
-    if llr and llr > 0:
-        return float(llr), "notice"
-    # 금액대 티어는 **기초금액** 기준이다. 추정가격을 넣으면 한 티어 아래로
-    # 떨어져 하한율이 틀린다(예: 10억 경계).
-    return (
-        get_lower_limit_rate(notice.contract_type or "CONSTRUCTION",
-                             basis_svc.confirmed_basis(notice)),
-        "table",
+    # 금액대 티어는 **추정가격** 기준이다(2026-10-22 정정 — 실제 공고 구간명 확인).
+    rate, src = _resolve_rate(
+        notice.contract_type or "CONSTRUCTION",
+        notice_rate=getattr(notice, "lower_limit_rate", None),
+        estimated_price=getattr(notice, "basic_price", None),
+        basis_amount=basis_svc.confirmed_basis(notice),
     )
+    return rate, ("notice" if src == "notice" else "table")
 
 
 def _a_value_of(notice: models.Notice) -> tuple[int, str]:

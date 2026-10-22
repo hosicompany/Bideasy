@@ -23,6 +23,9 @@ from datetime import date
 CUTOFF_2026 = date(2026, 1, 30)
 
 # 시설공사 — (추정가격 하한 경계(원), 하한율 %) 내림차순.
+# ⚠️ 경계는 **추정가격**(부가세 제외) 기준이다 — 2026-10-22 확인. 실제 공고의 적격심사 구간명이
+#   전부 "추정가격 N억원 미만…"이고, 기초금액 정확히 2억·추정가격 1.82억 공고가 "추정가격 2억원
+#   미만" 구간으로 분류됐다. 2026-08 에 "기초금액 기준"으로 정했던 판단(PRICE_BASE_DEFECT.md)은 반대였다.
 # 값은 기존 simulation_service.LOWER_LIMITS_2026/OLD 와 동일 (이관·통합).
 # ★ KEEP IN SYNC: infra/nginx/html/assets/lower-limits.js (웹 계산기·랜딩 미러) —
 #   이 테이블 변경 시 JS 도 함께 수정. tests/test_lower_limits_sync.py 가 드리프트 감시.
@@ -51,35 +54,81 @@ LEGACY_RATES = {
 
 def get_lower_limit_rate(
     contract_type: str,
-    basic_price: float | None = None,
+    estimated_price: float | None = None,
     bid_date: date | None = None,
 ) -> float:
-    """법정 낙찰하한율(%) 조회 — 하한율 판정의 유일한 진입점.
+    """법정 낙찰하한율(%) — **추정가격**으로 금액대 티어를 찾는다.
 
     Args:
         contract_type: CONSTRUCTION / SERVICE / GOODS
-        basic_price: 기초금액(원). 공사 금액대 티어 판정에 사용.
-            None 이면 legacy 상수로 폴백 (호출부는 가급적 항상 전달할 것).
+        estimated_price: 추정가격(원, 부가세 제외) = `Notice.basic_price`(presmptPrce).
+            기초금액만 있으면 이 함수 대신 `lower_limit_from_basis` 를 쓸 것.
+            None 이면 legacy 상수로 폴백.
         bid_date: 공고 기준일. None 이면 오늘 (2026-01-30 이후면 개정 테이블).
     """
     ct = (contract_type or "CONSTRUCTION").upper()
-    if ct != "CONSTRUCTION" or not basic_price or basic_price <= 0:
+    if ct != "CONSTRUCTION" or not estimated_price or estimated_price <= 0:
         return LEGACY_RATES.get(ct, 87.745)
     d = bid_date or date.today()
     table = _CONSTRUCTION_2026 if d >= CUTOFF_2026 else _CONSTRUCTION_OLD
     for threshold, rate in table:
-        if basic_price >= threshold:
+        if estimated_price >= threshold:
             return rate
     return table[-1][1]
 
 
+# 부가세 상한(10%) — 과세 공사의 추정가격 = 기초금액 × 10/11. 기초금액만 알 때 "추정가격이 경계
+# 아래일 수 있는 구간"을 가르는 데만 쓴다. ⛔ 기초금액 → 추정가격 환산에 쓰지 말 것(면세에서 틀린다 — 함정 22).
+# (÷1.1 대신 ×10/11 — 부동소수점에서 11억÷1.1 이 10억보다 작게 나와 경계가 한 칸 밀린다)
+def _min_estimated(basis_amount: float) -> float:
+    return basis_amount * 10 / 11
+
+
+def lower_limit_from_basis(
+    contract_type: str,
+    basis_amount: float | None,
+    bid_date: date | None = None,
+) -> tuple[float, bool]:
+    """기초금액만 알 때의 하한율과 '구간 불확실' 여부.
+
+    추정가격은 기초금액 ÷ 1.1(과세) ~ 기초금액(면세) 사이다. 두 끝의 티어가 다르면
+    (예: 기초금액 10억~11억) 공고를 보기 전엔 어느 쪽인지 모른다. 그때는 **높은 요율**
+    (하한선이 높아 무효 쪽으로 새지 않는 쪽)을 쓰고 ambiguous=True 를 돌려준다.
+    """
+    if not basis_amount or basis_amount <= 0:
+        return get_lower_limit_rate(contract_type, None, bid_date), False
+    taxed = get_lower_limit_rate(contract_type, _min_estimated(basis_amount), bid_date)
+    exempt = get_lower_limit_rate(contract_type, basis_amount, bid_date)
+    return max(taxed, exempt), taxed != exempt
+
+
+def resolve_lower_limit_rate(
+    contract_type: str,
+    *,
+    notice_rate: float | None = None,
+    estimated_price: float | None = None,
+    basis_amount: float | None = None,
+    bid_date: date | None = None,
+) -> tuple[float, str]:
+    """공고 하나의 하한율 — 공고 명시값 → 추정가격 티어 → 기초금액(보수) 순.
+
+    반환 출처: "notice" | "estimated" | "basis" | "basis_conservative"(구간 불확실, 높은 쪽 채택)
+    """
+    if notice_rate and notice_rate > 0:
+        return float(notice_rate), "notice"
+    if estimated_price and estimated_price > 0:
+        return get_lower_limit_rate(contract_type, estimated_price, bid_date), "estimated"
+    rate, ambiguous = lower_limit_from_basis(contract_type, basis_amount, bid_date)
+    return rate, "basis_conservative" if ambiguous else "basis"
+
+
 def get_lower_limit_fraction(
     contract_type: str,
-    basic_price: float | None = None,
+    estimated_price: float | None = None,
     bid_date: date | None = None,
 ) -> float:
-    """소수 비율(0.87745 형식) 버전 — simulation_service 호환용."""
-    return get_lower_limit_rate(contract_type, basic_price, bid_date) / 100.0
+    """소수 비율(0.87745 형식) 버전 — simulation_service 호환용(인자는 추정가격)."""
+    return get_lower_limit_rate(contract_type, estimated_price, bid_date) / 100.0
 
 
 # ---------------------------------------------------------------------------

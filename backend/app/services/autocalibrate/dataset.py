@@ -134,7 +134,7 @@ def _load_db_records(
         if strict:
             raise
         return out
-    from app.services.lower_limits import get_lower_limit_rate
+    from app.services.lower_limits import lower_limit_from_basis
 
     for r in rows:
         if not r.bid_no or r.bid_no in existing_bid_nos:
@@ -143,11 +143,12 @@ def _load_db_records(
         open_dt = getattr(r, "open_date", None)
         year = open_dt.year if open_dt else 0
         stored_llr = float(getattr(r, "lower_limit_rate", None) or 0)
-        llr = stored_llr if stored_llr > 0 else get_lower_limit_rate(
+        # 개찰 원장의 basic_price 는 기초금액이다 — 금액대 경계(추정가격)가 불확실하면 높은 쪽.
+        llr = stored_llr if stored_llr > 0 else lower_limit_from_basis(
             "CONSTRUCTION",
-            basic_price=float(r.basic_price),
+            float(r.basic_price),
             bid_date=open_dt.date() if open_dt else None,
-        )
+        )[0]
         out.append(BidRecord(
             bid_no=r.bid_no,
             title="",

@@ -21,7 +21,7 @@ from app.api.v1.endpoints.bids import _get_bid_context_data as get_bid_context
 from app.api.v1.endpoints.bids import _lookup_notice
 from app.services import blog as blog_svc
 from app.services.bid_data_quality import base_is_consistent
-from app.services.lower_limits import get_lower_limit_rate
+from app.services.lower_limits import resolve_lower_limit_rate
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -138,7 +138,12 @@ def bid_detail_page(bid_no: str, request: Request, db: Session = Depends(get_db)
         # 기초금액 미확인이면 금액대를 모르니 하한율도 확정할 수 없다 → None.
         "lower_limit_pct": (
             None if _basis_unconfirmed
-            else get_lower_limit_rate(ct, float(_basis_amount) if _basis_amount else None)
+            else resolve_lower_limit_rate(
+                ct,
+                notice_rate=getattr(notice, "lower_limit_rate", None) if notice else None,
+                estimated_price=getattr(notice, "basic_price", None) if notice else None,
+                basis_amount=float(_basis_amount) if _basis_amount else None,
+            )[0]
         ),
         "is_closed": is_closed,
         "result": _result,

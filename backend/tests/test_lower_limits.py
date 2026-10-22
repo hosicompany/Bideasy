@@ -73,3 +73,39 @@ class TestDangerJudgmentFix:
         )
         assert result.lower_limit_rate == 87.495
         assert result.safety_level != SafetyLevel.DANGER
+
+
+
+class TestEstimatedPriceBand:
+    """금액대 경계는 추정가격 기준(2026-10-22 정정). 기초금액만 알면 경계 위 10% 구간은 높은 쪽."""
+
+    def test_basis_just_over_boundary_is_ambiguous_and_takes_higher_rate(self):
+        from app.services.lower_limits import lower_limit_from_basis
+        # 기초금액 10.45억 = 추정가격 9.5억(과세) 또는 10.45억(면세) → 89.745 / 88.745
+        assert lower_limit_from_basis("CONSTRUCTION", 1_045_000_000, AFTER) == (89.745, True)
+        # 50~55억도 같은 원리
+        assert lower_limit_from_basis("CONSTRUCTION", 5_300_000_000, AFTER) == (88.745, True)
+
+    def test_basis_clear_of_boundary_is_not_ambiguous(self):
+        from app.services.lower_limits import lower_limit_from_basis
+        assert lower_limit_from_basis("CONSTRUCTION", 500_000_000, AFTER) == (89.745, False)
+        assert lower_limit_from_basis("CONSTRUCTION", 2_000_000_000, AFTER) == (88.745, False)
+        # 3억·100억 경계는 양쪽 요율이 같아 불확실하지 않다
+        assert lower_limit_from_basis("CONSTRUCTION", 3_100_000_000 // 10, AFTER)[1] is False
+        assert lower_limit_from_basis("CONSTRUCTION", 10_500_000_000, AFTER)[1] is False
+        # 정확히 11억 = 과세여도 추정가격 정확히 10억 → 10억 이상 티어 (부동소수점으로 밀리지 않는다)
+        assert lower_limit_from_basis("CONSTRUCTION", 1_100_000_000, AFTER) == (88.745, False)
+
+    def test_resolve_prefers_notice_then_estimated_then_basis(self):
+        from app.services.lower_limits import resolve_lower_limit_rate
+        assert resolve_lower_limit_rate("CONSTRUCTION", notice_rate=89.745,
+                                        estimated_price=2e9, basis_amount=2.2e9) == (89.745, "notice")
+        # 추정가격 9.5억 → 10억 미만 티어 (기초금액 10.45억으로 찾으면 틀린 88.745)
+        assert resolve_lower_limit_rate("CONSTRUCTION", estimated_price=950_000_000,
+                                        basis_amount=1_045_000_000, bid_date=AFTER) == (89.745, "estimated")
+        assert resolve_lower_limit_rate("CONSTRUCTION", basis_amount=1_045_000_000,
+                                        bid_date=AFTER) == (89.745, "basis_conservative")
+
+    def test_calculator_service_treats_input_as_basis(self):
+        # 계산기 입력(기초금액) 10억 → 추정가격이 10억 미만일 수 있어 89.745
+        assert CalculatorService.get_lower_limit_rate("CONSTRUCTION", 1_000_000_000) == 89.745

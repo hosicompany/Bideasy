@@ -30,7 +30,7 @@ _SAMPLES = {
 
 def _js_construction_rate(js_src: str, basic_price: float) -> float:
     """JS construction() 의 임계·반환값을 파싱해 파이썬으로 동일 판정을 재현."""
-    pairs = re.findall(r"if \(basicPrice >= (\d+)\) return ([\d.]+);", js_src)
+    pairs = re.findall(r"if \(estimatedPrice >= (\d+)\) return ([\d.]+);", js_src)
     assert pairs, "lower-limits.js 에서 티어 구문을 찾지 못했어요 — 구조 변경 시 테스트도 갱신 필요"
     default = re.search(r"return ([\d.]+);\s+// 10억 미만", js_src)
     assert default, "lower-limits.js 기본(10억 미만) 반환값을 찾지 못했어요"
@@ -60,10 +60,22 @@ class TestLowerLimitsWebSync:
     def test_web_pages_do_not_hardcode_construction_rate(self):
         """계산기·랜딩이 공사 하한율을 다시 하드코딩하면 실패 (재발 방지)."""
         html_dir = _JS_PATH.parents[1]
-        for name in ("calculator.html", "index.html"):
+        for name in ("calculator.html", "index.html", "rationale.html"):
             src = (html_dir / name).read_text(encoding="utf-8")
-            assert "BD_LOWER.construction" in src, f"{name} 이 티어 함수를 쓰지 않아요"
+            # 이 화면들은 기초금액을 받는다 — 추정가격 티어(construction)를 바로 부르면 경계에서 틀린다
+            assert "BD_LOWER.fromBasis" in src, f"{name} 이 기초금액용 fromBasis() 를 쓰지 않아요"
+            assert "BD_LOWER.construction(" not in src, f"{name} 이 기초금액으로 추정가격 티어를 찾아요"
             # JS 코드 라인에 87.745 상수가 CONSTRUCTION 키로 재등장하는지 검사
             assert not re.search(r"CONSTRUCTION\s*:\s*87\.745", src), (
                 f"{name} 에 공사 하한율 87.745 하드코딩이 재도입됐어요 — BD_LOWER.construction() 사용"
             )
+
+
+class TestFromBasisMirror:
+    """웹 fromBasis() 가 정본 lower_limit_from_basis 와 같은 규칙인지 — 부가세 상한과 '높은 쪽' 채택."""
+
+    def test_js_uses_same_vat_bound_and_max_rule(self):
+        js = _JS_PATH.read_text(encoding="utf-8")
+        assert "basisAmount * 10 / 11" in js
+        assert "Math.max(taxed, exempt)" in js
+        assert "ambiguous: taxed !== exempt" in js

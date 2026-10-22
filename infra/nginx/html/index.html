@@ -623,7 +623,7 @@
     var demo = { basic: 500000000, tcl: 90.20, used: false };
     var $ = function (id) { return document.getElementById(id); };
     function renderDemo() {
-      var DEMO_RATE = window.BD_LOWER.construction(demo.basic);
+      var DEMO_RATE = window.BD_LOWER.fromBasis(demo.basic).rate;
       $('demo-rate-label').textContent = '낙찰하한선 ' + DEMO_RATE + '%';
       // 하한선 마커·게이지 배경도 금액대별 하한율 위치로 이동
       var markPos = Math.max(2, Math.min(98, (DEMO_RATE - DEMO_MIN) / (DEMO_MAX - DEMO_MIN) * 100));

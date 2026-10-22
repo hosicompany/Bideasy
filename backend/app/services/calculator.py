@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
-from app.services.lower_limits import LEGACY_RATES, get_lower_limit_rate as _shared_lower_limit
+from app.services.lower_limits import LEGACY_RATES, lower_limit_from_basis
 
 
 class SafetyLevel(str, Enum):
@@ -140,7 +140,9 @@ class CalculatorService:
         공사는 금액대·시행일(2026-01-30 개정)별 티어드 — basic_price 를
         전달해야 정확하다. 미전달 시 legacy 상수 폴백(하위 호환).
         """
-        return _shared_lower_limit(contract_type, basic_price, bid_date)
+        # 계산기 입력은 기초금액이다. 금액대 경계는 추정가격 기준이라, 경계 바로 위
+        # (기초금액 10억~11억 등)에서는 높은 쪽 요율을 쓴다(lower_limit_from_basis).
+        return lower_limit_from_basis(contract_type, basic_price, bid_date)[0]
     
     @staticmethod
     def truncate_to_10_won(price: float) -> int:

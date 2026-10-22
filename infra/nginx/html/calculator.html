@@ -120,7 +120,8 @@
 
     function render() {
       var a = st.ct === 'GOODS' ? 0 : st.aval;
-      var rate = st.ct === 'CONSTRUCTION' ? window.BD_LOWER.construction(st.basic) : LOWER[st.ct];
+      var lb = st.ct === 'CONSTRUCTION' ? window.BD_LOWER.fromBasis(st.basic) : { rate: LOWER[st.ct], ambiguous: false };
+      var rate = lb.rate;
       var predicted = Math.floor(((st.basic - a) * (st.tcl / 100) + a) / 10) * 10;
       // 하한선도 A값 보정 — 백엔드 calculator.py 와 동일 공식: (기초 − A) × 하한율 + A
       var lower = Math.round(a > 0 ? (st.basic - a) * rate / 100 + a : st.basic * rate / 100);
@@ -131,7 +132,8 @@
       var meta = { SAFE: ['하한선 이상', 'safe', '입력값 기준 계산 결과가 낙찰하한선보다 높습니다. 최종 투찰 전 공고 원문과 입력값을 확인하세요.'], WARN: ['하한선 근접 — 주의', 'warn', '입력값 기준 계산 결과가 하한선과 가깝습니다. 공고 원문과 투찰률을 다시 확인하세요.'], DANGER: ['하한선 미달', 'danger', '입력값 기준 계산 결과가 낙찰하한선 아래입니다. 공고 원문을 확인하도록 복사를 막았어요.'] }[level];
 
       document.getElementById('tcl-label').textContent = '투찰률 — 현재 ' + st.tcl.toFixed(2) + '%';
-      document.getElementById('tcl-hint').textContent = '낙찰하한선(' + rate + '%) 아래는 무효 구간입니다. 슬라이더로 입력값에 따른 계산 결과를 확인하세요.';
+      document.getElementById('tcl-hint').textContent = '낙찰하한선(' + rate + '%) 아래는 무효 구간입니다. 슬라이더로 입력값에 따른 계산 결과를 확인하세요.' +
+        (lb.ambiguous ? ' ⚠️ 하한율 구간은 추정가격(부가세 제외) 기준이에요. 이 기초금액이면 공고의 추정가격이 경계 아래일 수 있어 높은 쪽(' + rate + '%)으로 계산했어요 — 공고문의 추정가격을 확인하세요.' : '');
       document.getElementById('tcl').style.accentColor = danger ? 'var(--danger)' : 'var(--accent)';
 
       var presets = [rate - 0.25, rate, rate + 0.45, rate + 1.05, rate + 2.05];

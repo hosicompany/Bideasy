@@ -86,7 +86,7 @@ def test_required_disclaimers_present():
 def test_lower_limit_rate_is_not_hardcoded():
     """하한율은 정본 미러에서 가져온다 — 하드코딩하면 개정 때 조용히 어긋난다."""
     raw = _HTML_PATH.read_text(encoding="utf-8")
-    assert "BD_LOWER.construction" in raw, (
+    assert "BD_LOWER.fromBasis" in raw, (
         "낙찰하한율은 assets/lower-limits.js(정본 미러)에서 가져와야 합니다"
     )
     # 하한율 상수를 직접 박아두지 않았는지 (JS 리터럴로 등장하면 드리프트 위험)
