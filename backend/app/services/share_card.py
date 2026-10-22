@@ -62,7 +62,8 @@ def eok(n: int) -> str:
 
 
 def summary_line(r: dict) -> str:
-    parts = [f"기초금액 {eok(r['basic'])}", f"투찰률 {r['tcl']:.2f}%"]
+    tcl = f"{r['tcl']:.3f}".rstrip("0").rstrip(".")  # 89.745 는 그대로, 90.300 은 90.3
+    parts = [f"기초금액 {eok(r['basic'])}", f"투찰률 {tcl}%"]
     if r["a"]:
         parts.append(f"A값{'(추정)' if r.get('a_est') else ''} {eok(r['a'])}")
     return " · ".join(parts)

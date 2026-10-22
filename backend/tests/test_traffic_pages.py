@@ -107,6 +107,7 @@ def test_share_keeps_three_decimal_rate_end_to_end(client):
     html = client.get("/s/calc", params={"basic": "500000000", "tcl": "89.745", "a": "12400000"}).text
     assert "tcl=89.745" in html
     assert share_card.won(r["predicted"]) in html
+    assert "투찰률 89.745%" in html  # 표기도 반올림하지 않는다
 
 
 def test_share_carries_estimated_a_value_flag(client):
