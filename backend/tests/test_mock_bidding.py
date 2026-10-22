@@ -150,6 +150,12 @@ class TestLowerLimitSource:
         rate, src = mb.resolve_lower_limit_rate(_notice(llr=None))
         assert src == "table" and rate > 0
 
+    def test_table_fallback_uses_estimated_price_band(self):
+        """추정가격 9.5억·기초금액 10.45억 → 10억 미만 티어 (기초금액으로 찾으면 88.745 로 무효 쪽)."""
+        rate, src = mb.resolve_lower_limit_rate(
+            _notice(llr=None, basic_price=950_000_000, basis_amount=1_045_000_000))
+        assert (rate, src) == (89.745, "table")
+
 
 # ── §0.5 유효성 체크 ──────────────────────────────────────────
 

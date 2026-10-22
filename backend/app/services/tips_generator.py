@@ -173,8 +173,14 @@ class TipsGenerator:
             basic = self._safe_float(basic_price)
             # 공사는 금액대·시행일 티어드(단일 소스), 용역·물품은 팁 정책상 0 유지
             if contract_type == "CONSTRUCTION":
-                from app.services.lower_limits import get_lower_limit_rate
-                lower_rate = get_lower_limit_rate(contract_type, basic)
+                from app.services.lower_limits import resolve_lower_limit_rate
+                # 공고 명시값 → 추정가격 → (쿼리로만 받은 금액이면 기초금액으로 보고) 보수 판정
+                lower_rate, _ = resolve_lower_limit_rate(
+                    contract_type,
+                    notice_rate=self.data.get("lower_limit_rate"),
+                    estimated_price=self._safe_float(self.data.get("estimated_price")) or None,
+                    basis_amount=basic,
+                )
             else:
                 lower_rate = LOWER_LIMIT_RATES.get(contract_type, 87.745)
             

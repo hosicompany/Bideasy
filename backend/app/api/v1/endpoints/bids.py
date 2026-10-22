@@ -46,7 +46,8 @@ def calculate_bid(
 
         final_price = CalculatorService.calculate_safe_bid(request.basic_price, request.rate)
 
-        lower_limit_rate = CalculatorService.get_lower_limit_rate(contract_type, request.basic_price)
+        lower_limit_rate = CalculatorService.get_lower_limit_rate(
+            contract_type, request.basic_price, notice_rate=request.lower_limit_rate)
         limit_price = request.basic_price * (lower_limit_rate / 100)
 
         is_safe = final_price >= limit_price
@@ -93,7 +94,8 @@ def calculate_bid_detailed(
             basic_price=request.basic_price,
             rate=request.rate,
             contract_type=contract_type,
-            a_value=a_value
+            a_value=a_value,
+            notice_rate=request.lower_limit_rate,
         )
 
         # 활성화 계측: 로그인 사용자의 첫 "안전 판정" 시각 기록 (계산 성공 후에만).
@@ -268,7 +270,17 @@ def _notice_to_context(notice: models.Notice, source: str) -> schemas.BidContext
         qualification=getattr(notice, "bid_qualification", None),
         region=getattr(notice, "region", None),
         contract_type=getattr(notice, "contract_type", None),
+        basis_amount=_confirmed_basis(notice),
+        lower_limit_rate=getattr(notice, "lower_limit_rate", None),
     )
+
+
+def _confirmed_basis(notice: models.Notice) -> float | None:
+    from app.services import basis as basis_svc
+    try:
+        return basis_svc.confirmed_basis(notice)
+    except Exception:
+        return None
 
 
 

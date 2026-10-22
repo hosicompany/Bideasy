@@ -8,6 +8,8 @@ class BidCalculationRequest(BaseModel):
     rate: float  # e.g., -5.0 for 사정률 -5%
     contract_type: Optional[str] = "CONSTRUCTION"
     a_value: Optional[int] = 0  # A값 (고정비용)
+    # 공고가 명시한 낙찰하한율(%). 공고를 아는 화면(공고상세)이 넘긴다 — 없으면 기초금액으로 보수 판정.
+    lower_limit_rate: Optional[float] = None
 
 class BidCalculationResponse(BaseModel):
     original_price: float
@@ -104,6 +106,9 @@ class BidContextResponse(BaseModel):
     qualification: Optional[str] = None       # 입찰자격 관련 텍스트 (있으면)
     region: Optional[str] = None              # prtcptLmtRgnNm (참가제한지역)
     contract_type: Optional[str] = None       # CONSTRUCTION/SERVICE/GOODS
+    # 확인된 기초금액(없으면 null — 추정가격으로 대신 채우지 말 것, 함정 22)과 공고 명시 하한율(%)
+    basis_amount: Optional[float] = None
+    lower_limit_rate: Optional[float] = None
 
 
 class BatchContextRequest(BaseModel):
