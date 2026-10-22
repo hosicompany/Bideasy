@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from app.services.lower_limits import get_lower_limit_rate
+from app.services.lower_limits import is_plausible_rate, lower_limit_from_basis
 
 _FONT_DIR = Path(__file__).resolve().parents[1] / "assets" / "fonts"
 CT_LABEL = {"CONSTRUCTION": "공사", "SERVICE": "용역", "GOODS": "물품"}
@@ -19,7 +19,7 @@ MAX_BASIC = 10_000_000_000_000  # 10조 — 이 위는 오타로 본다
 
 
 def parse(ct: str | None, basic: str | None, tcl: str | None, a: str | None,
-          a_src: str | None = None) -> dict | None:
+          a_src: str | None = None, llr: str | None = None) -> dict | None:
     """쿼리 파라미터 검증. 하나라도 이상하면 None (카드 대신 기본 계산기로 보낸다)."""
     try:
         ct = (ct or "CONSTRUCTION").upper()
@@ -33,15 +33,27 @@ def parse(ct: str | None, basic: str | None, tcl: str | None, a: str | None,
             or not (0 <= a_v < basic_v):
         return None
     est = a_src == "median" and a_v > 0
-    return {"ct": ct, "basic": basic_v, "tcl": tcl_v, "a": a_v, "a_est": est}
+    try:
+        llr_v = round(float(llr), 3) if llr not in (None, "") else None
+    except (TypeError, ValueError, OverflowError):
+        llr_v = None
+    # 공고 명시 하한율(계산기가 공고를 불러온 경우) — 범위 밖이면 버리고 기초금액 판정으로
+    llr_v = llr_v if is_plausible_rate(llr_v) else None
+    return {"ct": ct, "basic": basic_v, "tcl": tcl_v, "a": a_v, "a_est": est, "llr": llr_v}
 
 
 def compute(p: dict) -> dict:
     basic, tcl, a = p["basic"], p["tcl"], p["a"]
     predicted = math.floor(((basic - a) * (tcl / 100) + a) / 10) * 10
-    out = {**p, "predicted": predicted, "rate": None, "lower": None, "diff": None, "level": None}
+    out = {**p, "predicted": predicted, "rate": None, "lower": None, "diff": None, "level": None,
+           "ambiguous": False}
     if p["ct"] == "CONSTRUCTION":
-        rate = get_lower_limit_rate("CONSTRUCTION", basic)
+        # 웹 계산기와 같은 규칙: 공고 하한율이 있으면 그것, 없으면 기초금액 보수 판정(BD_LOWER.fromBasis)
+        if p.get("llr"):
+            rate, ambiguous = p["llr"], False
+        else:
+            rate, ambiguous = lower_limit_from_basis("CONSTRUCTION", basic)
+        out["ambiguous"] = ambiguous
         lower = math.floor((basic - a) * rate / 100 + a + 0.5)  # JS Math.round 와 같은 0.5 올림
         diff = (predicted - lower) / basic * 100
         level = "DANGER" if predicted < lower else ("WARN" if diff < 0.5 else "SAFE")
@@ -83,8 +95,9 @@ def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
 
 
 @lru_cache(maxsize=256)
-def render_png(ct: str, basic: int, tcl: float, a: int, a_est: bool = False) -> bytes:
-    r = compute({"ct": ct, "basic": basic, "tcl": tcl, "a": a, "a_est": a_est})
+def render_png(ct: str, basic: int, tcl: float, a: int, a_est: bool = False,
+               llr: float | None = None) -> bytes:
+    r = compute({"ct": ct, "basic": basic, "tcl": tcl, "a": a, "a_est": a_est, "llr": llr})
     W, H = 1200, 630
     img = Image.new("RGB", (W, H), (49, 130, 246))
     d = ImageDraw.Draw(img)
@@ -100,7 +113,8 @@ def render_png(ct: str, basic: int, tcl: float, a: int, a_est: bool = False) -> 
         tw = d.textlength(v, font=bold(40))
         d.rounded_rectangle((72, 380, 72 + tw + 48, 452), radius=36, fill=white)
         d.text((96, 391), v, font=bold(40), fill=color)
-        d.text((72, 470), f"낙찰하한선 {r['rate']}% · ₩{won(r['lower'])}", font=reg(34), fill=soft)
+        note = " (추정가격 구간 확인 필요)" if r["ambiguous"] else (" (공고 명시)" if r.get("llr") else "")
+        d.text((72, 470), f"낙찰하한선 {r['rate']}% · ₩{won(r['lower'])}{note}", font=reg(34), fill=soft)
     else:
         d.text((72, 390), "하한율은 공고문에서 확인하세요 (용역·물품은 계약 방식마다 다름)", font=reg(34), fill=soft)
     d.rectangle((0, H - 84, W, H), fill=(25, 31, 40))

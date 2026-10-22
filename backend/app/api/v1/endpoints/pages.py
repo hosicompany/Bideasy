@@ -230,15 +230,18 @@ def a_value_page(request: Request, db: Session = Depends(get_db)):
 # ── 계산 결과 공유 링크 — 카톡·네이버 링크 카드용 og 메타 + 숫자 이미지 ──
 @router.get("/s/calc", response_class=HTMLResponse)
 def share_calc_page(request: Request, ct: str | None = None, basic: str | None = None,
-                    tcl: str | None = None, a: str | None = None, a_src: str | None = None):
+                    tcl: str | None = None, a: str | None = None, a_src: str | None = None,
+                    llr: str | None = None):
     from urllib.parse import urlencode
-    p = share_card.parse(ct, basic, tcl, a, a_src)
+    p = share_card.parse(ct, basic, tcl, a, a_src, llr)
     if p is None:
         return RedirectResponse("/calculator", status_code=302)
     r = share_card.compute(p)
     q = {"ct": p["ct"], "basic": p["basic"], "tcl": f"{p['tcl']:.3f}", "a": p["a"]}
     if p["a_est"]:
         q["a_src"] = "median"  # 추정 A값은 공유 뒤에도 추정이라고 보여야 한다
+    if p["llr"]:
+        q["llr"] = f"{p['llr']:.3f}"  # 공고 명시 하한율로 계산한 결과는 받는 쪽도 같은 요율로
     qs = urlencode(q)
     verdict = share_card.verdict(r)
     title = f"투찰가 ₩{share_card.won(r['predicted'])} — {share_card.summary_line(r)}"
@@ -254,11 +257,12 @@ def share_calc_page(request: Request, ct: str | None = None, basic: str | None =
 
 @router.get("/s/calc.png")
 def share_calc_image(ct: str | None = None, basic: str | None = None,
-                     tcl: str | None = None, a: str | None = None, a_src: str | None = None):
-    p = share_card.parse(ct, basic, tcl, a, a_src)
+                     tcl: str | None = None, a: str | None = None, a_src: str | None = None,
+                     llr: str | None = None):
+    p = share_card.parse(ct, basic, tcl, a, a_src, llr)
     if p is None:
         return Response(status_code=400)
-    png = share_card.render_png(p["ct"], p["basic"], p["tcl"], p["a"], p["a_est"])
+    png = share_card.render_png(p["ct"], p["basic"], p["tcl"], p["a"], p["a_est"], p["llr"])
     return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=604800"})
 
 

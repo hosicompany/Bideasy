@@ -122,3 +122,24 @@ def test_lower_line_rounds_half_up_like_browser():
     # 300,010,000 × 89.745% = 269,243,974.5 → JS Math.round 는 ...975
     r = share_card.compute({"ct": "CONSTRUCTION", "basic": 300_010_000, "tcl": 90.0, "a": 0})
     assert r["lower"] == 269_243_975
+
+
+
+# ── 하한율 추정가격 기준 정정(#152) 반영 ──
+def test_share_card_basis_boundary_is_conservative_and_flagged():
+    """기초금액 10.45억 = 추정가격 10억 미만일 수 있다 → 계산기(fromBasis)처럼 89.745 + 확인 필요."""
+    r = share_card.compute(share_card.parse("CONSTRUCTION", "1045000000", "90", "0"))
+    assert r["rate"] == 89.745 and r["ambiguous"] is True
+
+
+def test_share_card_uses_notice_rate_when_carried(client):
+    r = share_card.compute(share_card.parse("CONSTRUCTION", "1045000000", "90", "0", llr="88.745"))
+    assert r["rate"] == 88.745 and r["ambiguous"] is False
+    html = client.get("/s/calc", params={"basic": "1045000000", "tcl": "90", "a": "0", "llr": "88.745"}).text
+    assert "llr=88.745" in html
+    assert share_card.parse("CONSTRUCTION", "1045000000", "90", "0", llr="0.88745")["llr"] is None
+
+
+def test_lower_limits_page_says_estimated_price_band(client):
+    html = client.get("/lower-limits").text
+    assert "추정가격 구간" in html and "기초금액 10억~11.3억" in html
