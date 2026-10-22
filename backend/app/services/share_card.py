@@ -101,24 +101,22 @@ def render_png(ct: str, basic: int, tcl: float, a: int, a_est: bool = False,
     W, H = 1200, 630
     img = Image.new("RGB", (W, H), (49, 130, 246))
     d = ImageDraw.Draw(img)
-    bold = lambda s: _font("Pretendard-Bold.otf", s)  # noqa: E731
-    reg = lambda s: _font("Pretendard-Regular.otf", s)  # noqa: E731
     white, soft = (255, 255, 255), (214, 230, 255)
-    d.text((72, 64), f"BidEasy 투찰가 계산 · {CT_LABEL[ct]}", font=bold(36), fill=soft)
-    d.text((72, 150), f"₩{won(r['predicted'])}", font=bold(112), fill=white)
-    d.text((72, 300), summary_line(r), font=reg(40), fill=white)
+    d.text((72, 64), f"BidEasy 투찰가 계산 · {CT_LABEL[ct]}", font=_font("Pretendard-Bold.otf", 36), fill=soft)
+    d.text((72, 150), f"₩{won(r['predicted'])}", font=_font("Pretendard-Bold.otf", 112), fill=white)
+    d.text((72, 300), summary_line(r), font=_font("Pretendard-Regular.otf", 40), fill=white)
     v = verdict(r)
     if v:
         color = {"SAFE": (52, 199, 89), "WARN": (255, 149, 0), "DANGER": (255, 59, 48)}[r["level"]]
-        tw = d.textlength(v, font=bold(40))
+        tw = d.textlength(v, font=_font("Pretendard-Bold.otf", 40))
         d.rounded_rectangle((72, 380, 72 + tw + 48, 452), radius=36, fill=white)
-        d.text((96, 391), v, font=bold(40), fill=color)
+        d.text((96, 391), v, font=_font("Pretendard-Bold.otf", 40), fill=color)
         note = " (추정가격 구간 확인 필요)" if r["ambiguous"] else (" (공고 명시)" if r.get("llr") else "")
-        d.text((72, 470), f"낙찰하한선 {r['rate']}% · ₩{won(r['lower'])}{note}", font=reg(34), fill=soft)
+        d.text((72, 470), f"낙찰하한선 {r['rate']}% · ₩{won(r['lower'])}{note}", font=_font("Pretendard-Regular.otf", 34), fill=soft)
     else:
-        d.text((72, 390), "하한율은 공고문에서 확인하세요 (용역·물품은 계약 방식마다 다름)", font=reg(34), fill=soft)
+        d.text((72, 390), "하한율은 공고문에서 확인하세요 (용역·물품은 계약 방식마다 다름)", font=_font("Pretendard-Regular.otf", 34), fill=soft)
     d.rectangle((0, H - 84, W, H), fill=(25, 31, 40))
-    d.text((72, H - 64), "bideasy.kr/calculator  ·  낙찰가를 예측하지 않습니다", font=reg(32), fill=soft)
+    d.text((72, H - 64), "bideasy.kr/calculator  ·  낙찰가를 예측하지 않습니다", font=_font("Pretendard-Regular.otf", 32), fill=soft)
     buf = io.BytesIO()
     img.save(buf, "PNG", optimize=True)
     return buf.getvalue()

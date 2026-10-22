@@ -180,6 +180,11 @@ def amount_band_label(code: str) -> str:
     return _BAND_LABELS.get(code or "", code or "")
 
 
+def example_basis_for_band(threshold: int) -> int:
+    """구간 링크용 예시 기초금액 — 구간 하한의 1.5배(0원 구간은 2억)."""
+    return int(threshold * 1.5) or 200_000_000
+
+
 def construction_rate_table() -> list[dict]:
     """공개 하한율표(/lower-limits) 행 — 금액대 밴드 × (개정 후, 개정 전) 요율.
 

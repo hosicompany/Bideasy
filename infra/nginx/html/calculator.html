@@ -89,6 +89,7 @@
           </div>
           <div id="presets" style="display:flex;gap:6px;margin-top:12px;"></div>
           <div class="hint" id="tcl-hint" style="font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5;"></div>
+          <div id="ref-links" style="font-size:12px;margin-top:6px;"><a href="/lower-limits" style="color:var(--accent);text-decoration:none;">금액대별 낙찰하한율표 →</a> · <a href="/a-value" style="color:var(--accent);text-decoration:none;">금액대별 A값 중앙값 →</a></div>
         </div>
 
         <div id="aval-wrap" style="margin-top:18px;">
@@ -150,7 +151,6 @@
       document.getElementById('aval-badge').style.display = st.aSrc === 'median' ? 'block' : 'none';
       document.getElementById('tcl-hint').textContent = '낙찰하한선(' + rate + '%) 아래는 무효 구간입니다. 슬라이더로 입력값에 따른 계산 결과를 확인하세요.' +
         (lb.ambiguous ? ' ⚠️ 하한율 구간은 추정가격(부가세 제외) 기준이에요. 이 기초금액이면 공고의 추정가격이 경계 아래일 수 있어 높은 쪽(' + rate + '%)으로 계산했어요 — 공고문의 추정가격을 확인하세요.' : '');
-      if (!document.getElementById('ref-links')) document.getElementById('tcl-hint').insertAdjacentHTML('afterend', '<div id="ref-links" style="font-size:12px;margin-top:6px;"><a href="/lower-limits" style="color:var(--accent);text-decoration:none;">금액대별 낙찰하한율표 →</a> · <a href="/a-value" style="color:var(--accent);text-decoration:none;">금액대별 A값 중앙값 →</a></div>');
       document.getElementById('tcl').style.accentColor = danger ? 'var(--danger)' : 'var(--accent)';
 
       var presets = [rate - 0.25, rate, rate + 0.45, rate + 1.05, rate + 2.05];

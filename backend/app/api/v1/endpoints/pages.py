@@ -6,6 +6,7 @@
 """
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 from xml.sax.saxutils import escape as xml_escape
 
 from fastapi import APIRouter, Depends, Request
@@ -21,7 +22,7 @@ from app.api.v1.endpoints.bids import _get_bid_context_data as get_bid_context
 from app.api.v1.endpoints.bids import _lookup_notice
 from app.services import blog as blog_svc
 from app.services.bid_data_quality import base_is_consistent
-from app.services.lower_limits import construction_rate_table, resolve_lower_limit_rate
+from app.services.lower_limits import construction_rate_table, example_basis_for_band, resolve_lower_limit_rate
 from app.services import a_value_stats, share_card
 
 logger = get_logger(__name__)
@@ -210,7 +211,7 @@ _REF_CACHE = {"Cache-Control": "public, max-age=3600"}
 
 @router.get("/lower-limits", response_class=HTMLResponse)
 def lower_limits_page(request: Request):
-    rows = [{**r, "example_basic": int(r["threshold"] * 1.5) or 200_000_000} for r in construction_rate_table()]
+    rows = [{**r, "example_basic": example_basis_for_band(r["threshold"])} for r in construction_rate_table()]
     rows = sorted(rows, key=lambda r: r["threshold"])
     return templates.TemplateResponse(
         "lower_limits.html", {"request": request, "rows": rows, "site_url": SITE_URL},
@@ -232,7 +233,6 @@ def a_value_page(request: Request, db: Session = Depends(get_db)):
 def share_calc_page(request: Request, ct: str | None = None, basic: str | None = None,
                     tcl: str | None = None, a: str | None = None, a_src: str | None = None,
                     llr: str | None = None):
-    from urllib.parse import urlencode
     p = share_card.parse(ct, basic, tcl, a, a_src, llr)
     if p is None:
         return RedirectResponse("/calculator", status_code=302)

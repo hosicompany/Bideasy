@@ -106,7 +106,9 @@
 
       var tier = sub.tier || 'free';
       var winbackDays = (sub.winback_eligible && sub.winback_expires_at) ? Math.max(0, Math.ceil((new Date(sub.winback_expires_at) - new Date()) / 86400000)) : 0;
-      var winbackBanner = sub.winback_eligible
+      // 2026-10 유료 모델 잠정 중단 — 결제·업그레이드 유도는 모두 숨긴다(결제 페이지는 nginx 가 계산기로 보낸다)
+      var PAUSED = '<span class="micro" style="margin-left:auto;color:var(--muted);">유료 플랜 일시 중단</span>';
+      var winbackBanner = false && sub.winback_eligible
         ? '<div style="background:var(--warn-soft);color:var(--warn);padding:11px 14px;border-radius:10px;font-size:13px;font-weight:700;margin-top:14px;display:flex;gap:8px;align-items:center;"><span style="display:flex;">' + BD.icon('bolt', 14) + '</span>첫 달 ' + sub.winback_discount_pct + '% 할인 자격 — ' + winbackDays + '일 안에 월간 결제 시 자동 적용</div>'
         : '';
       var winbackPrice = sub.winback_eligible ? Math.round(19900 * (1 - sub.winback_discount_pct / 100)) : 19900;
@@ -125,7 +127,7 @@
         card.innerHTML = head('Pro 체험 중',
           '<span class="chip chip-accent" style="font-family:var(--font-mono);">D-' + d + '</span>',
           fmtDate(sub.trial_expires_at) + ' 종료 · 종료 시 자동으로 Free 전환 (카드 등록 없음)',
-          '<a class="btn btn-primary btn-sm" style="margin-left:auto;" href="/pricing">' + cta + '</a>') + winbackBanner;
+          PAUSED) + winbackBanner;
       } else if (sub.is_active && tier !== 'free') {
         var autoRenew = billing && billing.auto_renew;
         var cycle = ((billing && billing.billing_cycle === 'annual') || sub.billing_cycle === 'annual') ? '연간' : '월간';
@@ -134,17 +136,17 @@
           (billing && billing.card ? '<div class="drow"><span class="k">결제 카드</span><span class="v" style="font-family:var(--font-sans);">' + billing.card + '</span></div>' : '') +
           '<div class="drow"><span class="k">자동 갱신</span><span class="v" style="font-family:var(--font-sans);font-weight:700;color:' + (autoRenew ? 'var(--safe)' : 'var(--faint)') + ';">' + (autoRenew ? 'ON' : '해지됨') + '</span></div>';
         var actions = autoRenew
-          ? '<a class="btn btn-ghost btn-sm" href="/pricing">플랜 변경</a><button class="btn btn-quiet btn-sm" id="btn-cancel" style="color:var(--danger);">자동 갱신 해지</button>'
-          : '<a class="btn btn-primary btn-sm" href="/pricing">자동 갱신 다시 켜기</a>';
+          ? '<button class="btn btn-quiet btn-sm" id="btn-cancel" style="color:var(--danger);">자동 갱신 해지</button>'
+          : PAUSED;
         card.innerHTML = '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;"><span style="width:40px;height:40px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;">' + BD.icon('shield', 19) + '</span><div style="font-size:18px;font-weight:800;">' + (TIER_NAMES[tier] || tier) + ' 구독 중</div></div>' + rows + '<div style="display:flex;gap:10px;margin-top:16px;">' + actions + '</div>';
         var cb = document.getElementById('btn-cancel'); if (cb) cb.addEventListener('click', cancelSubscription);
       } else {
-        var msg = sub.winback_eligible
+        var msg = false && sub.winback_eligible
           ? '체험이 끝났어요. ' + winbackDays + '일 안에 결제하면 첫 달 ' + sub.winback_discount_pct + '% 할인이 적용됩니다.'
-          : (sub.has_used_trial ? '체험이 끝났어요. Pro로 업그레이드하고 모든 기능을 계속 사용하세요.' : '현재 Free 플랜을 사용 중이에요.');
+          : '현재 Free 플랜을 사용 중이에요. 유료 플랜은 잠시 쉬고 있어요.';
         var ctaF = sub.winback_eligible ? '지금 결제 (월 ' + won(winbackPrice) + '원)' : 'Pro 구독하기';
         card.innerHTML = head('Free 플랜', '', msg,
-          '<a class="btn btn-primary btn-sm" style="margin-left:auto;" href="/pricing">' + ctaF + '</a>') + winbackBanner;
+          PAUSED) + winbackBanner;
       }
       return billing;
     }
