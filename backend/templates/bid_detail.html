@@ -310,7 +310,7 @@
         try {
           const resp = await fetch(API_BASE + '/bids/calculate/detailed', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ basic_price: basic, rate: rate, contract_type: CONTRACT_TYPE, a_value: aValue }),
+            body: JSON.stringify({ basic_price: basic, rate: rate, contract_type: CONTRACT_TYPE, a_value: aValue, lower_limit_rate: {{ lower_limit_pct | tojson }} }),
           });
           if (!resp.ok) throw new Error('계산 실패');
           const r = await resp.json();

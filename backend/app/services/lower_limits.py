@@ -77,11 +77,12 @@ def get_lower_limit_rate(
     return table[-1][1]
 
 
-# 부가세 상한(10%) — 과세 공사의 추정가격 = 기초금액 × 10/11. 기초금액만 알 때 "추정가격이 경계
-# 아래일 수 있는 구간"을 가르는 데만 쓴다. ⛔ 기초금액 → 추정가격 환산에 쓰지 말 것(면세에서 틀린다 — 함정 22).
-# (÷1.1 대신 ×10/11 — 부동소수점에서 11억÷1.1 이 10억보다 작게 나와 경계가 한 칸 밀린다)
+# 기초금액 ÷ 추정가격 실측 비율의 상한. 부가세만이면 1.1 이지만 운영 실측은 0.9877~1.1223 으로
+# 흩어진다(services/basis.py) — 1.1 로 잡으면 기초금액 11.1억(추정 9.9억) 공고를 놓친다. 여유를 둬 1.13.
+# 기초금액만 알 때 "추정가격이 경계 아래일 수 있는 구간"을 가르는 데만 쓴다.
+# ⛔ 기초금액 → 추정가격 환산에 쓰지 말 것(함정 22). 정수 비(×100/113)로 계산해 경계에서 부동소수점이 밀리지 않게 한다.
 def _min_estimated(basis_amount: float) -> float:
-    return basis_amount * 10 / 11
+    return basis_amount * 100 / 113
 
 
 def lower_limit_from_basis(
@@ -91,8 +92,8 @@ def lower_limit_from_basis(
 ) -> tuple[float, bool]:
     """기초금액만 알 때의 하한율과 '구간 불확실' 여부.
 
-    추정가격은 기초금액 ÷ 1.1(과세) ~ 기초금액(면세) 사이다. 두 끝의 티어가 다르면
-    (예: 기초금액 10억~11억) 공고를 보기 전엔 어느 쪽인지 모른다. 그때는 **높은 요율**
+    추정가격은 대략 기초금액 ÷ 1.13 ~ 기초금액 사이다(실측 비율 상한 1.1223). 두 끝의 티어가
+    다르면(예: 기초금액 10억~11.3억) 공고를 보기 전엔 어느 쪽인지 모른다. 그때는 **높은 요율**
     (하한선이 높아 무효 쪽으로 새지 않는 쪽)을 쓰고 ambiguous=True 를 돌려준다.
     """
     if not basis_amount or basis_amount <= 0:
@@ -100,6 +101,14 @@ def lower_limit_from_basis(
     taxed = get_lower_limit_rate(contract_type, _min_estimated(basis_amount), bid_date)
     exempt = get_lower_limit_rate(contract_type, basis_amount, bid_date)
     return max(taxed, exempt), taxed != exempt
+
+
+def is_plausible_rate(rate: float | None) -> bool:
+    """퍼센트 단위 하한율로 볼 수 있는 값인지 — 0.89745 같은 비율 형식·이상치는 버린다."""
+    try:
+        return rate is not None and 50.0 <= float(rate) <= 100.0
+    except (TypeError, ValueError):
+        return False
 
 
 def resolve_lower_limit_rate(
@@ -114,7 +123,7 @@ def resolve_lower_limit_rate(
 
     반환 출처: "notice" | "estimated" | "basis" | "basis_conservative"(구간 불확실, 높은 쪽 채택)
     """
-    if notice_rate and notice_rate > 0:
+    if notice_rate and is_plausible_rate(notice_rate):
         return float(notice_rate), "notice"
     if estimated_price and estimated_price > 0:
         return get_lower_limit_rate(contract_type, estimated_price, bid_date), "estimated"
@@ -136,6 +145,8 @@ def get_lower_limit_fraction(
 # ---------------------------------------------------------------------------
 # 경계를 위 하한율 테이블과 **같은 지점**으로 잡는다. 하한율이 바뀌는 곳이 곧
 # 게임이 바뀌는 곳이라, 다른 경계로 묶으면 성격이 다른 표본이 한 셀에 섞인다.
+# ⚠️ 2026-10-22: 하한율 경계는 추정가격 기준인데 이 밴드는 기초금액으로 나눈다. 기초금액 10억~11.3억
+#   공고(89.745% 티어)가 10E_50E 셀에 섞일 수 있다 — 누적 개찰 통계 S2 화면 착수 전에 축을 정할 것.
 # 경계를 통계 쪽에 따로 적으면 요율 개정 때 두 소스가 갈라진다 — 여기 한 곳에만 둔다.
 # (100억 이상과 50~100억은 하한율이 같지만 밴드는 나눈다. 규모가 다르면 참여
 #  양상이 다르고, 합칠 일이 생기면 조회 쪽에서 합치는 편이 되돌리기 쉽다.)

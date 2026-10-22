@@ -76,6 +76,6 @@ class TestFromBasisMirror:
 
     def test_js_uses_same_vat_bound_and_max_rule(self):
         js = _JS_PATH.read_text(encoding="utf-8")
-        assert "basisAmount * 10 / 11" in js
+        assert "basisAmount * 100 / 113" in js
         assert "Math.max(taxed, exempt)" in js
         assert "ambiguous: taxed !== exempt" in js

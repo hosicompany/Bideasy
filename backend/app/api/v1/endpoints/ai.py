@@ -225,6 +225,9 @@ async def analyze_bid(
                 "basic_price": notice.basic_price,
                 "organization": getattr(notice, "organization", None),
                 "contract_type": getattr(notice, "contract_type", "CONSTRUCTION"),
+                # 하한율 티어용 — 쿼리 basic_price 가 덮어써도 남는다(추정가격·공고 명시값)
+                "estimated_price": notice.basic_price,
+                "lower_limit_rate": getattr(notice, "lower_limit_rate", None),
             }
     
     # Override/supplement with query params (they are more recent)

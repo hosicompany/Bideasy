@@ -121,3 +121,31 @@ def test_bid_page_renders_active_notice_without_closed_notice(
     assert response.status_code == 200
     assert "진행중 공고" in response.text
     assert "마감된 공고" not in response.text
+
+
+
+# ── 하한율 금액대는 추정가격 기준 (2026-10-22) ──
+def _llp(html):
+    import re as _re
+    m = _re.search(r'낙찰하한율</span><span class="v">([\d.]+)%', html)
+    return float(m.group(1)) if m else None
+
+
+def test_bid_page_lower_limit_uses_estimated_price_band(client, db_session, frozen_now, no_remote_fetch):
+    """추정가격 9.5억·기초금액 10.45억·공고 명시값 없음 → 10억 미만 티어 89.745 (기초금액으로 찾으면 틀린 88.745)."""
+    db_session.query(models.Notice).delete()
+    db_session.add(_notice("SSR-LL-EST", days_left=5, basic_price=950_000_000,
+                           basis_amount=1_045_000_000, contract_type="CONSTRUCTION"))
+    db_session.flush()
+    assert _llp(client.get("/bid/SSR-LL-EST").text) == 89.745
+
+
+def test_bid_page_lower_limit_prefers_notice_rate(client, db_session, frozen_now, no_remote_fetch):
+    db_session.query(models.Notice).delete()
+    db_session.add(_notice("SSR-LL-NOTICE", days_left=5, basic_price=2_000_000_000,
+                           basis_amount=2_200_000_000, contract_type="CONSTRUCTION",
+                           lower_limit_rate=87.995))
+    db_session.flush()
+    html = client.get("/bid/SSR-LL-NOTICE").text
+    assert _llp(html) == 87.995
+    assert "lower_limit_rate: 87.995" in html  # 아래 계산기도 같은 요율로 계산한다

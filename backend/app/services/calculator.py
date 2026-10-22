@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
-from app.services.lower_limits import LEGACY_RATES, lower_limit_from_basis
+from app.services.lower_limits import LEGACY_RATES, is_plausible_rate, lower_limit_from_basis
 
 
 class SafetyLevel(str, Enum):
@@ -134,6 +134,7 @@ class CalculatorService:
         contract_type: str,
         basic_price: float | None = None,
         bid_date=None,
+        notice_rate: float | None = None,
     ) -> float:
         """법정 낙찰하한율 조회 (정본: app.services.lower_limits).
 
@@ -142,6 +143,8 @@ class CalculatorService:
         """
         # 계산기 입력은 기초금액이다. 금액대 경계는 추정가격 기준이라, 경계 바로 위
         # (기초금액 10억~11억 등)에서는 높은 쪽 요율을 쓴다(lower_limit_from_basis).
+        if is_plausible_rate(notice_rate):
+            return float(notice_rate)  # 공고가 명시한 값이 정답이다
         return lower_limit_from_basis(contract_type, basic_price, bid_date)[0]
     
     @staticmethod
@@ -176,7 +179,8 @@ class CalculatorService:
         basic_price: float, 
         rate: float, 
         contract_type: str = "CONSTRUCTION",
-        a_value: int = 0
+        a_value: int = 0,
+        notice_rate: float | None = None,
     ) -> BidCalculationResult:
         """
         상세 투찰금액 계산 (A값 반영)
@@ -198,7 +202,7 @@ class CalculatorService:
         est_max = basic_price * (1 + ESTIMATED_PRICE_VARIANCE)
         
         # 3. 낙찰하한선 계산 (A값 반영) — 공사는 금액대·시행일 티어드
-        lower_rate = CalculatorService.get_lower_limit_rate(contract_type, basic_price)
+        lower_rate = CalculatorService.get_lower_limit_rate(contract_type, basic_price, notice_rate=notice_rate)
         
         # 기초금액 기준 하한선 (A값 적용 공식: (기초금액 - A) * 하한율 + A)
         if a_value > 0:

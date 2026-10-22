@@ -93,8 +93,23 @@ class TestEstimatedPriceBand:
         # 3억·100억 경계는 양쪽 요율이 같아 불확실하지 않다
         assert lower_limit_from_basis("CONSTRUCTION", 3_100_000_000 // 10, AFTER)[1] is False
         assert lower_limit_from_basis("CONSTRUCTION", 10_500_000_000, AFTER)[1] is False
-        # 정확히 11억 = 과세여도 추정가격 정확히 10억 → 10억 이상 티어 (부동소수점으로 밀리지 않는다)
-        assert lower_limit_from_basis("CONSTRUCTION", 1_100_000_000, AFTER) == (88.745, False)
+        # 정확히 11.3억 = 비율 상한(1.13)에서도 추정가격 정확히 10억 → 10억 이상 (부동소수점으로 밀리지 않는다)
+        assert lower_limit_from_basis("CONSTRUCTION", 1_130_000_000, AFTER) == (88.745, False)
+
+    def test_real_ratio_spread_beyond_vat_is_covered(self):
+        """실측 기초/추정 비율이 1.12 까지 간다 — 부가세(1.1)만 가정하면 기초금액 11.1억(추정 9.9억)을 놓친다."""
+        from app.services.lower_limits import lower_limit_from_basis
+        assert lower_limit_from_basis("CONSTRUCTION", 1_110_000_000, AFTER) == (89.745, True)
+        assert lower_limit_from_basis("CONSTRUCTION", 5_550_000_000, AFTER) == (88.745, True)
+
+    def test_notice_rate_in_ratio_form_or_outlier_is_ignored(self):
+        from app.services.lower_limits import resolve_lower_limit_rate
+        assert resolve_lower_limit_rate("CONSTRUCTION", notice_rate=0.89745,
+                                        estimated_price=950_000_000, bid_date=AFTER) == (89.745, "estimated")
+        assert resolve_lower_limit_rate("CONSTRUCTION", notice_rate=120,
+                                        estimated_price=950_000_000, bid_date=AFTER)[1] == "estimated"
+        assert CalculatorService.get_lower_limit_rate("CONSTRUCTION", 1e9, notice_rate=88.0) == 88.0
+        assert CalculatorService.get_lower_limit_rate("CONSTRUCTION", 2e9, notice_rate=0.88) == 88.745
 
     def test_resolve_prefers_notice_then_estimated_then_basis(self):
         from app.services.lower_limits import resolve_lower_limit_rate

@@ -11,11 +11,11 @@ window.BD_LOWER = {
     if (estimatedPrice >= 1000000000) return 88.745;       // 10억 이상 50억 미만
     return 89.745;                                         // 10억 미만
   },
-  // 기초금액만 알 때: 추정가격은 기초금액×10/11(과세)~기초금액(면세) 사이. (÷1.1 은 부동소수점 오차로 경계가 밀린다)
+  // 기초금액만 알 때: 추정가격은 대략 기초금액×100/113 ~ 기초금액 사이(실측 비율 상한 1.1223 — 정본 _min_estimated).
   // 두 끝의 티어가 다르면(기초금액 10억~11억 등) 높은 요율을 쓰고 ambiguous 로 알린다.
   fromBasis: function (basisAmount) {
     if (!basisAmount || basisAmount <= 0) return { rate: this.construction(0), ambiguous: false };
-    var taxed = this.construction(basisAmount * 10 / 11), exempt = this.construction(basisAmount);
+    var taxed = this.construction(basisAmount * 100 / 113), exempt = this.construction(basisAmount);
     return { rate: Math.max(taxed, exempt), ambiguous: taxed !== exempt };
   }
 };
