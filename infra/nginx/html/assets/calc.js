@@ -126,7 +126,7 @@
           document.getElementById('aval-wrap').style.display = st.ct === 'GOODS' ? 'none' : 'block';
         }
         var nm = ctx.title || ('공고 ' + no);
-        document.getElementById('banner').innerHTML = '<div class="card" style="margin-top:16px;padding:12px 16px;display:flex;align-items:center;gap:12px;border-color:var(--accent);background:var(--accent-soft);flex-wrap:wrap;"><span style="color:var(--accent);display:flex;flex-shrink:0;">' + BD.icon('doc', 15) + '</span><span style="font-size:13.5px;color:var(--ink-2);"><b style="color:var(--ink);">' + BD.esc(nm) + '</b> 기준 · ' + (ctx.basis_amount ? '기초금액·종류 자동 입력됨' : '<b style="color:var(--danger);">기초금액 미확인</b> — 공고문의 기초금액을 직접 입력하세요') + (st.noticeRate ? ' · 공고 하한율 ' + st.noticeRate + '% 적용' : '') + '</span><a class="btn btn-quiet btn-sm" style="margin-left:auto;color:var(--accent);" href="/bid.html?no=' + encodeURIComponent(no) + '">공고 상세 →</a></div>';
+        document.getElementById('banner').innerHTML = '<div class="card" style="margin-top:16px;padding:12px 16px;display:flex;align-items:center;gap:12px;border-color:var(--accent);background:var(--accent-soft);flex-wrap:wrap;"><span style="color:var(--accent);display:flex;flex-shrink:0;">' + BD.icon('doc', 15) + '</span><span style="font-size:13.5px;color:var(--ink-2);"><b style="color:var(--ink);">' + BD.esc(nm) + '</b> 기준 · ' + (ctx.basis_amount ? '기초금액·종류 자동 입력됨' : '<b style="color:var(--danger);">기초금액 미확인</b> — 공고문의 기초금액을 직접 입력하세요') + (st.noticeRate ? ' · 공고 하한율 ' + st.noticeRate + '% 적용' : '') + '</span><a class="btn btn-quiet btn-sm" style="margin-left:auto;color:var(--accent);" href="/bid/' + encodeURIComponent(no) + '">공고 상세 →</a></div>';
         st.copied = false; render();
       }).catch(function () {});
     }

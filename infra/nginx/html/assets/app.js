@@ -226,7 +226,7 @@
     panel.className = 'bd-chat-panel';
     panel.innerHTML =
       '<div class="bd-chat-head"><span style="width:30px;height:30px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;">' + icon('chat', 16) + '</span>' +
-      '<div style="flex:1;min-width:0;"><div style="font-size:14.5px;font-weight:800;">BidEasy 도우미</div><div style="font-size:11.5px;color:var(--muted);">요금제·사용법·결제 등 무엇이든</div></div>' +
+      '<div style="flex:1;min-width:0;"><div style="font-size:14.5px;font-weight:800;">BidEasy 도우미</div><div style="font-size:11.5px;color:var(--muted);">계산 방법·A값·하한율 등 무엇이든</div></div>' +
       '<button id="bd-chat-ticket" class="btn btn-quiet btn-sm" style="padding:6px 9px;font-size:12px;" title="사람에게 문의">문의</button>' +
       '<button id="bd-chat-x" class="btn btn-quiet btn-sm" style="padding:6px;" aria-label="닫기">' + icon('x', 15) + '</button></div>' +
       '<div class="bd-chat-body" id="bd-chat-body"></div>' +
@@ -245,7 +245,7 @@
     }
     function openPanel() {
       panel.classList.add('open');
-      if (!history.length) bubble('assistant', '안녕하세요 사장님! BidEasy 도우미예요. 요금제·A값·자격 매칭·결제·설치 방법 등 무엇이든 편하게 물어보세요. 🙂');
+      if (!history.length) bubble('assistant', '안녕하세요 사장님! BidEasy 도우미예요. 투찰가 계산·A값·낙찰하한율·설치 방법 등 무엇이든 편하게 물어보세요. 🙂');
       setTimeout(function () { input.focus(); }, 60);
     }
     function closePanel() { panel.classList.remove('open'); }
