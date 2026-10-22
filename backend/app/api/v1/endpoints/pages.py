@@ -230,13 +230,16 @@ def a_value_page(request: Request, db: Session = Depends(get_db)):
 # ── 계산 결과 공유 링크 — 카톡·네이버 링크 카드용 og 메타 + 숫자 이미지 ──
 @router.get("/s/calc", response_class=HTMLResponse)
 def share_calc_page(request: Request, ct: str | None = None, basic: str | None = None,
-                    tcl: str | None = None, a: str | None = None):
+                    tcl: str | None = None, a: str | None = None, a_src: str | None = None):
     from urllib.parse import urlencode
-    p = share_card.parse(ct, basic, tcl, a)
+    p = share_card.parse(ct, basic, tcl, a, a_src)
     if p is None:
         return RedirectResponse("/calculator", status_code=302)
     r = share_card.compute(p)
-    qs = urlencode({"ct": p["ct"], "basic": p["basic"], "tcl": f"{p['tcl']:.2f}", "a": p["a"]})
+    q = {"ct": p["ct"], "basic": p["basic"], "tcl": f"{p['tcl']:.3f}", "a": p["a"]}
+    if p["a_est"]:
+        q["a_src"] = "median"  # 추정 A값은 공유 뒤에도 추정이라고 보여야 한다
+    qs = urlencode(q)
     verdict = share_card.verdict(r)
     title = f"투찰가 ₩{share_card.won(r['predicted'])} — {share_card.summary_line(r)}"
     desc = (verdict + " · " if verdict else "") + "BidEasy 투찰가·낙찰하한율 계산기에서 숫자를 바꿔 다시 계산해 보세요. 낙찰가를 예측하지 않습니다."
@@ -251,11 +254,11 @@ def share_calc_page(request: Request, ct: str | None = None, basic: str | None =
 
 @router.get("/s/calc.png")
 def share_calc_image(ct: str | None = None, basic: str | None = None,
-                     tcl: str | None = None, a: str | None = None):
-    p = share_card.parse(ct, basic, tcl, a)
+                     tcl: str | None = None, a: str | None = None, a_src: str | None = None):
+    p = share_card.parse(ct, basic, tcl, a, a_src)
     if p is None:
         return Response(status_code=400)
-    png = share_card.render_png(p["ct"], p["basic"], round(p["tcl"], 2), p["a"])
+    png = share_card.render_png(p["ct"], p["basic"], p["tcl"], p["a"], p["a_est"])
     return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=604800"})
 
 

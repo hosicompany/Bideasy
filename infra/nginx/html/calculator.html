@@ -119,12 +119,13 @@
     // 공유 링크·참고 페이지에서 온 값 (?ct=&basic=&tcl=&a=&a_src=median)
     var qp = new URLSearchParams(location.search);
     if (['CONSTRUCTION', 'SERVICE', 'GOODS'].indexOf((qp.get('ct') || '').toUpperCase()) >= 0) st.ct = qp.get('ct').toUpperCase();
-    if (Number(qp.get('basic')) > 0) st.basic = Math.round(Number(qp.get('basic')));
-    if (Number(qp.get('tcl')) >= 85 && Number(qp.get('tcl')) <= 92) st.tcl = Number(qp.get('tcl'));
-    if (qp.get('a') !== null && Number(qp.get('a')) >= 0) { st.aval = Math.round(Number(qp.get('a'))); st.aSrc = qp.get('a_src') === 'median' ? 'median' : ''; }
+    var qn = function (k) { var v = qp.get(k); return v === null || v === '' ? NaN : Number(v); };
+    if (Number.isFinite(qn('basic')) && qn('basic') > 0 && qn('basic') <= 1e13) st.basic = Math.round(qn('basic'));
+    if (Number.isFinite(qn('tcl')) && qn('tcl') >= 85 && qn('tcl') <= 92) st.tcl = Math.round(qn('tcl') * 1000) / 1000;
+    if (Number.isFinite(qn('a')) && qn('a') >= 0 && qn('a') < st.basic) { st.aval = Math.round(Number(qp.get('a'))); st.aSrc = qp.get('a_src') === 'median' ? 'median' : ''; }
 
     function shareUrl() {
-      return 'https://bideasy.kr/s/calc?ct=' + st.ct + '&basic=' + st.basic + '&tcl=' + st.tcl.toFixed(2) + '&a=' + (st.ct === 'GOODS' ? 0 : st.aval);
+      return 'https://bideasy.kr/s/calc?ct=' + st.ct + '&basic=' + st.basic + '&tcl=' + st.tcl.toFixed(3) + '&a=' + (st.ct === 'GOODS' ? 0 : st.aval) + (st.aSrc === 'median' ? '&a_src=median' : '');
     }
 
     function num(el) { return Number(document.getElementById(el).value.replace(/[^\d]/g, '')) || 0; }

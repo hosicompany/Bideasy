@@ -18,19 +18,22 @@ CT_LABEL = {"CONSTRUCTION": "공사", "SERVICE": "용역", "GOODS": "물품"}
 MAX_BASIC = 10_000_000_000_000  # 10조 — 이 위는 오타로 본다
 
 
-def parse(ct: str | None, basic: str | None, tcl: str | None, a: str | None) -> dict | None:
+def parse(ct: str | None, basic: str | None, tcl: str | None, a: str | None,
+          a_src: str | None = None) -> dict | None:
     """쿼리 파라미터 검증. 하나라도 이상하면 None (카드 대신 기본 계산기로 보낸다)."""
     try:
         ct = (ct or "CONSTRUCTION").upper()
         basic_v = int(float(basic))
         tcl_v = round(float(tcl), 3)
         a_v = int(float(a or 0)) if ct != "GOODS" else 0
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
-    if ct not in CT_LABEL or not (0 < basic_v <= MAX_BASIC) or not (50 <= tcl_v <= 100) \
+    # 투찰률 범위는 웹 계산기 슬라이더(85~92)와 같다 — 밖이면 계산기가 무시해 숫자가 갈라진다
+    if ct not in CT_LABEL or not (0 < basic_v <= MAX_BASIC) or not (85 <= tcl_v <= 92) \
             or not (0 <= a_v < basic_v):
         return None
-    return {"ct": ct, "basic": basic_v, "tcl": tcl_v, "a": a_v}
+    est = a_src == "median" and a_v > 0
+    return {"ct": ct, "basic": basic_v, "tcl": tcl_v, "a": a_v, "a_est": est}
 
 
 def compute(p: dict) -> dict:
@@ -39,7 +42,7 @@ def compute(p: dict) -> dict:
     out = {**p, "predicted": predicted, "rate": None, "lower": None, "diff": None, "level": None}
     if p["ct"] == "CONSTRUCTION":
         rate = get_lower_limit_rate("CONSTRUCTION", basic)
-        lower = round((basic - a) * rate / 100 + a)
+        lower = math.floor((basic - a) * rate / 100 + a + 0.5)  # JS Math.round 와 같은 0.5 올림
         diff = (predicted - lower) / basic * 100
         level = "DANGER" if predicted < lower else ("WARN" if diff < 0.5 else "SAFE")
         out.update(rate=rate, lower=lower, diff=round(diff, 2), level=level)
@@ -61,7 +64,7 @@ def eok(n: int) -> str:
 def summary_line(r: dict) -> str:
     parts = [f"기초금액 {eok(r['basic'])}", f"투찰률 {r['tcl']:.2f}%"]
     if r["a"]:
-        parts.append(f"A값 {eok(r['a'])}")
+        parts.append(f"A값{'(추정)' if r.get('a_est') else ''} {eok(r['a'])}")
     return " · ".join(parts)
 
 
@@ -73,14 +76,19 @@ def verdict(r: dict) -> str:
         + f" {sign}{r['diff']:.2f}%p"
 
 
+@lru_cache(maxsize=16)
+def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(str(_FONT_DIR / name), size)
+
+
 @lru_cache(maxsize=256)
-def render_png(ct: str, basic: int, tcl: float, a: int) -> bytes:
-    r = compute({"ct": ct, "basic": basic, "tcl": tcl, "a": a})
+def render_png(ct: str, basic: int, tcl: float, a: int, a_est: bool = False) -> bytes:
+    r = compute({"ct": ct, "basic": basic, "tcl": tcl, "a": a, "a_est": a_est})
     W, H = 1200, 630
     img = Image.new("RGB", (W, H), (49, 130, 246))
     d = ImageDraw.Draw(img)
-    bold = lambda s: ImageFont.truetype(str(_FONT_DIR / "Pretendard-Bold.otf"), s)  # noqa: E731
-    reg = lambda s: ImageFont.truetype(str(_FONT_DIR / "Pretendard-Regular.otf"), s)  # noqa: E731
+    bold = lambda s: _font("Pretendard-Bold.otf", s)  # noqa: E731
+    reg = lambda s: _font("Pretendard-Regular.otf", s)  # noqa: E731
     white, soft = (255, 255, 255), (214, 230, 255)
     d.text((72, 64), f"BidEasy 투찰가 계산 · {CT_LABEL[ct]}", font=bold(36), fill=soft)
     d.text((72, 150), f"₩{won(r['predicted'])}", font=bold(112), fill=white)
@@ -92,6 +100,8 @@ def render_png(ct: str, basic: int, tcl: float, a: int) -> bytes:
         d.rounded_rectangle((72, 380, 72 + tw + 48, 452), radius=36, fill=white)
         d.text((96, 391), v, font=bold(40), fill=color)
         d.text((72, 470), f"낙찰하한선 {r['rate']}% · ₩{won(r['lower'])}", font=reg(34), fill=soft)
+    else:
+        d.text((72, 390), "하한율은 공고문에서 확인하세요 (용역·물품은 계약 방식마다 다름)", font=reg(34), fill=soft)
     d.rectangle((0, H - 84, W, H), fill=(25, 31, 40))
     d.text((72, H - 64), "bideasy.kr/calculator  ·  낙찰가를 예측하지 않습니다", font=reg(32), fill=soft)
     buf = io.BytesIO()

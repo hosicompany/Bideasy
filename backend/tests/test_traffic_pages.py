@@ -77,7 +77,7 @@ def test_share_page_has_og_card_noindex_and_escapes(client):
     assert resp.status_code == 200
     html = resp.text
     assert '<meta name="robots" content="noindex">' in html
-    assert 'og:image" content="https://bideasy.kr/s/calc.png?ct=CONSTRUCTION&amp;basic=500000000&amp;tcl=90.30&amp;a=12400000"' in html
+    assert 'og:image" content="https://bideasy.kr/s/calc.png?ct=CONSTRUCTION&amp;basic=500000000&amp;tcl=90.300&amp;a=12400000"' in html
     assert "452,702,800" in html and "하한선 이상" in html
     assert 'rel="canonical" href="https://bideasy.kr/calculator"' in html
 
@@ -92,3 +92,32 @@ def test_share_image_is_png(client):
 def test_sitemap_static_lists_reference_pages(client):
     body = client.get("/sitemap-static.xml").text
     assert "https://bideasy.kr/lower-limits" in body and "https://bideasy.kr/a-value" in body
+
+
+# ── 독립 리뷰 보완 (2026-10-22) ──
+@pytest.mark.parametrize("q", [{"basic": "inf", "tcl": "90"}, {"basic": "1e999", "tcl": "90"},
+                               {"basic": "500000000", "tcl": "80"}])
+def test_share_rejects_overflow_and_out_of_slider_range(client, q):
+    assert client.get("/s/calc.png", params=q).status_code == 400
+
+
+def test_share_keeps_three_decimal_rate_end_to_end(client):
+    """프리셋 89.745 를 공유해도 받는 쪽이 89.75 로 반올림된 다른 숫자를 보면 안 된다."""
+    r = share_card.compute(share_card.parse("CONSTRUCTION", "500000000", "89.745", "12400000"))
+    html = client.get("/s/calc", params={"basic": "500000000", "tcl": "89.745", "a": "12400000"}).text
+    assert "tcl=89.745" in html
+    assert share_card.won(r["predicted"]) in html
+
+
+def test_share_carries_estimated_a_value_flag(client):
+    html = client.get("/s/calc", params={"basic": "500000000", "tcl": "90.3",
+                                         "a": "11800000", "a_src": "median"}).text
+    assert "a_src=median" in html and "A값(추정)" in html
+    plain = client.get("/s/calc", params={"basic": "500000000", "tcl": "90.3", "a": "11800000"}).text
+    assert "a_src" not in plain and "A값(추정)" not in plain
+
+
+def test_lower_line_rounds_half_up_like_browser():
+    # 300,010,000 × 89.745% = 269,243,974.5 → JS Math.round 는 ...975
+    r = share_card.compute({"ct": "CONSTRUCTION", "basic": 300_010_000, "tcl": 90.0, "a": 0})
+    assert r["lower"] == 269_243_975
