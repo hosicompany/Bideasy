@@ -58,17 +58,23 @@ class TestLowerLimitsWebSync:
             )
 
     def test_web_pages_do_not_hardcode_construction_rate(self):
-        """계산기·랜딩이 공사 하한율을 다시 하드코딩하면 실패 (재발 방지)."""
+        """기초금액을 받는 화면은 fromBasis() 만 쓴다 — 추정가격 티어(construction)를 기초금액으로 부르면 경계에서 틀린다.
+
+        계산기 로직은 assets/calc.js 하나를 홈(/)과 /calculator 가 함께 쓴다(2026-10).
+        """
         html_dir = _JS_PATH.parents[1]
+        calc_js = (_JS_PATH.parent / "calc.js").read_text(encoding="utf-8")
+        assert "BD_LOWER.fromBasis" in calc_js and "BD_LOWER.construction(" not in calc_js
+        for name in ("calculator.html", "index.html"):
+            src = (html_dir / name).read_text(encoding="utf-8")
+            assert '<script src="/assets/calc.js"></script>' in src, f"{name} 이 공용 계산기 스크립트를 안 불러요"
         for name in ("calculator.html", "index.html", "rationale.html"):
             src = (html_dir / name).read_text(encoding="utf-8")
-            # 이 화면들은 기초금액을 받는다 — 추정가격 티어(construction)를 바로 부르면 경계에서 틀린다
-            assert "BD_LOWER.fromBasis" in src, f"{name} 이 기초금액용 fromBasis() 를 쓰지 않아요"
             assert "BD_LOWER.construction(" not in src, f"{name} 이 기초금액으로 추정가격 티어를 찾아요"
-            # JS 코드 라인에 87.745 상수가 CONSTRUCTION 키로 재등장하는지 검사
             assert not re.search(r"CONSTRUCTION\s*:\s*87\.745", src), (
-                f"{name} 에 공사 하한율 87.745 하드코딩이 재도입됐어요 — BD_LOWER.construction() 사용"
+                f"{name} 에 공사 하한율 87.745 하드코딩이 재도입됐어요"
             )
+        assert "BD_LOWER.fromBasis" in (html_dir / "rationale.html").read_text(encoding="utf-8")
 
 
 class TestFromBasisMirror:

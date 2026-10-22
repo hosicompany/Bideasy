@@ -18,11 +18,11 @@
         </button>
         <div class="bd-nav-menu" id="bd-nav-menu">
           <ul class="bd-nav-links">
-            <li><a href="/search" class="bd-nav-link" data-path="/search">공고 검색</a></li>
             <li><a href="/calculator" class="bd-nav-link" data-path="/calculator">계산기</a></li>
-            <li><a href="/blog" class="bd-nav-link" data-path="/blog">블로그</a></li>
-            <li><a href="/guide" class="bd-nav-link" data-path="/guide">사용 가이드</a></li>
             <li><a href="/lower-limits" class="bd-nav-link" data-path="/lower-limits">하한율표</a></li>
+            <li><a href="/a-value" class="bd-nav-link" data-path="/a-value">A값</a></li>
+            <li><a href="/search" class="bd-nav-link" data-path="/search">공고 검색</a></li>
+            <li><a href="/blog" class="bd-nav-link" data-path="/blog">블로그</a></li>
           </ul>
           <div class="bd-nav-cta" id="bd-nav-cta">
             <!-- 로그인 상태에 따라 동적 -->
@@ -70,7 +70,7 @@
     if (!user) {
       // 비로그인 — 2026-10 유료·신규 가입 잠정 중단: 로그인·체험 대신 무료 계산기
       cta.innerHTML = `
-        <a href="/calculator" class="bd-nav-btn">무료 계산기</a>
+        <a href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" class="bd-nav-btn" target="_blank" rel="noopener">Chrome 익스텐션</a>
       `;
     } else {
       // 로그인됨
