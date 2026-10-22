@@ -72,7 +72,7 @@
     // 자격 자동 매칭 — 실제 per-user 판정 (로그인 필요)
     function loadQualification() {
       var el = document.getElementById('qual');
-      if (!token) { el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--accent);display:flex;">' + BD.icon('user', 15) + '</span><span style="font-size:13.5px;color:var(--muted);">로그인하면 회사 정보로 <b style="color:var(--ink-2);">입찰 가능 여부</b>를 자동 판정해드려요.</span><a class="btn btn-ghost btn-sm" style="margin-left:auto;" href="/login?redirect=' + encodeURIComponent('/bid.html?no=' + no) + '">로그인</a></div>'; return; }
+      if (!token) { el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--accent);display:flex;">' + BD.icon('user', 15) + '</span><span style="font-size:13.5px;color:var(--muted);">입찰 가능 여부 자동 판정은 <b style="color:var(--ink-2);">기존 회원</b>만 이용할 수 있어요(신규 가입 일시 중단).</span><a class="btn btn-ghost btn-sm" style="margin-left:auto;" href="/login?redirect=' + encodeURIComponent('/bid.html?no=' + no) + '">로그인</a></div>'; return; }
       fetch(API_BASE + '/bids/' + encodeURIComponent(no) + '/qualification', { headers: authHeaders() }).then(function (r) { return r.ok ? r.json() : null; }).then(function (q) {
         if (!q) { el.innerHTML = '<div style="font-size:13.5px;color:var(--muted);">자격 판정을 불러오지 못했어요.</div>'; return; }
         var pass = q.status === 'PASS', unknown = q.status === 'UNKNOWN';
@@ -109,13 +109,13 @@
         ['공고문 텍스트 파싱', '독소조항 탐지', '자격 요건 대조'].map(function (t) { return '<div style="display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);"><span style="color:var(--accent);display:flex;">' + BD.icon('clock', 14, 2) + '</span>' + t + '</div>'; }).join('') + '</div></div>';
     }
     function run() {
-      if (!token) { ai.innerHTML = head() + '<div style="text-align:center;padding:30px 12px;"><p style="font-size:14px;color:var(--muted);line-height:1.6;">AI 분석은 로그인 후 이용할 수 있어요.</p><a class="btn btn-primary" style="margin-top:14px;" href="/login?redirect=' + encodeURIComponent('/bid.html?no=' + no) + '">로그인</a></div>'; return; }
+      if (!token) { ai.innerHTML = head() + '<div style="text-align:center;padding:30px 12px;"><p style="font-size:14px;color:var(--muted);line-height:1.6;">AI 분석은 기존 회원만 이용할 수 있어요.<br>지금은 신규 가입을 잠시 쉬고 있어요.</p><a class="btn btn-ghost" style="margin-top:14px;" href="/login?redirect=' + encodeURIComponent('/bid.html?no=' + no) + '">로그인</a></div>'; return; }
       loading();
       fetch(API_BASE + '/ai/' + encodeURIComponent(no) + '/analysis', { headers: authHeaders() }).then(function (r) {
         if (r.status === 429) throw { rate: true };
         return r.ok ? r.json() : Promise.reject();
       }).then(function (d) { renderResult(d); BD.toast('AI 분석을 완료했어요', 'accent'); }).catch(function (e) {
-        if (e && e.rate) { ai.innerHTML = head() + '<div style="text-align:center;padding:30px 12px;"><p style="font-size:14px;color:var(--muted);line-height:1.6;">오늘 무료 AI 분석을 다 쓰셨어요.<br>Pro로 업그레이드하면 무제한이에요.</p><a class="btn btn-primary" style="margin-top:14px;" href="/pricing">Pro 보기</a><button id="back" class="btn btn-ghost btn-block btn-sm" style="margin-top:8px;">돌아가기</button></div>'; var b = document.getElementById('back'); if (b) b.addEventListener('click', idle); return; }
+        if (e && e.rate) { ai.innerHTML = head() + '<div style="text-align:center;padding:30px 12px;"><p style="font-size:14px;color:var(--muted);line-height:1.6;">오늘 AI 분석 횟수를 다 쓰셨어요.<br>내일 다시 이용할 수 있어요.</p><button id="back" class="btn btn-ghost btn-block btn-sm" style="margin-top:8px;">돌아가기</button></div>'; var b = document.getElementById('back'); if (b) b.addEventListener('click', idle); return; }
         ai.innerHTML = head() + '<div style="text-align:center;padding:30px 12px;"><p style="font-size:14px;color:var(--danger);">분석에 실패했어요. 잠시 후 다시 시도해주세요.</p><button id="retry" class="btn btn-ghost btn-sm" style="margin-top:14px;">다시 시도</button></div>'; var rt = document.getElementById('retry'); if (rt) rt.addEventListener('click', run);
       });
     }

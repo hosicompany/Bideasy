@@ -87,6 +87,9 @@
     .prose img { max-width: 100%; height: auto; border-radius: 12px; display: block; margin: 6px auto; }
     .prose figure { margin: 24px 0; }
     .prose figcaption { color: #8B95A1; font-size: 13px; text-align: center; margin-top: 9px; }
+    .calc-cta { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 0 0 22px; padding: 16px 18px; border-radius: 14px; background: rgba(49,130,246,.07); border: 1px solid rgba(49,130,246,.35); text-decoration: none; color: inherit; font-size: 14.5px; line-height: 1.55; }
+    .calc-cta .go { flex-shrink: 0; background: #3182F6; color: #fff; font-weight: 700; padding: 10px 16px; border-radius: 10px; font-size: 14px; }
+    .ad-slot[hidden] { display: none; }
     .hero { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 16px; margin: 6px 0 20px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
     .byline { display: flex; align-items: center; gap: 11px; margin-top: 16px; }
     .byline .av { width: 38px; height: 38px; border-radius: 50%; background: #EBF2FF; display: grid; place-items: center; flex-shrink: 0; }
@@ -129,6 +132,11 @@
         </div>
       </div>
       {% if post.hero %}<img class="hero" src="{{ post.hero }}" alt="{{ post.title }}" loading="eager">{% endif %}
+      <!-- 글 위 계산기 안내 — 검색으로 들어온 사람이 숫자를 바로 넣어 보게 (2026-10 계산기 중심 개편) -->
+      <a class="calc-cta" href="/calculator" data-ev="cta_blog_top_calc">
+        <span><b>🧮 이 글의 숫자로 바로 계산하기</b><br><span class="muted">기초금액만 넣으면 투찰가와 낙찰하한선이 1원 단위로 나와요. 로그인 없음.</span></span>
+        <span class="go">투찰가 계산기 열기 →</span>
+      </a>
       <div class="prose">{{ post.body_html | safe }}</div>
       {% if post.tags %}<div class="tags">{% for t in post.tags %}<span class="t">#{{ t }}</span>{% endfor %}</div>{% endif %}
     </article>
@@ -137,7 +145,15 @@
       <div class="muted" style="margin-top:4px;">투찰가 · 낙찰하한선 · A값 계산은 무료, 가입 없이 가능합니다.</div>
       <a href="/calculator">무료 계산기 →</a>
     </div>
+    <!-- 광고 자리(글 끝). 애드센스 승인 전엔 비워 둔다 — 본문 중간 광고는 자동 광고가 배치한다.
+         계산기 버튼과 붙지 않게 제목을 사이에 둔다(실수 클릭 유도 금지). -->
+    <div class="ad-slot" data-ad-slot="blog-end" hidden></div>
     {% endif %}
   </div>
+  <script>
+    document.querySelectorAll('[data-ev]').forEach(function (el) {
+      el.addEventListener('click', function () { try { gtag('event', this.getAttribute('data-ev')); } catch (e) {} });
+    });
+  </script>
 </body>
 </html>

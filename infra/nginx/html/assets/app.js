@@ -158,7 +158,8 @@
     // 왼쪽 nav = 공개 기능(항상 동일) — 로그인 여부와 무관해 레이아웃이 흔들리지 않음.
     // 대시보드·계정은 오른쪽 "내 영역"으로 분리: [대시보드] 버튼 + 아바타 드롭다운(마이·관심·로그아웃).
     // /search 는 백엔드 SSR(정적 search.html 제거) — 절대경로로 둔다.
-    var links = [['/search', '공고 검색', 'search'], ['calculator.html', '계산기', 'calculator'], ['/blog', '블로그', 'blog'], ['pricing.html', '요금제', 'pricing']];
+    // 2026-10 계산기 중심 개편(intent §10): 계산기 → 참고 페이지 → 검색 → 블로그 순
+    var links = [['/calculator', '계산기', 'calculator'], ['/lower-limits', '하한율표', 'lower-limits'], ['/a-value', 'A값', 'a-value'], ['/search', '공고 검색', 'search'], ['/blog', '블로그', 'blog']];
     var right = authed
       ? '<a class="btn btn-primary btn-sm"' + (active === 'dashboard' ? ' aria-current="page"' : '') + ' href="dashboard.html">대시보드</a>' +
         '<div class="navmenu">' +
@@ -169,7 +170,8 @@
             '<button class="navmenu-item navmenu-danger" type="button" role="menuitem" id="navlogout">로그아웃</button>' +
           '</div>' +
         '</div>'
-      : '<a class="navlink" href="login.html">로그인</a><a class="btn btn-primary btn-sm" href="signup.html">14일 체험</a>';
+      // 2026-10 유료·신규 가입 잠정 중단 — 비로그인에겐 로그인·체험 대신 무료 계산기. 기존 회원 로그인은 /login 직접 접근
+      : '<a class="btn btn-ghost btn-sm" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener" data-ev="cta_nav_install">Chrome 익스텐션</a>';
     var html = '<nav class="topnav"><div class="topnav-in">' +
       '<a class="brand" href="index.html"><img src="brand/bideasy-mark.svg" width="22" height="22" alt="">BidEasy</a>' +
       '<ul class="navlinks">' + links.map(function (l) { return '<li><a class="navlink' + (active === l[2] ? ' active' : '') + '"' + (active === l[2] ? ' aria-current="page"' : '') + ' href="' + l[0] + '">' + l[1] + '</a></li>'; }).join('') + '</ul>' +
@@ -224,7 +226,7 @@
     panel.className = 'bd-chat-panel';
     panel.innerHTML =
       '<div class="bd-chat-head"><span style="width:30px;height:30px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;">' + icon('chat', 16) + '</span>' +
-      '<div style="flex:1;min-width:0;"><div style="font-size:14.5px;font-weight:800;">BidEasy 도우미</div><div style="font-size:11.5px;color:var(--muted);">요금제·사용법·결제 등 무엇이든</div></div>' +
+      '<div style="flex:1;min-width:0;"><div style="font-size:14.5px;font-weight:800;">BidEasy 도우미</div><div style="font-size:11.5px;color:var(--muted);">계산 방법·A값·하한율 등 무엇이든</div></div>' +
       '<button id="bd-chat-ticket" class="btn btn-quiet btn-sm" style="padding:6px 9px;font-size:12px;" title="사람에게 문의">문의</button>' +
       '<button id="bd-chat-x" class="btn btn-quiet btn-sm" style="padding:6px;" aria-label="닫기">' + icon('x', 15) + '</button></div>' +
       '<div class="bd-chat-body" id="bd-chat-body"></div>' +
@@ -243,7 +245,7 @@
     }
     function openPanel() {
       panel.classList.add('open');
-      if (!history.length) bubble('assistant', '안녕하세요 사장님! BidEasy 도우미예요. 요금제·A값·자격 매칭·결제·설치 방법 등 무엇이든 편하게 물어보세요. 🙂');
+      if (!history.length) bubble('assistant', '안녕하세요 사장님! BidEasy 도우미예요. 투찰가 계산·A값·낙찰하한율·설치 방법 등 무엇이든 편하게 물어보세요. 🙂');
       setTimeout(function () { input.focus(); }, 60);
     }
     function closePanel() { panel.classList.remove('open'); }

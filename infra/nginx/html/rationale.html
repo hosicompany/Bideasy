@@ -200,7 +200,8 @@
     .ft p { margin: 0; font-size: 9px; color: var(--sub); line-height: 1.5; }
     .ft-b { text-align: right; white-space: nowrap; }
     .ft-b b { display: block; font-size: 11px; font-weight: 800; color: var(--ink); }
-    .ft-b i { font-style: normal; font-size: 9px; color: var(--sub); }
+    .ft-b i { font-style: normal; font-size: 9px; color: var(--sub); display: block; }
+    .ft-b img { display: block; margin-left: auto; margin-bottom: 2px; }
 
     /* 반응형 */
     @media (max-width: 880px) {
@@ -577,7 +578,7 @@
   + '<footer class="ft">'
   +   '<p>공고 데이터 ' + esc(D.meta.dataCollectedAt) + ' 수집 · 낙찰하한율 ' + esc(D.meta.rateRevisedAt) + ' 개정 반영<br>'
   +     '이 문서는 투찰 판단의 근거를 기록한 것이며, 낙찰 결과를 보장하지 않습니다. 최종 투찰 책임은 투찰자에게 있습니다.</p>'
-  +   '<div class="ft-b"><b>BidEasy</b><i>bideasy.kr</i></div>'
+  +   '<div class="ft-b"><img src="/brand/bideasy-logo.svg" alt="BidEasy" width="86" height="20"><i>bideasy.kr/calculator 에서 무료로 만든 근거서</i></div>'
   + '</footer>';
 
   /* ── 툴바 ───────────────────────────────────────────────── */

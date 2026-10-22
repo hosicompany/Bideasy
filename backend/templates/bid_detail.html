@@ -252,7 +252,7 @@
           const r = await fetch(API_BASE + '/ai/' + encodeURIComponent(BID_NO) + '/analysis', { headers: { Authorization: 'Bearer ' + token } });
           if (r.status === 429) {
             const d = await r.json().catch(()=>({}));
-            aiResult.innerHTML = '<div style="padding:14px;border-radius:12px;background:#FFFBEB;color:#B45309;font-size:14px;">' + (d.detail || '오늘 AI 분석 횟수를 모두 사용했어요.') + ' <a href="/pricing" style="color:#3182F6;font-weight:700;text-decoration:none;">업그레이드 →</a></div>';
+            aiResult.innerHTML = '<div style="padding:14px;border-radius:12px;background:#FFFBEB;color:#B45309;font-size:14px;">' + (d.detail || '오늘 AI 분석 횟수를 모두 사용했어요.') + '</div>';
             aiRun.style.display = 'none'; return;
           }
           if (!r.ok) throw new Error('분석 실패 (' + r.status + ')');
