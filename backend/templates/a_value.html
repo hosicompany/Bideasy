@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A값이란? 공사 금액대별 A값 중앙값과 계산법 | BidEasy</title>
+  <meta name="description" content="A값(사후정산 비목 10종 합계)의 뜻과 계산법, 공사 공고 실측 기준 금액대별 A값 중앙값. 산재·고용보험은 A값이 아닙니다.">
+  <link rel="canonical" href="{{ site_url }}/a-value">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="A값이란? 공사 금액대별 A값 중앙값과 계산법 | BidEasy">
+  <meta property="og:description" content="A값(사후정산 비목 10종 합계)의 뜻과 계산법, 공사 공고 실측 기준 금액대별 A값 중앙값. 산재·고용보험은 A값이 아닙니다.">
+  <meta property="og:url" content="{{ site_url }}/a-value">
+  <meta property="og:site_name" content="BidEasy">
+  {% if google_verification %}<meta name="google-site-verification" content="{{ google_verification }}">{% endif %}
+  {% if naver_verification %}<meta name="naver-site-verification" content="{{ naver_verification }}">{% endif %}
+  <link rel="icon" href="/brand/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>html,body{margin:0;} .rt{border-collapse:collapse;width:100%} .rt th,.rt td{padding:13px 16px;border-bottom:1px solid var(--line);text-align:left;font-size:15px} .rt th{color:var(--muted);font-weight:600;font-size:13px} .rt tr:last-child td{border-bottom:0}</style>
+  <script src="/assets/app.js"></script>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-V4ERRL0NH0"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-V4ERRL0NH0');
+  </script>
+</head>
+<body class="bd" data-theme="light">
+  <div id="nav"></div>
+  <div style="max-width:960px;margin:0 auto;padding:32px 28px 64px;">
+    <span class="eyebrow">A값</span>
+    <h1 style="font-size:30px;font-weight:800;letter-spacing:-0.8px;margin:8px 0 6px;">A값이란? 공사 금액대별 A값 중앙값</h1>
+    <p style="font-size:15px;color:var(--muted);margin:0 0 22px;line-height:1.6;">A값 = 사후정산 비목 10종(국민연금·건강보험·노인장기요양보험료·퇴직공제부금비·산업안전보건관리비·안전관리비·품질관리비·환경보전비·안전점검비·하도급대금지급보증서 발급수수료) 합계입니다. <b>산재·고용보험은 들어가지 않습니다.</b> 투찰률을 곱하지 않고 그대로 더합니다.</p>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table class="rt">
+        <thead><tr><th>기초금액 구간</th><th>표본</th><th>A값 중앙값</th><th>기초금액 대비</th><th></th></tr></thead>
+        <tbody>
+        {% for b in stats.bands %}
+          <tr><td>{{ b.label }}</td><td class="num">{{ "{:,}".format(b.n) }}건</td>
+          {% if b.median_a %}
+            <td class="num" style="font-weight:700;">{{ "{:,}".format(b.median_a) }}원</td><td class="num">{{ b.median_ratio_pct }}%</td>
+            <td><a href="/calculator?ct=CONSTRUCTION&basic={{ b.example_basic }}&a={{ b.median_a }}&a_src=median" style="color:var(--accent);font-weight:700;text-decoration:none;">계산기에 채우기 (추정) →</a></td>
+          {% else %}<td colspan="3" style="color:var(--muted);">표본 부족</td>{% endif %}</tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p style="color:var(--muted);font-size:13px;margin-top:12px;line-height:1.6;">조달청 기초금액 조회 응답의 구성요소 합계로 확인된 공사 공고 {{ "{:,}".format(stats.total) }}건 기준 · 매일 갱신. <b>중앙값은 추정치입니다</b> — 공고마다 실제 A값은 다르니, 공고번호로 계산기에 불러오면 그 공고의 실제 A값이 채워집니다.</p>
+    <div class="card" style="padding:20px;margin-top:20px;"><b>왜 중요한가</b><p style="color:var(--muted);font-size:14px;line-height:1.6;margin:8px 0 0;">투찰가 = (기초금액 − A값) × 투찰률 + A값, 낙찰하한선 = (기초금액 − A값) × 하한율 + A값. A값을 빼먹고 전체에 투찰률을 곱하면 계산한 투찰가와 하한선이 실제와 어긋납니다.</p></div>
+    <p style="margin-top:22px;font-size:14px;"><a href="/calculator" style="color:var(--accent);font-weight:700;text-decoration:none;">투찰가 계산기 →</a> · <a href="/blog/a-value-guide" style="color:var(--accent);text-decoration:none;">A값 자세히 알아보기</a> · <a href="/lower-limits" style="color:var(--accent);text-decoration:none;">낙찰하한율표</a></p>
+  </div>
+  <script>BD.mountNav('calculator');</script>
+</body>
+</html>

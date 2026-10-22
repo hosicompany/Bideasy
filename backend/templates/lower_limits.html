@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>낙찰하한율표 2026 — 공사 금액대별 (3억·10억·50억·100억) | BidEasy</title>
+  <meta name="description" content="2026-01-30 개정 공사 낙찰하한율을 금액대별 표로 정리했습니다. 10억 미만 89.745%, 10억~50억 88.745%, 50억 이상 87.495%. 옛 기준 87.745%와 비교.">
+  <link rel="canonical" href="{{ site_url }}/lower-limits">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="낙찰하한율표 2026 — 공사 금액대별 (3억·10억·50억·100억) | BidEasy">
+  <meta property="og:description" content="2026-01-30 개정 공사 낙찰하한율을 금액대별 표로 정리했습니다. 10억 미만 89.745%, 10억~50억 88.745%, 50억 이상 87.495%. 옛 기준 87.745%와 비교.">
+  <meta property="og:url" content="{{ site_url }}/lower-limits">
+  <meta property="og:site_name" content="BidEasy">
+  {% if google_verification %}<meta name="google-site-verification" content="{{ google_verification }}">{% endif %}
+  {% if naver_verification %}<meta name="naver-site-verification" content="{{ naver_verification }}">{% endif %}
+  <link rel="icon" href="/brand/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css">
+  <style>html,body{margin:0;} .rt{border-collapse:collapse;width:100%} .rt th,.rt td{padding:13px 16px;border-bottom:1px solid var(--line);text-align:left;font-size:15px} .rt th{color:var(--muted);font-weight:600;font-size:13px} .rt tr:last-child td{border-bottom:0}</style>
+  <script src="/assets/app.js"></script>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-V4ERRL0NH0"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-V4ERRL0NH0');
+  </script>
+</head>
+<body class="bd" data-theme="light">
+  <div id="nav"></div>
+  <div style="max-width:960px;margin:0 auto;padding:32px 28px 64px;">
+    <span class="eyebrow">낙찰하한율표</span>
+    <h1 style="font-size:30px;font-weight:800;letter-spacing:-0.8px;margin:8px 0 6px;">낙찰하한율표 — 공사 금액대별 (2026년 개정)</h1>
+    <p style="font-size:15px;color:var(--muted);margin:0 0 22px;line-height:1.6;">예정가격 대비 이 비율 <b>미만</b>으로 투찰하면 무효입니다. 2026-01-30 개정 기준이며, BidEasy 계산기가 쓰는 값과 같은 표에서 바로 가져옵니다.</p>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table class="rt">
+        <thead><tr><th>기초금액 구간</th><th>낙찰하한율 (2026 개정)</th><th>개정 전 (참고)</th><th></th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+          <tr><td>{{ r.label }}</td><td class="num" style="font-weight:700;color:var(--accent);">{{ "%.3f"|format(r.rate) }}%</td><td class="num">{{ "%.3f"|format(r.rate_old) }}%</td>
+          <td><a href="/calculator?ct=CONSTRUCTION&basic={{ r.example_basic }}&tcl={{ "%.3f"|format(r.rate + 0.5) }}" style="color:var(--accent);font-weight:700;text-decoration:none;">이 구간으로 계산 →</a></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:20px;">
+      <div class="card" style="padding:20px;"><b>87.745%는 뭔가요?</b><p style="color:var(--muted);font-size:14px;line-height:1.6;margin:8px 0 0;">2026-01-30 개정 <b>전</b> 10억 미만 공사의 하한율입니다. 지금도 많이 검색되는 숫자지만 <b>현재 10억 미만은 89.745%</b>입니다. 옛 글을 보고 87.745%로 투찰하면 하한선 아래가 될 수 있습니다.</p></div>
+      <div class="card" style="padding:20px;"><b>용역·물품은?</b><p style="color:var(--muted);font-size:14px;line-height:1.6;margin:8px 0 0;">용역은 계약 방식에 따라 다르고, 물품 최저가 입찰은 하한선이 없습니다. 공고문의 "낙찰하한율" 항목을 먼저 확인하세요.</p></div>
+    </div>
+    <p style="margin-top:22px;font-size:14px;"><a href="/calculator" style="color:var(--accent);font-weight:700;text-decoration:none;">투찰가 계산기로 바로 계산하기 →</a> · <a href="/blog/nakchal-hahanyul-guide" style="color:var(--accent);text-decoration:none;">낙찰하한율 자세히 알아보기</a> · <a href="/a-value" style="color:var(--accent);text-decoration:none;">금액대별 A값</a></p>
+    <p style="color:var(--muted);font-size:12.5px;margin-top:14px;">공고마다 명시된 하한율이 우선합니다. BidEasy는 낙찰가를 예측하지 않습니다.</p>
+  </div>
+  <script>BD.mountNav('calculator');</script>
+</body>
+</html>

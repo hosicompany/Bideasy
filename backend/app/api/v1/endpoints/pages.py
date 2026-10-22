@@ -9,7 +9,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -21,7 +21,8 @@ from app.api.v1.endpoints.bids import _get_bid_context_data as get_bid_context
 from app.api.v1.endpoints.bids import _lookup_notice
 from app.services import blog as blog_svc
 from app.services.bid_data_quality import base_is_consistent
-from app.services.lower_limits import resolve_lower_limit_rate
+from app.services.lower_limits import construction_rate_table, resolve_lower_limit_rate
+from app.services import a_value_stats, share_card
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -42,7 +43,7 @@ _KST = timezone(timedelta(hours=9))
 # sitemap 프로토콜 상한은 50,000 URL / 50MB. 5,000 으로 잡아 파일당 크기·재생성
 # 비용을 낮춘다(공고는 매일 갱신되므로 작은 파일이 크롤 효율에 유리).
 SITEMAP_CHUNK = 5000
-_SITEMAP_STATIC_PATHS = ["", "/search", "/calculator", "/guide", "/pricing", "/blog"]
+_SITEMAP_STATIC_PATHS = ["", "/search", "/calculator", "/lower-limits", "/a-value", "/guide", "/pricing", "/blog"]
 _SITEMAP_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600"
 }
@@ -201,6 +202,61 @@ def blog_detail_page(slug: str, request: Request, db: Session = Depends(get_db))
         {"request": request, "post": post, "found": bool(post), "slug": slug, "site_url": SITE_URL},
         status_code=200 if post else 404,
     )
+
+
+# ── 검색어 대응 참고 페이지 (intent/2026-10-21-calculator-first.md §10) ──
+_REF_CACHE = {"Cache-Control": "public, max-age=3600"}
+
+
+@router.get("/lower-limits", response_class=HTMLResponse)
+def lower_limits_page(request: Request):
+    rows = [{**r, "example_basic": int(r["threshold"] * 1.5) or 200_000_000} for r in construction_rate_table()]
+    rows = sorted(rows, key=lambda r: r["threshold"])
+    return templates.TemplateResponse(
+        "lower_limits.html", {"request": request, "rows": rows, "site_url": SITE_URL},
+        headers=_REF_CACHE,
+    )
+
+
+@router.get("/a-value", response_class=HTMLResponse)
+def a_value_page(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(
+        "a_value.html",
+        {"request": request, "stats": a_value_stats.band_medians(db), "site_url": SITE_URL},
+        headers=_REF_CACHE,
+    )
+
+
+# ── 계산 결과 공유 링크 — 카톡·네이버 링크 카드용 og 메타 + 숫자 이미지 ──
+@router.get("/s/calc", response_class=HTMLResponse)
+def share_calc_page(request: Request, ct: str | None = None, basic: str | None = None,
+                    tcl: str | None = None, a: str | None = None):
+    from urllib.parse import urlencode
+    p = share_card.parse(ct, basic, tcl, a)
+    if p is None:
+        return RedirectResponse("/calculator", status_code=302)
+    r = share_card.compute(p)
+    qs = urlencode({"ct": p["ct"], "basic": p["basic"], "tcl": f"{p['tcl']:.2f}", "a": p["a"]})
+    verdict = share_card.verdict(r)
+    title = f"투찰가 ₩{share_card.won(r['predicted'])} — {share_card.summary_line(r)}"
+    desc = (verdict + " · " if verdict else "") + "BidEasy 투찰가·낙찰하한율 계산기에서 숫자를 바꿔 다시 계산해 보세요. 낙찰가를 예측하지 않습니다."
+    return templates.TemplateResponse(
+        "share_calc.html",
+        {"request": request, "site_url": SITE_URL, "title": title, "desc": desc,
+         "share_url": f"{SITE_URL}/s/calc?{qs}", "image_url": f"{SITE_URL}/s/calc.png?{qs}",
+         "target": f"/calculator?{qs}"},
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.get("/s/calc.png")
+def share_calc_image(ct: str | None = None, basic: str | None = None,
+                     tcl: str | None = None, a: str | None = None):
+    p = share_card.parse(ct, basic, tcl, a)
+    if p is None:
+        return Response(status_code=400)
+    png = share_card.render_png(p["ct"], p["basic"], round(p["tcl"], 2), p["a"])
+    return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=604800"})
 
 
 @router.get("/robots.txt", response_class=PlainTextResponse)

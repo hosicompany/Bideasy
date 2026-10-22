@@ -1,14 +1,16 @@
 ---
-title: 투찰가 계산 방법 — 사정률·예가·A값까지 5분 정리 (실수 사례 포함)
+title: 투찰가 계산 방법 5분 정리 (투찰금액 계산기 + 나라장터 입찰 계산기)
 slug: tuchalga-calculation
 date: 2026-06-13
-updated: 2026-06-15
+updated: 2026-10-22
 category: 실무 가이드
 summary: 기초금액에서 안전 투찰가까지 가는 계산 순서를 단계별로 정리하고, 실제로 자주 나오는 계산 실수 3가지를 사례로 짚었습니다.
 cover: /assets/blog/tuchalga-calculation/hero.png
 hero: /assets/blog/tuchalga-calculation/hero.png
 tags: 투찰가, 사정률, 예정가격, A값, 낙찰하한율
 ---
+
+> 바로 계산하려면 → **[투찰금액 계산기 (나라장터 입찰 계산기) 열기](/calculator)** — 기초금액·투찰률·A값을 넣으면 1원 단위까지, 로그인 없이.
 
 투찰가 계산, 엑셀로 하다가 셀 하나 잘못 건드려서 떨어져 본 적 있으신가요? 오늘은 **기초금액 → 안전 투찰가**까지 가는 전체 순서를 단계별로 정리하고, 실무에서 가장 자주 나오는 실수 3가지를 짚어볼게요.
 

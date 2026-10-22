@@ -12,6 +12,8 @@ STATIC_URLS = [
     "https://bideasy.kr",
     "https://bideasy.kr/search",
     "https://bideasy.kr/calculator",
+    "https://bideasy.kr/lower-limits",
+    "https://bideasy.kr/a-value",
     "https://bideasy.kr/guide",
     "https://bideasy.kr/pricing",
     "https://bideasy.kr/blog",

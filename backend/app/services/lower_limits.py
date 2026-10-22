@@ -178,3 +178,15 @@ def get_amount_band(basic_price: float | None) -> str:
 def amount_band_label(code: str) -> str:
     """밴드 코드 → 사람이 읽는 라벨. 모르는 코드는 그대로 돌려준다."""
     return _BAND_LABELS.get(code or "", code or "")
+
+
+def construction_rate_table() -> list[dict]:
+    """공개 하한율표(/lower-limits) 행 — 금액대 밴드 × (개정 후, 개정 전) 요율.
+
+    표를 따로 적지 않고 위 테이블에서 끌어온다. 요율이 바뀌면 페이지도 같이 바뀐다.
+    """
+    old = dict(_CONSTRUCTION_OLD)
+    return [
+        {"threshold": t, "label": label, "rate": rate, "rate_old": old[t]}
+        for (t, rate), (_t, _code, label) in zip(_CONSTRUCTION_2026, AMOUNT_BANDS)
+    ]

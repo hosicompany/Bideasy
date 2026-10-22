@@ -1,0 +1,99 @@
+"""계산 결과 공유 — 링크 미리보기(og:image)용 숫자 카드.
+
+카톡·네이버 블로그/카페 링크 카드는 JS 를 실행하지 않으므로 서버가 숫자를 그린다.
+공식은 웹 계산기(calculator.html render())와 같아야 한다 — 링크를 연 사람이 같은
+숫자를 봐야 하기 때문. 하한선 판정은 공사만 낸다(용역·물품은 계산기도 별도 정책).
+"""
+import io
+import math
+from functools import lru_cache
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
+
+from app.services.lower_limits import get_lower_limit_rate
+
+_FONT_DIR = Path(__file__).resolve().parents[1] / "assets" / "fonts"
+CT_LABEL = {"CONSTRUCTION": "공사", "SERVICE": "용역", "GOODS": "물품"}
+MAX_BASIC = 10_000_000_000_000  # 10조 — 이 위는 오타로 본다
+
+
+def parse(ct: str | None, basic: str | None, tcl: str | None, a: str | None) -> dict | None:
+    """쿼리 파라미터 검증. 하나라도 이상하면 None (카드 대신 기본 계산기로 보낸다)."""
+    try:
+        ct = (ct or "CONSTRUCTION").upper()
+        basic_v = int(float(basic))
+        tcl_v = round(float(tcl), 3)
+        a_v = int(float(a or 0)) if ct != "GOODS" else 0
+    except (TypeError, ValueError):
+        return None
+    if ct not in CT_LABEL or not (0 < basic_v <= MAX_BASIC) or not (50 <= tcl_v <= 100) \
+            or not (0 <= a_v < basic_v):
+        return None
+    return {"ct": ct, "basic": basic_v, "tcl": tcl_v, "a": a_v}
+
+
+def compute(p: dict) -> dict:
+    basic, tcl, a = p["basic"], p["tcl"], p["a"]
+    predicted = math.floor(((basic - a) * (tcl / 100) + a) / 10) * 10
+    out = {**p, "predicted": predicted, "rate": None, "lower": None, "diff": None, "level": None}
+    if p["ct"] == "CONSTRUCTION":
+        rate = get_lower_limit_rate("CONSTRUCTION", basic)
+        lower = round((basic - a) * rate / 100 + a)
+        diff = (predicted - lower) / basic * 100
+        level = "DANGER" if predicted < lower else ("WARN" if diff < 0.5 else "SAFE")
+        out.update(rate=rate, lower=lower, diff=round(diff, 2), level=level)
+    return out
+
+
+def won(n: int) -> str:
+    return f"{n:,}"
+
+
+def eok(n: int) -> str:
+    """5억 · 1,240만 처럼 읽기 쉬운 금액."""
+    if n >= 100_000_000:
+        v = n / 100_000_000
+        return f"{v:g}억" if v == int(v) else f"{v:.2f}".rstrip("0").rstrip(".") + "억"
+    return f"{n // 10_000:,}만"
+
+
+def summary_line(r: dict) -> str:
+    parts = [f"기초금액 {eok(r['basic'])}", f"투찰률 {r['tcl']:.2f}%"]
+    if r["a"]:
+        parts.append(f"A값 {eok(r['a'])}")
+    return " · ".join(parts)
+
+
+def verdict(r: dict) -> str:
+    if r["level"] is None:
+        return ""
+    sign = "+" if r["diff"] >= 0 else ""
+    return {"SAFE": "하한선 이상", "WARN": "하한선 근접", "DANGER": "하한선 미달"}[r["level"]] \
+        + f" {sign}{r['diff']:.2f}%p"
+
+
+@lru_cache(maxsize=256)
+def render_png(ct: str, basic: int, tcl: float, a: int) -> bytes:
+    r = compute({"ct": ct, "basic": basic, "tcl": tcl, "a": a})
+    W, H = 1200, 630
+    img = Image.new("RGB", (W, H), (49, 130, 246))
+    d = ImageDraw.Draw(img)
+    bold = lambda s: ImageFont.truetype(str(_FONT_DIR / "Pretendard-Bold.otf"), s)  # noqa: E731
+    reg = lambda s: ImageFont.truetype(str(_FONT_DIR / "Pretendard-Regular.otf"), s)  # noqa: E731
+    white, soft = (255, 255, 255), (214, 230, 255)
+    d.text((72, 64), f"BidEasy 투찰가 계산 · {CT_LABEL[ct]}", font=bold(36), fill=soft)
+    d.text((72, 150), f"₩{won(r['predicted'])}", font=bold(112), fill=white)
+    d.text((72, 300), summary_line(r), font=reg(40), fill=white)
+    v = verdict(r)
+    if v:
+        color = {"SAFE": (52, 199, 89), "WARN": (255, 149, 0), "DANGER": (255, 59, 48)}[r["level"]]
+        tw = d.textlength(v, font=bold(40))
+        d.rounded_rectangle((72, 380, 72 + tw + 48, 452), radius=36, fill=white)
+        d.text((96, 391), v, font=bold(40), fill=color)
+        d.text((72, 470), f"낙찰하한선 {r['rate']}% · ₩{won(r['lower'])}", font=reg(34), fill=soft)
+    d.rectangle((0, H - 84, W, H), fill=(25, 31, 40))
+    d.text((72, H - 64), "bideasy.kr/calculator  ·  낙찰가를 예측하지 않습니다", font=reg(32), fill=soft)
+    buf = io.BytesIO()
+    img.save(buf, "PNG", optimize=True)
+    return buf.getvalue()
