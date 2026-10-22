@@ -6,6 +6,7 @@
   <title>BidEasy — 무료 투찰가·낙찰하한율 계산기와 나라장터 입찰 참고값</title>
   <meta name="description" content="기초금액과 투찰률만 넣으면 투찰가와 낙찰하한선을 1원 단위로. 2026 개정 낙찰하한율표, 금액대별 A값, 나라장터 공고 검색까지 로그인 없이 무료. 낙찰가는 예측하지 않습니다.">
   <link rel="canonical" href="https://bideasy.kr/">
+  <meta name="google-adsense-account" content="ca-pub-6337758470578530">
   <meta property="og:type" content="website">
   <meta property="og:title" content="BidEasy — 무료 투찰가·낙찰하한율 계산기">
   <meta property="og:description" content="기초금액과 투찰률로 투찰가·낙찰하한선을 바로. 로그인 없이 무료, 낙찰가는 예측하지 않습니다.">
@@ -267,7 +268,10 @@
     }).join('');
 
     // 모의투찰 공개 요약 — 실패·유효 표본 0이면 띠를 숨긴 채 둔다
-    fetch('/api/v1/mock-bidding/public-summary').then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (d) {
+    // 2026-10-22 꺼 둠: 운영 숫자가 계산기가 아니라 참고 전략(active arm)의 성적(누적 무효 778·유효율 94.2%)이라
+    // "이 계산 로직으로"가 사실과 어긋난다. 문구·지표를 다시 정해 사용자 승인 후 true 로.
+    var MOCK_BAND_ON = false;
+    if (MOCK_BAND_ON) fetch('/api/v1/mock-bidding/public-summary').then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (d) {
       var c = d.cumulative || {}, w = d.last_7d || {};
       if (!c.valid_judged_notices) return;
       var set = function (id, v) { document.getElementById(id).textContent = v; };

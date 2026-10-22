@@ -34,3 +34,19 @@ def test_home_ad_slots_stay_hidden_until_adsense():
     src = (_HTML / "index.html").read_text(encoding="utf-8")
     slots = re.findall(r'<div class="ad-slot"[^>]*>', src)
     assert slots and all(" hidden" in s for s in slots)
+
+
+def test_adsense_ownership_without_ad_script():
+    """애드센스 소유권 확인은 메타 태그 + ads.txt 로만 — 승인·배치 결정 전엔 광고 스크립트를 넣지 않는다."""
+    meta = '<meta name="google-adsense-account" content="ca-pub-6337758470578530">'
+    tpl = _HTML.parents[2] / "backend" / "templates"
+    for page in (_HTML / "index.html", _HTML / "calculator.html", tpl / "blog_detail.html",
+                 tpl / "lower_limits.html", tpl / "bid_detail.html"):
+        src = page.read_text(encoding="utf-8")
+        assert meta in src, f"{page.name} 에 애드센스 메타 태그 없음"
+        assert "adsbygoogle" not in src, f"{page.name} 에 광고 스크립트가 들어감 — 승인 후 별도 결정"
+    assert (_HTML / "ads.txt").read_text().strip() == "google.com, pub-6337758470578530, DIRECT, f08c47fec0942fa0"
+
+
+def test_mock_band_is_off():
+    assert "var MOCK_BAND_ON = false;" in (_HTML / "index.html").read_text(encoding="utf-8")
