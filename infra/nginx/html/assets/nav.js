@@ -22,7 +22,7 @@
             <li><a href="/calculator" class="bd-nav-link" data-path="/calculator">계산기</a></li>
             <li><a href="/blog" class="bd-nav-link" data-path="/blog">블로그</a></li>
             <li><a href="/guide" class="bd-nav-link" data-path="/guide">사용 가이드</a></li>
-            <li><a href="/pricing" class="bd-nav-link" data-path="/pricing">요금제</a></li>
+            <li><a href="/lower-limits" class="bd-nav-link" data-path="/lower-limits">하한율표</a></li>
           </ul>
           <div class="bd-nav-cta" id="bd-nav-cta">
             <!-- 로그인 상태에 따라 동적 -->
@@ -68,10 +68,9 @@
     if (!cta) return;
 
     if (!user) {
-      // 비로그인
+      // 비로그인 — 2026-10 유료·신규 가입 잠정 중단: 로그인·체험 대신 무료 계산기
       cta.innerHTML = `
-        <a href="/login" class="bd-nav-link" data-path="/login">로그인</a>
-        <a href="/signup" class="bd-nav-btn">14일 체험 시작</a>
+        <a href="/calculator" class="bd-nav-btn">무료 계산기</a>
       `;
     } else {
       // 로그인됨

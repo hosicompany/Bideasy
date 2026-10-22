@@ -43,7 +43,7 @@ _KST = timezone(timedelta(hours=9))
 # sitemap 프로토콜 상한은 50,000 URL / 50MB. 5,000 으로 잡아 파일당 크기·재생성
 # 비용을 낮춘다(공고는 매일 갱신되므로 작은 파일이 크롤 효율에 유리).
 SITEMAP_CHUNK = 5000
-_SITEMAP_STATIC_PATHS = ["", "/search", "/calculator", "/lower-limits", "/a-value", "/guide", "/pricing", "/blog"]
+_SITEMAP_STATIC_PATHS = ["", "/search", "/calculator", "/lower-limits", "/a-value", "/guide", "/blog"]
 _SITEMAP_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600"
 }
