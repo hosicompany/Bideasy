@@ -169,11 +169,12 @@
       <div class="card sticky-col" id="result" style="padding:24px;position:sticky;top:84px;"></div>
     </div>
 
-    <!-- 모의투찰 신뢰 띠 — 공개 요약 API, 유효 표본이 없으면 숨긴 채 둔다(낙찰률·등수는 API 가 만들지 않는다) -->
+    <!-- 모의투찰 띠(B2, 2026-10-22 승인) — 성적이 아니라 "매일 실제 개찰 결과로 검증 중"이라는 운영량만 보여 준다.
+         무효 건수 같은 성적은 계산기가 아니라 참고 전략의 것이라 홈에 쓰지 않는다. 지난 7일 채점이 0이면 숨긴 채 둔다. -->
     <div id="mock-live" style="display:none;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;margin-top:20px;border-radius:14px;background:var(--accent-soft);font-size:13.5px;">
-      <span style="font-weight:800;color:var(--accent);">📊 이 계산 로직으로 모의투찰</span>
-      <span>지난 7일 등록 <b class="num" id="mock-reg">—</b>건 · 채점 <b class="num" id="mock-scored">—</b>건 · 누적 하한선 미달(무효) <b class="num" id="mock-dropout" style="color:var(--safe);">—</b>건 · 누적 유효율 <b class="num" id="mock-valid" style="color:var(--safe);">—</b></span>
-      <span style="margin-left:auto;font-size:12px;color:var(--muted);">매주 월 갱신 · 반사실 재구성, 낙찰가 예측 아님</span>
+      <span style="font-weight:800;color:var(--accent);">📊 BidEasy는 매일 실제 개찰 결과로 검증해요</span>
+      <span>지난 7일 공고 <b class="num" id="mock-reg">—</b>건을 따라가 개찰 결과 <b class="num" id="mock-scored">—</b>건으로 하한선·사정률을 대조</span>
+      <span style="margin-left:auto;font-size:12px;color:var(--muted);">매주 월 갱신 · 낙찰가 예측 아님</span>
     </div>
 
     <!-- 광고 자리 A (결과 아래). 애드센스 승인 전엔 비워 둔다 — hidden 이라 높이 0 -->
@@ -197,7 +198,7 @@
       <div style="display:flex;flex-direction:column;gap:10px;">
         <a class="card home-post" href="/blog/nakchal-hahanyul-guide"><span class="t">낙찰하한율이란? 87.745%의 의미와 투찰가 계산법 총정리</span><span class="go">이 숫자로 바로 계산 →</span></a>
         <a class="card home-post" href="/blog/a-value-guide"><span class="t">A값이란? 투찰가 계산에서 절대 빠뜨리면 안 되는 이유</span><span class="go">이 숫자로 바로 계산 →</span></a>
-        <a class="card home-post" href="/blog/knowledge-k11"><span class="t">기초금액·예정가격·사정률, 3분 안에 구분하기</span><span class="go">이 숫자로 바로 계산 →</span></a>
+        <a class="card home-post" href="/blog/knowledge-k11"><span class="t">기초금액·예정가격·사정률 차이 — 사정금액 계산까지 3분 정리</span><span class="go">이 숫자로 바로 계산 →</span></a>
         <a class="card home-post" href="/blog/tuchalga-calculation"><span class="t">투찰가 계산 방법 5분 정리 (투찰금액 계산기 + 나라장터 입찰 계산기)</span><span class="go">이 숫자로 바로 계산 →</span></a>
         <a href="/blog" style="font-size:13.5px;color:var(--accent);font-weight:700;text-decoration:none;margin-top:4px;">블로그 전체 보기 →</a>
       </div>
@@ -267,18 +268,13 @@
       return '<details><summary>' + q[0] + '</summary><div class="fa">' + q[1] + '</div></details>';
     }).join('');
 
-    // 모의투찰 공개 요약 — 실패·유효 표본 0이면 띠를 숨긴 채 둔다
-    // 2026-10-22 꺼 둠: 운영 숫자가 계산기가 아니라 참고 전략(active arm)의 성적(누적 무효 778·유효율 94.2%)이라
-    // "이 계산 로직으로"가 사실과 어긋난다. 문구·지표를 다시 정해 사용자 승인 후 true 로.
-    var MOCK_BAND_ON = false;
+    // 모의투찰 운영량(B2) — 공개 요약 API 의 지난 7일 등록·채점 수만 쓴다. 실패·0건이면 띠를 숨긴 채 둔다
+    var MOCK_BAND_ON = true;
     if (MOCK_BAND_ON) fetch('/api/v1/mock-bidding/public-summary').then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (d) {
-      var c = d.cumulative || {}, w = d.last_7d || {};
-      if (!c.valid_judged_notices) return;
-      var set = function (id, v) { document.getElementById(id).textContent = v; };
-      set('mock-reg', (w.registered_notices || 0).toLocaleString('ko-KR'));
-      set('mock-scored', (w.scored_notices || 0).toLocaleString('ko-KR'));
-      set('mock-dropout', (c.dropout || 0).toLocaleString('ko-KR'));
-      set('mock-valid', c.valid_rate_pct == null ? '—' : c.valid_rate_pct.toFixed(1) + '%');
+      var w = d.last_7d || {};
+      if (!w.scored_notices) return;
+      document.getElementById('mock-reg').textContent = (w.registered_notices || 0).toLocaleString('ko-KR');
+      document.getElementById('mock-scored').textContent = w.scored_notices.toLocaleString('ko-KR');
       document.getElementById('mock-live').style.display = 'flex';
     }).catch(function () {});
 

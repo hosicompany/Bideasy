@@ -48,5 +48,9 @@ def test_adsense_ownership_without_ad_script():
     assert (_HTML / "ads.txt").read_text().strip() == "google.com, pub-6337758470578530, DIRECT, f08c47fec0942fa0"
 
 
-def test_mock_band_is_off():
-    assert "var MOCK_BAND_ON = false;" in (_HTML / "index.html").read_text(encoding="utf-8")
+def test_mock_band_shows_volume_not_performance():
+    """띠(B2)는 '매일 검증 중' 운영량만 — 계산기 성적처럼 읽히는 문구·무효/유효율 수치는 홈에 쓰지 않는다."""
+    src = (_HTML / "index.html").read_text(encoding="utf-8")
+    assert "BidEasy는 매일 실제 개찰 결과로 검증해요" in src
+    for banned in ("이 계산 로직으로", "mock-dropout", "mock-valid", "유효율"):
+        assert banned not in src, f"홈 띠에 성적 표기 재유입: {banned}"
