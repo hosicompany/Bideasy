@@ -62,7 +62,7 @@ sitemap.xml 실측(2026-07-27): 총 61 URL
 
 ### 1.5 전환 계측이 클릭에서 끊긴다 (전환 병목 ②)
 
-- GA4 이벤트는 `cta_*`·`calc_demo_use`·`lead_*` 등 **클릭 단계까지만** 있다. 가입 이후 "제품을 실제로 써서 가치를 봤는가"(활성화)를 나타내는 이벤트가 없다.
+- GA4 이벤트는 `cta_*`·`calculate`·`lead_*` 등이 있다. `calculate`는 계산기에서 사용자가 직접 입력을 바꾼 뒤 유효 결과가 그려질 때(페이지당 1회·1.5s 디바운스) 보낸다. 가입 이후 "제품을 실제로 써서 가치를 봤는가"(활성화)를 나타내는 DB/GA4 이벤트는 여전히 부족하다.
 - 특히 PR #28로 **프로필 미기재 = UNKNOWN(판정 불가)**가 됐다 → 면허·지역을 안 채운 계정은 제품 핵심 가치(자격 판정)가 아예 안 뜬다. **프로필 완성률이 전환의 선행지표인데 계측·유도 장치가 없다.**
 
 ---
@@ -200,7 +200,7 @@ sitemap.xml 실측(2026-07-27): 총 61 URL
 | 단계 | 이벤트/소스 | 현재 상태 |
 |---|---|---|
 | ① 방문(채널별) | GA4 + first-touch UTM(`bd_attr`) | ✅ |
-| ② 무가입 가치 사용 | `calc_demo_use` · `lead_diagnose` | ✅ |
+| ② 무가입 가치 사용 | `calculate` · `lead_diagnose` | ✅ |
 | ③ 리드 캡처 | `lead_capture` + `Lead` 행 | ✅ |
 | ④ 가입 | `users.signup_source` + `Lead.converted_user_id` | ✅ (PR #27) |
 | ⑤ 프로필 완성 | **신규** `profile_complete` (GA4+DB) | ❌ |
@@ -209,6 +209,20 @@ sitemap.xml 실측(2026-07-27): 총 61 URL
 
 - **주간 대시보드 1장**: 기존 `/admin/stats/attribution` + `/admin/leads/stats`에 ⑤⑥을 더해 **채널 × 단계 전환율** 표 하나로 통합. 매주 같은 시각에 같은 표를 본다.
 - **Week 0에 베이스라인을 반드시 기록**한다(서치콘솔 노출/클릭, GA4 세션, 가입 수, 체험 수, 결제 수). 기록 없이 시작하면 이후 어떤 개선도 판정 불가.
+
+### GA4 `calculate` (계산기 — `assets/calc.js`)
+
+| 파라미터 | 값 | 비고 |
+|---|---|---|
+| `contract_type` | `CONSTRUCTION` · `SERVICE` · `GOODS` | `calc_share_link` 와 동일 키 |
+| `result_level` | `SAFE` · `WARN` · `DANGER` | 화면 안전 등급 |
+| `input_source` | `manual` · `preset` · `notice_prefill` · `share_link` | 유입·마지막 조작 맥락(원값 없음) |
+| `page_type` | `home` · `calculator` | `location.pathname` |
+| `has_a_value` | `true` · `false` | A값 입력 여부만 |
+| `amount_band` | `lt_100m` · `100m_1b` · `1b_5b` · `5b_plus` | 기초금액 구간(1억·10억·50억 경계) |
+| `debug_mode` | `true` | URL `?ga_debug=1` 일 때만 |
+
+최초 자동 렌더·`?no=` 프리필만으로는 전송하지 않는다. 페이지뷰당 1회.
 
 ---
 
