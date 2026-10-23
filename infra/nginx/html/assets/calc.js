@@ -25,6 +25,66 @@
     if (Number.isFinite(qn('llr')) && qn('llr') >= 50 && qn('llr') <= 100) st.noticeRate = qn('llr');
     if (Number.isFinite(qn('a')) && qn('a') >= 0 && qn('a') < st.basic) { st.aval = Math.round(Number(qp.get('a'))); st.aSrc = qp.get('a_src') === 'median' ? 'median' : ''; }
 
+    // GA4 calculate — 페이지당 1회, 사용자 변경 후 1.5s 디바운스(금액·A값 등 원값 미전송)
+    var hadShareQuery = qp.has('basic') || qp.has('tcl') || qp.has('a');
+    var noticePrefillActive = false;
+    var userTouched = false;
+    var lastUserKind = 'manual';
+    var calculateDebounce = null;
+    var AMOUNT_100M = 100000000;
+    var AMOUNT_1B = 1000000000;
+    var AMOUNT_5B = 5000000000;
+
+    function amountBand(basic) {
+      if (basic < AMOUNT_100M) return 'lt_100m';
+      if (basic < AMOUNT_1B) return '100m_1b';
+      if (basic < AMOUNT_5B) return '1b_5b';
+      return '5b_plus';
+    }
+
+    function pageTypeForEvent() {
+      var p = location.pathname.replace(/\/$/, '') || '/';
+      return (p === '/' || p.endsWith('/index.html')) ? 'home' : 'calculator';
+    }
+
+    function inputSourceForEvent() {
+      if (lastUserKind === 'preset') return 'preset';
+      if (noticePrefillActive) return 'notice_prefill';
+      if (hadShareQuery) return 'share_link';
+      return 'manual';
+    }
+
+    function sendCalculateEvent(level) {
+      if (typeof window.gtag !== 'function' || !level || st.basic <= 0) return;
+      var params = {
+        contract_type: st.ct,
+        result_level: level,
+        input_source: inputSourceForEvent(),
+        page_type: pageTypeForEvent(),
+        has_a_value: st.ct !== 'GOODS' && st.aval > 0,
+        amount_band: amountBand(st.basic)
+      };
+      if (qp.get('ga_debug') === '1') params.debug_mode = true;
+      window.gtag('event', 'calculate', params);
+    }
+
+    function scheduleCalculateEvent() {
+      if (!userTouched || window.__bideasyCalcCalculateSent) return;
+      clearTimeout(calculateDebounce);
+      calculateDebounce = setTimeout(function () {
+        if (window.__bideasyCalcCalculateSent || st.basic <= 0) return;
+        sendCalculateEvent(st._lastLevel);
+        window.__bideasyCalcCalculateSent = true;
+      }, 1500);
+    }
+
+    function userRender(kind) {
+      userTouched = true;
+      if (kind) lastUserKind = kind;
+      render();
+      scheduleCalculateEvent();
+    }
+
     function shareUrl() {
       return 'https://bideasy.kr/s/calc?ct=' + st.ct + '&basic=' + st.basic + '&tcl=' + st.tcl.toFixed(3) + '&a=' + (st.ct === 'GOODS' ? 0 : st.aval) + (st.aSrc === 'median' ? '&a_src=median' : '') + (st.noticeRate ? '&llr=' + st.noticeRate : '');
     }
@@ -42,6 +102,7 @@
       var lower = Math.round(a > 0 ? (st.basic - a) * rate / 100 + a : st.basic * rate / 100);
       var diff = st.basic ? ((predicted - lower) / st.basic) * 100 : 0;
       var level = predicted < lower ? 'DANGER' : (diff < 0.5 ? 'WARN' : 'SAFE');
+      st._lastLevel = level;
       var danger = level === 'DANGER';
       var pos = Math.max(0.05, Math.min(0.96, (diff + 1.5) / 4));
       var meta = { SAFE: ['하한선 이상', 'safe', '입력값 기준 계산 결과가 낙찰하한선보다 높습니다. 최종 투찰 전 공고 원문과 입력값을 확인하세요.'], WARN: ['하한선 근접 — 주의', 'warn', '입력값 기준 계산 결과가 하한선과 가깝습니다. 공고 원문과 투찰률을 다시 확인하세요.'], DANGER: ['하한선 미달', 'danger', '입력값 기준 계산 결과가 낙찰하한선 아래입니다. 공고 원문을 확인하도록 복사를 막았어요.'] }[level];
@@ -57,7 +118,7 @@
         var on = Math.abs(st.tcl - r) < 0.005, isL = Math.abs(r - rate) < 0.005;
         return '<button class="btn btn-ghost btn-sm preset" data-r="' + r.toFixed(3) + '" style="flex:1;padding:7px 0;font-family:var(--font-mono);font-weight:500;border-color:' + (on ? 'var(--accent)' : isL ? 'var(--danger)' : 'var(--line-2)') + ';color:' + (on ? 'var(--accent)' : isL ? 'var(--danger)' : 'var(--muted)') + ';">' + r.toFixed(2) + '</button>';
       }).join('');
-      document.querySelectorAll('.preset').forEach(function (b) { b.addEventListener('click', function () { st.tcl = Number(b.getAttribute('data-r')); document.getElementById('tcl').value = st.tcl; render(); }); });
+      document.querySelectorAll('.preset').forEach(function (b) { b.addEventListener('click', function () { st.tcl = Number(b.getAttribute('data-r')); document.getElementById('tcl').value = st.tcl; userRender('preset'); }); });
 
       var gauge = '<div style="position:relative;height:8px;border-radius:4px;overflow:hidden;background:linear-gradient(90deg,var(--danger-soft) 0 37.5%,var(--safe-soft) 37.5% 100%);"></div>' +
         '<div style="position:relative;height:0;"><div style="position:absolute;left:37.5%;top:-14px;width:2px;height:16px;background:var(--ink);border-radius:1px;"></div>' +
@@ -98,12 +159,12 @@
         document.querySelectorAll('#seg button').forEach(function (x) { x.classList.remove('active'); });
         b.classList.add('active'); st.ct = b.getAttribute('data-ct'); st.noticeRate = null;
         document.getElementById('aval-wrap').style.display = st.ct === 'GOODS' ? 'none' : 'block';
-        st.copied = false; render();
+        st.copied = false; userRender('manual');
       });
     });
-    document.getElementById('basic').addEventListener('input', function (e) { st.basic = num('basic'); st.copied = false; render(); });
-    document.getElementById('aval').addEventListener('input', function () { st.aval = num('aval'); st.aSrc = ''; st.copied = false; render(); });
-    document.getElementById('tcl').addEventListener('input', function (e) { st.tcl = Number(e.target.value); st.copied = false; render(); });
+    document.getElementById('basic').addEventListener('input', function () { st.basic = num('basic'); st.copied = false; userRender('manual'); });
+    document.getElementById('aval').addEventListener('input', function () { st.aval = num('aval'); st.aSrc = ''; st.copied = false; userRender('manual'); });
+    document.getElementById('tcl').addEventListener('input', function (e) { st.tcl = Number(e.target.value); st.copied = false; userRender('manual'); });
     document.getElementById('basic').value = BD.won(st.basic);
     document.getElementById('aval').value = BD.won(st.aval);
     document.getElementById('tcl').value = st.tcl;
@@ -116,6 +177,7 @@
     if (no) {
       fetch(API_BASE + '/bids/' + encodeURIComponent(no) + '/context').then(function (r) { return r.ok ? r.json() : null; }).then(function (ctx) {
         if (!ctx || ctx.found === false) return;
+        noticePrefillActive = true;
         // 기초금액 칸에는 확인된 기초금액만 넣는다 — 추정가격(estimated_price)을 넣으면 하한선이 약 9% 낮아진다(함정 22)
         st.noticeRate = (ctx.lower_limit_rate >= 50 && ctx.lower_limit_rate <= 100) ? ctx.lower_limit_rate : null;
         if (ctx.basis_amount) { st.basic = Math.round(ctx.basis_amount); document.getElementById('basic').value = BD.won(st.basic); }
