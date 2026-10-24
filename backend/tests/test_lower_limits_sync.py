@@ -67,7 +67,7 @@ class TestLowerLimitsWebSync:
         assert "BD_LOWER.fromBasis" in calc_js and "BD_LOWER.construction(" not in calc_js
         for name in ("calculator.html", "index.html"):
             src = (html_dir / name).read_text(encoding="utf-8")
-            assert '<script src="/assets/calc.js"></script>' in src, f"{name} 이 공용 계산기 스크립트를 안 불러요"
+            assert re.search(r'<script src="/assets/calc\.js(\?v=\d+)?"></script>', src), f"{name} 이 공용 계산기 스크립트를 안 불러요"
         for name in ("calculator.html", "index.html", "rationale.html"):
             src = (html_dir / name).read_text(encoding="utf-8")
             assert "BD_LOWER.construction(" not in src, f"{name} 이 기초금액으로 추정가격 티어를 찾아요"
