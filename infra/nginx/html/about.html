@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BidEasy 소개 — 무료 나라장터 투찰가·낙찰하한율 계산기</title>
+  <meta name="description" content="BidEasy는 나라장터 입찰 전에 투찰가·낙찰하한선·A값을 무료로 확인하는 계산기 사이트입니다. 무엇을 하고 무엇을 하지 않는지, 데이터 출처와 운영 정보를 안내합니다.">
+  <link rel="canonical" href="https://bideasy.kr/about">
+  <meta name="google-adsense-account" content="ca-pub-6337758470578530">
+  <link rel="icon" href="/brand/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css?v=20261025">
+  <style>
+    html,body{margin:0;}
+    .doc h2{font-size:18px;font-weight:800;letter-spacing:-0.4px;margin:36px 0 12px;}
+    .doc p,.doc li{font-size:14.5px;color:var(--ink-2);line-height:1.8;}
+    .doc ul{margin:8px 0;padding-left:20px;}
+    .doc li{margin:4px 0;}
+    .doc a{color:var(--accent);}
+  </style>
+  <script src="/assets/app.js?v=20261025"></script>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-V4ERRL0NH0"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-V4ERRL0NH0');
+  </script>
+</head>
+<body class="bd" data-theme="light">
+  <div id="nav"></div>
+
+  <div class="doc" style="max-width:760px;margin:0 auto;padding:40px 28px 72px;">
+    <span class="eyebrow">About</span>
+    <h1 style="font-size:30px;font-weight:800;letter-spacing:-0.8px;margin:10px 0 0;">BidEasy 소개</h1>
+    <p style="margin-top:14px;">BidEasy는 나라장터(조달청 전자조달시스템) 입찰에 참여하는 중소 시공사가 <b>투찰 전에 숫자를 한 번 더 확인</b>할 수 있도록 만든 무료 계산기 사이트입니다. 가입이나 로그인 없이 쓸 수 있어요.</p>
+
+    <h2>무엇을 할 수 있나요</h2>
+    <ul>
+      <li><a href="/calculator">투찰가 계산기</a> — 기초금액·투찰률·A값을 넣으면 투찰가와 낙찰하한선을 1원 단위로 계산해요.</li>
+      <li><a href="/lower-limits">낙찰하한율표</a> — 공사 금액대별 낙찰하한율을 한 표로 정리했어요.</li>
+      <li><a href="/a-value">A값 참고값</a> — 실제 공고에 공개된 A값을 금액대별로 모아 보여드려요.</li>
+      <li><a href="/search">공고 검색</a> — 나라장터 공고를 찾아 계산기로 바로 불러올 수 있어요.</li>
+      <li><a href="/blog">블로그</a> — 기초금액·예정가격·사정률 같은 입찰 기초 개념을 쉽게 풀어 써요.</li>
+    </ul>
+
+    <h2>하지 않는 것</h2>
+    <ul>
+      <li>낙찰가를 예측하지 않습니다. 예정가격은 복수예비가격 추첨으로 정해지는 값이라 미리 알 수 없어요.</li>
+      <li>낙찰 가능성이나 순위를 계산하지 않습니다.</li>
+      <li>계산 결과로 낙찰을 보장하지 않습니다. 최종 투찰 금액은 공고문과 나라장터 화면에서 직접 확인해 주세요.</li>
+    </ul>
+
+    <h2>데이터 출처</h2>
+    <ul>
+      <li>공고·기초금액·개찰 결과는 공공데이터포털(data.go.kr)이 제공하는 조달청 나라장터 OpenAPI에서 가져와요.</li>
+      <li>낙찰하한율은 공고에 적힌 값을 먼저 쓰고, 없으면 현행 기준표의 추정가격 금액대를 적용해요.</li>
+      <li>틀린 숫자를 발견하시면 <a href="/contact">문의하기</a>로 알려 주세요. 확인 후 바로 고칩니다.</li>
+    </ul>
+
+    <h2>운영 방식</h2>
+    <p>BidEasy는 무료로 운영되며, 운영비 마련을 위해 사이트에 광고를 게재할 수 있습니다. 광고와 개인정보 처리 방식은 <a href="/privacy">개인정보처리방침</a>에서 안내해요. BidEasy는 조달청·나라장터의 공식 또는 제휴 서비스가 아닌 민간 서비스입니다.</p>
+
+    <h2>운영 정보</h2>
+    <ul>
+      <li>상호: 호시(HOSI)</li>
+      <li>사업자등록번호: 420-29-00113 · 통신판매업신고 2022-서울마포-0517호</li>
+      <li>주소: 서울시 마포구 마포대로 92, A동 3층</li>
+      <li>이메일: <a href="mailto:support@bideasy.kr">support@bideasy.kr</a></li>
+    </ul>
+  </div>
+
+  <script>window.BD.mountNav();</script>
+</body>
+</html>

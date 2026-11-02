@@ -44,10 +44,6 @@
     <h1 style="font-size:30px;font-weight:800;letter-spacing:-0.8px;margin:10px 0 0;">이용약관</h1>
     <p style="font-size:13.5px;color:var(--faint);margin-top:8px;">최종 개정일 2026-06-09 · 시행일 2026-06-09</p>
 
-    <div class="panel" style="padding:14px 16px;margin-top:18px;display:flex;gap:10px;align-items:flex-start;">
-      <span style="color:var(--warn);flex-shrink:0;display:flex;margin-top:1px;" id="note-ic"></span>
-      <p style="font-size:13px;color:var(--muted);line-height:1.6;margin:0;">본 약관은 디자인 적용을 위한 <b style="color:var(--ink-2);">예시 템플릿</b>입니다. 실제 시행 전 법무 검토를 받아 확정하세요.</p>
-    </div>
 
     <div class="card toc" style="padding:16px 22px;margin-top:20px;">
       <div class="micro" style="margin-bottom:6px;">목차</div>
@@ -59,7 +55,6 @@
   <script>
   (function () {
     var BD = window.BD; BD.mountNav();
-    document.getElementById('note-ic').innerHTML = BD.icon('alert', 15, 2);
 
     var SECTIONS = [
       ['제1조 (목적)', '<p>본 약관은 호시(HOSI, 이하 "회사")가 제공하는 BidEasy 및 관련 제반 서비스(이하 "서비스")의 이용과 관련하여 회사와 회원 간의 권리·의무 및 책임사항, 이용 조건 및 절차를 규정함을 목적으로 합니다.</p>'],
