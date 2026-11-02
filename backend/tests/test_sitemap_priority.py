@@ -16,6 +16,8 @@ STATIC_URLS = [
     "https://bideasy.kr/a-value",
     "https://bideasy.kr/guide",
     "https://bideasy.kr/blog",
+    "https://bideasy.kr/about",
+    "https://bideasy.kr/contact",
 ]
 
 
