@@ -7,7 +7,9 @@
   <title>{{ title }} - BidEasy 입찰공고</title>
   <meta name="description" content="{{ contract_type_label }} 입찰공고 · {{ organization or '공고기관' }}{% if region %} · {{ region }}{% endif %} · 기초금액 {{ "{:,}".format(basic_price) }}원. 투찰가 계산·AI 분석은 BidEasy.">
   <link rel="canonical" href="{{ site_url }}/bid/{{ bid_no }}">
-  {% if not found %}<meta name="robots" content="noindex">{% endif %}
+  {# 공고 상세는 나라장터 공공데이터를 옮긴 페이지라 구글엔 색인하지 않는다(애드센스 '가치가 별로 없는 콘텐츠' 대응, 2026-11).
+     네이버 유입은 유지하려고 googlebot 에만 건다. #}
+  {% if not found %}<meta name="robots" content="noindex">{% else %}<meta name="googlebot" content="noindex, follow">{% endif %}
   <!-- Open Graph -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="{{ title }} - BidEasy">
@@ -172,11 +174,10 @@
       <div class="result" id="calc-result"></div>
     </div>
 
-    <div class="card" id="ai-card">
+    <div class="card" id="ai-card" style="display:none;">
       <h2>🤖 AI 분석</h2>
       <div id="ai-cta">
         <div class="muted">자격 검토 · 핵심 팁 · 위험 요소를 AI가 분석합니다.</div>
-        <a id="ai-login" href="/login?next=/bid/{{ bid_no }}" style="display:none;margin-top:10px;background:#3182F6;color:#fff;text-decoration:none;padding:11px 18px;border-radius:12px;font-weight:700;font-size:14px;">로그인하고 AI 분석</a>
         <button id="ai-run" style="display:none;margin-top:10px;background:#3182F6;color:#fff;border:none;padding:11px 18px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;">AI 분석 실행</button>
       </div>
       <div id="ai-result" style="margin-top:14px;"></div>
@@ -240,12 +241,13 @@
 
     // AI 분석 패널 (온디맨드 — 레이트리밋 절약)
     (function aiPanel(){
-      const aiLogin = document.getElementById('ai-login');
       const aiRun = document.getElementById('ai-run');
       const aiResult = document.getElementById('ai-result');
       if (!aiRun) return;
       const token = getToken();
-      if (!token) { if (aiLogin) aiLogin.style.display = 'inline-block'; return; }
+      // 로그인은 닫혀 있다(무료 계산기 전환) — 비로그인에겐 카드 자체를 숨겨 막힌 버튼을 보이지 않는다.
+      if (!token) return;
+      document.getElementById('ai-card').style.display = '';
       aiRun.style.display = 'inline-block';
       aiRun.addEventListener('click', async () => {
         aiRun.disabled = true; aiRun.textContent = 'AI 분석 중...';
