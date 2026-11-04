@@ -123,6 +123,35 @@ def test_bid_page_renders_active_notice_without_closed_notice(
     assert "마감된 공고" not in response.text
 
 
+def test_bid_page_is_noindex_for_google_only_and_hides_login_wall(
+    client, db_session, frozen_now, no_remote_fetch
+):
+    """공고 상세는 구글에만 색인 제외(애드센스 '가치가 별로 없는 콘텐츠' 대응) — 네이버 유입은 지킨다.
+    로그인을 닫았으므로 비로그인에게 '로그인하고 AI 분석' 막힌 버튼을 보이지 않는다."""
+    db_session.query(models.Notice).delete()
+    db_session.add(_notice("SSR-GBOT-200", days_left=5, title="구글 제외 공고"))
+    db_session.flush()
+
+    html = client.get("/bid/SSR-GBOT-200").text
+
+    assert '<meta name="googlebot" content="noindex, follow">' in html
+    assert 'name="robots" content="noindex"' not in html  # 네이버(Yeti) 등은 그대로 색인
+    assert "로그인하고 AI 분석" not in html
+    assert 'id="ai-card" style="display:none;"' in html
+
+
+def test_static_unknown_paths_return_404_not_home():
+    """없는 주소가 홈을 200 으로 돌려주면 중복 페이지가 무한히 생긴다(soft-404)."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2] / "infra" / "nginx"
+    conf = (root / "conf.d" / "default.conf").read_text(encoding="utf-8")
+    assert "try_files $uri $uri.html $uri/ /index.html;" not in conf
+    assert "try_files $uri $uri.html $uri/ =404;" in conf
+    assert "error_page 404 /404.html;" in conf
+    page = (root / "html" / "404.html").read_text(encoding="utf-8")
+    assert '<meta name="robots" content="noindex">' in page
+
+
 
 # ── 하한율 금액대는 추정가격 기준 (2026-10-22) ──
 def _llp(html):
