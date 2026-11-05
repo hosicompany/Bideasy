@@ -323,7 +323,7 @@ Bideasy/
 | 20:00 | `verification.daily_verify_predictions` | 예측 검증 |
 | 20:30 | `mock_bid.score` | 모의투찰 채점·등수 백필 |
 | 月 04:00 | `autocalibrate.recalibrate_strategy` | 전략 재보정 |
-| 月 08:00 | `content.weekly_data_story` | 데이터스토리 주간 초안(유예 `publish_at` 부여) |
+| ~~月 08:00~~ | ~~`content.weekly_data_story`~~ | **2026-11-05 중지** — 틀이 같은 주간 결산 글 12편이 애드센스 '가치가 별로 없는 콘텐츠' 위험. 태스크 코드는 남김 |
 | 月 21:00 | `mock_bid.weekly_report` | 모의투찰 게이트·표본품질·오답노트 성적표 |
 | 10:10 | `trial.send_onboarding_sequence` | 체험 온보딩 광고 3종(D1·D3·D7, 확인자만) |
 | 火 08:00 | `nurture.send_lead_matches` | 리드 주간 신규 매칭(광고, 확인자만) |
