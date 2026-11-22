@@ -25,7 +25,7 @@
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/theme.css?v=20261025">
-  <style>html,body{margin:0;} .rt{border-collapse:collapse;width:100%} .rt th,.rt td{padding:13px 16px;border-bottom:1px solid var(--line);text-align:left;font-size:15px} .rt th{color:var(--muted);font-weight:600;font-size:13px} .rt tr:last-child td{border-bottom:0}</style>
+  <style>html,body{margin:0;} .rt{border-collapse:collapse;width:100%} .rt th,.rt td{padding:13px 16px;border-bottom:1px solid var(--line);text-align:left;font-size:15px} .rt th{color:var(--muted);font-weight:600;font-size:13px} .rt tr:last-child td{border-bottom:0} .rdoc{max-width:760px;margin:40px auto 0} .rdoc h2{font-size:20px;font-weight:800;letter-spacing:-0.5px;margin:36px 0 12px} .rdoc p,.rdoc li{font-size:14.5px;color:var(--ink-2);line-height:1.8} .rdoc ul{margin:8px 0;padding-left:20px} .rdoc a{color:var(--accent)} .rdoc .f{padding:12px 16px;border-radius:10px;background:var(--sunken);font-size:14px;line-height:1.8}</style>
   <script src="/assets/app.js?v=20261025"></script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-V4ERRL0NH0"></script>
@@ -60,7 +60,46 @@
     <p style="color:var(--muted);font-size:13px;margin-top:12px;line-height:1.6;">조달청 기초금액 조회 응답의 구성요소 합계로 확인된 공사 공고 {{ "{:,}".format(stats.total) }}건 기준 · 매일 갱신. <b>중앙값은 추정치입니다</b> — 공고마다 실제 A값은 다르니, 공고번호로 계산기에 불러오면 그 공고의 실제 A값이 채워집니다.</p>
     <div class="card" style="padding:20px;margin-top:20px;"><b>왜 중요한가</b><p style="color:var(--muted);font-size:14px;line-height:1.6;margin:8px 0 0;">투찰가 = (기초금액 − A값) × 투찰률 + A값, 낙찰하한선 = (기초금액 − A값) × 하한율 + A값. A값을 빼먹고 전체에 투찰률을 곱하면 계산한 투찰가와 하한선이 실제와 어긋납니다.</p></div>
     <p style="margin-top:22px;font-size:14px;"><a href="/calculator" style="color:var(--accent);font-weight:700;text-decoration:none;">투찰가 계산기 →</a> · <a href="/blog/a-value-guide" style="color:var(--accent);text-decoration:none;">A값 자세히 알아보기</a> · <a href="/lower-limits" style="color:var(--accent);text-decoration:none;">낙찰하한율표</a></p>
+
+  <article class="rdoc">
+    <h2>A값에 들어가는 10가지</h2>
+    <p>A값은 공사를 하면서 실제로 쓴 만큼 나중에 정산하는 비목(사후정산 비목)의 합계예요. 조달청 기초금액 조회 정보에 나오는 다음 10가지를 더한 값이에요.</p>
+    <ul>
+      <li>국민연금보험료 · 국민건강보험료 · 노인장기요양보험료</li>
+      <li>퇴직공제부금비</li>
+      <li>산업안전보건관리비 · 안전관리비 · 안전점검비</li>
+      <li>품질관리비 · 환경보전비</li>
+      <li>하도급대금지급보증서 발급수수료</li>
+    </ul>
+    <p>산재보험료와 고용보험료는 여기에 들어가지 않아요. 예전 글이나 일부 자료에는 보험료 합계처럼 적혀 있기도 하니, 공고의 실제 구성 항목을 확인하세요. A값은 공사 입찰에만 해당하고, 물품 입찰에는 없어요.</p>
+
+    <h2>왜 투찰률을 곱하지 않나요</h2>
+    <p>사후정산 비목은 투찰 금액과 상관없이 실제로 쓴 만큼 정산되는 돈이에요. 그래서 투찰가를 계산할 때 이 부분까지 투찰률만큼 깎아 쓰면, 깎이지 않을 돈을 깎은 셈이 돼요. 계산은 이렇게 해요.</p>
+    <p class="f">투찰가 = (기초금액 − A값) × 투찰률 + A값 (10원 미만 절사)<br>낙찰하한선 = (예정가격 − A값) × 낙찰하한율 + A값</p>
+    <p>가상의 예시로 기초금액 5억 원, A값 2,500만 원, 투찰률 90.30%인 공사를 보면, 올바른 투찰가는 (5억 − 2,500만) × 90.30% + 2,500만 = 453,925,000원이에요. A값까지 투찰률을 곱하면 451,500,000원이 되어 2,425,000원(= A값 × 9.70%) 낮게 쓰게 돼요. 이 공사의 하한선(사정률 100% 가정, 하한율 89.745%)은 451,288,750원이라, 잘못 계산한 금액은 하한선과 211,250원밖에 떨어져 있지 않아요.</p>
+
+    <h2>A값을 모를 때 0으로 두면 생기는 일</h2>
+    <p>A값을 0으로 넣으면 계산기는 기초금액 전체에 하한율을 곱해 하한선을 보여줘요. 그런데 실제 공고에 A값이 있으면 실제 하한선은 A값 × (100% − 하한율)만큼 더 높아요. 위 예시라면 2,500만 원 × (100% − 89.745%) = 2,563,750원이에요. 즉 A값이 있는 공고를 0으로 계산하면 화면의 하한선이 실제보다 낮게 보여, 미달 위험을 덜 느끼게 돼요. 공고번호로 불러와 실제 A값을 채우거나, 공고문에서 A값을 확인한 뒤 계산하세요. 위 표의 중앙값은 아직 공고 A값을 모를 때 대략의 크기를 가늠하는 참고값이에요.</p>
+
+    <h2>A값은 어디서 확인하나요</h2>
+    <ul>
+      <li><b>BidEasy 공고번호 불러오기</b> — 조달청 기초금액 조회 정보의 구성요소 합계로 확인된 공고는 계산기에 실제 A값이 채워져요. 기초금액이 아직 공개되지 않은 공고는 A값도 비어 있을 수 있어요.</li>
+      <li><b>공고문과 첨부문서</b> — 공고문, 산출내역서 같은 첨부에 항목별 금액이 나와요.</li>
+      <li><b>나라장터 화면</b> — 공고의 기초금액 공개 정보에서 확인할 수 있어요.</li>
+    </ul>
+
+    <h2>중앙값 표 읽는 법</h2>
+    <p>표의 '표본'은 그 기초금액 구간에서 A값이 확인된 공사 공고 수, '기초금액 대비'는 A값이 기초금액에서 차지하는 비율의 중앙값이에요. 중앙값은 평균과 달리 유난히 큰 공고 몇 건에 끌려가지 않아 대략적인 크기를 보기에 좋아요. 다만 공종과 공사 내용에 따라 A값은 크게 달라서, 같은 금액대라도 실제 공고 값과 차이가 날 수 있어요. 표본이 적은 구간은 '표본 부족'으로 비워 둬요.</p>
+
+    <h2>함께 보면 좋은 글</h2>
+    <ul>
+      <li><a href="/blog/a-value-guide">A값이란? 투찰가 계산에서 절대 빠뜨리면 안 되는 이유</a></li>
+      <li><a href="/blog/knowledge-k5">A값 하나 빠뜨려 적자 수주한 사장님 이야기</a></li>
+      <li><a href="/calculator-examples">계산기 사용 사례 — A값이 있는 공사</a> · <a href="/lower-limits">낙찰하한율표</a> · <a href="/faq">자주 묻는 질문</a></li>
+    </ul>
+  </article>
   </div>
+  {% include "_site_footer.html" %}
   <script>BD.mountNav('calculator');</script>
 </body>
 </html>

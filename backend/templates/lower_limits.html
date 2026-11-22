@@ -25,7 +25,7 @@
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/theme.css?v=20261025">
-  <style>html,body{margin:0;} .rt{border-collapse:collapse;width:100%} .rt th,.rt td{padding:13px 16px;border-bottom:1px solid var(--line);text-align:left;font-size:15px} .rt th{color:var(--muted);font-weight:600;font-size:13px} .rt tr:last-child td{border-bottom:0}</style>
+  <style>html,body{margin:0;} .rt{border-collapse:collapse;width:100%} .rt th,.rt td{padding:13px 16px;border-bottom:1px solid var(--line);text-align:left;font-size:15px} .rt th{color:var(--muted);font-weight:600;font-size:13px} .rt tr:last-child td{border-bottom:0} .rdoc{max-width:760px;margin:40px auto 0} .rdoc h2{font-size:20px;font-weight:800;letter-spacing:-0.5px;margin:36px 0 12px} .rdoc p,.rdoc li{font-size:14.5px;color:var(--ink-2);line-height:1.8} .rdoc ul{margin:8px 0;padding-left:20px} .rdoc a{color:var(--accent)} .rdoc .f{padding:12px 16px;border-radius:10px;background:var(--sunken);font-size:14px;line-height:1.8}</style>
   <script src="/assets/app.js?v=20261025"></script>
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-V4ERRL0NH0"></script>
@@ -61,7 +61,40 @@
     </div>
     <p style="margin-top:22px;font-size:14px;"><a href="/calculator" style="color:var(--accent);font-weight:700;text-decoration:none;">투찰가 계산기로 바로 계산하기 →</a> · <a href="/blog/nakchal-hahanyul-guide" style="color:var(--accent);text-decoration:none;">낙찰하한율 자세히 알아보기</a> · <a href="/a-value" style="color:var(--accent);text-decoration:none;">금액대별 A값</a></p>
     <p style="color:var(--muted);font-size:12.5px;margin-top:14px;">공고마다 명시된 하한율이 우선합니다. BidEasy는 낙찰가를 예측하지 않습니다.</p>
+
+  <article class="rdoc">
+    <h2>낙찰하한율이란</h2>
+    <p>낙찰하한율은 예정가격 대비 이 비율 아래로는 낙찰자를 정하지 않는 최소 비율이에요. 적격심사처럼 가격과 이행능력을 함께 보는 공사 입찰에서는, 하한율 이상으로 쓴 업체 가운데 가격이 낮은 순서로 심사해 낙찰자를 정해요. 하한율 미만으로 쓴 금액은 아무리 낮아도 낙찰자 결정 대상에서 빠지니, 사실상 그 입찰은 없던 일이 돼요. 너무 낮은 가격으로 수주해 부실 시공이나 적자 공사가 생기는 것을 막으려는 장치라고 이해하면 쉬워요.</p>
+
+    <h2>낙찰하한선 계산 공식</h2>
+    <p class="f">낙찰하한선 = (예정가격 − A값) × 낙찰하한율 + A값</p>
+    <p>A값(국민연금·건강보험료 같은 사후정산 비목 10종의 합계)에는 하한율을 곱하지 않고 그대로 더해요. 예정가격은 기초금액의 ±2% 또는 ±3% 범위에서 만든 복수예비가격 15개 가운데, 입찰자들이 고른 번호 중 많이 선택된 4개의 평균으로 개찰 때 정해져요. 그래서 투찰하는 시점에는 하한선을 정확히 알 수 없어요. BidEasy 계산기는 기초금액을 예정가격 자리에 두고(사정률 100%) 하한선을 보여줘요.</p>
+    <p>가상의 예시로 보면, 기초금액 2억 5천만 원·A값 없음·하한율 89.745%인 공사의 하한선은 224,362,500원이에요. 그런데 예정가격이 기초금액의 101%(252,500,000원)로 정해지면 하한선은 226,606,125원, 99%(247,500,000원)면 222,118,875원이 돼요. 같은 공고라도 예정가격에 따라 하한선이 400만 원 넘게 움직일 수 있다는 뜻이에요. 하한선에 너무 바짝 붙여 쓰면 예정가격이 높게 정해졌을 때 미달이 될 수 있어요. 더 많은 숫자 예시는 <a href="/calculator-examples">계산기 사용 사례</a>에 있어요.</p>
+
+    <h2>2026년 개정에서 바뀐 것</h2>
+    <p>2026-01-30부터 시설공사의 금액대별 하한율이 세 구간 모두 2%p씩 올라갔어요. 추정가격 10억 미만은 87.745%에서 89.745%로, 10억 이상 50억 미만은 86.745%에서 88.745%로, 50억 이상은 85.495%에서 87.495%로 바뀌었어요. 위 표의 '개정 전' 열이 예전 값이에요.</p>
+    <p>검색에서 아직 87.745%가 많이 보이는 건 개정 전 값을 다룬 글이 많기 때문이에요. 예전 엑셀 양식이나 지난해 공고를 기준으로 계산하면 하한선을 2%p 낮게 잡게 되고, 그 차이만큼 미달 위험이 커져요. 공고일이 개정 시행일 전후로 걸쳐 있다면 공고문에 적힌 하한율을 그대로 따르세요.</p>
+
+    <h2>추정가격과 기초금액, 무엇으로 구간을 나누나요</h2>
+    <ul>
+      <li><b>추정가격</b> — 발주기관이 계약 금액을 추정한 값으로, 부가가치세를 포함하지 않아요. 하한율 금액대 구간은 이 값으로 나눠요. 공고문의 적격심사 구간명도 "추정가격 ○억원 미만인 공사"처럼 적혀 있어요.</li>
+      <li><b>기초금액</b> — 발주기관이 공고에 제시하는 기준 금액으로, 복수예비가격과 투찰가 계산의 출발점이에요. 보통 추정가격보다 약 10% 커요.</li>
+    </ul>
+    <p>기초금액만 보고 구간을 고르면 경계 근처에서 틀릴 수 있어요. 예를 들어 기초금액이 10억 5천만 원이어도 추정가격은 10억 미만일 수 있고, 그러면 하한율은 88.745%가 아니라 89.745%예요. BidEasy 계산기는 기초금액 10억~11.3억, 50억~56.5억 구간에서는 높은 쪽 하한율로 계산하고 '추정가격 확인'을 안내해요. 하한선을 낮게 잡아 미달 쪽으로 틀리는 것보다 높게 잡는 편이 안전하기 때문이에요.</p>
+
+    <h2>공고문 확인이 먼저인 이유</h2>
+    <p>이 표는 공고에 하한율이 적혀 있지 않을 때 쓰는 기준이에요. 발주기관이 따르는 기준(국가기관·지방자치단체·공공기관)이나 공고의 계약 방식에 따라 적용 값이 다를 수 있으니, 공고문의 낙찰자 결정방법·적격심사 기준 부분에 적힌 하한율을 먼저 확인하세요. BidEasy에서 공고번호로 불러오면 공고에 적힌 하한율이 있을 때 그 값이 계산에 들어가요.</p>
+
+    <h2>함께 보면 좋은 글</h2>
+    <ul>
+      <li><a href="/blog/nakchal-hahanyul-guide">낙찰하한율이란? 87.745%의 의미와 투찰가 계산법 총정리</a></li>
+      <li><a href="/blog/knowledge-k11">기초금액·예정가격·사정률 차이 — 사정금액 계산까지</a></li>
+      <li><a href="/blog/knowledge-k23">최저가 vs 적격심사 — 왜 무작정 싸게 쓰면 지나</a></li>
+      <li><a href="/start-guide">나라장터 입찰 시작 가이드</a> · <a href="/faq">자주 묻는 질문</a></li>
+    </ul>
+  </article>
   </div>
+  {% include "_site_footer.html" %}
   <script>BD.mountNav('calculator');</script>
 </body>
 </html>
