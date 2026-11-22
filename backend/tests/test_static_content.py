@@ -73,3 +73,12 @@ def test_home_faq_html_matches_json_ld():
         r'<details><summary>(.*?)</summary><div class="fa">(.*?)</div></details>', faq)]
     expected = [(e["name"], e["acceptedAnswer"]["text"]) for e in ld["mainEntity"]]
     assert shown == expected
+
+
+def test_no_page_claims_notice_prefill_fills_a_value():
+    """웹 계산기의 공고번호 불러오기(calc.js ?no=)는 A값을 채우지 않는다(/bids/{no}/context 가 A값 제외).
+    채워진다고 쓰면 사용자는 A값 0인 채로 하한선을 실제보다 낮게 본다(2026-11 리뷰에서 5곳 발견)."""
+    claim = re.compile(r"불러오[^.。]{0,80}A값[^.。]{0,40}채워(지|져)")
+    pages = [_HTML / p for p in _MIN_HANGUL] + [_TPL / "a_value.html", _TPL / "lower_limits.html"]
+    bad = [p.name for p in pages if claim.search(_body_text(p.read_text(encoding="utf-8")))]
+    assert not bad, bad
