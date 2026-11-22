@@ -53,7 +53,7 @@ https://register.search.daum.net/index.daum → 사이트 등록만 해두기. 5
 - 구글 서치콘솔 **실적** — 노출(impressions) 키워드 확인. "낙찰하한율", "투찰가 계산" 같은 단어가 뜨기 시작하면 1층이 작동하는 것
 - 색인된 공고 수 추이
 
-> **2026-11-22 사이트맵 분리(애드센스 재검토 1차)**: 공고 상세(`/bid/*`)는 구글에만 `googlebot noindex` 라, 구글용 사이트맵 **`/sitemap-google.xml`**(정적+블로그, 공고 제외)을 새로 만들고 `robots.txt` 의 `Sitemap:` 줄을 이것으로 바꿨다. **`/sitemap.xml` 은 네이버 서치어드바이저 등록 URL 이라 공고 포함 그대로 둔다 — 공고를 빼지 말 것.** 배포 뒤 할 일(사람/봇): 서치콘솔에서 `sitemap.xml` 제출 삭제 → `sitemap-google.xml` 제출. 서치어드바이저는 `sitemap.xml` 그대로(등록 상태는 콘솔에서 확인). 정적 사이트맵에 `/privacy`(GitHub Pages 로 302)·`/terms`·`/diagnose`·`/faq`·`/extension`·`/start-guide`·`/calculator-examples` 추가.
+> **2026-11-22 사이트맵 분리(애드센스 재검토 1차)**: 공고 상세(`/bid/*`)는 구글에만 `googlebot noindex` 라, 구글용 사이트맵 **`/sitemap-google.xml`**(정적+블로그, 공고 제외)을 새로 만들고 `robots.txt` 의 `Sitemap:` 줄을 이것으로 바꿨다. **`/sitemap.xml` 은 네이버 서치어드바이저 등록 URL 이라 공고 포함 그대로 둔다 — 공고를 빼지 말 것.** 배포 뒤 할 일(사람/봇): 서치콘솔에서 `sitemap.xml` 제출 삭제 → `sitemap-google.xml` 제출. 서치어드바이저는 `sitemap.xml` 그대로(등록 상태는 콘솔에서 확인). 정적 사이트맵에 `/privacy`(2026-11-22 부터 302 없이 bideasy.kr 정적 `privacy.html` 로 직접 제공)·`/terms`·`/diagnose`·`/faq`·`/extension`·`/start-guide`·`/calculator-examples` 추가.
 
 > **2026-07-27 정정**: 이 문서는 오랫동안 "sitemap에 진행중 공고 최대 5,000건이 자동 노출됨"이라고 적혀 있었으나, **코드는 50건 상한이었다**(`pages.py` `.limit(50)`). 같은 날 sitemap 인덱스 구조로 전환해 **진행중 공고 전량**을 5,000건 단위로 분할 노출하도록 수정했다. 제출 대상은 여전히 `https://bideasy.kr/sitemap.xml`(이제 인덱스) 하나이며, 하위 파일은 `/sitemap-static.xml`·`/sitemap-blog.xml`·`/sitemap-notices-{N}.xml`. 함께 `/search`를 SSR로 바꿔 크롤러가 `/bid/*`로 들어갈 내부 링크 경로를 열었고, 없는 공고는 soft-404(200+noindex) 대신 실제 404를 반환한다. → 배경·후속은 `GROWTH_STRATEGY.md`.
 

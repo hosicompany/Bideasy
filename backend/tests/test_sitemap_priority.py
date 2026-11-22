@@ -227,7 +227,7 @@ def test_static_sitemap_pages_exist_as_files_or_routes():
     from pathlib import Path
 
     html = Path(__file__).resolve().parents[2] / "infra" / "nginx" / "html"
-    backend_routes = {"/search", "/lower-limits", "/a-value", "/blog", "/privacy"}  # /privacy 는 nginx 302
+    backend_routes = {"/search", "/lower-limits", "/a-value", "/blog"}  # /privacy 는 정적 privacy.html
     missing = [p for p in pages._SITEMAP_STATIC_PATHS
                if p and p not in backend_routes and not (html / f"{p.lstrip('/')}.html").is_file()]
     assert not missing, missing

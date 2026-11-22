@@ -26,6 +26,7 @@ _MIN_HANGUL = {
     "calculator-examples.html": 2500,
     "faq.html": 2500,
     "extension.html": 1800,
+    "privacy.html": 4000,
 }
 
 
@@ -82,3 +83,12 @@ def test_no_page_claims_notice_prefill_fills_a_value():
     pages = [_HTML / p for p in _MIN_HANGUL] + [_TPL / "a_value.html", _TPL / "lower_limits.html"]
     bad = [p.name for p in pages if claim.search(_body_text(p.read_text(encoding="utf-8")))]
     assert not bad, bad
+
+
+def test_privacy_page_is_served_directly():
+    """개인정보처리방침은 bideasy.kr 안에 직접 둔다(2026-11-22) — GitHub Pages 302 로 되돌아가면 실패."""
+    conf = (_ROOT / "infra" / "nginx" / "conf.d" / "default.conf").read_text(encoding="utf-8")
+    assert "location = /privacy" not in conf and "bideasy-policy" not in conf
+    text = _body_text((_HTML / "privacy.html").read_text(encoding="utf-8"))
+    for phrase in ("시행일 : 2026-11-11", "support@bideasy.kr", "사업자등록번호 420-29-00113", "호시(HOSI, 이하 “회사”)"):
+        assert phrase in text, phrase
