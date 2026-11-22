@@ -12,12 +12,19 @@ STATIC_URLS = [
     "https://bideasy.kr",
     "https://bideasy.kr/search",
     "https://bideasy.kr/calculator",
+    "https://bideasy.kr/calculator-examples",
     "https://bideasy.kr/lower-limits",
     "https://bideasy.kr/a-value",
+    "https://bideasy.kr/start-guide",
     "https://bideasy.kr/guide",
+    "https://bideasy.kr/faq",
+    "https://bideasy.kr/extension",
     "https://bideasy.kr/blog",
     "https://bideasy.kr/about",
     "https://bideasy.kr/contact",
+    "https://bideasy.kr/privacy",
+    "https://bideasy.kr/terms",
+    "https://bideasy.kr/diagnose",
 ]
 
 
@@ -192,9 +199,35 @@ def test_sitemap_notices_page_beyond_range_returns_empty_urlset(client, db_sessi
 
 
 def test_sitemaps_have_daily_shared_cache_headers(client):
-    for path in ("/sitemap.xml", "/sitemap-static.xml", "/sitemap-blog.xml", "/sitemap-notices-1.xml"):
+    for path in ("/sitemap.xml", "/sitemap-google.xml", "/sitemap-static.xml", "/sitemap-blog.xml", "/sitemap-notices-1.xml"):
         response = client.get(path)
 
         assert response.headers["cache-control"] == (
             "public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600"
         ), path
+
+
+def test_google_sitemap_excludes_notices_while_naver_index_keeps_them(client, db_session):
+    """구글용(/sitemap-google.xml)엔 공고가 없고, 네이버 등록 URL(/sitemap.xml)엔 그대로 있다.
+    robots.txt 는 모든 엔진이 읽으므로 구글용만 가리킨다."""
+    _seed_active_notices(db_session, 1, now_kst=_current_naive_kst())
+
+    google = _child_sitemaps(client.get("/sitemap-google.xml"))
+    naver = _child_sitemaps(client.get("/sitemap.xml"))
+
+    assert google == ["https://bideasy.kr/sitemap-static.xml", "https://bideasy.kr/sitemap-blog.xml"]
+    assert naver[:2] == google and naver[2:] == ["https://bideasy.kr/sitemap-notices-1.xml"]
+    robots = client.get("/robots.txt").text
+    assert "Sitemap: https://bideasy.kr/sitemap-google.xml" in robots
+    assert "Sitemap: https://bideasy.kr/sitemap.xml" not in robots
+
+
+def test_static_sitemap_pages_exist_as_files_or_routes():
+    """사이트맵에 올린 정적 경로가 실제 파일(nginx try_files)이거나 백엔드 라우트여야 한다."""
+    from pathlib import Path
+
+    html = Path(__file__).resolve().parents[2] / "infra" / "nginx" / "html"
+    backend_routes = {"/search", "/lower-limits", "/a-value", "/blog"}  # /privacy 는 정적 privacy.html
+    missing = [p for p in pages._SITEMAP_STATIC_PATHS
+               if p and p not in backend_routes and not (html / f"{p.lstrip('/')}.html").is_file()]
+    assert not missing, missing

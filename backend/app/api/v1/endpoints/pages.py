@@ -44,7 +44,12 @@ _KST = timezone(timedelta(hours=9))
 # sitemap 프로토콜 상한은 50,000 URL / 50MB. 5,000 으로 잡아 파일당 크기·재생성
 # 비용을 낮춘다(공고는 매일 갱신되므로 작은 파일이 크롤 효율에 유리).
 SITEMAP_CHUNK = 5000
-_SITEMAP_STATIC_PATHS = ["", "/search", "/calculator", "/lower-limits", "/a-value", "/guide", "/blog", "/about", "/contact"]
+_SITEMAP_STATIC_PATHS = [
+    "", "/search", "/calculator", "/calculator-examples", "/lower-limits", "/a-value",
+    "/start-guide", "/guide", "/faq", "/extension", "/blog", "/about", "/contact",
+    "/privacy", "/terms", "/diagnose",
+]
+_BASE_SITEMAPS = ["/sitemap-static.xml", "/sitemap-blog.xml"]
 _SITEMAP_CACHE_HEADERS = {
     "Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600"
 }
@@ -268,7 +273,9 @@ def share_calc_image(ct: str | None = None, basic: str | None = None,
 
 @router.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
-    return f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}/sitemap.xml\n"
+    # robots.txt 의 Sitemap 은 모든 검색엔진이 읽는다 — 공고(/bid/*)가 빠진 구글용만 알린다.
+    # 네이버는 서치어드바이저에 등록한 /sitemap.xml(공고 포함)을 그대로 읽는다(2026-11 애드센스 재검토).
+    return f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}/sitemap-google.xml\n"
 
 
 def _active_notice_query(db: Session, now: datetime):
@@ -305,12 +312,23 @@ def sitemap_index(db: Session = Depends(get_db)):
 
     이전 구현은 단일 urlset 에 진행중 공고 50건만 실었다(문서상 기대치는 5,000건).
     진행중 공고 전량을 색인 대상으로 노출하기 위해 인덱스 구조로 전환한다.
+    ⚠️ 네이버 서치어드바이저에 등록된 URL 이다 — 공고를 빼지 말 것(구글용은 /sitemap-google.xml).
     """
-    children = ["/sitemap-static.xml", "/sitemap-blog.xml"]
-    children += [
+    return _sitemap_index(_BASE_SITEMAPS + [
         f"/sitemap-notices-{page}.xml"
         for page in range(1, _notice_page_count(db, _current_naive_kst()) + 1)
-    ]
+    ])
+
+
+@router.get("/sitemap-google.xml")
+def sitemap_google():
+    """구글용 인덱스 — 공고(/bid/*)를 뺀다. 공고 상세는 googlebot noindex 라 구글에 알리지 않는다.
+    네이버(서치어드바이저 등록 URL = /sitemap.xml)는 공고를 포함한 그대로 둔다."""
+    return _sitemap_index(_BASE_SITEMAPS)
+
+
+
+def _sitemap_index(children: list[str]) -> Response:
     entries = "\n".join(f"  <sitemap><loc>{SITE_URL}{c}</loc></sitemap>" for c in children)
     return _xml_response(
         '<?xml version="1.0" encoding="UTF-8"?>\n'

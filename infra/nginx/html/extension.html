@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BidEasy 크롬 확장 프로그램 — 나라장터 공고 옆에서 투찰가·하한선 확인 | BidEasy</title>
+  <meta name="description" content="BidEasy 크롬 확장 프로그램은 나라장터 공고 페이지 옆 사이드패널에서 투찰가와 낙찰하한선을 바로 계산합니다. 설치 방법, 요청 권한, 웹과의 차이를 안내합니다.">
+  <link rel="canonical" href="https://bideasy.kr/extension">
+  <meta name="google-adsense-account" content="ca-pub-6337758470578530">
+  <link rel="icon" href="/brand/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/theme.css?v=20261025">
+  <style>
+    html,body{margin:0;}
+    .doc h2{font-size:18px;font-weight:800;letter-spacing:-0.4px;margin:36px 0 12px;}
+    .doc p,.doc li{font-size:14.5px;color:var(--ink-2);line-height:1.8;}
+    .doc ul{margin:8px 0;padding-left:20px;}
+    .doc li{margin:4px 0;}
+    .doc a{color:var(--accent);}
+    .doc h3{font-size:16px;font-weight:800;margin:24px 0 8px;}
+    .rt{border-collapse:collapse;width:100%} .rt th,.rt td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;font-size:14px} .rt th{color:var(--muted);font-weight:600;font-size:13px}
+  </style>
+  <script src="/assets/app.js?v=20261025"></script>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-V4ERRL0NH0"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-V4ERRL0NH0');
+  </script>
+</head>
+<body class="bd" data-theme="light">
+  <div id="nav"></div>
+
+  <div class="doc" style="max-width:760px;margin:0 auto;padding:40px 28px 48px;">
+    <span class="eyebrow">Extension</span>
+    <h1 style="font-size:30px;font-weight:800;letter-spacing:-0.8px;margin:10px 0 0;">BidEasy 크롬 확장 프로그램</h1>
+    <p style="margin-top:14px;">나라장터(g2b.go.kr) 공고 페이지를 열어 둔 채로, 화면 옆 사이드패널에서 투찰가와 낙찰하한선을 바로 계산할 수 있어요. 공고 보던 탭에서 계산기 탭으로 옮겨 가서 공고번호를 다시 입력하는 수고를 줄여 줍니다. 가입 없이 바로 설치해서 써 볼 수 있고, 보고 있는 공고를 알아서 인식해 계산에 필요한 숫자를 채워요.</p>
+    <p style="margin-top:14px;"><a class="btn btn-primary" href="https://chromewebstore.google.com/detail/ecdpfnfonccaaneihkdlkhnkpjakmmnp" target="_blank" rel="noopener" data-ev="cta_extension_install">Chrome 웹스토어에서 설치</a></p>
+
+    <h2>무엇을 하나요</h2>
+    <p>나라장터에서 공고를 여러 건 살펴보다 보면, 괜찮아 보이는 공고를 발견할 때마다 공고번호를 적어 두고 다른 탭의 계산기로 옮겨 가는 일이 반복됩니다. 확장은 이 과정을 줄이려고 만들었어요. 공고 페이지를 보던 그 자리에서 사이드패널을 열면 바로 계산 결과가 나옵니다. 기능은 로그인 여부와 관계없이 쓸 수 있는 것과, 기존 회원 계정이 있어야 쓸 수 있는 것으로 나뉘어 있어요. BidEasy는 지금 유료 요금제와 신규 회원가입을 잠시 쉬고 있어서, 계정이 필요한 기능은 기존 회원만 이용할 수 있습니다.</p>
+    <h3>로그인 없이 바로 되는 것</h3>
+    <ul>
+      <li>보고 있는 나라장터 공고를 사이드패널이 자동으로 인식해, 투찰가·낙찰하한선을 계산해요. 공식은 웹 <a href="/calculator">투찰가 계산기</a>와 같아요 — 투찰가 = (기초금액 − A값) × 투찰률 + A값(10원 미만 절사), 하한선은 같은 공식에 낙찰하한율을 넣어 계산해요. 나라장터 공고 화면에서 A값을 읽을 수 있는 공고는 A값도 반영돼요.</li>
+      <li>기초금액이 아직 공개되지 않은 공고는 추정치를 만들지 않고 '미확인'으로 표시해요. 추정가격을 대신 넣으면 하한선이 실제보다 약 9% 낮게 나와, 안전하다고 잘못 판단할 수 있기 때문이에요.</li>
+      <li>공고에 하한율이 적혀 있으면 그 값을 그대로 쓰고, 없으면 현행 금액대별 기준을 적용해요. 금액대별 기준은 <a href="/lower-limits">낙찰하한율표</a>에서도 볼 수 있어요.</li>
+      <li>사이드패널의 '무료 조건 진단' 버튼으로 웹의 <a href="/diagnose">무료 조건 진단</a> 페이지를 바로 열 수 있어요. 업종·지역을 넣으면 참가 가능성이 있는 공고 후보를 확인할 수 있어요.</li>
+    </ul>
+    <h3>계정이 필요한 것 (기존 회원 대상, 신규 가입 잠시 중단)</h3>
+    <ul>
+      <li>공고 AI 요약, 독소조항 같은 주의 조항 표시 — 공고 본문에서 눈에 잘 안 들어올 수 있는 조건을 짚어 줘요.</li>
+      <li>내 자격 조건과 공고 요건 대조 — 미리 등록해 둔 업종·지역 같은 정보로 참가 가능 여부를 함께 보여줘요.</li>
+      <li>관심 공고 마감 알림 — 등록해 둔 공고의 마감이 다가오면 알려줘요.</li>
+    </ul>
+    <p>계정이 필요한 기능은 웹(bideasy.kr)과 같은 계정을 그대로 씁니다. bideasy.kr에서 로그인하면 확장에도 같은 계정이 연결돼요.</p>
+
+    <h2>설치하고 쓰는 순서</h2>
+    <ol>
+      <li>위 버튼으로 크롬 웹스토어에서 BidEasy 확장을 설치해요.</li>
+      <li>나라장터(<a href="https://www.g2b.go.kr" target="_blank" rel="noopener">www.g2b.go.kr</a>)에서 확인하고 싶은 공고의 상세 페이지를 열어요. 목록 화면이 아니라 공고 상세 화면을 열어야 해요.</li>
+      <li>브라우저 오른쪽 위 BidEasy 아이콘을 눌러요.</li>
+      <li>사이드패널이 열리면서 그 공고의 기초금액과 A값(화면에서 읽을 수 있는 경우)을 가져와 계산 결과를 보여줘요.</li>
+      <li>투찰률을 조정하며 투찰가와 낙찰하한선을 확인해요. 다른 공고 페이지로 넘어가면 사이드패널 내용도 그 공고 기준으로 바뀌어요.</li>
+    </ol>
+
+    <h2>요청하는 권한과 이유</h2>
+    <table class="rt">
+      <tr><th>권한</th><th>쓰는 곳</th></tr>
+      <tr><td>storage</td><td>설정값 저장</td></tr>
+      <tr><td>sidePanel</td><td>사이드패널 화면 표시</td></tr>
+      <tr><td>activeTab</td><td>지금 보고 있는 탭의 공고 정보 읽기</td></tr>
+      <tr><td>alarms, notifications</td><td>관심 공고 마감 알림</td></tr>
+      <tr><td>scripting</td><td>공고 페이지에서 정보 읽어오기</td></tr>
+      <tr><td>g2b.go.kr 접속</td><td>나라장터 공고 페이지 읽기</td></tr>
+      <tr><td>bideasy.kr, api.bideasy.kr 접속</td><td>계산 기준 조회, 로그인 연동</td></tr>
+    </table>
+    <p>storage는 로그인 상태와 설정값을 브라우저에 저장하는 데 쓰고, sidePanel은 공고 페이지 옆에 계산 화면을 띄우기 위한 크롬의 사이드패널 기능이에요. activeTab과 scripting은 지금 보고 있는 공고 페이지에서 공고번호 같은 정보를 읽어 오는 데 쓰고, alarms·notifications는 관심 공고로 등록한 공고의 마감을 알려 주는 데 씁니다(계정 필요 기능). 접속 범위를 g2b.go.kr과 bideasy.kr·api.bideasy.kr로 한정한 것도 같은 이유예요 — 공고를 읽어 오고 계산 기준을 조회하는 데 필요한 범위만 열어 두고, 그 밖의 사이트에 대한 상시 접근 권한은 요청하지 않아요.</p>
+    <p>확장이 어떤 정보를 처리하고 보관하는지는 <a href="/privacy">개인정보처리방침</a>에서 안내해요.</p>
+
+    <h2>웹만으로도 되는 것과 비교</h2>
+    <p>계산기만 쓰려면 확장을 설치하지 않고 웹에서 바로 공고번호나 숫자를 입력해도 됩니다. 확장은 나라장터 공고를 자주, 여러 건씩 훑어보는 분들을 위한 보조 도구예요.</p>
+    <table class="rt">
+      <tr><th>기능</th><th>웹(bideasy.kr)</th><th>확장</th></tr>
+      <tr><td>투찰가·하한선 계산</td><td>공고번호 입력 또는 직접 입력</td><td>보고 있는 공고를 자동 인식</td></tr>
+      <tr><td>무료 조건 진단</td><td>가능</td><td>가능(사이드패널에서 바로 연결)</td></tr>
+      <tr><td>AI 요약·주의 조항, 자격 대조, 마감 알림</td><td>계정 필요(신규 가입 중단)</td><td>계정 필요(신규 가입 중단)</td></tr>
+    </table>
+    <p>계산 자체는 웹 계산기만으로도 할 수 있어요. 확장은 나라장터 공고 페이지를 떠나지 않고, 공고번호를 다시 입력할 필요 없이 같은 계산을 바로 볼 수 있다는 점이 다릅니다. 공고를 여러 건 훑어보며 빠르게 확인할 때 특히 유용해요.</p>
+
+    <h2>하지 않는 것</h2>
+    <ul>
+      <li>낙찰가를 예측하지 않습니다. 예정가격은 입찰자들이 고른 복수예비가격 가운데 많이 선택된 값들의 평균으로 개찰 때 정해지는 값이라, 투찰 전에는 미리 알 수 없어요.</li>
+      <li>낙찰 가능성이나 순위를 계산하지 않습니다.</li>
+      <li>계산 결과로 낙찰을 보장하지 않습니다. 사이드패널이 보여주는 건 공고 당시 확인된 숫자를 바탕으로 한 계산값일 뿐이에요.</li>
+      <li>나라장터의 공식 서비스가 아닙니다. 조달청·나라장터와 제휴 관계도 아니고, 운영 주체는 민간 업체 호시(HOSI)예요.</li>
+      <li>투찰을 대신 하지 않습니다. 실제 투찰 제출은 나라장터 화면에서 직접 진행해 주세요.</li>
+    </ul>
+
+    <h2>문제가 생기면</h2>
+    <p>사이드패널이 뜨지 않으면 먼저 공고 페이지를 새로고침해 보세요. 나라장터 공고 상세 화면이 아닌 목록 화면이나 다른 페이지에서는 계산 대상 공고를 찾지 못할 수 있어요. 다른 탭에서 열어 둔 BidEasy 사이드패널이 그대로 남아 있는 경우도 있으니, 지금 보고 있는 탭이 맞는지도 확인해 보세요. 그래도 해결되지 않으면 <a href="/contact">문의하기</a>로 알려 주세요.</p>
+
+    <h2>관련 링크</h2>
+    <ul>
+      <li><a href="/calculator">투찰가 계산기</a></li>
+      <li><a href="/guide">사용 가이드</a></li>
+      <li><a href="/faq">자주 묻는 질문</a></li>
+      <li><a href="/start-guide">나라장터 입찰 시작 가이드</a></li>
+    </ul>
+  </div>
+
+  <footer class="site-foot">
+    <nav class="site-foot-links" aria-label="사이트 안내">
+      <a href="/calculator">투찰가 계산기</a> · <a href="/calculator-examples">계산기 사용 사례</a> · <a href="/lower-limits">낙찰하한율표</a> · <a href="/a-value">A값</a> · <a href="/search">공고 검색</a> · <a href="/diagnose">무료 조건 진단</a><br>
+      <a href="/start-guide">나라장터 입찰 시작 가이드</a> · <a href="/guide">사용 가이드</a> · <a href="/faq">자주 묻는 질문</a> · <a href="/extension">크롬 확장 프로그램</a> · <a href="/blog">블로그</a><br>
+      <a href="/about">소개</a> · <a href="/contact">문의하기</a> · <a href="/terms">이용약관</a> · <a href="/privacy">개인정보처리방침</a>
+    </nav>
+    <p>상호 호시(HOSI) · 사업자등록번호 420-29-00113 · 통신판매업신고 2022-서울마포-0517호 · 서울시 마포구 마포대로 92, A동 3층 · support@bideasy.kr<br>BidEasy는 조달청·나라장터의 공식 또는 제휴 서비스가 아닌 민간 서비스입니다.</p>
+  </footer>
+
+  <script>window.BD.mountNav();</script>
+</body>
+</html>

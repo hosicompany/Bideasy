@@ -159,7 +159,7 @@
     // 대시보드·계정은 오른쪽 "내 영역"으로 분리: [대시보드] 버튼 + 아바타 드롭다운(마이·관심·로그아웃).
     // /search 는 백엔드 SSR(정적 search.html 제거) — 절대경로로 둔다.
     // 2026-10 계산기 중심 개편(intent §10): 계산기 → 참고 페이지 → 검색 → 블로그 순
-    var links = [['/calculator', '계산기', 'calculator'], ['/lower-limits', '하한율표', 'lower-limits'], ['/a-value', 'A값', 'a-value'], ['/search', '공고 검색', 'search'], ['/blog', '블로그', 'blog']];
+    var links = [['/calculator', '계산기', 'calculator'], ['/lower-limits', '하한율표', 'lower-limits'], ['/a-value', 'A값', 'a-value'], ['/search', '공고 검색', 'search'], ['/start-guide', '입찰 가이드', 'start-guide'], ['/blog', '블로그', 'blog']];
     var right = authed
       ? '<a class="btn btn-primary btn-sm"' + (active === 'dashboard' ? ' aria-current="page"' : '') + ' href="dashboard.html">대시보드</a>' +
         '<div class="navmenu">' +

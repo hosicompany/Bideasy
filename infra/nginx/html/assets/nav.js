@@ -22,6 +22,7 @@
             <li><a href="/lower-limits" class="bd-nav-link" data-path="/lower-limits">하한율표</a></li>
             <li><a href="/a-value" class="bd-nav-link" data-path="/a-value">A값</a></li>
             <li><a href="/search" class="bd-nav-link" data-path="/search">공고 검색</a></li>
+            <li><a href="/start-guide" class="bd-nav-link" data-path="/start-guide">입찰 가이드</a></li>
             <li><a href="/blog" class="bd-nav-link" data-path="/blog">블로그</a></li>
           </ul>
           <div class="bd-nav-cta" id="bd-nav-cta">
